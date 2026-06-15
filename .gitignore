@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Production builds
+dist/
+dist-electron/
+*.apk
+*.zip
+
+# Local server database and Xtream credentials cache
+server/data/
+credentials.json
+playlist_cache.json
+epg_cache.json
+
+# Android Studio and Gradle settings/caches
+.gradle/
+.idea/
+build/
+local.properties
+capture/
+android/.gradle/
+android/app/build/
+android/local.properties
+android/.idea/
+
+# OS Files
+.DS_Store
+Thumbs.db

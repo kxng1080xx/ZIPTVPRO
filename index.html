@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZIPTV Pro</title>
+  <!-- Google Fonts: Inter & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="/src/style.css">
+  <script type="module" src="/src/main.js"></script>
+</head>
+<body class="dark-mode">
+
+  <!-- ==================== LOGIN SCREEN ==================== -->
+  <div id="login-screen" class="login-container">
+    <div class="login-card">
+      <div class="login-logo-header">
+        <img src="/src/assets/logo.png" alt="ZIPTV Pro Logo" class="logo-img login-logo">
+        <h2>ZIPTV Pro</h2>
+        <p>Connect your Xtream Codes subscription</p>
+      </div>
+      
+      <form id="login-form">
+        <div class="form-group">
+          <label for="playlist-name">Playlist Name</label>
+          <input type="text" id="playlist-name" placeholder="e.g. My Cord Cutter Playlist" value="Xtream Codes">
+        </div>
+        <div class="form-group">
+          <label for="host-url">Server URL (Host & Port)</label>
+          <input type="text" id="host-url" placeholder="e.g. http://your-provider-url.com:8080" required>
+        </div>
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input type="text" id="username" placeholder="Enter username" required>
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" placeholder="Enter password" required>
+        </div>
+        
+        <div id="login-error" class="login-error-msg hidden">Invalid login details. Please check and try again.</div>
+        
+        <button type="submit" id="login-btn">
+          <span class="btn-text">Connect Playlist</span>
+          <span class="btn-loader hidden"></span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== MAIN APPLICATION ==================== -->
+  <div id="app-container" class="app-layout hidden">
+    
+    <!-- ==================== TOP NAVIGATION HEADER ==================== -->
+    <header class="top-header">
+      <!-- Hamburger Menu Button (Mobile Only) -->
+      <button id="mobile-menu-btn" class="header-icon-btn mobile-only" title="Toggle Categories">
+        <i data-lucide="menu"></i>
+      </button>
+      
+      <!-- Top Left: Time & Expiry -->
+      <div class="header-left">
+        <div class="time-widget">
+          <i data-lucide="clock"></i>
+          <span id="current-time">12:19 PM</span>
+          <span class="date-sep">|</span>
+          <span id="current-date">June 15, 2026</span>
+        </div>
+        <div class="status-badge gold-badge">
+          <i data-lucide="award"></i>
+          <span id="expiry-text">PRO TRIAL 3 days left</span>
+        </div>
+      </div>
+
+      <!-- Top Center: Logo & Tabs -->
+      <div class="header-center">
+        <div class="logo-container">
+          <img src="/src/assets/logo.png" alt="ZIPTV Pro Logo" class="logo-img header-logo animate-glow">
+        </div>
+        <nav class="navigation-tabs">
+          <button class="nav-tab active" data-tab="live">
+            <i data-lucide="tv"></i> Live TV
+          </button>
+          <button class="nav-tab" data-tab="movies">
+            <i data-lucide="film"></i> Movies
+          </button>
+          <button class="nav-tab" data-tab="series">
+            <i data-lucide="clapperboard"></i> Series
+          </button>
+        </nav>
+      </div>
+
+      <!-- Top Right: Active Profile & Controls -->
+      <div class="header-right">
+        <div class="profile-card" id="profile-card-btn">
+          <div class="profile-info">
+            <span class="profile-name" id="nav-playlist-name">Xtream Codes</span>
+            <span class="profile-status">Xtream Codes</span>
+          </div>
+          <i data-lucide="chevron-down" class="profile-chevron"></i>
+        </div>
+        <button class="header-icon-btn" id="sync-btn" title="Refresh Playlist Data">
+          <i data-lucide="refresh-cw"></i>
+        </button>
+        <button class="header-icon-btn" id="settings-btn" title="Settings">
+          <i data-lucide="settings"></i>
+        </button>
+      </div>
+    </header>
+
+    <div class="main-body-container">
+      
+      <!-- ==================== SIDEBAR ==================== -->
+      <aside class="sidebar">
+        <!-- Pins and Filters Section -->
+        <div class="sidebar-top-pins">
+          <div class="pin-title-row">
+            <span><i data-lucide="pin" class="pin-icon"></i> Pin top section</span>
+            <button class="icon-btn-small"><i data-lucide="layout-grid"></i></button>
+          </div>
+          
+          <ul class="sidebar-pin-list">
+            <li class="pin-item" data-category="favorites">
+              <span class="pin-label"><i data-lucide="star" class="star-filled"></i> Favorites</span>
+              <span class="pin-count" id="count-favorites">0</span>
+            </li>
+            <li class="pin-item" data-category="recordings">
+              <span class="pin-label"><i data-lucide="circle-dot"></i> Recordings</span>
+              <span class="pin-count">0</span>
+            </li>
+            <li class="pin-item" data-category="recently_viewed">
+              <span class="pin-label"><i data-lucide="history"></i> Recently Viewed</span>
+              <span class="pin-count" id="count-recently-viewed">0</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="categories-search-section">
+          <div class="categories-header-row">
+            <span class="categories-title">Categories</span>
+            <span class="categories-count-total" id="categories-count-total">40</span>
+          </div>
+          <div class="search-box-container">
+            <i data-lucide="search" class="search-icon"></i>
+            <input type="text" id="categories-search" placeholder="Search categories">
+          </div>
+        </div>
+
+        <!-- Scrollable Category List -->
+        <div class="categories-list-container" id="categories-list">
+          <div class="category-item active" data-category="all">
+            <span class="cat-label">All channels</span>
+            <span class="cat-count" id="count-all-channels">0</span>
+          </div>
+          <!-- Categories dynamic list will insert here -->
+        </div>
+
+      </aside>
+
+      <!-- ==================== CONTENT PANELS ==================== -->
+      <main class="content-viewport">
+        
+        <!-- 1. LIVE TV VIEW -->
+        <div id="live-view" class="view-panel active">
+          <!-- Top section: Split Video Player and Channel Info -->
+          <div class="live-top-row">
+            
+            <!-- Video Player Area -->
+            <div class="player-wrapper">
+              <div class="video-container" id="video-container">
+                <video id="main-video-player" playsinline></video>
+                
+                <!-- Custom Control Overlay -->
+                <div class="player-controls-overlay" id="player-controls">
+                  <!-- Top controls (indicators) -->
+                  <div class="controls-top">
+                    <span class="live-tag">LIVE</span>
+                    <span class="fps-indicator">HD | 30 FPS</span>
+                  </div>
+                  
+                  <!-- Center play/pause & skip -->
+                  <div class="controls-center">
+                    <button class="player-skip-btn" id="player-prev-btn"><i data-lucide="chevron-left"></i></button>
+                    <button class="player-play-btn" id="player-play-pause-btn"><i data-lucide="play" class="play-icon"></i></button>
+                    <button class="player-skip-btn" id="player-next-btn"><i data-lucide="chevron-right"></i></button>
+                  </div>
+                  
+                  <!-- Bottom controls bar -->
+                  <div class="controls-bottom">
+                    <div class="control-row-left">
+                      <button class="player-control-icon" id="player-stop-btn" title="Stop"><i data-lucide="square"></i></button>
+                      <div class="player-playing-details">
+                        <span class="player-playing-title" id="player-channel-name">No Channel Selected</span>
+                        <span class="player-playing-epg" id="player-epg-title">Select a channel from the list to start watching</span>
+                      </div>
+                    </div>
+                    
+                    <div class="control-row-right">
+                      <button class="player-control-icon" id="player-cc-btn" title="Subtitles"><i data-lucide="subtitles"></i></button>
+                      <button class="player-control-icon" id="player-volume-btn" title="Mute"><i data-lucide="volume-2"></i></button>
+                      <input type="range" class="player-volume-slider" id="player-volume-slider" min="0" max="1" step="0.05" value="0.8">
+                      <button class="player-control-icon" id="player-pip-btn" title="Picture in Picture"><i data-lucide="picture-in-picture"></i></button>
+                      <button class="player-control-icon" id="player-fullscreen-btn" title="Fullscreen"><i data-lucide="maximize"></i></button>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- Channel Logo Overlay (Watermark top left when overlay hidden) -->
+                <div class="player-channel-logo-watermark hidden" id="player-watermark">
+                  <img src="" alt="" id="watermark-img">
+                </div>
+
+                <!-- Video Loading Spinner -->
+                <div class="video-loader hidden" id="video-spinner">
+                  <div class="spinner"></div>
+                  <span>Loading Stream...</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Program Info Details Panel -->
+            <div class="program-details-panel" id="program-details">
+              <div class="details-header-row">
+                <div class="channel-logo-wrapper">
+                  <img id="detail-channel-icon" src="" alt="Z" class="fallback-logo">
+                </div>
+                <div class="channel-meta-text">
+                  <h3 id="detail-channel-name">Select a Channel</h3>
+                  <p id="detail-category-name">Live TV</p>
+                </div>
+                <button class="favorite-toggle-btn" id="detail-favorite-btn">
+                  <span>Favorite</span>
+                  <i data-lucide="star" id="detail-favorite-icon"></i>
+                </button>
+              </div>
+
+              <div class="details-program-info">
+                <div class="info-label">Program</div>
+                <h2 id="detail-program-title">No Program Information</h2>
+                <div class="program-time-range" id="detail-program-time">11:00 AM - 7:00 PM</div>
+                
+                <!-- Progress bar -->
+                <div class="details-progress-bar-container">
+                  <div class="details-progress-bar" id="detail-program-progress" style="width: 0%;"></div>
+                </div>
+                
+                <div class="info-label">Description</div>
+                <p class="program-description-text" id="detail-program-desc">
+                  No program details available. Select a channel to view the current schedule and start watching live streams.
+                </p>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Bottom section: EPG Grid -->
+          <div class="epg-section-container">
+            <!-- EPG Control Header -->
+            <div class="epg-controls-header">
+              <div class="epg-controls-left">
+                <button class="epg-ctrl-btn" id="epg-search-btn">
+                  <i data-lucide="search"></i> Global Search
+                </button>
+                <button class="epg-ctrl-btn" id="epg-edit-btn">
+                  <i data-lucide="edit-3"></i> Edit EPG
+                </button>
+                <button class="epg-ctrl-btn" id="epg-refresh-btn" title="Refresh EPG Data">
+                  <i data-lucide="refresh-cw"></i>
+                </button>
+                <div class="epg-channels-search-box">
+                  <i data-lucide="search"></i>
+                  <input type="text" id="epg-channels-filter" placeholder="Filter channels...">
+                </div>
+              </div>
+              
+              <div class="epg-controls-right">
+                <button class="epg-ctrl-btn active" id="epg-full-btn">
+                  <i data-lucide="expand"></i> Full screen EPG
+                </button>
+                <div class="epg-hours-select">
+                  <span>Hours</span>
+                  <select id="epg-hours-range">
+                    <option value="4">4h</option>
+                    <option value="8" selected>8h</option>
+                    <option value="12">12h</option>
+                    <option value="24">24h</option>
+                  </select>
+                </div>
+                
+                <div class="epg-nav-controls">
+                  <button class="epg-nav-btn" id="epg-nav-prev"><i data-lucide="chevron-left"></i></button>
+                  <button class="epg-nav-btn active" id="epg-nav-now">Now</button>
+                  <button class="epg-nav-btn" id="epg-nav-next"><i data-lucide="chevron-right"></i></button>
+                  <span class="epg-selected-date" id="epg-selected-date-label">Monday, Jun 15</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- EPG Grid Body -->
+            <div class="epg-grid-layout">
+              <!-- Grid Header: Timeline Hours -->
+              <div class="epg-timeline-header-row">
+                <div class="epg-channel-header-cell">
+                  Channels <span id="epg-visible-count">(0)</span>
+                </div>
+                <div class="epg-timeline-hours-container" id="epg-timeline-hours">
+                  <!-- Hour ticks will insert here -->
+                </div>
+              </div>
+
+              <!-- Grid Content: Scrollable Channels & EPG blocks -->
+              <div class="epg-grid-scroll-container">
+                <!-- Left Channels Column (Scrolls vertically in sync with right column) -->
+                <div class="epg-channels-column" id="epg-channels-list">
+                  <!-- Channels list rows will insert here -->
+                </div>
+                
+                <!-- Right Programs Grid (Scrolls horizontally AND vertically) -->
+                <div class="epg-programs-grid-viewport" id="epg-grid-viewport">
+                  <!-- Red Current Time indicator -->
+                  <div class="epg-current-time-line" id="epg-current-time-indicator"></div>
+                  <!-- Timeline background grid lines -->
+                  <div class="epg-grid-lines" id="epg-grid-lines"></div>
+                  <!-- Rows with program blocks -->
+                  <div class="epg-programs-rows-container" id="epg-programs-rows">
+                    <!-- Dynamic program blocks insert here -->
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. MOVIES VIEW (VOD) -->
+        <div id="movies-view" class="view-panel">
+          <div class="vod-view-header">
+            <h2>Movies Catalog</h2>
+            <div class="vod-filters">
+              <div class="vod-search-box">
+                <i data-lucide="search"></i>
+                <input type="text" id="movies-search" placeholder="Search movies...">
+              </div>
+              <div class="vod-sort-select">
+                <select id="movies-sort">
+                  <option value="added">Recently Added</option>
+                  <option value="name">Name (A-Z)</option>
+                  <option value="rating">Rating</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Movies Grid -->
+          <div class="vod-grid" id="movies-grid">
+            <!-- Dynamic Movie Poster Cards -->
+          </div>
+
+          <!-- Pagination -->
+          <div class="vod-pagination" id="movies-pagination">
+            <!-- Dynamic Pagination Buttons -->
+          </div>
+        </div>
+
+        <!-- 3. SERIES VIEW -->
+        <div id="series-view" class="view-panel">
+          <div class="vod-view-header">
+            <h2>TV Series Catalog</h2>
+            <div class="vod-filters">
+              <div class="vod-search-box">
+                <i data-lucide="search"></i>
+                <input type="text" id="series-search" placeholder="Search series...">
+              </div>
+              <div class="vod-sort-select">
+                <select id="series-sort">
+                  <option value="added">Recently Added</option>
+                  <option value="name">Name (A-Z)</option>
+                  <option value="rating">Rating</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Series Grid -->
+          <div class="vod-grid" id="series-grid">
+            <!-- Dynamic Series Poster Cards -->
+          </div>
+
+          <!-- Pagination -->
+          <div class="vod-pagination" id="series-pagination">
+            <!-- Dynamic Pagination Buttons -->
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- ==================== VOD / SERIES DETAILS MODAL ==================== -->
+  <div id="vod-modal" class="modal-overlay hidden">
+    <div class="vod-modal-content">
+      <button class="modal-close-btn" id="vod-modal-close"><i data-lucide="x"></i></button>
+      
+      <div class="vod-modal-body">
+        <div class="vod-modal-left">
+          <img id="vod-modal-poster" src="" alt="Poster" class="vod-details-poster">
+          <button class="vod-play-btn-large" id="vod-modal-play-btn">
+            <i data-lucide="play-circle"></i> Play Now
+          </button>
+        </div>
+        <div class="vod-modal-right">
+          <div class="vod-modal-title-row">
+            <h1 id="vod-modal-title">Movie Title</h1>
+            <span class="vod-badge-rating" id="vod-modal-rating"><i data-lucide="star"></i> 8.5</span>
+          </div>
+          
+          <div class="vod-modal-metadata">
+            <span class="vod-meta-item" id="vod-modal-genre">Action, Drama</span>
+            <span class="vod-meta-item" id="vod-modal-release">2026</span>
+            <span class="vod-meta-item" id="vod-modal-duration">2h 15m</span>
+          </div>
+
+          <p class="vod-modal-description" id="vod-modal-plot">
+            Movie plot summary goes here...
+          </p>
+
+          <div class="vod-cast-section">
+            <p><strong>Director:</strong> <span id="vod-modal-director">N/A</span></p>
+            <p><strong>Cast:</strong> <span id="vod-modal-cast">N/A</span></p>
+          </div>
+
+          <!-- Series Seasons & Episodes container -->
+          <div id="vod-series-episodes-container" class="hidden">
+            <div class="seasons-select-row">
+              <label for="seasons-dropdown">Season</label>
+              <select id="seasons-dropdown">
+                <!-- Dynamic season options -->
+              </select>
+            </div>
+            
+            <div class="episodes-list" id="episodes-list">
+              <!-- Dynamic episode rows -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SETTINGS MODAL ==================== -->
+  <div id="settings-modal" class="modal-overlay hidden">
+    <div class="settings-card">
+      <div class="settings-header">
+        <h2>Settings</h2>
+        <button class="modal-close-btn" id="settings-close-btn"><i data-lucide="x"></i></button>
+      </div>
+      
+      <div class="settings-body">
+        <div class="settings-section">
+          <h3>Streaming Preferences</h3>
+          <div class="settings-group">
+            <label for="settings-format">Stream Format</label>
+            <select id="settings-format">
+              <option value="m3u8">HLS (.m3u8) - Recommended</option>
+              <option value="ts">MPEG-TS (.ts)</option>
+            </select>
+          </div>
+          <div class="settings-group checkbox-group">
+            <input type="checkbox" id="settings-proxy" checked>
+            <label for="settings-proxy">
+              Enable CORS Proxy (Local Backend)
+              <span class="settings-help">Recommended. Pipes stream chunks through your local server to bypass browser blockages.</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Sync & Cache</h3>
+          <button class="settings-action-btn" id="settings-sync-now">
+            <i data-lucide="refresh-cw"></i> Sync Playlists & Cache Now
+          </button>
+          <span class="settings-help">Force download all channels, movies, and series lists from your Xtream server.</span>
+        </div>
+
+        <div class="settings-section logout-section">
+          <h3>Account Action</h3>
+          <p>Connected server: <span id="settings-connected-server" class="gold-text">N/A</span></p>
+          <button class="settings-action-btn danger-btn" id="settings-logout">
+            <i data-lucide="log-out"></i> Disconnect & Log Out
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Mobile Sidebar Backdrop Overlay -->
+  <div id="sidebar-backdrop" class="sidebar-backdrop hidden"></div>
+</body>
+</html>

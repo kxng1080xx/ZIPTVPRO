@@ -1,0 +1,52 @@
+{
+  "name": "iptv-player-zero",
+  "version": "1.0.0",
+  "description": "Premium IPTV Player - ZIPTV Pro",
+  "main": "main.electron.cjs",
+  "type": "module",
+  "scripts": {
+    "dev:server": "nodemon server/index.js",
+    "dev:client": "vite",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "node server/index.js",
+    "electron:start": "electron .",
+    "electron:dist": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "@capacitor/screen-orientation": "^8.0.1",
+    "cors": "^2.8.5",
+    "dexie": "^4.4.3",
+    "express": "^4.21.2",
+    "hls.js": "^1.5.15",
+    "mpegts.js": "^1.8.0"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^8.4.0",
+    "@capacitor/cli": "^8.4.0",
+    "@capacitor/core": "^8.4.0",
+    "concurrently": "^9.1.2",
+    "electron": "^42.4.0",
+    "electron-builder": "^26.15.3",
+    "nodemon": "^3.1.9",
+    "vite": "^6.2.0"
+  },
+  "build": {
+    "appId": "com.iptv.player.zero",
+    "productName": "ZIPTV Pro",
+    "files": [
+      "dist/**/*",
+      "server/**/*",
+      "main.electron.cjs",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "directories": {
+      "output": "dist-electron"
+    },
+    "asar": true
+  }
+}

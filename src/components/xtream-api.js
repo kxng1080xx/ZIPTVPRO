@@ -1,0 +1,578 @@
+/**
+ * Frontend Client for interacting with the local IPTV Player Node.js backend API
+ * or querying the IPTV server directly (using client-side IndexedDB cache).
+ */
+import { db } from './db.js';
+
+let isServerMode = false;
+let epgMemoryCache = {};
+
+// Helper: Check if backend server is active
+async function checkServerMode() {
+  try {
+    const res = await fetch('/api/status', { signal: AbortSignal.timeout(1500) });
+    if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data && typeof data === 'object' && 'loggedIn' in data) {
+          isServerMode = true;
+          return true;
+        }
+      }
+    }
+  } catch (err) {}
+  isServerMode = false;
+  return false;
+}
+
+// Local Credentials helpers
+function getCredentialsLocal() {
+  try {
+    const data = localStorage.getItem('xtream_credentials');
+    return data ? JSON.parse(data) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function saveCredentialsLocal(creds) {
+  localStorage.setItem('xtream_credentials', JSON.stringify(creds));
+}
+
+export async function login(hostUrl, username, password, playlistName) {
+  await checkServerMode();
+  
+  if (isServerMode) {
+    const response = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hostUrl, username, password, playlistName })
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || 'Login failed');
+    }
+    return response.json();
+  } else {
+    // Client Mode login
+    let normalizedHost = hostUrl.trim();
+    const lowerHost = normalizedHost.toLowerCase();
+    if (!lowerHost.startsWith('http://') && !lowerHost.startsWith('https://')) {
+      normalizedHost = 'http://' + normalizedHost;
+    } else {
+      normalizedHost = normalizedHost.replace(/^https?:\/\//i, (match) => match.toLowerCase());
+    }
+    if (normalizedHost.endsWith('/')) {
+      normalizedHost = normalizedHost.slice(0, -1);
+    }
+    
+    const testUrl = `${normalizedHost}/player_api.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
+    const res = await fetch(testUrl);
+    if (!res.ok) {
+      throw new Error(`Server returned status ${res.status}`);
+    }
+    const data = await res.json();
+    if (data.user_info && data.user_info.auth === 0) {
+      throw new Error('Invalid credentials');
+    }
+    if (!data.user_info) {
+      throw new Error('Invalid response from server. Check URL.');
+    }
+    
+    const credentials = {
+      playlistName: playlistName || 'My Xtream Playlist',
+      server_url: normalizedHost,
+      username,
+      password,
+      stream_format: 'ts' // Default to ts on mobile for compatibility
+    };
+    saveCredentialsLocal(credentials);
+    return {
+      success: true,
+      user_info: data.user_info,
+      server_info: data.server_info
+    };
+  }
+}
+
+export async function getStatus() {
+  await checkServerMode();
+  if (isServerMode) {
+    const response = await fetch('/api/status');
+    if (!response.ok) throw new Error('Failed to get status');
+    return response.json();
+  } else {
+    // Client Mode getStatus
+    const creds = getCredentialsLocal();
+    if (!creds) {
+      return { loggedIn: false };
+    }
+    
+    // Try to get favorites from Dexie
+    const favs = { live: [], movie: [], series: [] };
+    try {
+      const records = await db.favorites.toArray();
+      records.forEach(r => {
+        if (favs[r.type]) favs[r.type].push(String(r.id));
+      });
+    } catch (e) {}
+
+    return {
+      loggedIn: true,
+      credentials: {
+        playlistName: creds.playlistName,
+        server_url: creds.server_url,
+        username: creds.username,
+        stream_format: creds.stream_format
+      },
+      user_info: {
+        username: creds.username,
+        status: 'Active'
+      },
+      server_info: {
+        url: creds.server_url
+      },
+      favorites: favs
+    };
+  }
+}
+
+export async function logout() {
+  if (isServerMode) {
+    const response = await fetch('/api/logout', { method: 'POST' });
+    if (!response.ok) throw new Error('Logout failed');
+    return response.json();
+  } else {
+    localStorage.removeItem('xtream_credentials');
+    await db.live_categories.clear();
+    await db.vod_categories.clear();
+    await db.series_categories.clear();
+    await db.live_streams.clear();
+    await db.vod_streams.clear();
+    await db.series_streams.clear();
+    await db.favorites.clear();
+    await db.recently_viewed.clear();
+    return { success: true };
+  }
+}
+
+export async function updateSettings(settings) {
+  if (isServerMode) {
+    const response = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings)
+    });
+    if (!response.ok) throw new Error('Failed to update settings');
+    return response.json();
+  } else {
+    const creds = getCredentialsLocal();
+    if (!creds) throw new Error('Not logged in');
+    if (settings.stream_format) creds.stream_format = settings.stream_format;
+    saveCredentialsLocal(creds);
+    return { success: true, credentials: creds };
+  }
+}
+
+export async function syncPlaylist(progressCallback = null) {
+  if (isServerMode) {
+    const response = await fetch('/api/sync', { method: 'POST' });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || 'Sync failed');
+    }
+    return response.json();
+  } else {
+    const creds = getCredentialsLocal();
+    if (!creds) throw new Error('No playlist credentials found');
+
+    const baseApiUrl = `${creds.server_url}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}`;
+
+    if (progressCallback) progressCallback('Syncing Live Categories...');
+    const liveCatRes = await fetch(`${baseApiUrl}&action=get_live_categories`);
+    const liveCategories = await liveCatRes.json();
+    
+    if (progressCallback) progressCallback('Syncing Movies Categories...');
+    const vodCatRes = await fetch(`${baseApiUrl}&action=get_vod_categories`);
+    const vodCategories = await vodCatRes.json();
+    
+    if (progressCallback) progressCallback('Syncing Series Categories...');
+    const seriesCatRes = await fetch(`${baseApiUrl}&action=get_series_categories`);
+    const seriesCategories = await seriesCatRes.json();
+
+    // Clear and put categories
+    await db.live_categories.clear();
+    await db.live_categories.bulkPut(Array.isArray(liveCategories) ? liveCategories : []);
+    
+    await db.vod_categories.clear();
+    await db.vod_categories.bulkPut(Array.isArray(vodCategories) ? vodCategories : []);
+
+    await db.series_categories.clear();
+    await db.series_categories.bulkPut(Array.isArray(seriesCategories) ? seriesCategories : []);
+
+    if (progressCallback) progressCallback('Downloading Live Streams...');
+    const liveStreamsRes = await fetch(`${baseApiUrl}&action=get_live_streams`);
+    const liveStreams = await liveStreamsRes.json();
+
+    if (progressCallback) progressCallback('Downloading Movie Streams...');
+    const vodStreamsRes = await fetch(`${baseApiUrl}&action=get_vod_streams`);
+    const vodStreams = await vodStreamsRes.json();
+
+    if (progressCallback) progressCallback('Downloading Series List...');
+    const seriesRes = await fetch(`${baseApiUrl}&action=get_series`);
+    const seriesStreams = await seriesRes.json();
+
+    // Write to Dexie in bulk
+    if (progressCallback) progressCallback('Saving Live Channels...');
+    await db.live_streams.clear();
+    if (Array.isArray(liveStreams)) {
+      const mapped = liveStreams.map(s => ({
+        stream_id: String(s.stream_id),
+        category_id: String(s.category_id),
+        name: s.name || '',
+        stream_icon: s.stream_icon || '',
+        epg_channel_id: s.epg_channel_id || '',
+        tv_archive: s.tv_archive || 0
+      }));
+      await db.live_streams.bulkPut(mapped);
+    }
+
+    if (progressCallback) progressCallback('Saving Movies Catalog...');
+    await db.vod_streams.clear();
+    if (Array.isArray(vodStreams)) {
+      const mapped = vodStreams.map(s => ({
+        stream_id: String(s.stream_id),
+        category_id: String(s.category_id),
+        name: s.name || '',
+        stream_icon: s.stream_icon || '',
+        rating: parseFloat(s.rating) || 0,
+        year: s.year || s.releaseDate || 'N/A'
+      }));
+      await db.vod_streams.bulkPut(mapped);
+    }
+
+    if (progressCallback) progressCallback('Saving Series Catalog...');
+    await db.series_streams.clear();
+    if (Array.isArray(seriesStreams)) {
+      const mapped = seriesStreams.map(s => ({
+        series_id: String(s.series_id || s.stream_id),
+        category_id: String(s.category_id),
+        name: s.name || '',
+        stream_icon: s.stream_icon || '',
+        rating: parseFloat(s.rating) || 0,
+        releaseDate: s.releaseDate || s.year || 'N/A'
+      }));
+      await db.series_streams.bulkPut(mapped);
+    }
+
+    return {
+      success: true,
+      counts: {
+        live: liveStreams.length,
+        movies: vodStreams.length,
+        series: seriesStreams.length
+      }
+    };
+  }
+}
+
+export async function getCategories(type) {
+  const normType = type === 'movies' ? 'movie' : type;
+
+  if (isServerMode) {
+    const response = await fetch(`/api/categories?type=${encodeURIComponent(normType)}`);
+    if (!response.ok) throw new Error('Failed to fetch categories');
+    return response.json();
+  } else {
+    // Client Mode getCategories
+    let categories = [];
+    let streamsTable;
+    
+    if (normType === 'live') {
+      categories = await db.live_categories.toArray();
+      streamsTable = db.live_streams;
+    } else if (normType === 'movie') {
+      categories = await db.vod_categories.toArray();
+      streamsTable = db.vod_streams;
+    } else if (normType === 'series') {
+      categories = await db.series_categories.toArray();
+      streamsTable = db.series_streams;
+    }
+
+    if (!streamsTable) {
+      return {
+        categories: [],
+        counts: { favorites: 0, recently_viewed: 0 }
+      };
+    }
+
+    const favCount = await db.favorites.where('type').equals(normType).count();
+    const recentCount = normType === 'live' ? await db.recently_viewed.count() : 0;
+
+    // Fast category count mapping
+    const allStreams = await streamsTable.toArray();
+    const countMap = {};
+    allStreams.forEach(s => {
+      const catId = String(s.category_id);
+      countMap[catId] = (countMap[catId] || 0) + 1;
+    });
+
+    const mappedCategories = categories.map(cat => ({
+      ...cat,
+      count: countMap[String(cat.category_id)] || 0
+    })).filter(cat => cat.count > 0 || cat.category_id === 'all');
+
+    return {
+      categories: mappedCategories,
+      counts: {
+        favorites: favCount,
+        recently_viewed: recentCount
+      }
+    };
+  }
+}
+
+export async function getStreams({ type, categoryId, page = 1, limit = 50, search = '' }) {
+  const normType = type === 'movies' ? 'movie' : type;
+
+  if (isServerMode) {
+    const params = new URLSearchParams({
+      type: normType,
+      category_id: categoryId,
+      page: String(page),
+      limit: String(limit),
+      search
+    });
+    const response = await fetch(`/api/streams?${params.toString()}`);
+    if (!response.ok) throw new Error('Failed to fetch streams');
+    return response.json();
+  } else {
+    // Client Mode getStreams
+    let table = normType === 'live' ? db.live_streams : (normType === 'movie' ? db.vod_streams : db.series_streams);
+    let collection;
+    const idField = normType === 'series' ? 'series_id' : 'stream_id';
+
+    if (categoryId === 'favorites') {
+      const favRecords = await db.favorites.where('type').equals(normType).toArray();
+      const favIds = favRecords.map(f => String(f.id));
+      if (favIds.length === 0) {
+        return {
+          items: [],
+          pagination: { total: 0, page: 1, limit, pages: 0 }
+        };
+      }
+      collection = table.where(idField).anyOf(favIds);
+    } else if (categoryId === 'recently_viewed') {
+      const recentRecords = await db.recently_viewed.orderBy('timestamp').reverse().toArray();
+      const recentIds = recentRecords.map(r => String(r.id));
+      if (recentIds.length === 0) {
+        return {
+          items: [],
+          pagination: { total: 0, page: 1, limit, pages: 0 }
+        };
+      }
+      collection = table.where(idField).anyOf(recentIds);
+    } else if (categoryId && categoryId !== 'all') {
+      collection = table.where('category_id').equals(String(categoryId));
+    } else {
+      collection = table.toCollection();
+    }
+
+    let items = await collection.toArray();
+
+    // Preserve viewing order for recently viewed
+    if (categoryId === 'recently_viewed') {
+      const recentRecords = await db.recently_viewed.orderBy('timestamp').reverse().toArray();
+      const recentIds = recentRecords.map(r => String(r.id));
+      items = recentIds
+        .map(id => items.find(item => String(item[idField]) === id))
+        .filter(Boolean);
+    }
+
+    if (search) {
+      const query = search.toLowerCase();
+      items = items.filter(item => {
+        const name = (item.name || '').toLowerCase();
+        return name.includes(query);
+      });
+    }
+
+    const total = items.length;
+    const startIndex = (page - 1) * limit;
+    const paginatedItems = items.slice(startIndex, startIndex + limit);
+
+    return {
+      items: paginatedItems,
+      pagination: {
+        total,
+        page,
+        limit,
+        pages: Math.ceil(total / limit)
+      }
+    };
+  }
+}
+
+export async function getEPG(streamId) {
+  if (isServerMode) {
+    const response = await fetch(`/api/epg?stream_id=${encodeURIComponent(streamId)}`);
+    if (!response.ok) throw new Error('Failed to fetch EPG');
+    return response.json();
+  } else {
+    // Client Mode getEPG
+    const cached = epgMemoryCache[streamId];
+    if (cached && cached.expiry > Date.now()) {
+      return { listings: cached.listings };
+    }
+
+    const creds = getCredentialsLocal();
+    if (!creds) throw new Error('Not logged in');
+
+    const epgUrl = `${creds.server_url}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}&action=get_short_epg&stream_id=${streamId}`;
+    const response = await fetch(epgUrl);
+    if (!response.ok) throw new Error('Failed to fetch EPG');
+    const data = await response.json();
+    const rawListings = data.epg_listings || [];
+
+    const decodeBase64Safe = (str) => {
+      if (!str) return '';
+      try {
+        return atob(str);
+      } catch (e) {
+        return str;
+      }
+    };
+
+    const listings = rawListings.map(prog => {
+      const titleDecoded = decodeBase64Safe(prog.title);
+      const descDecoded = decodeBase64Safe(prog.description);
+      
+      let startTimestamp = prog.start_timestamp;
+      if (!startTimestamp && prog.start) {
+        try {
+          startTimestamp = String(Math.floor(new Date(prog.start.replace(' ', 'T')).getTime() / 1000));
+        } catch (e) {}
+      }
+      
+      let endTimestamp = prog.stop_timestamp || prog.end_timestamp;
+      if (!endTimestamp && prog.end) {
+        try {
+          endTimestamp = String(Math.floor(new Date(prog.end.replace(' ', 'T')).getTime() / 1000));
+        } catch (e) {}
+      }
+
+      return {
+        ...prog,
+        title: titleDecoded,
+        description: descDecoded,
+        start_timestamp: startTimestamp,
+        end_timestamp: endTimestamp
+      };
+    });
+
+    epgMemoryCache[streamId] = {
+      expiry: Date.now() + 4 * 60 * 60 * 1000,
+      listings
+    };
+
+    return { listings };
+  }
+}
+
+export async function toggleFavorite(type, id) {
+  const normType = type === 'movies' ? 'movie' : type;
+
+  if (isServerMode) {
+    const response = await fetch('/api/favorites/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: normType, id })
+    });
+    if (!response.ok) throw new Error('Failed to toggle favorite');
+    return response.json();
+  } else {
+    // Client Mode toggleFavorite
+    const key = [normType, String(id)];
+    const exists = await db.favorites.get(key);
+    
+    let isFav = false;
+    if (exists) {
+      await db.favorites.delete(key);
+      isFav = false;
+    } else {
+      await db.favorites.put({ type: normType, id: String(id) });
+      isFav = true;
+    }
+    
+    return { success: true, isFavorite: isFav };
+  }
+}
+
+export async function trackPlayback(id) {
+  if (isServerMode) {
+    const response = await fetch('/api/play-track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    if (!response.ok) throw new Error('Failed to track playback');
+    return response.json();
+  } else {
+    // Client Mode trackPlayback
+    await db.recently_viewed.put({ id: String(id), timestamp: Date.now() });
+    
+    // Limit to 50 items
+    const count = await db.recently_viewed.count();
+    if (count > 50) {
+      const oldest = await db.recently_viewed.orderBy('timestamp').first();
+      if (oldest) {
+        await db.recently_viewed.delete(oldest.id);
+      }
+    }
+    return { success: true };
+  }
+}
+
+export async function getStreamUrl(streamId, type = 'live') {
+  if (isServerMode) {
+    const response = await fetch(`/api/stream-url/${encodeURIComponent(streamId)}?type=${encodeURIComponent(type)}`);
+    if (!response.ok) throw new Error('Failed to get stream URL');
+    const data = await response.json();
+    return data.url;
+  } else {
+    // Client Mode getStreamUrl
+    const creds = getCredentialsLocal();
+    if (!creds) throw new Error('Not logged in');
+
+    const format = creds.stream_format || 'ts';
+    
+    if (type === 'movie') {
+      return `${creds.server_url}/movie/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${streamId}`;
+    } else if (type === 'series') {
+      return `${creds.server_url}/series/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${streamId}`;
+    } else {
+      return `${creds.server_url}/live/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${streamId}.${format}`;
+    }
+  }
+}
+
+export async function getStreamInfo(id, type) {
+  if (isServerMode) {
+    const response = await fetch(`/api/stream-info/${encodeURIComponent(id)}?type=${encodeURIComponent(type)}`);
+    if (!response.ok) throw new Error('Failed to fetch stream details');
+    return response.json();
+  } else {
+    // Client Mode getStreamInfo
+    const creds = getCredentialsLocal();
+    if (!creds) throw new Error('Not logged in');
+
+    const action = type === 'series' ? 'get_series_info' : 'get_vod_info';
+    const paramName = type === 'series' ? 'series_id' : 'vod_id';
+    
+    const infoUrl = `${creds.server_url}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}&action=${action}&${paramName}=${id}`;
+    const response = await fetch(infoUrl);
+    if (!response.ok) throw new Error('Failed to fetch stream details');
+    return response.json();
+  }
+}

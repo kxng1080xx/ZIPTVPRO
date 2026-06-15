@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ZIPTV Pro</string>
+    <string name="title_activity_main">ZIPTV Pro</string>
+    <string name="package_name">com.iptv.player.zero</string>
+    <string name="custom_url_scheme">com.iptv.player.zero</string>
+</resources>
