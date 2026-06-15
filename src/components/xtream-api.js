@@ -7,6 +7,32 @@ import { db } from './db.js';
 let isServerMode = false;
 let epgMemoryCache = {};
 
+/**
+ * On a hosted HTTPS web build (e.g. Vercel) the browser blocks direct requests
+ * to an HTTP Xtream provider (mixed content) and to any cross-origin server with
+ * no CORS headers. In that case we route external requests through the bundled
+ * serverless proxy at /api/proxy. In the native app (Capacitor) or local/HTTP
+ * dev we fetch the provider directly, since those environments allow it.
+ */
+const USE_WEB_PROXY = (() => {
+  try {
+    const isCapacitor = !!(
+      window.Capacitor &&
+      (typeof window.Capacitor.isNativePlatform === 'function'
+        ? window.Capacitor.isNativePlatform()
+        : window.Capacitor.isNative)
+    );
+    return window.location.protocol === 'https:' && !isCapacitor;
+  } catch (e) {
+    return false;
+  }
+})();
+
+// Wrap an absolute provider URL so it is fetched via the serverless proxy when needed.
+function proxify(url) {
+  return USE_WEB_PROXY ? `/api/proxy?url=${encodeURIComponent(url)}` : url;
+}
+
 // Helper: Check if backend server is active
 async function checkServerMode() {
   try {
@@ -68,7 +94,7 @@ export async function login(hostUrl, username, password, playlistName) {
     }
     
     const testUrl = `${normalizedHost}/player_api.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
-    const res = await fetch(testUrl);
+    const res = await fetch(proxify(testUrl));
     if (!res.ok) {
       throw new Error(`Server returned status ${res.status}`);
     }
@@ -190,15 +216,15 @@ export async function syncPlaylist(progressCallback = null) {
     const baseApiUrl = `${creds.server_url}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}`;
 
     if (progressCallback) progressCallback('Syncing Live Categories...');
-    const liveCatRes = await fetch(`${baseApiUrl}&action=get_live_categories`);
+    const liveCatRes = await fetch(proxify(`${baseApiUrl}&action=get_live_categories`));
     const liveCategories = await liveCatRes.json();
-    
+
     if (progressCallback) progressCallback('Syncing Movies Categories...');
-    const vodCatRes = await fetch(`${baseApiUrl}&action=get_vod_categories`);
+    const vodCatRes = await fetch(proxify(`${baseApiUrl}&action=get_vod_categories`));
     const vodCategories = await vodCatRes.json();
-    
+
     if (progressCallback) progressCallback('Syncing Series Categories...');
-    const seriesCatRes = await fetch(`${baseApiUrl}&action=get_series_categories`);
+    const seriesCatRes = await fetch(proxify(`${baseApiUrl}&action=get_series_categories`));
     const seriesCategories = await seriesCatRes.json();
 
     // Clear and put categories
@@ -212,15 +238,15 @@ export async function syncPlaylist(progressCallback = null) {
     await db.series_categories.bulkPut(Array.isArray(seriesCategories) ? seriesCategories : []);
 
     if (progressCallback) progressCallback('Downloading Live Streams...');
-    const liveStreamsRes = await fetch(`${baseApiUrl}&action=get_live_streams`);
+    const liveStreamsRes = await fetch(proxify(`${baseApiUrl}&action=get_live_streams`));
     const liveStreams = await liveStreamsRes.json();
 
     if (progressCallback) progressCallback('Downloading Movie Streams...');
-    const vodStreamsRes = await fetch(`${baseApiUrl}&action=get_vod_streams`);
+    const vodStreamsRes = await fetch(proxify(`${baseApiUrl}&action=get_vod_streams`));
     const vodStreams = await vodStreamsRes.json();
 
     if (progressCallback) progressCallback('Downloading Series List...');
-    const seriesRes = await fetch(`${baseApiUrl}&action=get_series`);
+    const seriesRes = await fetch(proxify(`${baseApiUrl}&action=get_series`));
     const seriesStreams = await seriesRes.json();
 
     // Write to Dexie in bulk
@@ -430,7 +456,7 @@ export async function getEPG(streamId) {
     if (!creds) throw new Error('Not logged in');
 
     const epgUrl = `${creds.server_url}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}&action=get_short_epg&stream_id=${streamId}`;
-    const response = await fetch(epgUrl);
+    const response = await fetch(proxify(epgUrl));
     if (!response.ok) throw new Error('Failed to fetch EPG');
     const data = await response.json();
     const rawListings = data.epg_listings || [];
@@ -545,15 +571,21 @@ export async function getStreamUrl(streamId, type = 'live') {
     const creds = getCredentialsLocal();
     if (!creds) throw new Error('Not logged in');
 
-    const format = creds.stream_format || 'ts';
-    
+    // On hosted web we must proxy the stream; HLS (.m3u8) is segmented so it can
+    // be relayed through the serverless function, whereas a continuous .ts stream
+    // would hold the function open. Force m3u8 in that case.
+    const format = USE_WEB_PROXY ? 'm3u8' : (creds.stream_format || 'ts');
+
+    let targetUrl;
     if (type === 'movie') {
-      return `${creds.server_url}/movie/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${streamId}`;
+      targetUrl = `${creds.server_url}/movie/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${streamId}`;
     } else if (type === 'series') {
-      return `${creds.server_url}/series/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${streamId}`;
+      targetUrl = `${creds.server_url}/series/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${streamId}`;
     } else {
-      return `${creds.server_url}/live/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${streamId}.${format}`;
+      targetUrl = `${creds.server_url}/live/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${streamId}.${format}`;
     }
+
+    return proxify(targetUrl);
   }
 }
 
@@ -571,7 +603,7 @@ export async function getStreamInfo(id, type) {
     const paramName = type === 'series' ? 'series_id' : 'vod_id';
     
     const infoUrl = `${creds.server_url}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}&action=${action}&${paramName}=${id}`;
-    const response = await fetch(infoUrl);
+    const response = await fetch(proxify(infoUrl));
     if (!response.ok) throw new Error('Failed to fetch stream details');
     return response.json();
   }
