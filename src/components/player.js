@@ -8,7 +8,6 @@ export class VideoPlayer {
     this.video = document.getElementById('main-video-player');
     this.controls = document.getElementById('player-controls');
     this.playPauseBtn = document.getElementById('player-play-pause-btn');
-    this.stopBtn = document.getElementById('player-stop-btn');
     this.prevBtn = document.getElementById('player-prev-btn');
     this.nextBtn = document.getElementById('player-next-btn');
     this.ccBtn = document.getElementById('player-cc-btn');
@@ -35,9 +34,6 @@ export class VideoPlayer {
     // Play / Pause click
     this.playPauseBtn.addEventListener('click', () => this.togglePlay());
     this.video.addEventListener('click', () => this.togglePlay());
-
-    // Stop click
-    this.stopBtn.addEventListener('click', () => this.stop());
 
     // Prev / Next click
     this.prevBtn.addEventListener('click', () => {
@@ -169,7 +165,7 @@ export class VideoPlayer {
     this.onNextChannelCallback = callback;
   }
 
-  loadStream(url, name, logo, currentEpg = 'No schedule available') {
+  loadStream(url, name, logo, currentEpg = 'No schedule available', isVod = false) {
     this.showSpinner();
     this.channelNameEl.textContent = name || 'Live Channel';
     this.epgTitleEl.textContent = currentEpg;
@@ -184,16 +180,28 @@ export class VideoPlayer {
     // Stop existing streams
     this.destroyHls();
     this.destroyMpegts();
+    this.hlsNetworkRetries = 0;
 
-    const isHls = url.includes('.m3u8') || url.includes('m3u8');
-    const isMpegTs = url.includes('.ts') || url.includes('ts') || (url.includes('/live/') && !url.includes('.m3u8'));
+    // VOD (movies / series episodes) is a single on-demand file addressed by its
+    // real container extension, so match strictly on the file type. Live streams
+    // keep the looser matching (and the /live/ path heuristic).
+    let isHls, isMpegTs;
+    if (isVod) {
+      isHls = /\.m3u8(\?|$)/i.test(url);
+      isMpegTs = /\.ts(\?|$)/i.test(url);
+    } else {
+      isHls = url.includes('.m3u8') || url.includes('m3u8');
+      isMpegTs = url.includes('.ts') || url.includes('ts') || (url.includes('/live/') && !url.includes('.m3u8'));
+    }
 
     if (isHls) {
       if (Hls.isSupported()) {
+        // Live wants a short, low-latency buffer; VOD wants normal buffering so
+        // it can seek and won't stall.
         this.hls = new Hls({
-          maxMaxBufferLength: 10,
+          maxMaxBufferLength: isVod ? 60 : 10,
           enableWorker: true,
-          lowLatencyMode: true
+          lowLatencyMode: !isVod
         });
         this.hls.loadSource(url);
         this.hls.attachMedia(this.video);
@@ -204,21 +212,45 @@ export class VideoPlayer {
         });
 
         this.hls.on(Hls.Events.ERROR, (event, data) => {
-          if (data.fatal) {
-            switch (data.type) {
-              case Hls.ErrorTypes.NETWORK_ERROR:
-                console.warn('Fatal network error in HLS, attempting recovery...');
+          if (!data.fatal) return;
+
+          const httpCode = data.response && data.response.code;
+          // If we can't even load/parse the manifest, retrying won't help —
+          // this is almost always the provider rejecting the request (403),
+          // a bad URL (404), or auth (401). Surface it instead of spinning.
+          const isManifestFailure =
+            data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR ||
+            data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT ||
+            data.details === Hls.ErrorDetails.MANIFEST_PARSING_ERROR;
+
+          if (isManifestFailure || httpCode === 403 || httpCode === 401 || httpCode === 404) {
+            console.error('HLS manifest could not be loaded:', data);
+            this.destroyHls();
+            this.showError(this.describeStreamError(httpCode));
+            return;
+          }
+
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              this.hlsNetworkRetries++;
+              if (this.hlsNetworkRetries > 4) {
+                console.error('HLS network error limit reached, giving up.');
+                this.destroyHls();
+                this.showError(this.describeStreamError(httpCode));
+              } else {
+                console.warn(`Fatal network error in HLS, recovery attempt ${this.hlsNetworkRetries}...`);
                 this.hls.startLoad();
-                break;
-              case Hls.ErrorTypes.MEDIA_ERROR:
-                console.warn('Fatal media error in HLS, attempting recovery...');
-                this.hls.recoverMediaError();
-                break;
-              default:
-                console.error('Fatal HLS error, stopping stream:', data);
-                this.stop();
-                break;
-            }
+              }
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              console.warn('Fatal media error in HLS, attempting recovery...');
+              this.hls.recoverMediaError();
+              break;
+            default:
+              console.error('Fatal HLS error, stopping stream:', data);
+              this.destroyHls();
+              this.showError('This stream could not be played.');
+              break;
           }
         });
       } else if (this.video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -237,11 +269,11 @@ export class VideoPlayer {
       if (mpegts.getFeatureList().mseLivePlayback) {
         this.mpegtsPlayer = mpegts.createPlayer({
           type: 'mpegts',
-          isLive: true,
+          isLive: !isVod,
           url: url
         }, {
-          enableStashBuffer: false,
-          liveBufferLatencyChaser: true
+          enableStashBuffer: isVod,
+          liveBufferLatencyChaser: !isVod
         });
         this.mpegtsPlayer.attachMediaElement(this.video);
         this.mpegtsPlayer.load();
@@ -374,7 +406,15 @@ export class VideoPlayer {
     if (Capacitor.isNativePlatform()) {
       try {
         const PipPlugin = registerPlugin('PipPlugin');
-        await PipPlugin.enterPiP();
+        const res = await PipPlugin.enterPiP();
+        // PiP can't be granted via a runtime dialog. If the OS refused to enter
+        // (the special "Picture-in-picture" access is off for this app), send the
+        // user straight to the settings screen where they can enable it. We don't
+        // use window.confirm() here because it doesn't reliably render in the
+        // Android WebView and would silently dead-end.
+        if (res && res.needsPermission) {
+          await PipPlugin.openPiPSettings();
+        }
       } catch (err) {
         console.error('Failed to enter Android PiP:', err);
       }
@@ -414,11 +454,41 @@ export class VideoPlayer {
   }
 
   showSpinner() {
+    // Restore the loading state (spinner + text) and show it.
+    this.spinner.innerHTML = '<div class="spinner"></div><span>Loading Stream...</span>';
+    this.spinner.classList.remove('video-loader-error');
     this.spinner.classList.remove('hidden');
   }
 
   hideSpinner() {
     this.spinner.classList.add('hidden');
+  }
+
+  // Build a human-readable explanation from the HTTP status the provider returned.
+  describeStreamError(httpCode) {
+    if (httpCode === 403) {
+      return 'Stream blocked by the provider (HTTP 403). Many IPTV providers only allow playback from home/mobile networks, not from web servers. Try the mobile or desktop app.';
+    }
+    if (httpCode === 401) {
+      return 'Not authorized for this stream (HTTP 401). Your subscription may not include this channel.';
+    }
+    if (httpCode === 404) {
+      return 'Stream not found (HTTP 404). This channel may be offline or unavailable in this format.';
+    }
+    return 'Could not load this stream. The provider may be blocking playback from this network, or the channel is offline.';
+  }
+
+  // Replace the spinner with a non-spinning error message in the player area.
+  showError(message) {
+    this.hideSpinner();
+    this.spinner.innerHTML =
+      `<div class="video-error-icon"><i data-lucide="alert-triangle"></i></div>` +
+      `<span class="video-error-text">${message}</span>`;
+    this.spinner.classList.add('video-loader-error');
+    this.spinner.classList.remove('hidden');
+    try {
+      if (window.lucide) lucide.createIcons({ scope: this.spinner });
+    } catch (e) {}
   }
 }
 export default VideoPlayer;

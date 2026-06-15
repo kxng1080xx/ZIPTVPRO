@@ -50,7 +50,7 @@
         </button>
       </form>
       <div class="login-credits">
-        Built and created by Leon Goulbourne
+        Designed by: Leon Goulbourne
       </div>
     </div>
   </div>
@@ -120,13 +120,13 @@
       <!-- ==================== SIDEBAR ==================== -->
       <aside class="sidebar">
         <!-- Pins and Filters Section -->
-        <div class="sidebar-top-pins">
-          <div class="pin-title-row">
+        <div class="sidebar-top-pins" id="pin-top-section">
+          <div class="pin-title-row" id="pin-section-toggle" role="button" tabindex="0" aria-expanded="true" aria-controls="sidebar-pin-list" title="Show/hide pinned items">
             <span><i data-lucide="pin" class="pin-icon"></i> Pin top section</span>
-            <button class="icon-btn-small"><i data-lucide="layout-grid"></i></button>
+            <button class="icon-btn-small pin-collapse-chevron" tabindex="-1" aria-hidden="true"><i data-lucide="chevron-down"></i></button>
           </div>
-          
-          <ul class="sidebar-pin-list">
+
+          <ul class="sidebar-pin-list" id="sidebar-pin-list">
             <li class="pin-item" data-category="favorites">
               <span class="pin-label"><i data-lucide="star" class="star-filled"></i> Favorites</span>
               <span class="pin-count" id="count-favorites">0</span>
@@ -195,7 +195,6 @@
                   <!-- Bottom controls bar -->
                   <div class="controls-bottom">
                     <div class="control-row-left">
-                      <button class="player-control-icon" id="player-stop-btn" title="Stop"><i data-lucide="square"></i></button>
                       <div class="player-playing-details">
                         <span class="player-playing-title" id="player-channel-name">No Channel Selected</span>
                         <span class="player-playing-epg" id="player-epg-title">Select a channel from the list to start watching</span>
@@ -267,9 +266,6 @@
               <div class="epg-controls-left">
                 <button class="epg-ctrl-btn" id="epg-search-btn">
                   <i data-lucide="search"></i> Global Search
-                </button>
-                <button class="epg-ctrl-btn" id="epg-edit-btn">
-                  <i data-lucide="edit-3"></i> Edit EPG
                 </button>
                 <button class="epg-ctrl-btn" id="epg-refresh-btn" title="Refresh EPG Data">
                   <i data-lucide="refresh-cw"></i>

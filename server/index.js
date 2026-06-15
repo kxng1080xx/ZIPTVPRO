@@ -421,20 +421,23 @@ app.get('/api/proxy', async (req, res) => {
 // API: Get direct or proxied stream URL
 app.get('/api/stream-url/:stream_id', (req, res) => {
   const { stream_id } = req.params;
-  const { type } = req.query; // 'live', 'movie', 'series'
-  
+  const { type, ext } = req.query; // 'live', 'movie', 'series' + container extension for VOD
+
   const creds = getCredentials();
   if (!creds) return res.status(401).json({ error: 'Not logged in' });
 
   const format = creds.stream_format || 'm3u8';
+  // VOD (movies/series episodes) are individual files keyed by their own
+  // container extension (mp4, mkv, …); without it the provider returns a 404.
+  const vodExt = ext ? `.${ext}` : '';
   let targetUrl = '';
 
   if (type === 'movie') {
     // VOD format: http://host/movie/user/pass/id.extension (mp4, mkv, etc.)
-    targetUrl = `${creds.server_url}/movie/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${stream_id}`;
+    targetUrl = `${creds.server_url}/movie/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${stream_id}${vodExt}`;
   } else if (type === 'series') {
-    // Series format is same as VOD but we query episode stream id
-    targetUrl = `${creds.server_url}/series/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${stream_id}`;
+    // Series episodes are addressed by the episode id + its container extension
+    targetUrl = `${creds.server_url}/series/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${stream_id}${vodExt}`;
   } else {
     // Live TV format
     targetUrl = `${creds.server_url}/live/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${stream_id}.${format}`;

@@ -285,7 +285,8 @@ export async function syncPlaylist(progressCallback = null) {
         series_id: String(s.series_id || s.stream_id),
         category_id: String(s.category_id),
         name: s.name || '',
-        stream_icon: s.stream_icon || '',
+        // Series use `cover` (Xtream get_series); only movies use `stream_icon`.
+        stream_icon: s.cover || s.cover_big || s.stream_icon || '',
         rating: parseFloat(s.rating) || 0,
         releaseDate: s.releaseDate || s.year || 'N/A'
       }));
@@ -560,9 +561,11 @@ export async function trackPlayback(id) {
   }
 }
 
-export async function getStreamUrl(streamId, type = 'live') {
+export async function getStreamUrl(streamId, type = 'live', containerExtension = '') {
   if (isServerMode) {
-    const response = await fetch(`/api/stream-url/${encodeURIComponent(streamId)}?type=${encodeURIComponent(type)}`);
+    const params = new URLSearchParams({ type });
+    if (containerExtension) params.set('ext', containerExtension);
+    const response = await fetch(`/api/stream-url/${encodeURIComponent(streamId)}?${params.toString()}`);
     if (!response.ok) throw new Error('Failed to get stream URL');
     const data = await response.json();
     return data.url;
@@ -575,12 +578,15 @@ export async function getStreamUrl(streamId, type = 'live') {
     // be relayed through the serverless function, whereas a continuous .ts stream
     // would hold the function open. Force m3u8 in that case.
     const format = USE_WEB_PROXY ? 'm3u8' : (creds.stream_format || 'ts');
+    // VOD (movies/series episodes) are individual files addressed by their own
+    // container extension (mp4, mkv, …). Live channels use the stream_format.
+    const ext = containerExtension ? `.${containerExtension}` : '';
 
     let targetUrl;
     if (type === 'movie') {
-      targetUrl = `${creds.server_url}/movie/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${streamId}`;
+      targetUrl = `${creds.server_url}/movie/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${streamId}${ext}`;
     } else if (type === 'series') {
-      targetUrl = `${creds.server_url}/series/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${streamId}`;
+      targetUrl = `${creds.server_url}/series/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${streamId}${ext}`;
     } else {
       targetUrl = `${creds.server_url}/live/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${streamId}.${format}`;
     }

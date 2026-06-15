@@ -494,7 +494,8 @@ function renderSeriesCatalog(seriesList) {
     
     const rating = parseFloat(series.rating) || 0;
     const year = series.releaseDate || 'N/A';
-    const logo = series.stream_icon || '';
+    // Series posters live in `cover`/`cover_big`; `stream_icon` is movies-only.
+    const logo = series.stream_icon || series.cover || series.cover_big || '';
 
     card.innerHTML = `
       <div class="vod-poster-wrapper">
@@ -607,7 +608,7 @@ async function openVODDetailsModal(vodData, type) {
   // Clear modal values first
   title.textContent = vodData.name;
   rating.innerHTML = `<i data-lucide="star"></i> ${parseFloat(vodData.rating)?.toFixed(1) || 'N/A'}`;
-  poster.src = vodData.stream_icon || '';
+  poster.src = vodData.stream_icon || vodData.cover || vodData.cover_big || '';
   genre.textContent = 'General';
   release.textContent = vodData.releaseDate || vodData.year || 'N/A';
   duration.textContent = 'N/A';
@@ -640,9 +641,10 @@ async function openVODDetailsModal(vodData, type) {
       duration.textContent = runTime;
 
       // Play Movie Action
+      const movieExt = info.movie_data?.container_extension || infoMeta.container_extension || '';
       playBtn.onclick = async () => {
         modal.classList.add('hidden');
-        await playVODStream(queryId, 'movie', vodData.name, vodData.stream_icon, plot.textContent);
+        await playVODStream(queryId, 'movie', vodData.name, vodData.stream_icon, plot.textContent, movieExt);
       };
     } else if (type === 'series') {
       // It's a Series, hide direct play button and show Episode Lists
@@ -704,10 +706,12 @@ function renderSeriesSeasons(seriesInfo) {
       row.addEventListener('click', async () => {
         document.getElementById('vod-modal').classList.add('hidden');
         
-        // Series stream ID is container extension stream id of that specific episode
-        const epStreamId = ep.id; 
+        // Each episode is its own stream: identified by ep.id and played from a
+        // file with its own container extension (mp4/mkv/…).
+        const epStreamId = ep.id;
+        const epExt = ep.container_extension || ep.info?.container_extension || '';
         const epName = `${seriesInfo.info?.name || 'Series'} - S${seasonNum}E${ep.episode_num}: ${ep.title}`;
-        await playVODStream(epStreamId, 'series', epName, seriesInfo.info?.cover, ep.info?.plot || '');
+        await playVODStream(epStreamId, 'series', epName, seriesInfo.info?.cover, ep.info?.plot || '', epExt);
       });
       episodesList.appendChild(row);
     });
@@ -721,17 +725,17 @@ function renderSeriesSeasons(seriesInfo) {
   loadSeasonEpisodes(seasons[0]);
 }
 
-async function playVODStream(streamId, type, name, logo, description) {
+async function playVODStream(streamId, type, name, logo, description, containerExtension = '') {
   // 1. Switch back to Live TV tab (where main player lives)
   await switchTab('live');
-  
+
   // 2. Fetch play URL
   playerInstance.showSpinner();
   try {
-    const playUrl = await getStreamUrl(streamId, type);
+    const playUrl = await getStreamUrl(streamId, type, containerExtension);
     
-    // 3. Play stream
-    playerInstance.loadStream(playUrl, name, logo, 'Watching VOD');
+    // 3. Play stream (VOD = on-demand file, played differently from live channels)
+    playerInstance.loadStream(playUrl, name, logo, 'Watching VOD', true);
 
     // 4. Update details panel dummy data
     const mockChannel = {
@@ -933,6 +937,31 @@ function bindGlobalEvents() {
     backdrop.addEventListener('click', () => {
       appContainer.classList.remove('sidebar-open');
       backdrop.classList.add('hidden');
+    });
+  }
+
+  // Collapsible "Pin top section" (accordion)
+  const pinSection = document.getElementById('pin-top-section');
+  const pinToggle = document.getElementById('pin-section-toggle');
+  if (pinSection && pinToggle) {
+    // Restore saved state
+    if (localStorage.getItem('pin_section_collapsed') === 'true') {
+      pinSection.classList.add('collapsed');
+      pinToggle.setAttribute('aria-expanded', 'false');
+    }
+
+    const togglePinSection = () => {
+      const collapsed = pinSection.classList.toggle('collapsed');
+      pinToggle.setAttribute('aria-expanded', String(!collapsed));
+      localStorage.setItem('pin_section_collapsed', String(collapsed));
+    };
+
+    pinToggle.addEventListener('click', togglePinSection);
+    pinToggle.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        togglePinSection();
+      }
     });
   }
 

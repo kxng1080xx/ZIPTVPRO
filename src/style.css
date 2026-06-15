@@ -497,6 +497,38 @@ button {
   color: var(--text-secondary);
   letter-spacing: 0.05em;
   margin-bottom: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: color var(--transition-fast), margin var(--transition-normal);
+}
+
+.pin-title-row:hover {
+  color: var(--text-primary);
+}
+
+/* Accordion chevron + collapsible list */
+.pin-collapse-chevron i {
+  transition: transform var(--transition-normal);
+}
+
+.sidebar-pin-list {
+  overflow: hidden;
+  max-height: 240px;
+  opacity: 1;
+  transition: max-height var(--transition-normal), opacity var(--transition-fast);
+}
+
+.sidebar-top-pins.collapsed .pin-title-row {
+  margin-bottom: 0;
+}
+
+.sidebar-top-pins.collapsed .sidebar-pin-list {
+  max-height: 0;
+  opacity: 0;
+}
+
+.sidebar-top-pins.collapsed .pin-collapse-chevron i {
+  transform: rotate(-90deg);
 }
 
 .pin-icon {
@@ -926,6 +958,39 @@ button {
   background: white;
 }
 
+/* On phones / small screens the volume slider eats ~90px and pushes the
+   Picture-in-Picture and Fullscreen buttons off the right edge (clipped by
+   overflow:hidden). Use a WIDTH query (not hover/pointer, which is unreliable
+   on stylus devices like Samsung S-Pen) to hide it and tighten the bar so the
+   right-hand buttons always fit. Hardware buttons handle volume on these. */
+@media (max-width: 1024px) {
+  .player-volume-slider {
+    display: none;
+  }
+
+  .player-controls-overlay {
+    padding: 12px;
+  }
+
+  .controls-bottom {
+    gap: 8px;
+  }
+
+  /* Left side (title) yields and truncates; right side never shrinks so every
+     icon — including Fullscreen — stays on screen. */
+  .control-row-left {
+    min-width: 0;
+    flex: 1 1 auto;
+    max-width: none;
+    overflow: hidden;
+  }
+
+  .control-row-right {
+    flex: 0 0 auto;
+    gap: 16px;
+  }
+}
+
 /* Watermark & Spinners */
 .player-channel-logo-watermark {
   position: absolute;
@@ -971,6 +1036,25 @@ button {
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+
+/* Error state inside the player (replaces the spinner) */
+.video-loader.video-loader-error {
+  padding: 24px;
+  text-align: center;
+}
+
+.video-error-icon i {
+  width: 44px;
+  height: 44px;
+  color: var(--accent-gold);
+}
+
+.video-error-text {
+  max-width: 460px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
 }
 
 /* Program Details Panel */
@@ -2662,7 +2746,9 @@ body.pip-mode-active #main-video-player {
   }
 
   .live-top-row {
-    grid-template-columns: 1.7fr 1fr;
+    /* Wider player, narrower details panel — gives the control bar room so the
+       Fullscreen button is never clipped in landscape. */
+    grid-template-columns: 2.4fr 1fr;
     height: 46%;
     max-height: 46%;
     flex-shrink: 0;

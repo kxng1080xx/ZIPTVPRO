@@ -12,8 +12,11 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
+        // Must register BEFORE super.onCreate(): BridgeActivity builds the bridge
+        // during super.onCreate(), so a plugin registered afterwards never makes it
+        // into the bridge and its JS calls silently no-op.
         registerPlugin(PipPlugin.class);
+        super.onCreate(savedInstanceState);
     }
 
     @Override
