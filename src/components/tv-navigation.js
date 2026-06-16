@@ -365,8 +365,24 @@ class TVNavigation {
       // Move focus back to the EPG list
       this.focusDefault('channels');
       e.preventDefault();
-    } else if (e.key === this.KEYS.ENTER || e.key === this.KEYS.SPACE) {
-      // Play / Pause toggle
+    } else if (e.key === this.KEYS.ENTER) {
+      // Enter toggles fullscreen
+      const fullscreenBtn = document.getElementById('player-fullscreen-btn');
+      if (fullscreenBtn) {
+        fullscreenBtn.click();
+      } else {
+        const videoContainer = document.getElementById('video-container');
+        if (videoContainer) {
+          if (!document.fullscreenElement) {
+            videoContainer.requestFullscreen().catch(err => console.error(err));
+          } else {
+            document.exitFullscreen();
+          }
+        }
+      }
+      e.preventDefault();
+    } else if (e.key === this.KEYS.SPACE) {
+      // Space toggles play / pause
       const playBtn = document.getElementById('player-play-pause-btn');
       if (playBtn) playBtn.click();
       e.preventDefault();

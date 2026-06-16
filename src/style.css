@@ -986,9 +986,7 @@ button {
 }
 
 .control-row-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  display: none !important;
 }
 
 .player-volume-slider {
