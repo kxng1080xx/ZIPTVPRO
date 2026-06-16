@@ -15,6 +15,7 @@
     "electron:dist": "npm run build && electron-builder"
   },
   "dependencies": {
+    "@capacitor/app": "^8.1.0",
     "@capacitor/screen-orientation": "^8.0.1",
     "cors": "^2.8.5",
     "dexie": "^4.4.3",

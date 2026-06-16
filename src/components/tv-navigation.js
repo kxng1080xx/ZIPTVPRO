@@ -1,3 +1,6 @@
+import { Capacitor } from '@capacitor/core';
+import { App } from '@capacitor/app';
+
 /**
  * TV Navigation Coordinator for Arrow Key & Enter Button Navigation.
  * Enables full remote control (keyboard equivalent) usage.
@@ -25,6 +28,22 @@ class TVNavigation {
 
   init() {
     window.addEventListener('keydown', (e) => this.handleKeyDown(e));
+
+    if (Capacitor.isNativePlatform()) {
+      App.addListener('backButton', () => {
+        if (document.fullscreenElement) {
+          document.exitFullscreen().catch(err => console.warn(err));
+          this.focusDefault('channels');
+        } else {
+          if (document.body.classList.contains('epg-fullscreen-active')) {
+            const fullBtn = document.getElementById('epg-full-btn');
+            if (fullBtn) fullBtn.click();
+          } else {
+            App.exitApp();
+          }
+        }
+      });
+    }
   }
 
   // Set focus to a specific element within a zone
