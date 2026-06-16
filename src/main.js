@@ -65,6 +65,12 @@ async function initApp() {
   // 1. Initialize time clock
   startClock();
 
+  // Show the build version (injected from package.json at build time)
+  const versionEl = document.getElementById('app-version');
+  if (versionEl && typeof __APP_VERSION__ !== 'undefined') {
+    versionEl.textContent = `v${__APP_VERSION__}`;
+  }
+
   // 2. Initialize Core Components
   playerInstance = new VideoPlayer();
   
@@ -274,7 +280,16 @@ async function selectAndPlayChannel(channel, programBlock) {
     // Load to player
     const epgTitle = programBlock?.title || 'No Information';
     playerInstance.loadStream(streamUrl, channel.name, channel.stream_icon, epgTitle);
-    
+
+    // Show the channel-info banner with a short lineup (prev / current / next 2)
+    const channelList = epgGridInstance?.channels || [];
+    const currentIndex = channelList.findIndex(c => String(c.stream_id) === String(channel.stream_id));
+    playerInstance.showChannelInfo(channel, channelList, currentIndex);
+
+    // Show the one-line now/next guide for the current channel (cable-box style)
+    const { current, next } = epgGridInstance?.getNowNext(channel.stream_id) || {};
+    playerInstance.showProgramGuide(current || programBlock, next);
+
     // Automatically enter fullscreen
     playerInstance.enterFullscreen();
 

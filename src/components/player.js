@@ -22,6 +22,26 @@ export class VideoPlayer {
     this.pipBtn = document.getElementById('player-pip-btn');
     this.infoBtn = document.getElementById('player-info-btn');
 
+    // Channel info banner (brief OSD on channel change)
+    this.channelInfoBanner = document.getElementById('channel-info-banner');
+    this.cibLogo = document.getElementById('cib-logo');
+    this.cibLogoImg = document.getElementById('cib-logo-img');
+    this.cibName = document.getElementById('cib-name');
+    this.cibDatetime = document.getElementById('cib-datetime');
+    this.cibList = document.getElementById('cib-list');
+    this.channelInfoTimeout = null;
+
+    // Now/Next one-line guide (flip bar)
+    this.nowNextBar = document.getElementById('now-next-bar');
+    this.nnbNow = document.getElementById('nnb-now');
+    this.nnbNowTime = document.getElementById('nnb-now-time');
+    this.nnbNowTitle = document.getElementById('nnb-now-title');
+    this.nnbNext = document.getElementById('nnb-next');
+    this.nnbNextTime = document.getElementById('nnb-next-time');
+    this.nnbNextTitle = document.getElementById('nnb-next-title');
+    this.nnbSep = document.getElementById('nnb-sep');
+    this.nowNextTimeout = null;
+
     this.hls = null;
     this.mpegtsPlayer = null;
     this.controlsTimeout = null;
@@ -322,6 +342,101 @@ export class VideoPlayer {
           this.hideSpinner();
         });
     }
+  }
+
+  // Briefly surface the current channel (logo, name, time/date) plus a short
+  // lineup — 1 previous, the current (highlighted), and the next 2 — as a
+  // semi-transparent OSD banner, then auto-hide after a few seconds.
+  showChannelInfo(currentChannel, channels = [], currentIndex = -1) {
+    if (!this.channelInfoBanner) return;
+
+    const name = currentChannel?.name || 'Live Channel';
+    const logo = currentChannel?.stream_icon || '';
+
+    // Header: prominent current channel + clock
+    if (logo) {
+      this.cibLogoImg.src = logo;
+      this.cibLogo.style.display = '';
+    } else {
+      this.cibLogo.style.display = 'none';
+    }
+    this.cibName.textContent = name;
+
+    const now = new Date();
+    const time = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    const date = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    this.cibDatetime.textContent = `${time} · ${date}`;
+
+    // Lineup list: previous (-1), current (0, highlighted), next (+1, +2)
+    if (this.cibList) {
+      this.cibList.innerHTML = '';
+      const hasList = Array.isArray(channels) && currentIndex >= 0;
+      if (hasList) {
+        [-1, 0, 1, 2].forEach((offset) => {
+          const ch = channels[currentIndex + offset];
+          if (!ch) return;
+          const row = document.createElement('div');
+          row.className = 'cib-row' + (offset === 0 ? ' current' : '');
+          const chLogo = ch.stream_icon || '';
+          row.innerHTML = `
+            <span class="cib-row-logo">${chLogo ? `<img src="${chLogo}" alt="">` : '<i data-lucide="tv"></i>'}</span>
+            <span class="cib-row-name">${ch.name || 'Channel'}</span>
+          `;
+          this.cibList.appendChild(row);
+        });
+        if (typeof lucide !== 'undefined') lucide.createIcons({ scope: this.cibList });
+        this.cibList.style.display = '';
+      } else {
+        this.cibList.style.display = 'none';
+      }
+    }
+
+    this.channelInfoBanner.classList.add('visible');
+    clearTimeout(this.channelInfoTimeout);
+    this.channelInfoTimeout = setTimeout(() => {
+      this.channelInfoBanner.classList.remove('visible');
+    }, 4000);
+  }
+
+  // Cable-box style one-line "flip bar" along the bottom: shows the current
+  // program and what's up next for the tuned channel, then hides after 6s.
+  showProgramGuide(current, next) {
+    if (!this.nowNextBar) return;
+
+    const fmt = (p) => {
+      if (!p) return null;
+      const start = new Date(parseInt(p.start_timestamp) * 1000);
+      const end = new Date(parseInt(p.end_timestamp) * 1000);
+      const t = (d) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      const valid = !isNaN(start) && !isNaN(end) && p.start_timestamp;
+      return { time: valid ? `${t(start)} - ${t(end)}` : '', title: p.title || 'No Title' };
+    };
+
+    const nowP = fmt(current);
+    if (nowP) {
+      this.nnbNowTime.textContent = nowP.time;
+      this.nnbNowTitle.textContent = nowP.title;
+    } else {
+      this.nnbNowTime.textContent = '';
+      this.nnbNowTitle.textContent = 'No schedule information';
+    }
+
+    const nextP = fmt(next);
+    if (nextP) {
+      this.nnbNextTime.textContent = nextP.time;
+      this.nnbNextTitle.textContent = nextP.title;
+      this.nnbNext.style.display = '';
+      this.nnbSep.style.display = '';
+    } else {
+      this.nnbNext.style.display = 'none';
+      this.nnbSep.style.display = 'none';
+    }
+
+    this.nowNextBar.classList.add('visible');
+    clearTimeout(this.nowNextTimeout);
+    this.nowNextTimeout = setTimeout(() => {
+      this.nowNextBar.classList.remove('visible');
+    }, 6000);
   }
 
   togglePlay() {

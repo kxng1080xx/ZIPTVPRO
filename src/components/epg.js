@@ -436,6 +436,32 @@ export class EPGGrid {
     return block;
   }
 
+  // Return the currently-airing program and the one after it for a channel,
+  // used by the player's now/next flip bar. Uses already-cached EPG listings.
+  getNowNext(streamId) {
+    const listings = (this.epgData[String(streamId)] || [])
+      .slice()
+      .sort((a, b) => parseInt(a.start_timestamp) - parseInt(b.start_timestamp));
+    const now = Date.now();
+    let current = null;
+    let next = null;
+
+    for (let i = 0; i < listings.length; i++) {
+      const s = parseInt(listings[i].start_timestamp) * 1000;
+      const e = parseInt(listings[i].end_timestamp) * 1000;
+      if (now >= s && now < e) {
+        current = listings[i];
+        next = listings[i + 1] || null;
+        return { current, next };
+      }
+      // No program is airing right now, but this one is the next upcoming.
+      if (s > now && !next) {
+        next = listings[i];
+      }
+    }
+    return { current, next };
+  }
+
   getCurrentProgramBlock(streamId, startTime, endTime) {
     const listings = this.epgData[streamId] || [];
     const now = Date.now();

@@ -52,6 +52,7 @@
       <div class="login-credits">
         Designed by: Leon Goulbourne
       </div>
+      <div class="app-version" id="app-version"></div>
       <div class="apk-download-container">
         <a href="/app.apk" class="apk-download-btn" download>
           <i data-lucide="download"></i>
@@ -221,6 +222,33 @@
                 <!-- Channel Logo Overlay (Watermark top left when overlay hidden) -->
                 <div class="player-channel-logo-watermark hidden" id="player-watermark">
                   <img src="" alt="" id="watermark-img">
+                </div>
+
+                <!-- Channel Info Banner (brief OSD shown when a channel starts playing) -->
+                <div class="channel-info-banner" id="channel-info-banner">
+                  <div class="cib-header">
+                    <div class="cib-logo" id="cib-logo"><img src="" alt="" id="cib-logo-img"></div>
+                    <div class="cib-text">
+                      <span class="cib-name" id="cib-name">Live Channel</span>
+                      <span class="cib-datetime" id="cib-datetime"></span>
+                    </div>
+                  </div>
+                  <div class="cib-list" id="cib-list"></div>
+                </div>
+
+                <!-- Now/Next one-line guide (cable-box flip bar) at the bottom -->
+                <div class="now-next-bar" id="now-next-bar">
+                  <div class="nnb-item nnb-now" id="nnb-now">
+                    <span class="nnb-tag">NOW</span>
+                    <span class="nnb-time" id="nnb-now-time"></span>
+                    <span class="nnb-title" id="nnb-now-title"></span>
+                  </div>
+                  <span class="nnb-sep" id="nnb-sep"></span>
+                  <div class="nnb-item nnb-next" id="nnb-next">
+                    <span class="nnb-tag">NEXT</span>
+                    <span class="nnb-time" id="nnb-next-time"></span>
+                    <span class="nnb-title" id="nnb-next-title"></span>
+                  </div>
                 </div>
 
                 <!-- Video Loading Spinner -->

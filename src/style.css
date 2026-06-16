@@ -174,6 +174,15 @@ button {
   color: var(--accent-cyan);
 }
 
+.app-version {
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  opacity: 0.6;
+  margin-top: 6px;
+  letter-spacing: 0.04em;
+}
+
 .apk-download-container {
   display: flex;
   justify-content: center;
@@ -1084,6 +1093,229 @@ button {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+/* Channel Info Banner: brief semi-transparent OSD shown on channel change */
+.channel-info-banner {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  width: max-content;
+  max-width: min(80%, 420px);
+  padding: 12px 16px;
+  background: rgba(10, 14, 24, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-10px);
+  transition: opacity 0.35s ease, transform 0.35s ease, visibility 0.35s;
+}
+
+.channel-info-banner.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.channel-info-banner .cib-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.channel-info-banner .cib-logo {
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.channel-info-banner .cib-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.channel-info-banner .cib-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.channel-info-banner .cib-name {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.channel-info-banner .cib-datetime {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent-cyan);
+  margin-top: 2px;
+}
+
+/* Lineup list inside the banner: prev / current (highlighted) / next x2 */
+.channel-info-banner .cib-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.channel-info-banner .cib-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  opacity: 0.65;
+}
+
+.channel-info-banner .cib-row.current {
+  opacity: 1;
+  background: rgba(6, 182, 212, 0.16);
+  border-left: 3px solid var(--accent-cyan);
+  padding-left: 5px;
+}
+
+.channel-info-banner .cib-row-logo {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: var(--text-muted);
+}
+
+.channel-info-banner .cib-row-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.channel-info-banner .cib-row-logo i {
+  width: 16px;
+  height: 16px;
+}
+
+.channel-info-banner .cib-row-name {
+  font-size: 0.85rem;
+  color: #d6dae3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.channel-info-banner .cib-row.current .cib-row-name {
+  color: #fff;
+  font-weight: 700;
+}
+
+/* Now/Next one-line guide (cable-box flip bar) along the bottom of the stream */
+.now-next-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 44px 32px;
+  background: linear-gradient(to top, rgba(5, 8, 15, 0.94) 0%, rgba(5, 8, 15, 0.75) 60%, transparent 100%);
+  color: #fff;
+  font-size: 2.3rem;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(12px);
+  transition: opacity 0.35s ease, transform 0.35s ease, visibility 0.35s;
+}
+
+.now-next-bar.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.now-next-bar .nnb-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.now-next-bar .nnb-now {
+  flex-shrink: 0;
+  max-width: 55%;
+}
+
+.now-next-bar .nnb-next {
+  flex: 1;
+  min-width: 0;
+  opacity: 0.75;
+}
+
+.now-next-bar .nnb-tag {
+  flex-shrink: 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 8px 18px;
+  border-radius: 8px;
+  background: var(--accent-cyan);
+  color: #04121a;
+}
+
+.now-next-bar .nnb-next .nnb-tag {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+.now-next-bar .nnb-time {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--accent-cyan);
+}
+
+.now-next-bar .nnb-next .nnb-time {
+  color: #cdd3dd;
+}
+
+.now-next-bar .nnb-title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.now-next-bar .nnb-sep {
+  flex-shrink: 0;
+  width: 1px;
+  height: 48px;
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .video-loader {
