@@ -2191,14 +2191,28 @@ button {
 /* ==========================================================================
    TV FOCUS MODE HIGHLIGHTS
    ========================================================================== */
+@keyframes tv-focus-pulse {
+  0% {
+    transform: scale(1.02) !important;
+    box-shadow: 0 0 15px rgba(0, 243, 255, 0.6), 
+                0 0 6px rgba(37, 99, 235, 0.3) !important;
+    outline-color: rgba(0, 243, 255, 0.75) !important;
+  }
+  100% {
+    transform: scale(1.04) !important;
+    box-shadow: 0 0 32px rgba(0, 243, 255, 1), 
+                0 0 18px rgba(37, 99, 235, 0.7), 
+                inset 0 0 10px rgba(0, 243, 255, 0.5) !important;
+    outline-color: #00f3ff !important;
+  }
+}
+
 .tv-focused {
-  outline: 3px solid var(--accent-cyan) !important;
+  outline: 4px solid #00f3ff !important;
   outline-offset: -1px;
-  box-shadow: 0 0 20px rgba(6, 182, 212, 0.4), 0 0 10px rgba(37, 99, 235, 0.2) !important;
-  transform: scale(1.02) !important;
   z-index: 50 !important;
-  transition: transform var(--transition-fast), box-shadow var(--transition-fast) !important;
-  background-color: var(--bg-surface) !important;
+  background-color: var(--bg-surface-hover) !important;
+  animation: tv-focus-pulse 1.3s infinite alternate ease-in-out !important;
 }
 
 .nav-tab.tv-focused {
@@ -2207,18 +2221,18 @@ button {
 
 .category-item.tv-focused {
   outline-offset: -2px;
-  border-left: 2px solid var(--accent-cyan) !important;
-  background: linear-gradient(90deg, rgba(6, 182, 212, 0.1) 0%, rgba(17, 24, 39, 1) 100%) !important;
+  border-left: 3px solid #00f3ff !important;
+  background: linear-gradient(90deg, rgba(0, 243, 255, 0.15) 0%, rgba(17, 24, 39, 1) 100%) !important;
 }
 
 .epg-channel-row.tv-focused {
   outline-offset: -2px;
-  border-left: 3px solid var(--accent-cyan) !important;
-  background: linear-gradient(90deg, rgba(6, 182, 212, 0.1) 0%, rgba(17, 24, 39, 1) 100%) !important;
+  border-left: 4px solid #00f3ff !important;
+  background: linear-gradient(90deg, rgba(0, 243, 255, 0.15) 0%, rgba(17, 24, 39, 1) 100%) !important;
 }
 
 .vod-card.tv-focused {
-  outline-offset: 2px;
+  outline-offset: 3px;
 }
 
 .episode-row.tv-focused {
