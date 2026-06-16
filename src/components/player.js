@@ -401,6 +401,15 @@ export class VideoPlayer {
     }
   }
 
+  enterFullscreen() {
+    const container = this.video.parentElement;
+    if (!document.fullscreenElement) {
+      container.requestFullscreen().catch(err => {
+        console.warn(`Error entering fullscreen: ${err.message}`);
+      });
+    }
+  }
+
   toggleCaptions() {
     if (this.hls) {
       const tracks = this.video.textTracks;

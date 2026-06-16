@@ -114,6 +114,14 @@ class TVNavigation {
   }
 
   handleKeyDown(e) {
+    // If the video player is in fullscreen, pressing Backspace or Escape exits fullscreen and returns focus to the channels list
+    if (document.fullscreenElement && (e.key === this.KEYS.ESCAPE || e.key === this.KEYS.BACKSPACE)) {
+      document.exitFullscreen().catch(err => console.warn(err));
+      this.focusDefault('channels');
+      e.preventDefault();
+      return;
+    }
+
     // Ignore TV navigation if user is in login screen or typing in search boxes
     const activeEl = document.activeElement;
     if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'SELECT' || activeEl.tagName === 'TEXTAREA')) {
@@ -217,7 +225,7 @@ class TVNavigation {
     const pinItems = Array.from(document.querySelectorAll('.pin-item'));
     
     const allItems = [];
-    if (searchInput) allItems.push(searchInput);
+    if (searchInput && searchInput.offsetParent !== null) allItems.push(searchInput);
     allItems.push(...pinItems, ...items);
     
     const index = allItems.indexOf(this.focusedElement);

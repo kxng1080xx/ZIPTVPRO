@@ -274,6 +274,12 @@ async function selectAndPlayChannel(channel, programBlock) {
     // Load to player
     const epgTitle = programBlock?.title || 'No Information';
     playerInstance.loadStream(streamUrl, channel.name, channel.stream_icon, epgTitle);
+    
+    // Automatically enter fullscreen
+    playerInstance.enterFullscreen();
+
+    // Set navigation focus to player zone
+    navigation.focusDefault('player');
 
     // Update frontend Details Panel
     updateDetailsPanel(channel, programBlock);

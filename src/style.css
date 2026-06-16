@@ -645,11 +645,15 @@ button {
   border-bottom: 1px solid var(--border-color);
 }
 
+.categories-search-section .search-box-container {
+  display: none !important;
+}
+
 .categories-header-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: 0;
 }
 
 .categories-title {
