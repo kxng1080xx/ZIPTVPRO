@@ -802,6 +802,7 @@ button {
   border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
   background-color: var(--bg-base);
+  max-height: 55vh;
 }
 
 .live-top-row.details-collapsed {
@@ -824,6 +825,9 @@ button {
   aspect-ratio: 16/9;
   position: relative;
   overflow: hidden;
+  max-height: 100%;
+  justify-self: center;
+  width: 100%;
 }
 
 .video-container {
