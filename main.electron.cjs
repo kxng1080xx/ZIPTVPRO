@@ -1,20 +1,64 @@
 const { app, BrowserWindow } = require('electron');
-const path = require('path');
+const net = require('net');
 
 let mainWindow;
+let serverPort = 0;
 
-function startExpressServer() {
-  process.env.ELECTRON_RUNNING = 'true';
-  process.env.PORT = '3000';
-  
-  // Since server/index.js is an ES Module, we import it dynamically in CommonJS
-  import('./server/index.js')
-    .then(() => {
-      console.log('[Electron] In-process Express server initialized successfully.');
-    })
-    .catch((err) => {
-      console.error('[Electron] Error initializing in-process Express server:', err);
+// Only allow a single instance. A second launch would otherwise spin up another
+// server and fight over the port, which is what caused the EADDRINUSE crash.
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+
+  app.on('ready', async () => {
+    await startExpressServer();
+    createWindow();
+  });
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      app.quit();
+    }
+  });
+
+  app.on('activate', () => {
+    if (mainWindow === null) {
+      createWindow();
+    }
+  });
+}
+
+// Ask the OS for a free TCP port so we never collide with another app on :3000.
+function getFreePort() {
+  return new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.on('error', () => resolve(0));
+    srv.listen(0, '127.0.0.1', () => {
+      const { port } = srv.address();
+      srv.close(() => resolve(port));
     });
+  });
+}
+
+async function startExpressServer() {
+  process.env.ELECTRON_RUNNING = 'true';
+  serverPort = (await getFreePort()) || 3000;
+  process.env.PORT = String(serverPort);
+
+  // server/index.js is an ES Module, imported dynamically from CommonJS.
+  try {
+    await import('./server/index.js');
+    console.log(`[Electron] In-process Express server starting on port ${serverPort}.`);
+  } catch (err) {
+    console.error('[Electron] Error initializing in-process Express server:', err);
+  }
 }
 
 function createWindow() {
@@ -29,27 +73,29 @@ function createWindow() {
     }
   });
 
-  mainWindow.loadURL('http://localhost:3000');
+  loadWhenServerReady();
 
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
 }
 
-app.on('ready', () => {
-  startExpressServer();
-  // Wait 2 seconds for Express to boot up before opening the window
-  setTimeout(createWindow, 2000);
-});
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
-
-app.on('activate', () => {
-  if (mainWindow === null) {
-    createWindow();
-  }
-});
+// Poll the local server until it accepts connections, then load it. More reliable
+// than a fixed delay and avoids showing a blank/error page on slower machines.
+function loadWhenServerReady(attempt = 0) {
+  if (!mainWindow) return;
+  const url = `http://localhost:${serverPort}`;
+  const sock = net.connect(serverPort, '127.0.0.1');
+  sock.on('connect', () => {
+    sock.destroy();
+    if (mainWindow) mainWindow.loadURL(url);
+  });
+  sock.on('error', () => {
+    sock.destroy();
+    if (attempt < 60 && mainWindow) {
+      setTimeout(() => loadWhenServerReady(attempt + 1), 100);
+    } else if (mainWindow) {
+      mainWindow.loadURL(url); // last resort
+    }
+  });
+}

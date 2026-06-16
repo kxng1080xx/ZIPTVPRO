@@ -9,7 +9,10 @@ import {
   toggleFavorite,
   trackPlayback,
   getStreamUrl,
-  getStreamInfo
+  getStreamInfo,
+  getPlaylists,
+  switchPlaylist,
+  removePlaylist
 } from './components/xtream-api.js';
 import { VideoPlayer } from './components/player.js';
 import { EPGGrid } from './components/epg.js';
@@ -865,7 +868,11 @@ function bindGlobalEvents() {
     try {
       const res = await login(hostUrl, username, password, playlistName);
       if (res.success) {
-        state.user = res;
+        const status = await getStatus();
+        state.user = status;
+        if (status.favorites) {
+          state.favorites = status.favorites;
+        }
         showDashboard();
         
         // Trigger initial sync
@@ -878,6 +885,43 @@ function bindGlobalEvents() {
     } finally {
       btnText.classList.remove('hidden');
       loader.classList.add('hidden');
+    }
+  });
+
+  // Playlist switcher dropdown
+  const profileBtn = document.getElementById('profile-card-btn');
+  if (profileBtn) {
+    profileBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      togglePlaylistDropdown();
+    });
+  }
+  document.getElementById('playlist-add-btn')?.addEventListener('click', showAddPlaylist);
+  document.getElementById('playlist-dropdown-list')?.addEventListener('click', (e) => {
+    const del = e.target.closest('[data-del]');
+    if (del) {
+      e.stopPropagation();
+      deletePlaylist(del.getAttribute('data-del'));
+      return;
+    }
+    const row = e.target.closest('.playlist-row');
+    if (!row) return;
+    if (row.classList.contains('active')) {
+      closePlaylistDropdown();
+    } else {
+      switchToPlaylist(row.dataset.id);
+    }
+  });
+  document.getElementById('login-back-btn')?.addEventListener('click', () => {
+    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('app-container').classList.remove('hidden');
+    document.getElementById('login-back-btn').classList.add('hidden');
+  });
+  // Close the dropdown when clicking outside of it
+  document.addEventListener('click', (e) => {
+    const dd = document.getElementById('playlist-dropdown');
+    if (dd && !dd.classList.contains('hidden') && !e.target.closest('.profile-wrap')) {
+      dd.classList.add('hidden');
     }
   });
 
@@ -923,10 +967,14 @@ function bindGlobalEvents() {
   document.getElementById('settings-logout').addEventListener('click', async () => {
     if (confirm('Are you sure you want to disconnect this playlist? This will erase local cache.')) {
       settingsModal.classList.add('hidden');
-      await logout();
-      state.user = null;
       playerInstance.stop();
-      showLogin();
+      const res = await logout();
+      if (res && res.remaining > 0) {
+        await switchToPlaylist(res.activeId);
+      } else {
+        state.user = null;
+        showLogin();
+      }
     }
   });
 
@@ -1097,11 +1145,112 @@ async function triggerFullSync() {
 function showLogin() {
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('app-container').classList.add('hidden');
+  document.getElementById('login-back-btn')?.classList.add('hidden');
+}
+
+// ==========================================================================
+// PLAYLIST SWITCHER (multiple saved logins)
+// ==========================================================================
+function closePlaylistDropdown() {
+  document.getElementById('playlist-dropdown')?.classList.add('hidden');
+}
+
+async function renderPlaylistDropdown() {
+  const listEl = document.getElementById('playlist-dropdown-list');
+  if (!listEl) return;
+  listEl.innerHTML = '<div class="playlist-row-empty">Loading…</div>';
+  try {
+    const { playlists, activeId } = await getPlaylists();
+    if (!playlists || playlists.length === 0) {
+      listEl.innerHTML = '<div class="playlist-row-empty">No saved playlists</div>';
+      return;
+    }
+    listEl.innerHTML = '';
+    playlists.forEach(p => {
+      let domain = p.server_url;
+      try { domain = new URL(p.server_url).hostname; } catch (e) {}
+      const row = document.createElement('div');
+      row.className = 'playlist-row' + (p.id === activeId ? ' active' : '');
+      row.dataset.id = p.id;
+      row.innerHTML = `
+        <div class="playlist-row-main">
+          <span class="playlist-row-name">${p.playlistName || 'Playlist'}</span>
+          <span class="playlist-row-server">${domain} · ${p.username}</span>
+        </div>
+        ${p.id === activeId ? '<i data-lucide="check" class="playlist-row-check"></i>' : ''}
+        <button class="playlist-row-del" data-del="${p.id}" title="Remove playlist"><i data-lucide="trash-2"></i></button>
+      `;
+      listEl.appendChild(row);
+    });
+    if (window.lucide) lucide.createIcons({ scope: listEl });
+  } catch (err) {
+    listEl.innerHTML = '<div class="playlist-row-empty">Failed to load playlists</div>';
+  }
+}
+
+async function togglePlaylistDropdown() {
+  const dd = document.getElementById('playlist-dropdown');
+  if (!dd) return;
+  if (dd.classList.contains('hidden')) {
+    await renderPlaylistDropdown();
+    dd.classList.remove('hidden');
+  } else {
+    dd.classList.add('hidden');
+  }
+}
+
+async function switchToPlaylist(id) {
+  closePlaylistDropdown();
+  try {
+    playerInstance.stop();
+    await switchPlaylist(id);
+    const status = await getStatus();
+    state.user = status;
+    if (status.favorites) state.favorites = status.favorites;
+    showDashboard();
+    await triggerFullSync();
+    state.activeCategory = null;
+    await loadTabCategoriesAndContent();
+  } catch (err) {
+    console.error('Failed to switch playlist:', err);
+    alert('Could not switch playlist: ' + (err.message || err));
+  }
+}
+
+async function deletePlaylist(id) {
+  if (!confirm('Remove this playlist?')) return;
+  try {
+    const res = await removePlaylist(id);
+    if (!res.remaining) {
+      state.user = null;
+      showLogin();
+      return;
+    }
+    if (res.wasActive) {
+      await switchToPlaylist(res.activeId);
+    }
+    await renderPlaylistDropdown();
+  } catch (err) {
+    alert('Could not remove playlist: ' + (err.message || err));
+  }
+}
+
+function showAddPlaylist() {
+  closePlaylistDropdown();
+  document.getElementById('app-container').classList.add('hidden');
+  document.getElementById('login-screen').classList.remove('hidden');
+  document.getElementById('login-back-btn')?.classList.remove('hidden');
+  document.getElementById('host-url').value = '';
+  document.getElementById('username').value = '';
+  document.getElementById('password').value = '';
+  const err = document.getElementById('login-error');
+  if (err) err.classList.add('hidden');
 }
 
 function showDashboard() {
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('app-container').classList.remove('hidden');
+  document.getElementById('login-back-btn')?.classList.add('hidden');
 
   // Set topbar credentials details
   if (state.user && state.user.credentials) {

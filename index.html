@@ -18,6 +18,9 @@
   <!-- ==================== LOGIN SCREEN ==================== -->
   <div id="login-screen" class="login-container">
     <div class="login-card">
+      <button class="login-back-btn hidden" id="login-back-btn">
+        <i data-lucide="arrow-left"></i> Back to playlists
+      </button>
       <div class="login-logo-header">
         <img src="/src/assets/logo.png" alt="ZIPTV Pro Logo" class="logo-img login-logo">
         <h2>ZIPTV Pro</h2>
@@ -106,12 +109,22 @@
 
       <!-- Top Right: Active Profile & Controls -->
       <div class="header-right">
-        <div class="profile-card" id="profile-card-btn">
-          <div class="profile-info">
-            <span class="profile-name" id="nav-playlist-name">Xtream Codes</span>
-            <span class="profile-status">Xtream Codes</span>
+        <div class="profile-wrap">
+          <div class="profile-card" id="profile-card-btn">
+            <div class="profile-info">
+              <span class="profile-name" id="nav-playlist-name">Xtream Codes</span>
+              <span class="profile-status">Xtream Codes</span>
+            </div>
+            <i data-lucide="chevron-down" class="profile-chevron"></i>
           </div>
-          <i data-lucide="chevron-down" class="profile-chevron"></i>
+          <!-- Playlist switcher dropdown -->
+          <div class="playlist-dropdown hidden" id="playlist-dropdown">
+            <div class="playlist-dropdown-title">Playlists</div>
+            <div class="playlist-dropdown-list" id="playlist-dropdown-list"></div>
+            <button class="playlist-add-btn" id="playlist-add-btn">
+              <i data-lucide="plus"></i> Add playlist
+            </button>
+          </div>
         </div>
         <button class="header-icon-btn" id="sync-btn" title="Refresh Playlist Data">
           <i data-lucide="refresh-cw"></i>

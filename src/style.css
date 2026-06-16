@@ -505,6 +505,180 @@ button {
   color: var(--text-secondary);
 }
 
+/* Playlist switcher dropdown */
+.profile-wrap {
+  position: relative;
+}
+
+.playlist-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 280px;
+  max-width: 360px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-md);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  padding: 8px;
+}
+
+.playlist-dropdown.hidden {
+  display: none;
+}
+
+.playlist-dropdown-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  padding: 4px 8px 8px;
+}
+
+.playlist-dropdown-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.playlist-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.playlist-row:hover {
+  background: var(--bg-surface-hover);
+}
+
+.playlist-row.active {
+  background: rgba(6, 182, 212, 0.12);
+}
+
+.playlist-row-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.playlist-row-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.playlist-row-server {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.playlist-row-check {
+  width: 16px;
+  height: 16px;
+  color: var(--accent-cyan);
+  flex-shrink: 0;
+}
+
+.playlist-row-del {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.playlist-row-del:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--accent-red);
+}
+
+.playlist-row-del i {
+  width: 15px;
+  height: 15px;
+}
+
+.playlist-row-empty {
+  padding: 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.playlist-add-btn {
+  width: 100%;
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px;
+  background: var(--bg-base);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--border-radius-sm);
+  color: var(--accent-cyan);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.playlist-add-btn:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--accent-cyan);
+}
+
+.playlist-add-btn i {
+  width: 15px;
+  height: 15px;
+}
+
+.login-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  margin-bottom: 16px;
+}
+
+.login-back-btn:hover {
+  color: var(--accent-cyan);
+}
+
+.login-back-btn.hidden {
+  display: none;
+}
+
+.login-back-btn i {
+  width: 16px;
+  height: 16px;
+}
+
 .header-icon-btn {
   width: 38px;
   height: 38px;
@@ -1685,7 +1859,7 @@ button {
 }
 
 .epg-channel-header-cell {
-  width: 250px;
+  width: 360px;
   border-right: 1px solid var(--border-color);
   display: flex;
   align-items: center;
@@ -1711,12 +1885,19 @@ button {
   top: 0;
   height: 100%;
   border-left: 1px solid rgba(255, 255, 255, 0.05);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   padding-left: 8px;
   display: flex;
   align-items: center;
+}
+
+/* On-the-hour labels stand out from the half-hour ticks */
+.epg-hour-tick-major {
+  color: var(--text-primary);
+  font-weight: 700;
+  border-left-color: rgba(255, 255, 255, 0.1);
 }
 
 /* Grid Scroll Body */
@@ -1728,7 +1909,7 @@ button {
 
 /* Channels List (Left) */
 .epg-channels-column {
-  width: 250px;
+  width: 360px;
   flex-shrink: 0;
   background-color: var(--bg-panel);
   border-right: 1px solid var(--border-color);
@@ -1787,15 +1968,85 @@ button {
 .epg-channel-row-meta {
   flex-grow: 1;
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  align-self: stretch;
 }
 
 .epg-channel-row-name {
+  /* Fixed-width name column so the guide lines up uniformly across every row */
+  flex: 0 0 150px;
+  width: 150px;
   font-size: 0.85rem;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--text-primary);
+}
+
+/* Guide column — visually separated from the name by a full-height divider,
+   but still part of the same (single) channel row for navigation. */
+.epg-channel-row-now {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  overflow: hidden;
+  padding-left: 14px;
+  border-left: 1px solid var(--border-color);
+}
+
+.now-seg {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Subtle divider before the NEXT section */
+.now-seg.is-next {
+  position: relative;
+  padding-left: 18px;
+}
+
+.now-seg.is-next::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 13px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.now-seg-time {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--accent-cyan);
+}
+
+.now-seg.is-next .now-seg-time {
+  color: #aeb4bf;
+}
+
+.now-seg-title {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: #e4e7ec;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.now-seg.is-next .now-seg-title {
+  color: #99a0ac;
 }
 
 .epg-channel-row-fav {
@@ -1853,48 +2104,64 @@ button {
   width: 100%;
 }
 
+/* TV-guide grid: each program is a filled cell that fills the row height and
+   butts against its neighbours with a thin divider (like a classic EPG). */
 .epg-program-block {
   position: absolute;
-  top: 6px;
-  bottom: 6px;
-  background-color: var(--bg-panel);
-  border: 1px solid var(--border-color);
-  border-radius: var(--border-radius-sm);
-  padding: 6px 12px;
+  top: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.018);
+  border: none;
+  border-right: 1px solid var(--border-color);
+  border-radius: 0;
+  padding: 0 12px;
   display: flex;
   flex-direction: column;
   justify-content: center;
   overflow: hidden;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: background-color var(--transition-fast);
 }
 
 .epg-program-block:hover {
-  background-color: var(--bg-surface);
-  border-color: var(--text-muted);
+  background-color: rgba(255, 255, 255, 0.06);
   z-index: 4;
 }
 
+/* The currently-airing program is outlined as an inset box (cyan, to match the
+   app's accent) — like the highlighted cell in a TV guide. */
 .epg-program-block.active {
-  border-color: var(--accent-cyan);
-  background: linear-gradient(135deg, var(--bg-panel) 0%, rgba(6, 182, 212, 0.05) 100%);
+  top: 5px;
+  bottom: 5px;
+  border: 2px solid var(--accent-cyan);
+  border-radius: 6px;
+  background: rgba(6, 182, 212, 0.12);
+  box-shadow: 0 0 10px rgba(6, 182, 212, 0.22);
+  z-index: 3;
 }
 
 .epg-program-title {
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--text-primary);
-  margin-bottom: 2px;
 }
 
+.epg-program-block.active .epg-program-title {
+  color: #fff;
+}
+
+/* Time is conveyed by the timeline header / cell position, so hide it in-cell */
 .epg-program-time {
-  font-size: 0.7rem;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
+  display: none;
+}
+
+/* Subtle alternating row shading across the whole guide */
+.epg-programs-row:nth-child(even),
+.epg-channel-row:nth-child(even) {
+  background-color: rgba(255, 255, 255, 0.015);
 }
 
 /* ==========================================================================
@@ -2770,84 +3037,52 @@ button {
     margin-left: 4px !important;
   }
 
-  /* Collapse Channel columns to 70px on mobile portrait */
+  /* Mobile portrait: a clean full-width channel list (logo + name + inline
+     now/next guide). The horizontal timeline grid is hidden — the inline guide
+     replaces it — so there's no narrow icon strip to expand. */
   .epg-channel-header-cell {
-    width: 70px !important;
-    padding: 0 !important;
-    justify-content: center !important;
-    font-size: 0 !important; /* Hide "Channels (x)" text */
-    cursor: pointer;
-    transition: width 0.2s ease !important;
+    width: 100% !important;
+    padding: 0 14px !important;
+    justify-content: flex-start !important;
+    font-size: 0.72rem !important;
   }
-  
+
   .epg-channel-header-cell::after {
-    content: "Ch ❯" !important;
-    font-size: 0.75rem !important;
-    font-weight: 700 !important;
-    color: var(--accent-cyan) !important;
+    content: none !important;
   }
-  
+
   .epg-channels-column {
-    width: 70px !important;
-    transition: width 0.2s ease !important;
+    width: 100% !important;
   }
-  
+
   .epg-channel-row {
-    padding: 0 !important;
-    justify-content: center !important;
-    gap: 0 !important;
-    transition: padding 0.2s ease, justify-content 0.2s ease !important;
-  }
-  
-  .epg-channel-row-meta,
-  .epg-channel-row-fav {
-    display: none !important; /* Hide channel name and fav star */
-  }
-  
-  .epg-channel-row-logo {
-    margin: 0 auto !important;
-    width: 44px !important;
-    height: 44px !important;
-    transition: margin 0.2s ease, width 0.2s ease, height 0.2s ease !important;
-  }
-
-  /* Expanded State Rules */
-  .epg-grid-layout.epg-channel-col-expanded .epg-channel-header-cell {
-    width: 200px !important;
-    justify-content: space-between !important;
-    padding: 0 12px !important;
-    font-size: 0.75rem !important; /* Restore default text size */
-  }
-
-  .epg-grid-layout.epg-channel-col-expanded .epg-channel-header-cell::after {
-    content: "❮" !important; /* back arrow when expanded */
-    font-size: 0.75rem !important;
-    font-weight: 700 !important;
-    color: var(--text-muted) !important;
-  }
-
-  .epg-grid-layout.epg-channel-col-expanded .epg-channels-column {
-    width: 200px !important;
-  }
-
-  .epg-grid-layout.epg-channel-col-expanded .epg-channel-row {
     padding: 0 12px !important;
     justify-content: flex-start !important;
     gap: 10px !important;
   }
 
-  .epg-grid-layout.epg-channel-col-expanded .epg-channel-row-meta {
-    display: block !important;
+  .epg-channel-row-meta {
+    /* Same uniform name-column + divider + guide-column layout as desktop */
+    display: flex !important;
+    align-items: center !important;
+    align-self: stretch !important;
+    min-width: 0 !important;
   }
 
-  .epg-grid-layout.epg-channel-col-expanded .epg-channel-row-fav {
-    display: block !important;
+  .epg-channel-row-fav {
+    display: flex !important;
   }
 
-  .epg-grid-layout.epg-channel-col-expanded .epg-channel-row-logo {
+  .epg-channel-row-logo {
     margin: 0 !important;
     width: 38px !important;
     height: 38px !important;
+  }
+
+  /* Hide the horizontal timeline + program grid on phones */
+  .epg-timeline-hours-container,
+  .epg-programs-grid-viewport {
+    display: none !important;
   }
 
   /* Catalog Grid Overrides */

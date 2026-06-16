@@ -57,28 +57,158 @@ export function initCache() {
   } catch (err) {
     console.error('Error loading EPG cache file:', err);
   }
+
+  const activeCreds = getCredentials();
+  if (activeCreds) {
+    cache.favorites = activeCreds.favorites || { live: [], movie: [], series: [] };
+    cache.recently_viewed = activeCreds.recently_viewed || [];
+  }
 }
 
-// Credentials helpers
-export function getCredentials() {
+// ---------------------------------------------------------------------------
+// Credentials store: { playlists: [...], activeId }. getCredentials() returns
+// the active playlist so the rest of the server keeps working unchanged.
+// ---------------------------------------------------------------------------
+function makePlaylistId(c) {
+  return `${(c.server_url || '').toLowerCase()}|${c.username || ''}`;
+}
+
+function readStore() {
   try {
     if (fs.existsSync(CREDS_FILE)) {
-      return JSON.parse(fs.readFileSync(CREDS_FILE, 'utf8'));
+      const parsed = JSON.parse(fs.readFileSync(CREDS_FILE, 'utf8'));
+      if (parsed && Array.isArray(parsed.playlists)) return parsed;
+      // Legacy single-credential file → migrate to the list format.
+      if (parsed && parsed.server_url) {
+        parsed.id = parsed.id || makePlaylistId(parsed);
+        return { playlists: [parsed], activeId: parsed.id };
+      }
     }
   } catch (err) {
     console.error('Error reading credentials:', err);
   }
-  return null;
+  return { playlists: [], activeId: null };
 }
 
-export function saveCredentials(creds) {
+function writeStore(store) {
   try {
-    fs.writeFileSync(CREDS_FILE, JSON.stringify(creds, null, 2), 'utf8');
+    fs.writeFileSync(CREDS_FILE, JSON.stringify(store, null, 2), 'utf8');
     return true;
   } catch (err) {
     console.error('Error saving credentials:', err);
     return false;
   }
+}
+
+// Wipe cached streams/EPG (but not the credential store) — used when switching
+// playlists so the newly-active one re-syncs.
+function clearPlaylistData() {
+  cache = {
+    live_categories: [],
+    live_streams: [],
+    vod_categories: [],
+    vod_streams: [],
+    series_categories: [],
+    series_streams: [],
+    favorites: { live: [], movie: [], series: [] },
+    recently_viewed: []
+  };
+  epgCache = {};
+  try {
+    if (fs.existsSync(CACHE_FILE)) fs.unlinkSync(CACHE_FILE);
+    if (fs.existsSync(EPG_CACHE_FILE)) fs.unlinkSync(EPG_CACHE_FILE);
+  } catch (e) {}
+}
+
+export function getCredentials() {
+  const store = readStore();
+  if (store.playlists.length === 0) return null;
+  return store.playlists.find(p => p.id === store.activeId) || store.playlists[0];
+}
+
+// Add a new playlist (or update an existing one) and make it active.
+export function saveCredentials(creds) {
+  const store = readStore();
+  if (!creds.id) creds.id = makePlaylistId(creds);
+  const idx = store.playlists.findIndex(p => p.id === creds.id);
+  if (idx >= 0) {
+    // Preserve favorites and recently viewed
+    creds.favorites = store.playlists[idx].favorites || creds.favorites || { live: [], movie: [], series: [] };
+    creds.recently_viewed = store.playlists[idx].recently_viewed || creds.recently_viewed || [];
+    store.playlists[idx] = { ...store.playlists[idx], ...creds };
+  } else {
+    creds.favorites = creds.favorites || { live: [], movie: [], series: [] };
+    creds.recently_viewed = creds.recently_viewed || [];
+    store.playlists.push(creds);
+  }
+  store.activeId = creds.id;
+  
+  // Set in-memory cache
+  cache.favorites = creds.favorites;
+  cache.recently_viewed = creds.recently_viewed;
+
+  writeStore(store);
+
+  try {
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2), 'utf8');
+  } catch (e) {}
+
+  return true;
+}
+
+export function getPlaylistsList() {
+  const store = readStore();
+  let activeId = store.activeId;
+  if (!store.playlists.find(p => p.id === activeId)) activeId = store.playlists[0] ? store.playlists[0].id : null;
+  return {
+    playlists: store.playlists.map(p => ({
+      id: p.id,
+      playlistName: p.playlistName,
+      server_url: p.server_url,
+      username: p.username
+    })),
+    activeId
+  };
+}
+
+export function setActivePlaylist(id) {
+  const store = readStore();
+  const target = store.playlists.find(p => p.id === id);
+  if (!target) return false;
+  store.activeId = id;
+  writeStore(store);
+  clearPlaylistData();
+
+  // Load target playlist's favorites and history
+  cache.favorites = target.favorites || { live: [], movie: [], series: [] };
+  cache.recently_viewed = target.recently_viewed || [];
+
+  try {
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2), 'utf8');
+  } catch (e) {}
+
+  return true;
+}
+
+export function removePlaylist(id) {
+  const store = readStore();
+  const wasActive = store.activeId === id;
+  store.playlists = store.playlists.filter(p => p.id !== id);
+  const newActiveId = store.playlists[0] ? store.playlists[0].id : null;
+  if (wasActive) store.activeId = newActiveId;
+  writeStore(store);
+  if (wasActive) {
+    clearPlaylistData();
+    if (newActiveId) {
+      const newActive = store.playlists[0];
+      cache.favorites = newActive.favorites || { live: [], movie: [], series: [] };
+      cache.recently_viewed = newActive.recently_viewed || [];
+      try {
+        fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2), 'utf8');
+      } catch (e) {}
+    }
+  }
+  return { success: true, remaining: store.playlists.length, activeId: store.activeId, wasActive };
 }
 
 export function clearCredentials() {
@@ -245,6 +375,14 @@ export function toggleFavorite(type, id) {
     cache.favorites[normType].splice(index, 1);
   }
 
+  // Save to active playlist in credentials.json
+  const store = readStore();
+  const active = store.playlists.find(p => p.id === store.activeId);
+  if (active) {
+    active.favorites = cache.favorites;
+    writeStore(store);
+  }
+
   try {
     fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2), 'utf8');
     return true;
@@ -273,6 +411,14 @@ export function addToRecentlyViewed(id) {
   // Limit to 50 items
   if (cache.recently_viewed.length > 50) {
     cache.recently_viewed.pop();
+  }
+
+  // Save to active playlist in credentials.json
+  const store = readStore();
+  const active = store.playlists.find(p => p.id === store.activeId);
+  if (active) {
+    active.recently_viewed = cache.recently_viewed;
+    writeStore(store);
   }
 
   try {

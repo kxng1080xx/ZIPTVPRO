@@ -18,7 +18,10 @@ import {
   addToRecentlyViewed,
   getFavoritesCount,
   getRecentlyViewedCount,
-  getFavorites
+  getFavorites,
+  getPlaylistsList,
+  setActivePlaylist,
+  removePlaylist
 } from './cache.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -69,43 +72,62 @@ app.post('/api/login', async (req, res) => {
 
   const testUrl = `${normalizedHost}/player_api.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
 
+  let response;
   try {
-    const response = await fetchXtream(testUrl);
-    if (!response.ok) {
-      return res.status(response.status).json({ error: `Server returned status ${response.status}` });
-    }
-
-    const data = await response.json();
-
-    // Xtream returns error or empty if incorrect
-    if (data.user_info && data.user_info.auth === 0) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
-    if (!data.user_info) {
-      return res.status(400).json({ error: 'Invalid response from server. Check URL.' });
-    }
-
-    // Save credentials
-    const credentials = {
-      playlistName: playlistName || 'My Xtream Playlist',
-      server_url: normalizedHost,
-      username,
-      password,
-      stream_format: 'm3u8', // Default to HLS
-      proxy_streams: true // Default to using local CORS proxy
-    };
-    saveCredentials(credentials);
-
-    res.json({
-      success: true,
-      user_info: data.user_info,
-      server_info: data.server_info
-    });
+    response = await fetchXtream(testUrl);
   } catch (err) {
-    console.error('Login error:', err);
-    res.status(500).json({ error: `Failed to connect: ${err.message}` });
+    // Network error / timeout / DNS failure → server unreachable.
+    return res.status(503).json({ error: 'Server unavailable. Check the server URL and your internet connection.' });
   }
+
+  if (!response.ok) {
+    return res.status(502).json({ error: 'Server unavailable. Check the server URL.' });
+  }
+
+  let data;
+  try {
+    data = await response.json();
+  } catch (err) {
+    return res.status(502).json({ error: 'Could not read a valid response. Check the server URL.' });
+  }
+
+  const info = data.user_info;
+  if (!info) {
+    return res.status(400).json({ error: 'Could not read a valid response. Check the server URL.' });
+  }
+
+  // Wrong username/password.
+  if (info.auth === 0 || info.auth === '0') {
+    return res.status(401).json({ error: 'Incorrect username or password.' });
+  }
+
+  // Expired / inactive subscription (Xtream returns auth:1 with status "Expired").
+  const status = String(info.status || '').toLowerCase();
+  const exp = parseInt(info.exp_date, 10);
+  const isExpired = status === 'expired' || (exp && !isNaN(exp) && exp * 1000 < Date.now());
+  if (isExpired) {
+    return res.status(403).json({ error: 'Your subscription has expired.' });
+  }
+  if (status && status !== 'active') {
+    return res.status(403).json({ error: `Your account is not active (${info.status}).` });
+  }
+
+  // Save credentials
+  const credentials = {
+    playlistName: playlistName || 'My Xtream Playlist',
+    server_url: normalizedHost,
+    username,
+    password,
+    stream_format: 'm3u8', // Default to HLS
+    proxy_streams: true // Default to using local CORS proxy
+  };
+  saveCredentials(credentials);
+
+  res.json({
+    success: true,
+    user_info: info,
+    server_info: data.server_info
+  });
 });
 
 // 2. API: Get Status & User Info
@@ -150,10 +172,29 @@ app.get('/api/status', async (req, res) => {
   }
 });
 
-// 3. API: Logout
+// 3. API: Logout (removes the active playlist; keeps any others)
 app.post('/api/logout', (req, res) => {
-  clearCredentials();
-  res.json({ success: true });
+  const creds = getCredentials();
+  if (!creds) return res.json({ success: true, remaining: 0, activeId: null });
+  return res.json(removePlaylist(creds.id));
+});
+
+// 3b. API: Playlists — list / switch / remove
+app.get('/api/playlists', (req, res) => {
+  res.json(getPlaylistsList());
+});
+
+app.post('/api/playlists/switch', (req, res) => {
+  const { id } = req.body;
+  if (!id) return res.status(400).json({ error: 'Missing playlist id' });
+  if (!setActivePlaylist(id)) return res.status(404).json({ error: 'Playlist not found' });
+  res.json({ success: true, activeId: id });
+});
+
+app.post('/api/playlists/remove', (req, res) => {
+  const { id } = req.body;
+  if (!id) return res.status(400).json({ error: 'Missing playlist id' });
+  res.json(removePlaylist(id));
 });
 
 // 4. API: Update Settings
@@ -312,7 +353,9 @@ app.get('/api/epg', async (req, res) => {
   const creds = getCredentials();
   if (!creds) return res.status(401).json({ error: 'Not logged in' });
 
-  const epgUrl = `${creds.server_url}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}&action=get_short_epg&stream_id=${stream_id}`;
+  // get_simple_data_table returns the full schedule; get_short_epg often returns
+  // only a few past entries, leaving the now/next guide empty.
+  const epgUrl = `${creds.server_url}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}&action=get_simple_data_table&stream_id=${stream_id}`;
 
   try {
     const response = await fetchXtream(epgUrl, 8000);

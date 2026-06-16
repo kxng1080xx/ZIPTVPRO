@@ -52,18 +52,85 @@ async function checkServerMode() {
   return false;
 }
 
-// Local Credentials helpers
-function getCredentialsLocal() {
-  try {
-    const data = localStorage.getItem('xtream_credentials');
-    return data ? JSON.parse(data) : null;
-  } catch (e) {
-    return null;
-  }
+// ---------------------------------------------------------------------------
+// Multi-playlist local storage. Several Xtream logins can be saved; one is the
+// "active" playlist. getCredentialsLocal() returns the active one so the rest of
+// the client keeps working unchanged.
+// ---------------------------------------------------------------------------
+const PLAYLISTS_KEY = 'xtream_playlists';
+const ACTIVE_KEY = 'xtream_active_id';
+const LEGACY_KEY = 'xtream_credentials';
+
+function makePlaylistId(c) {
+  return `${(c.server_url || '').toLowerCase()}|${c.username || ''}`;
 }
 
+function readPlaylists() {
+  let list = [];
+  try {
+    const raw = localStorage.getItem(PLAYLISTS_KEY);
+    if (raw) list = JSON.parse(raw);
+    if (!Array.isArray(list)) list = [];
+  } catch (e) {
+    list = [];
+  }
+  // One-time migration from the old single-credential storage.
+  if (list.length === 0) {
+    try {
+      const legacy = localStorage.getItem(LEGACY_KEY);
+      if (legacy) {
+        const c = JSON.parse(legacy);
+        if (c && c.server_url) {
+          c.id = c.id || makePlaylistId(c);
+          list = [c];
+          localStorage.setItem(PLAYLISTS_KEY, JSON.stringify(list));
+          localStorage.setItem(ACTIVE_KEY, c.id);
+          localStorage.removeItem(LEGACY_KEY);
+        }
+      }
+    } catch (e) {}
+  }
+  return list;
+}
+
+function writePlaylists(list) {
+  localStorage.setItem(PLAYLISTS_KEY, JSON.stringify(list));
+}
+
+function getActiveIdLocal() {
+  return localStorage.getItem(ACTIVE_KEY);
+}
+
+function setActiveIdLocal(id) {
+  if (id) localStorage.setItem(ACTIVE_KEY, id);
+  else localStorage.removeItem(ACTIVE_KEY);
+}
+
+function getCredentialsLocal() {
+  const list = readPlaylists();
+  if (list.length === 0) return null;
+  const activeId = getActiveIdLocal();
+  return list.find(p => p.id === activeId) || list[0];
+}
+
+// Add a new playlist (or update an existing one with the same server+user) and
+// make it the active playlist.
 function saveCredentialsLocal(creds) {
-  localStorage.setItem('xtream_credentials', JSON.stringify(creds));
+  const list = readPlaylists();
+  if (!creds.id) creds.id = makePlaylistId(creds);
+  const idx = list.findIndex(p => p.id === creds.id);
+  if (idx >= 0) {
+    // Preserve favorites and recently viewed
+    creds.favorites = list[idx].favorites || creds.favorites || { live: [], movie: [], series: [] };
+    creds.recently_viewed = list[idx].recently_viewed || creds.recently_viewed || [];
+    list[idx] = { ...list[idx], ...creds };
+  } else {
+    creds.favorites = creds.favorites || { live: [], movie: [], series: [] };
+    creds.recently_viewed = creds.recently_viewed || [];
+    list.push(creds);
+  }
+  writePlaylists(list);
+  setActiveIdLocal(creds.id);
 }
 
 export async function login(hostUrl, username, password, playlistName) {
@@ -94,18 +161,41 @@ export async function login(hostUrl, username, password, playlistName) {
     }
     
     const testUrl = `${normalizedHost}/player_api.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
-    const res = await fetch(proxify(testUrl));
+
+    // 1. Reachability: a network error / timeout means the server is unavailable.
+    let res;
+    try {
+      res = await fetch(proxify(testUrl), { signal: AbortSignal.timeout(12000) });
+    } catch (e) {
+      throw new Error('Server unavailable. Check the server URL and your internet connection.');
+    }
     if (!res.ok) {
-      throw new Error(`Server returned status ${res.status}`);
+      throw new Error('Server unavailable. Check the server URL (status ' + res.status + ').');
     }
-    const data = await res.json();
-    if (data.user_info && data.user_info.auth === 0) {
-      throw new Error('Invalid credentials');
+
+    let data;
+    try {
+      data = await res.json();
+    } catch (e) {
+      throw new Error('Could not read a valid response. Check the server URL.');
     }
-    if (!data.user_info) {
-      throw new Error('Invalid response from server. Check URL.');
+
+    const info = data.user_info;
+    if (!info) {
+      throw new Error('Could not read a valid response. Check the server URL.');
     }
-    
+
+    // 2. Credentials: auth === 0 means wrong username/password.
+    if (info.auth === 0 || info.auth === '0') {
+      throw new Error('Incorrect username or password.');
+    }
+
+    // 3. Subscription: expired or otherwise inactive account.
+    const accountError = describeAccountState(info);
+    if (accountError) {
+      throw new Error(accountError);
+    }
+
     const credentials = {
       playlistName: playlistName || 'My Xtream Playlist',
       server_url: normalizedHost,
@@ -116,10 +206,21 @@ export async function login(hostUrl, username, password, playlistName) {
     saveCredentialsLocal(credentials);
     return {
       success: true,
-      user_info: data.user_info,
+      user_info: info,
       server_info: data.server_info
     };
   }
+}
+
+// Returns a user-facing error string when the Xtream account is expired/inactive,
+// or null when it's active. exp_date is a unix timestamp (seconds) or null.
+function describeAccountState(info) {
+  const status = String(info.status || '').toLowerCase();
+  const exp = parseInt(info.exp_date, 10);
+  const isExpired = status === 'expired' || (exp && !isNaN(exp) && exp * 1000 < Date.now());
+  if (isExpired) return 'Your subscription has expired.';
+  if (status && status !== 'active') return `Your account is not active (${info.status}).`;
+  return null;
 }
 
 export async function getStatus() {
@@ -164,13 +265,8 @@ export async function getStatus() {
   }
 }
 
-export async function logout() {
-  if (isServerMode) {
-    const response = await fetch('/api/logout', { method: 'POST' });
-    if (!response.ok) throw new Error('Logout failed');
-    return response.json();
-  } else {
-    localStorage.removeItem('xtream_credentials');
+async function clearLocalCache() {
+  try {
     await db.live_categories.clear();
     await db.vod_categories.clear();
     await db.series_categories.clear();
@@ -179,8 +275,119 @@ export async function logout() {
     await db.series_streams.clear();
     await db.favorites.clear();
     await db.recently_viewed.clear();
-    return { success: true };
+  } catch (e) {}
+}
+
+async function loadPlaylistFavoritesAndHistoryIntoDB(target) {
+  await db.favorites.clear();
+  await db.recently_viewed.clear();
+  if (!target) return;
+  if (target.favorites) {
+    for (const [type, ids] of Object.entries(target.favorites)) {
+      if (Array.isArray(ids)) {
+        for (const fid of ids) {
+          try {
+            await db.favorites.put({ type, id: String(fid) });
+          } catch (e) {}
+        }
+      }
+    }
   }
+  if (target.recently_viewed && Array.isArray(target.recently_viewed)) {
+    let timestamp = Date.now();
+    for (const rid of target.recently_viewed) {
+      try {
+        await db.recently_viewed.put({ id: String(rid), timestamp: timestamp-- });
+      } catch (e) {}
+    }
+  }
+}
+ 
+export async function logout() {
+  if (isServerMode) {
+    const response = await fetch('/api/logout', { method: 'POST' });
+    if (!response.ok) throw new Error('Logout failed');
+    return response.json();
+  } else {
+    // Disconnect the active playlist (keep any others) and clear cached data.
+    const activeId = getActiveIdLocal();
+    const list = readPlaylists().filter(p => p.id !== activeId);
+    writePlaylists(list);
+    const newActiveId = list[0] ? list[0].id : null;
+    setActiveIdLocal(newActiveId);
+    await clearLocalCache();
+    if (newActiveId) {
+      await loadPlaylistFavoritesAndHistoryIntoDB(list[0]);
+    }
+    return { success: true, remaining: list.length, activeId: getActiveIdLocal() };
+  }
+}
+
+// List saved playlists and which one is active.
+export async function getPlaylists() {
+  if (isServerMode) {
+    const response = await fetch('/api/playlists');
+    if (!response.ok) throw new Error('Failed to load playlists');
+    return response.json();
+  }
+  const list = readPlaylists();
+  let activeId = getActiveIdLocal();
+  if (!list.find(p => p.id === activeId)) activeId = list[0] ? list[0].id : null;
+  return {
+    playlists: list.map(p => ({
+      id: p.id,
+      playlistName: p.playlistName,
+      server_url: p.server_url,
+      username: p.username
+    })),
+    activeId
+  };
+}
+
+// Make a saved playlist the active one. The caller re-syncs + reloads afterward.
+export async function switchPlaylist(id) {
+  if (isServerMode) {
+    const response = await fetch('/api/playlists/switch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    if (!response.ok) throw new Error('Failed to switch playlist');
+    return response.json();
+  }
+  const list = readPlaylists();
+  const target = list.find(p => p.id === id);
+  if (!target) throw new Error('Playlist not found');
+  setActiveIdLocal(id);
+  await clearLocalCache();
+  await loadPlaylistFavoritesAndHistoryIntoDB(target);
+  return { success: true, activeId: id };
+}
+
+// Remove a saved playlist. Returns whether any remain + the new active id.
+export async function removePlaylist(id) {
+  if (isServerMode) {
+    const response = await fetch('/api/playlists/remove', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    if (!response.ok) throw new Error('Failed to remove playlist');
+    return response.json();
+  }
+  let list = readPlaylists();
+  const wasActive = getActiveIdLocal() === id;
+  list = list.filter(p => p.id !== id);
+  writePlaylists(list);
+  if (wasActive) {
+    const newActiveId = list[0] ? list[0].id : null;
+    setActiveIdLocal(newActiveId);
+    await clearLocalCache();
+    if (newActiveId) {
+      await loadPlaylistFavoritesAndHistoryIntoDB(list[0]);
+    }
+  }
+  return { success: true, remaining: list.length, activeId: getActiveIdLocal(), wasActive };
 }
 
 export async function updateSettings(settings) {
@@ -456,7 +663,10 @@ export async function getEPG(streamId) {
     const creds = getCredentialsLocal();
     if (!creds) throw new Error('Not logged in');
 
-    const epgUrl = `${creds.server_url}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}&action=get_short_epg&stream_id=${streamId}`;
+    // get_simple_data_table returns the full schedule; get_short_epg often
+    // returns only a few entries from the start of the day (all in the past),
+    // which leaves the now/next guide empty.
+    const epgUrl = `${creds.server_url}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}&action=get_simple_data_table&stream_id=${streamId}`;
     const response = await fetch(proxify(epgUrl));
     if (!response.ok) throw new Error('Failed to fetch EPG');
     const data = await response.json();
@@ -532,6 +742,25 @@ export async function toggleFavorite(type, id) {
       isFav = true;
     }
     
+    // Also save in localStorage
+    const activeId = getActiveIdLocal();
+    if (activeId) {
+      const list = readPlaylists();
+      const activePlaylist = list.find(p => p.id === activeId);
+      if (activePlaylist) {
+        if (!activePlaylist.favorites) activePlaylist.favorites = { live: [], movie: [], series: [] };
+        if (!activePlaylist.favorites[normType]) activePlaylist.favorites[normType] = [];
+        const strId = String(id);
+        const idx = activePlaylist.favorites[normType].indexOf(strId);
+        if (isFav) {
+          if (idx === -1) activePlaylist.favorites[normType].push(strId);
+        } else {
+          if (idx >= 0) activePlaylist.favorites[normType].splice(idx, 1);
+        }
+        writePlaylists(list);
+      }
+    }
+    
     return { success: true, isFavorite: isFav };
   }
 }
@@ -557,6 +786,24 @@ export async function trackPlayback(id) {
         await db.recently_viewed.delete(oldest.id);
       }
     }
+
+    // Also save in localStorage
+    const activeId = getActiveIdLocal();
+    if (activeId) {
+      const list = readPlaylists();
+      const activePlaylist = list.find(p => p.id === activeId);
+      if (activePlaylist) {
+        if (!activePlaylist.recently_viewed) activePlaylist.recently_viewed = [];
+        const strId = String(id);
+        activePlaylist.recently_viewed = activePlaylist.recently_viewed.filter(x => x !== strId);
+        activePlaylist.recently_viewed.unshift(strId);
+        if (activePlaylist.recently_viewed.length > 50) {
+          activePlaylist.recently_viewed.pop();
+        }
+        writePlaylists(list);
+      }
+    }
+
     return { success: true };
   }
 }

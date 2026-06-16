@@ -32,6 +32,7 @@ export class EPGGrid {
     
     this.channels = [];
     this.epgData = {}; // Cache map: stream_id -> epg_listings
+    this.epgObserver = null; // Lazy-loads EPG only for on-screen channel rows
     this.selectedDate = new Date();
     this.timeOffsetMs = 0; // Sliding navigation offset in ms
     
@@ -109,10 +110,11 @@ export class EPGGrid {
       }, 300);
     });
 
-    // Refresh EPG data
+    // Refresh EPG data — clear the per-channel cache and re-render, which
+    // re-observes the on-screen rows and re-fetches their guide.
     this.refreshBtn.addEventListener('click', () => {
       this.epgData = {};
-      this.loadEPGForVisibleChannels(true);
+      this.render();
     });
 
     // Full screen EPG toggle
@@ -232,34 +234,36 @@ export class EPGGrid {
     this.programsRows.style.width = `${totalWidth}px`;
     this.gridLines.style.width = `${totalWidth}px`;
 
-    // Draw grid vertical hour lines
+    // Draw grid + labels every 30 minutes (like a classic TV guide).
     this.gridLines.innerHTML = '';
 
-    for (let i = 0; i < hoursToShow; i++) {
-      const tickTime = new Date(startTime.getTime() + i * 60 * 60 * 1000);
-      const leftPos = i * this.pxPerHour;
+    const slots = hoursToShow * 2; // 30-minute slots
+    const slotWidth = this.pxPerHour / 2;
 
-      // Hour label
+    for (let i = 0; i < slots; i++) {
+      const tickTime = new Date(startTime.getTime() + i * 30 * 60 * 1000);
+      const leftPos = i * slotWidth;
+      const isHour = i % 2 === 0;
+
+      // Time label for each 30-minute slot
       const tick = document.createElement('div');
-      tick.className = 'epg-hour-tick';
+      tick.className = 'epg-hour-tick' + (isHour ? ' epg-hour-tick-major' : '');
       tick.style.left = `${leftPos}px`;
-      tick.style.width = `${this.pxPerHour}px`;
-      
-      const hourStr = tickTime.toLocaleTimeString('en-US', {
+      tick.style.width = `${slotWidth}px`;
+      tick.textContent = tickTime.toLocaleTimeString('en-US', {
         hour: 'numeric',
         minute: '2-digit',
         hour12: true
       });
-      tick.textContent = hourStr;
       this.timelineHours.appendChild(tick);
 
-      // Vertical grid line
+      // Vertical grid line (brighter on the hour)
       const gridLine = document.createElement('div');
       gridLine.style.position = 'absolute';
       gridLine.style.left = `${leftPos}px`;
       gridLine.style.top = '0';
       gridLine.style.bottom = '0';
-      gridLine.style.borderLeft = '1px solid rgba(255, 255, 255, 0.05)';
+      gridLine.style.borderLeft = `1px solid rgba(255, 255, 255, ${isHour ? 0.08 : 0.04})`;
       this.gridLines.appendChild(gridLine);
     }
   }
@@ -285,12 +289,14 @@ export class EPGGrid {
       chanRow.dataset.streamId = streamId;
       
       const logo = channel.stream_icon || '';
+      const guideHtml = this.buildInlineGuide(this.getNowNext(streamId));
       chanRow.innerHTML = `
         <div class="epg-channel-row-logo">
           ${logo ? `<img src="${logo}" alt="" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2224%22 height=%2224%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%234b5563%22 stroke-width=%222%22><rect x=%222%22 y=%222%22 width=%2220%22 height=%2220%22 rx=%224%22/></svg>'">` : '<i data-lucide="tv" class="fallback-logo"></i>'}
         </div>
         <div class="epg-channel-row-meta">
           <div class="epg-channel-row-name">${channel.name}</div>
+          <div class="epg-channel-row-now" data-now-for="${streamId}">${guideHtml}</div>
         </div>
         <button class="epg-channel-row-fav" data-id="${streamId}">
           <i data-lucide="star"></i>
@@ -403,8 +409,9 @@ export class EPGGrid {
     lucide.createIcons({ scope: this.channelsList });
     this.updateFavoritesHighlighting();
 
-    // Trigger on-demand EPG fetch for visible channels in background
-    this.loadEPGForVisibleChannels();
+    // Lazily fetch EPG only for channel rows that are actually on screen
+    // (fetching every channel at once gets the provider to throttle/drop requests).
+    this.observeVisibleChannels();
   }
 
   createProgramBlock(title, startMs, endMs, startTime, pxPerMs, progData = null) {
@@ -442,24 +449,37 @@ export class EPGGrid {
     const listings = (this.epgData[String(streamId)] || [])
       .slice()
       .sort((a, b) => parseInt(a.start_timestamp) - parseInt(b.start_timestamp));
-    const now = Date.now();
-    let current = null;
-    let next = null;
+    if (listings.length === 0) return { current: null, next: null };
 
-    for (let i = 0; i < listings.length; i++) {
-      const s = parseInt(listings[i].start_timestamp) * 1000;
-      const e = parseInt(listings[i].end_timestamp) * 1000;
-      if (now >= s && now < e) {
-        current = listings[i];
-        next = listings[i + 1] || null;
-        return { current, next };
-      }
-      // No program is airing right now, but this one is the next upcoming.
-      if (s > now && !next) {
-        next = listings[i];
-      }
-    }
-    return { current, next };
+    const now = Date.now();
+    const startMs = (p) => parseInt(p.start_timestamp) * 1000;
+    const endMs = (p) => parseInt(p.end_timestamp) * 1000;
+
+    // Prefer the program that contains "now"; otherwise fall back to the soonest
+    // program that hasn't ended yet (handles schedule gaps / rounding).
+    let idx = listings.findIndex((p) => now >= startMs(p) && now < endMs(p));
+    if (idx === -1) idx = listings.findIndex((p) => endMs(p) > now);
+    if (idx === -1) return { current: null, next: null }; // everything is in the past
+
+    return { current: listings[idx], next: listings[idx + 1] || null };
+  }
+
+  // Build the inline, time-sectioned guide markup shown on a channel row:
+  // a NOW segment (time + title) and a NEXT segment (time + title).
+  buildInlineGuide(nn) {
+    if (!nn || (!nn.current && !nn.next)) return '';
+    const seg = (p, cls) => {
+      if (!p) return '';
+      const ts = parseInt(p.start_timestamp);
+      const time = ts && !isNaN(ts)
+        ? new Date(ts * 1000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+        : '';
+      return `<span class="now-seg ${cls}">`
+        + (time ? `<span class="now-seg-time">${time}</span>` : '')
+        + `<span class="now-seg-title">${p.title || ''}</span>`
+        + `</span>`;
+    };
+    return seg(nn.current, 'is-now') + seg(nn.next, 'is-next');
   }
 
   getCurrentProgramBlock(streamId, startTime, endTime) {
@@ -508,34 +528,74 @@ export class EPGGrid {
     }
   }
 
-  // Load short EPG dynamically for the visible channels in viewport
+  // Lazy-load EPG only for channel rows visible in the scroll area. As the user
+  // scrolls, more rows enter view and their EPG is fetched on demand. This keeps
+  // the number of concurrent requests small so the provider doesn't throttle them.
+  observeVisibleChannels() {
+    if (this.epgObserver) this.epgObserver.disconnect();
+
+    const rows = this.channelsList.querySelectorAll('.epg-channel-row');
+
+    // No IntersectionObserver (very old webview): fall back to the bulk loader.
+    if (typeof IntersectionObserver === 'undefined') {
+      this.loadEPGForVisibleChannels();
+      return;
+    }
+
+    this.epgObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        const row = entry.target;
+        this.epgObserver.unobserve(row);
+        const id = row.dataset.streamId;
+        if (id && !this.epgData[id]) this.fetchEPGForChannel(id);
+      });
+    }, { root: this.channelsList, rootMargin: '400px 0px', threshold: 0.01 });
+
+    rows.forEach((row) => {
+      const id = row.dataset.streamId;
+      if (id && this.epgData[id]) {
+        // Already cached — paint it immediately.
+        this.updateChannelProgramRow(id);
+      } else {
+        this.epgObserver.observe(row);
+      }
+    });
+  }
+
+  // Fetch a single channel's EPG, retrying once on failure (handles transient
+  // throttling), then repaint that row's guide.
+  async fetchEPGForChannel(streamId, retriesLeft = 1) {
+    try {
+      const data = await getEPG(streamId);
+      this.epgData[streamId] = data.listings || [];
+      this.updateChannelProgramRow(streamId);
+    } catch (err) {
+      if (retriesLeft > 0) {
+        setTimeout(() => this.fetchEPGForChannel(streamId, retriesLeft - 1), 900);
+      } else {
+        console.warn(`EPG fetch failed for channel ${streamId}:`, err);
+      }
+    }
+  }
+
+  // Fallback bulk loader (used only when IntersectionObserver is unavailable).
   async loadEPGForVisibleChannels(force = false) {
-    // Collect stream IDs that don't have cached data
     const streamIds = [];
     document.querySelectorAll('.epg-channel-row').forEach(row => {
       const id = row.dataset.streamId;
-      if (id && (force || !this.epgData[id])) {
-        streamIds.push(id);
-      }
+      if (id && (force || !this.epgData[id])) streamIds.push(id);
     });
-
     if (streamIds.length === 0) return;
 
-    // Chunk requests to prevent server lockups
-    const chunkSize = 5;
+    const chunkSize = 4;
     for (let i = 0; i < streamIds.length; i += chunkSize) {
       const chunk = streamIds.slice(i, i + chunkSize);
-      
-      // Fetch in parallel
       await Promise.all(chunk.map(async (id) => {
         try {
           const data = await getEPG(id);
           this.epgData[id] = data.listings || [];
-          
-          // Re-render specifically that channel's row if listings are found
-          if (data.listings && data.listings.length > 0) {
-            this.updateChannelProgramRow(id);
-          }
+          if (data.listings && data.listings.length > 0) this.updateChannelProgramRow(id);
         } catch (err) {
           console.warn(`EPG fetch failed for channel ${id}:`, err);
         }
@@ -556,8 +616,14 @@ export class EPGGrid {
 
     if (listings.length === 0) return;
 
+    // Refresh the inline "now" guide text shown next to the channel name
+    const nowEl = document.querySelector(`.epg-channel-row-now[data-now-for="${streamId}"]`);
+    if (nowEl) {
+      nowEl.innerHTML = this.buildInlineGuide(this.getNowNext(streamId));
+    }
+
     progRow.innerHTML = '';
-    
+
     // Find corresponding channel row for trigger mapping
     const chanRow = document.querySelector(`.epg-channel-row[data-stream-id="${streamId}"]`);
     const channel = this.channels.find(c => String(c.stream_id) === String(streamId));
