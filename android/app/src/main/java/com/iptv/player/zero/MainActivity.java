@@ -50,4 +50,34 @@ public class MainActivity extends BridgeActivity {
             }
         }
     }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) {
+            hideSystemUI();
+        }
+    }
+
+    private void hideSystemUI() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            android.view.Window window = getWindow();
+            if (window != null) {
+                android.view.WindowInsetsController controller = window.getInsetsController();
+                if (controller != null) {
+                    controller.hide(android.view.WindowInsets.Type.statusBars() | android.view.WindowInsets.Type.navigationBars());
+                    controller.setSystemBarsBehavior(android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                }
+            }
+        } else {
+            android.view.View decorView = getWindow().getDecorView();
+            int uiOptions = android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                          | android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                          | android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                          | android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                          | android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                          | android.view.View.SYSTEM_UI_FLAG_FULLSCREEN;
+            decorView.setSystemUiVisibility(uiOptions);
+        }
+    }
 }
