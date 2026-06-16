@@ -804,6 +804,14 @@ button {
   background-color: var(--bg-base);
 }
 
+.live-top-row.details-collapsed {
+  grid-template-columns: 1fr !important;
+}
+
+.live-top-row.details-collapsed .program-details-panel {
+  display: none !important;
+}
+
 @media(max-width: 1200px) {
   .live-top-row {
     grid-template-columns: 1.2fr 1fr;

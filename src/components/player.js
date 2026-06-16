@@ -20,6 +20,7 @@ export class VideoPlayer {
     this.watermark = document.getElementById('player-watermark');
     this.watermarkImg = document.getElementById('watermark-img');
     this.pipBtn = document.getElementById('player-pip-btn');
+    this.infoBtn = document.getElementById('player-info-btn');
 
     this.hls = null;
     this.mpegtsPlayer = null;
@@ -87,6 +88,16 @@ export class VideoPlayer {
 
     // CC Toggle
     this.ccBtn.addEventListener('click', () => this.toggleCaptions());
+
+    // Info button toggle channel details panel
+    if (this.infoBtn) {
+      this.infoBtn.addEventListener('click', () => {
+        const topRow = document.querySelector('.live-top-row');
+        if (topRow) {
+          topRow.classList.toggle('details-collapsed');
+        }
+      });
+    }
 
     // Controls visibility timeout
     const container = this.video.parentElement;
