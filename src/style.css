@@ -1238,6 +1238,21 @@ button {
   background-color: var(--bg-darkest);
 }
 
+/* EPG Timeline Hidden State (Simple Channel List View) */
+.epg-section-container.timeline-hidden .epg-timeline-hours-container,
+.epg-section-container.timeline-hidden .epg-programs-grid-viewport,
+.epg-section-container.timeline-hidden .epg-hours-select,
+.epg-section-container.timeline-hidden .epg-nav-controls,
+.epg-section-container.timeline-hidden #epg-full-btn {
+  display: none !important;
+}
+
+.epg-section-container.timeline-hidden .epg-channel-header-cell,
+.epg-section-container.timeline-hidden .epg-channels-column {
+  width: 100% !important;
+  border-right: none !important;
+}
+
 .epg-controls-header {
   height: 54px;
   padding: 0 16px;

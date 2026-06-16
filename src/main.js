@@ -310,7 +310,11 @@ function updateDetailsPanel(channel, program) {
   favBtn.classList.toggle('favorited', isFav);
   
   // Set programs details
-  if (program) {
+  const progInfoContainer = document.querySelector('.details-program-info');
+  const hasValidProgram = program && program.title && program.title !== 'No information available';
+
+  if (hasValidProgram) {
+    if (progInfoContainer) progInfoContainer.classList.remove('hidden');
     progTitle.textContent = program.title || 'No Information';
     
     const startMs = parseInt(program.start_timestamp) * 1000;
@@ -332,6 +336,7 @@ function updateDetailsPanel(channel, program) {
     updateProgress();
     progressInterval = setInterval(updateProgress, 30000); // update progress bar every 30s
   } else {
+    if (progInfoContainer) progInfoContainer.classList.add('hidden');
     progTitle.textContent = 'No Schedule Data';
     progTime.textContent = '12:00 AM - 12:00 AM';
     progDesc.textContent = 'No program details available.';

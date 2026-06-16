@@ -22,6 +22,7 @@ export class EPGGrid {
     this.channelsFilter = document.getElementById('epg-channels-filter');
     this.refreshBtn = document.getElementById('epg-refresh-btn');
     this.fullBtn = document.getElementById('epg-full-btn');
+    this.toggleTimelineBtn = document.getElementById('epg-toggle-timeline-btn');
 
     // Layout configuration
     this.pxPerHour = 300; // Width of 1 hour in pixels
@@ -116,6 +117,25 @@ export class EPGGrid {
     // Full screen EPG toggle
     if (this.fullBtn) {
       this.fullBtn.addEventListener('click', () => this.toggleFullscreen());
+    }
+
+    // EPG Timeline Toggle
+    if (this.toggleTimelineBtn) {
+      this.toggleTimelineBtn.addEventListener('click', () => {
+        const epgContainer = document.querySelector('.epg-section-container');
+        if (epgContainer) {
+          const isHidden = epgContainer.classList.toggle('timeline-hidden');
+          this.toggleTimelineBtn.innerHTML = isHidden
+            ? '<i data-lucide="calendar"></i> Show Guide'
+            : '<i data-lucide="calendar-off"></i> Hide Guide';
+          lucide.createIcons({ scope: this.toggleTimelineBtn });
+          
+          if (!isHidden) {
+            this.render();
+            this.scrollToCurrentTime();
+          }
+        }
+      });
     }
   }
 
