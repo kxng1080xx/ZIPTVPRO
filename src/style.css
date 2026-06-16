@@ -986,7 +986,9 @@ button {
 }
 
 .control-row-right {
-  display: none !important;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .player-volume-slider {
@@ -1264,11 +1266,11 @@ button {
 }
 
 .epg-controls-header {
+  display: none !important;
   height: 54px;
   padding: 0 16px;
   background-color: var(--bg-panel);
   border-bottom: 1px solid var(--border-color);
-  display: flex;
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
