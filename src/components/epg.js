@@ -2,8 +2,9 @@ import { getEPG } from './xtream-api.js';
 import { navigation } from './tv-navigation.js';
 
 export class EPGGrid {
-  constructor(onChannelSelectCallback) {
+  constructor(onChannelSelectCallback, onChannelFocusCallback) {
     this.onChannelSelect = onChannelSelectCallback;
+    this.onChannelFocus = onChannelFocusCallback;
     
     // UI elements
     this.hoursSelect = document.getElementById('epg-hours-range');
@@ -330,6 +331,14 @@ export class EPGGrid {
           }
         });
       }
+
+      // Focus handler to update details panel on scroll highlight without playing
+      chanRow.addEventListener('focus', () => {
+        if (this.onChannelFocus) {
+          const activeBlock = this.getCurrentProgramBlock(streamId, startTime, endTime);
+          this.onChannelFocus(channel, activeBlock);
+        }
+      });
 
       this.channelsList.appendChild(chanRow);
 

@@ -72,9 +72,14 @@ async function initApp() {
   playerInstance.setOnPrevChannel(() => playPreviousChannel());
   playerInstance.setOnNextChannel(() => playNextChannel());
 
-  epgGridInstance = new EPGGrid((channel, program) => {
-    selectAndPlayChannel(channel, program);
-  });
+  epgGridInstance = new EPGGrid(
+    (channel, program) => {
+      selectAndPlayChannel(channel, program);
+    },
+    (channel, program) => {
+      updateDetailsPanel(channel, program);
+    }
+  );
 
   // Provide global function for EPG stars updates
   window.isChannelFavorite = (type, id) => {

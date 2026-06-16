@@ -227,20 +227,12 @@ class TVNavigation {
       if (index < allItems.length - 1) {
         const nextEl = allItems[index + 1];
         this.setFocus('categories', nextEl);
-        // Only trigger click to load streams if it's not the search field
-        if (nextEl.id !== 'categories-search') {
-          nextEl.click();
-        }
       }
       e.preventDefault();
     } else if (e.key === this.KEYS.UP) {
       if (index > 0) {
         const prevEl = allItems[index - 1];
         this.setFocus('categories', prevEl);
-        // Only trigger click to load streams if it's not the search field
-        if (prevEl.id !== 'categories-search') {
-          prevEl.click();
-        }
       } else {
         // Focus top navbar tabs
         this.focusDefault('tabs');
@@ -283,14 +275,11 @@ class TVNavigation {
     if (e.key === this.KEYS.DOWN) {
       if (index < channels.length - 1) {
         this.setFocus('channels', channels[index + 1]);
-        // Auto-select program description details
-        channels[index + 1].click();
       }
       e.preventDefault();
     } else if (e.key === this.KEYS.UP) {
       if (index > 0) {
         this.setFocus('channels', channels[index - 1]);
-        channels[index - 1].click();
       } else {
         this.focusDefault('tabs');
       }
