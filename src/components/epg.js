@@ -174,6 +174,9 @@ export class EPGGrid {
     this.navNow.classList.add('active');
     this.render();
     this.scrollToCurrentTime();
+    if (navigation.currentZone === 'channels') {
+      navigation.focusDefault('channels');
+    }
   }
 
   // Calculate times based on now + navigation offsets

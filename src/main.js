@@ -459,6 +459,9 @@ function renderMoviesCatalog(movies) {
   });
   
   lucide.createIcons({ scope: grid });
+  if (navigation.currentZone === 'grid') {
+    navigation.focusDefault('grid');
+  }
 }
 
 // ==========================================================================
@@ -522,6 +525,9 @@ function renderSeriesCatalog(seriesList) {
   });
 
   lucide.createIcons({ scope: grid });
+  if (navigation.currentZone === 'grid') {
+    navigation.focusDefault('grid');
+  }
 }
 
 // Render pagination buttons in catalog footers
