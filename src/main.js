@@ -19,7 +19,7 @@ import { navigation } from './components/tv-navigation.js';
 const state = {
   user: null,
   activeTab: 'live', // 'live', 'movies', 'series'
-  activeCategory: 'all', // category_id, 'favorites', 'recently_viewed'
+  activeCategory: null, // null until the user picks one (avoids auto-loading huge "All")
   activeChannel: null,
   activeProgram: null,
   favorites: {
@@ -124,7 +124,7 @@ async function initApp() {
 // ==========================================================================
 async function switchTab(tabId) {
   state.activeTab = tabId;
-  state.activeCategory = 'all';
+  state.activeCategory = null;
 
   // Toggle tab buttons class
   document.querySelectorAll('.nav-tab').forEach(btn => {
@@ -155,13 +155,35 @@ async function loadTabCategoriesAndContent() {
     // 2. Render categories sidebar list
     renderCategoriesList(res.categories);
 
-    // 3. Load active category streams
-    await loadCategoryContent();
+    // 3. Do NOT auto-load a category. The default "All" category can contain
+    // thousands of channels and loading it on startup makes the app crawl.
+    // Wait for the user to pick a category, and show a hint until then.
+    showSelectCategoryHint();
 
     // TV Navigation: default focus categories
     navigation.focusDefault('categories');
   } catch (err) {
     console.error('Failed to load categories/content:', err);
+  }
+}
+
+// Placeholder shown in the content area until the user picks a category
+// (we no longer auto-load the big "All" category on startup).
+function showSelectCategoryHint() {
+  const hint = '<div class="select-category-hint">Select a category to load content</div>';
+  if (state.activeTab === 'live') {
+    const chList = document.getElementById('epg-channels-list');
+    const progRows = document.getElementById('epg-programs-rows');
+    if (chList) chList.innerHTML = hint;
+    if (progRows) progRows.innerHTML = '';
+    const visibleCount = document.getElementById('epg-visible-count');
+    if (visibleCount) visibleCount.textContent = '(0)';
+  } else if (state.activeTab === 'movies') {
+    const grid = document.getElementById('movies-grid');
+    if (grid) grid.innerHTML = hint;
+  } else if (state.activeTab === 'series') {
+    const grid = document.getElementById('series-grid');
+    if (grid) grid.innerHTML = hint;
   }
 }
 

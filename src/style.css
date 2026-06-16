@@ -1233,6 +1233,20 @@ button {
   font-weight: 700;
 }
 
+/* Placeholder shown before a category is selected */
+.select-category-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 160px;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
 /* Now/Next one-line guide (cable-box flip bar) along the bottom of the stream */
 .now-next-bar {
   position: absolute;
@@ -1242,11 +1256,11 @@ button {
   z-index: 20;
   display: flex;
   align-items: center;
-  gap: 24px;
-  padding: 44px 32px;
+  gap: 18px;
+  padding: 22px 28px;
   background: linear-gradient(to top, rgba(5, 8, 15, 0.94) 0%, rgba(5, 8, 15, 0.75) 60%, transparent 100%);
   color: #fff;
-  font-size: 2.3rem;
+  font-size: 1.2rem;
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
@@ -1280,11 +1294,11 @@ button {
 
 .now-next-bar .nnb-tag {
   flex-shrink: 0;
-  font-size: 1.5rem;
+  font-size: 0.8rem;
   font-weight: 800;
   letter-spacing: 0.08em;
-  padding: 8px 18px;
-  border-radius: 8px;
+  padding: 4px 11px;
+  border-radius: 5px;
   background: var(--accent-cyan);
   color: #04121a;
 }
@@ -1314,7 +1328,7 @@ button {
 .now-next-bar .nnb-sep {
   flex-shrink: 0;
   width: 1px;
-  height: 48px;
+  height: 26px;
   background: rgba(255, 255, 255, 0.25);
 }
 
