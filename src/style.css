@@ -151,6 +151,44 @@ button {
   color: var(--accent-cyan);
 }
 
+.apk-download-container {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 20px;
+}
+
+.apk-download-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(6, 182, 212, 0.06);
+  border: 1px solid rgba(6, 182, 212, 0.2);
+  color: var(--accent-cyan);
+  padding: 8px 16px;
+  border-radius: var(--border-radius-md);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all var(--transition-fast) ease;
+  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.05);
+  cursor: pointer;
+}
+
+.apk-download-btn:hover {
+  background: linear-gradient(135deg, var(--accent-cyan) 0%, var(--accent-blue) 100%);
+  color: white;
+  border-color: transparent;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(6, 182, 212, 0.25), 0 0 12px rgba(37, 99, 235, 0.15);
+}
+
+.apk-download-btn i {
+  width: 14px;
+  height: 14px;
+}
+
 .login-logo-header {
   text-align: center;
   margin-bottom: 30px;
@@ -2577,6 +2615,27 @@ body.pip-mode-active #main-video-player {
   margin: 0 !important;
   padding: 0 !important;
   z-index: 99999 !important;
+}
+
+/* Full-screen EPG Mode: the guide takes the whole viewport. Header, sidebar and
+   the player row are hidden; the EPG controls header stays so the "Exit full
+   screen" toggle remains reachable by mouse, keyboard and TV remote. */
+body.epg-fullscreen-active .top-header,
+body.epg-fullscreen-active .sidebar,
+body.epg-fullscreen-active .live-top-row {
+  display: none !important;
+}
+
+body.epg-fullscreen-active .epg-section-container {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  z-index: 9000 !important;
 }
 
 

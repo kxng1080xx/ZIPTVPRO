@@ -21,6 +21,7 @@ export class EPGGrid {
     this.navNext = document.getElementById('epg-nav-next');
     this.channelsFilter = document.getElementById('epg-channels-filter');
     this.refreshBtn = document.getElementById('epg-refresh-btn');
+    this.fullBtn = document.getElementById('epg-full-btn');
 
     // Layout configuration
     this.pxPerHour = 300; // Width of 1 hour in pixels
@@ -111,6 +112,39 @@ export class EPGGrid {
       this.epgData = {};
       this.loadEPGForVisibleChannels(true);
     });
+
+    // Full screen EPG toggle
+    if (this.fullBtn) {
+      this.fullBtn.addEventListener('click', () => this.toggleFullscreen());
+    }
+  }
+
+  // Expand the EPG guide to fill the screen (hides header / sidebar / player).
+  // Keeps the channel list remote- and keyboard-navigable via the 'channels' zone.
+  setFullscreen(on) {
+    document.body.classList.toggle('epg-fullscreen-active', on);
+
+    if (this.fullBtn) {
+      this.fullBtn.classList.toggle('active', on);
+      this.fullBtn.innerHTML = on
+        ? '<i data-lucide="minimize"></i> Exit full screen'
+        : '<i data-lucide="expand"></i> Full screen EPG';
+      lucide.createIcons({ scope: this.fullBtn });
+    }
+
+    // Re-layout for the new viewport size.
+    this.render();
+    this.scrollToCurrentTime();
+
+    if (on) {
+      const target = this.channelsList.querySelector('.epg-channel-row.active')
+        || this.channelsList.querySelector('.epg-channel-row');
+      if (target) navigation.setFocus('channels', target);
+    }
+  }
+
+  toggleFullscreen() {
+    this.setFullscreen(!document.body.classList.contains('epg-fullscreen-active'));
   }
 
   setChannels(channels) {
@@ -242,16 +276,24 @@ export class EPGGrid {
       // Active highlighting
       chanRow.addEventListener('click', (e) => {
         if (e.target.closest('.epg-channel-row-fav')) return; // ignore fav click
-        
+
         document.querySelectorAll('.epg-channel-row').forEach(r => r.classList.remove('active'));
         chanRow.classList.add('active');
-        
+
         // Sync EPG Channel Focus
         navigation.setFocus('channels', chanRow);
 
         // Select matching program block
         const activeBlock = this.getCurrentProgramBlock(streamId, startTime, endTime);
         this.onChannelSelect(channel, activeBlock);
+
+        // A real pointer click while in the full-screen guide means "watch this"
+        // — leave full screen so the now-playing video is visible. (Synthetic
+        // clicks from keyboard/remote navigation have isTrusted === false and are
+        // ignored here; that exit is handled in the navigation layer instead.)
+        if (e.isTrusted && document.body.classList.contains('epg-fullscreen-active')) {
+          this.setFullscreen(false);
+        }
       });
 
       // Favorite toggle click handler

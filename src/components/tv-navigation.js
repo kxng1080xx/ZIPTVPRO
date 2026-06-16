@@ -115,6 +115,15 @@ class TVNavigation {
       return;
     }
 
+    // Back / Escape leaves full-screen EPG from anywhere (TV remote Back maps here).
+    if (document.body.classList.contains('epg-fullscreen-active') &&
+        (e.key === this.KEYS.ESCAPE || e.key === this.KEYS.BACKSPACE)) {
+      const fullBtn = document.getElementById('epg-full-btn');
+      if (fullBtn) fullBtn.click();
+      e.preventDefault();
+      return;
+    }
+
     switch (this.currentZone) {
       case 'tabs':
         this.handleTabsNavigation(e);
@@ -245,16 +254,26 @@ class TVNavigation {
       }
       e.preventDefault();
     } else if (e.key === this.KEYS.LEFT) {
-      // Jump back to categories sidebar list
-      this.focusDefault('categories');
+      // In full-screen EPG the sidebar is hidden, so stay in the guide.
+      if (!document.body.classList.contains('epg-fullscreen-active')) {
+        this.focusDefault('categories');
+      }
       e.preventDefault();
     } else if (e.key === this.KEYS.ENTER) {
       // Play channel stream!
       this.focusedElement.click();
+      // In full-screen EPG, selecting a channel means "watch it" — drop out of the
+      // guide so the now-playing player is visible.
+      if (document.body.classList.contains('epg-fullscreen-active')) {
+        const fullBtn = document.getElementById('epg-full-btn');
+        if (fullBtn) fullBtn.click();
+      }
       e.preventDefault();
     } else if (e.key === this.KEYS.RIGHT) {
-      // Jump focus directly to video player
-      this.focusDefault('player');
+      // Jump focus directly to video player (hidden in full-screen EPG, so skip).
+      if (!document.body.classList.contains('epg-fullscreen-active')) {
+        this.focusDefault('player');
+      }
       e.preventDefault();
     }
   }
