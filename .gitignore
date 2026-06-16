@@ -8,6 +8,7 @@ dist-electron/
 *.zip
 # …but the published download must be committed so Vercel can serve it.
 !app.apk
+ZIPTV-Pro-Setup.exe
 
 # Local server database and Xtream credentials cache
 server/data/
