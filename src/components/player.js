@@ -399,7 +399,7 @@ export class VideoPlayer {
   }
 
   // Cable-box style one-line "flip bar" along the bottom: shows the current
-  // program and what's up next for the tuned channel, then hides after 6s.
+  // program and what's up next for the tuned channel, then hides after 20s.
   showProgramGuide(current, next) {
     if (!this.nowNextBar) return;
 
@@ -436,7 +436,7 @@ export class VideoPlayer {
     clearTimeout(this.nowNextTimeout);
     this.nowNextTimeout = setTimeout(() => {
       this.nowNextBar.classList.remove('visible');
-    }, 6000);
+    }, 20000);
   }
 
   togglePlay() {

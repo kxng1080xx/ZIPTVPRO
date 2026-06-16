@@ -239,14 +239,19 @@ class TVNavigation {
 
   // 2. CATEGORIES SIDEBAR NAVIGATION
   handleCategoriesNavigation(e) {
+    const pinToggle = document.getElementById('pin-section-toggle');
     const searchInput = document.getElementById('categories-search');
     const items = Array.from(document.querySelectorAll('#categories-list .category-item:not(.hidden)'));
     const pinItems = Array.from(document.querySelectorAll('.pin-item'));
-    
+
+    // Top-to-bottom focus order: the "Pin top section" header, the pinned items
+    // (only when the section is expanded/visible), the search box, then categories.
     const allItems = [];
+    if (pinToggle) allItems.push(pinToggle);
+    pinItems.forEach(p => { if (p.offsetParent !== null) allItems.push(p); });
     if (searchInput && searchInput.offsetParent !== null) allItems.push(searchInput);
-    allItems.push(...pinItems, ...items);
-    
+    allItems.push(...items);
+
     const index = allItems.indexOf(this.focusedElement);
     if (index === -1) return;
 
@@ -266,7 +271,16 @@ class TVNavigation {
       }
       e.preventDefault();
     } else if (e.key === this.KEYS.RIGHT || e.key === this.KEYS.ENTER) {
-      if (this.focusedElement.id === 'categories-search') {
+      if (this.focusedElement.id === 'pin-section-toggle') {
+        if (e.key === this.KEYS.ENTER) {
+          // Collapse/expand the pinned section and stay on the header.
+          this.focusedElement.click();
+        } else {
+          // Right arrow moves into the content area.
+          const activeTab = document.querySelector('.nav-tab.active')?.dataset.tab;
+          this.focusDefault(activeTab === 'live' ? 'channels' : 'grid');
+        }
+      } else if (this.focusedElement.id === 'categories-search') {
         if (e.key === this.KEYS.ENTER) {
           this.focusedElement.focus(); // Focus natively to open virtual keyboard
         } else {
