@@ -47,6 +47,23 @@ class TVNavigation {
       inline: 'nearest'
     });
 
+    // Native focus management to prevent Smart TV/Android Webview focus stealing/keyboard popups
+    if (element.tagName !== 'INPUT') {
+      if (!element.hasAttribute('tabindex')) {
+        element.setAttribute('tabindex', '-1');
+      }
+      try {
+        element.focus({ preventScroll: true });
+      } catch (err) {
+        element.focus();
+      }
+    } else {
+      const activeEl = document.activeElement;
+      if (activeEl && activeEl !== document.body) {
+        activeEl.blur();
+      }
+    }
+
     console.log(`TV Focus -> Zone: ${zone}, Element:`, element.textContent?.trim() || element.className);
   }
 
@@ -195,38 +212,63 @@ class TVNavigation {
 
   // 2. CATEGORIES SIDEBAR NAVIGATION
   handleCategoriesNavigation(e) {
+    const searchInput = document.getElementById('categories-search');
     const items = Array.from(document.querySelectorAll('#categories-list .category-item:not(.hidden)'));
     const pinItems = Array.from(document.querySelectorAll('.pin-item'));
-    const allItems = [...pinItems, ...items];
+    
+    const allItems = [];
+    if (searchInput) allItems.push(searchInput);
+    allItems.push(...pinItems, ...items);
     
     const index = allItems.indexOf(this.focusedElement);
     if (index === -1) return;
 
     if (e.key === this.KEYS.DOWN) {
       if (index < allItems.length - 1) {
-        this.setFocus('categories', allItems[index + 1]);
-        // Trigger click on hover to load streams dynamically
-        allItems[index + 1].click();
+        const nextEl = allItems[index + 1];
+        this.setFocus('categories', nextEl);
+        // Only trigger click to load streams if it's not the search field
+        if (nextEl.id !== 'categories-search') {
+          nextEl.click();
+        }
       }
       e.preventDefault();
     } else if (e.key === this.KEYS.UP) {
       if (index > 0) {
-        this.setFocus('categories', allItems[index - 1]);
-        allItems[index - 1].click();
+        const prevEl = allItems[index - 1];
+        this.setFocus('categories', prevEl);
+        // Only trigger click to load streams if it's not the search field
+        if (prevEl.id !== 'categories-search') {
+          prevEl.click();
+        }
       } else {
         // Focus top navbar tabs
         this.focusDefault('tabs');
       }
       e.preventDefault();
     } else if (e.key === this.KEYS.RIGHT || e.key === this.KEYS.ENTER) {
-      // Select category and jump to EPG Channels list or VOD Grid
-      this.focusedElement.click();
-      
-      const activeTab = document.querySelector('.nav-tab.active')?.dataset.tab;
-      if (activeTab === 'live') {
-        this.focusDefault('channels');
+      if (this.focusedElement.id === 'categories-search') {
+        if (e.key === this.KEYS.ENTER) {
+          this.focusedElement.focus(); // Focus natively to open virtual keyboard
+        } else {
+          // Right arrow moves focus directly to channels or grid
+          const activeTab = document.querySelector('.nav-tab.active')?.dataset.tab;
+          if (activeTab === 'live') {
+            this.focusDefault('channels');
+          } else {
+            this.focusDefault('grid');
+          }
+        }
       } else {
-        this.focusDefault('grid');
+        // Select category and jump to EPG Channels list or VOD Grid
+        this.focusedElement.click();
+        
+        const activeTab = document.querySelector('.nav-tab.active')?.dataset.tab;
+        if (activeTab === 'live') {
+          this.focusDefault('channels');
+        } else {
+          this.focusDefault('grid');
+        }
       }
       e.preventDefault();
     }
