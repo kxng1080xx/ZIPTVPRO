@@ -220,7 +220,15 @@ class TVNavigation {
         return;
       }
     } else if (zone === 'login') {
-      const firstInput = document.getElementById('m3u-url') || document.getElementById('playlist-name');
+      // If remote-login-box is visible, focus the Manual Login button first
+      const remoteBox = document.getElementById('remote-login-box');
+      const manualBtn = document.getElementById('remote-manual-login-btn');
+      if (remoteBox && remoteBox.offsetParent !== null && manualBtn && manualBtn.offsetParent !== null) {
+        this.setFocus('login', manualBtn);
+        return;
+      }
+      // Otherwise default to the first input on manual form
+      const firstInput = document.getElementById('playlist-name') || document.getElementById('m3u-url');
       if (firstInput) {
         this.setFocus('login', firstInput);
         return;
@@ -941,7 +949,35 @@ class TVNavigation {
     return closest;
   }
   handleLoginFormNavigation(e) {
-    const backBtn = document.getElementById('login-back-btn');
+    // Check which sub-screen is active
+    const remoteBox = document.getElementById('remote-login-box');
+    const isRemoteActive = remoteBox && remoteBox.offsetParent !== null;
+
+    if (isRemoteActive) {
+      // Remote Activation screen: only the Manual Login button is focusable
+      const manualBtn = document.getElementById('remote-manual-login-btn');
+      const backBtn = document.getElementById('login-back-btn');
+      const items = [];
+      if (backBtn && !backBtn.classList.contains('hidden') && backBtn.offsetParent !== null) items.push(backBtn);
+      if (manualBtn && manualBtn.offsetParent !== null) items.push(manualBtn);
+
+      if (e.key === this.KEYS.ENTER) {
+        if (this.focusedElement) this.focusedElement.click();
+        e.preventDefault();
+      } else if (e.key === this.KEYS.UP || e.key === this.KEYS.LEFT) {
+        const idx = items.indexOf(this.focusedElement);
+        if (idx > 0) this.setFocus('login', items[idx - 1]);
+        e.preventDefault();
+      } else if (e.key === this.KEYS.DOWN || e.key === this.KEYS.RIGHT) {
+        const idx = items.indexOf(this.focusedElement);
+        if (idx < items.length - 1) this.setFocus('login', items[idx + 1]);
+        e.preventDefault();
+      }
+      return;
+    }
+
+    // Manual login form navigation
+    const manualBackBtn = document.getElementById('manual-back-btn');
     const nameEl = document.getElementById('playlist-name');
     const m3uEl = document.getElementById('m3u-url');
     const hostEl = document.getElementById('host-url');
@@ -951,8 +987,8 @@ class TVNavigation {
 
     // Define the grid of elements
     const grid = [];
-    if (backBtn && !backBtn.classList.contains('hidden') && backBtn.offsetParent !== null) {
-      grid.push([backBtn]);
+    if (manualBackBtn && manualBackBtn.offsetParent !== null) {
+      grid.push([manualBackBtn]);
     }
     if (nameEl && nameEl.offsetParent !== null) grid.push([nameEl]);
     if (m3uEl && m3uEl.offsetParent !== null) grid.push([m3uEl]);
