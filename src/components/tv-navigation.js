@@ -1060,7 +1060,7 @@ class TVNavigation {
     const rows = Array.from(document.querySelectorAll('#login-playlists-list .playlist-row'));
     const addBtn = document.getElementById('login-show-form-btn');
 
-    // Create a flat list of focusable rows/buttons
+    // Create a flat list of focusable ROWS (not delete buttons)
     const items = [];
     if (backBtn && !backBtn.classList.contains('hidden') && backBtn.offsetParent !== null) {
       items.push(backBtn);
@@ -1070,30 +1070,26 @@ class TVNavigation {
       items.push(addBtn);
     }
 
-    // Find if focused element is a delete button
+    // Get current row (if on delete button, get parent row)
     const isDelBtn = this.focusedElement && this.focusedElement.classList.contains('playlist-row-del');
-    let activeRow = null;
-    if (isDelBtn) {
-      activeRow = this.focusedElement.closest('.playlist-row');
-    }
+    let currentRow = isDelBtn ? this.focusedElement.closest('.playlist-row') : this.focusedElement;
+    const index = items.indexOf(currentRow);
 
-    const index = items.indexOf(isDelBtn ? activeRow : this.focusedElement);
+    console.log('handlePlaylistSelectNavigation:', { isDelBtn, currentIndex: index, key: e.key, focused: this.focusedElement?.className });
 
-    console.log('handlePlaylistSelectNavigation:', { isDelBtn, currentIndex: index, key: e.key });
-
-    if (index === -1) {
-      if (items[0]) {
-        console.log('Focus lost, resetting to first item');
-        this.setFocus('playlist-select', items[0]);
-      }
+    if (index === -1 && items[0]) {
+      console.log('Focus lost, resetting to first item');
+      this.setFocus('playlist-select', items[0]);
       return;
     }
 
+    // Vertical navigation (UP/DOWN) - move between rows
     if (e.key === this.KEYS.DOWN) {
       if (index < items.length - 1) {
         const nextItem = items[index + 1];
-        if (isDelBtn && nextItem.classList.contains('playlist-row')) {
-          const delBtn = nextItem.querySelector('.playlist-row-del');
+        // If on delete button, stay on the button of next row. Otherwise move to next row
+        if (isDelBtn) {
+          const delBtn = nextItem.classList.contains('playlist-row') ? nextItem.querySelector('.playlist-row-del') : null;
           this.setFocus('playlist-select', delBtn || nextItem);
         } else {
           this.setFocus('playlist-select', nextItem);
@@ -1103,8 +1099,9 @@ class TVNavigation {
     } else if (e.key === this.KEYS.UP) {
       if (index > 0) {
         const prevItem = items[index - 1];
-        if (isDelBtn && prevItem.classList.contains('playlist-row')) {
-          const delBtn = prevItem.querySelector('.playlist-row-del');
+        // If on delete button, stay on the button of prev row. Otherwise move to prev row
+        if (isDelBtn) {
+          const delBtn = prevItem.classList.contains('playlist-row') ? prevItem.querySelector('.playlist-row-del') : null;
           this.setFocus('playlist-select', delBtn || prevItem);
         } else {
           this.setFocus('playlist-select', prevItem);
@@ -1112,20 +1109,22 @@ class TVNavigation {
       }
       e.preventDefault();
     } else if (e.key === this.KEYS.RIGHT) {
-      if (!isDelBtn && this.focusedElement.classList.contains('playlist-row')) {
-        const delBtn = this.focusedElement.querySelector('.playlist-row-del');
+      // Right arrow: move from row to its delete button
+      if (!isDelBtn && currentRow && currentRow.classList.contains('playlist-row')) {
+        const delBtn = currentRow.querySelector('.playlist-row-del');
         if (delBtn) {
           this.setFocus('playlist-select', delBtn);
         }
       }
       e.preventDefault();
     } else if (e.key === this.KEYS.LEFT) {
-      if (isDelBtn && activeRow) {
-        this.setFocus('playlist-select', activeRow);
+      // Left arrow: move from delete button back to row
+      if (isDelBtn && currentRow) {
+        this.setFocus('playlist-select', currentRow);
       }
       e.preventDefault();
     } else if (e.key === this.KEYS.ENTER) {
-      console.log('Playlist-select ENTER pressed on:', this.focusedElement?.className, this.focusedElement?.dataset?.id);
+      console.log('Playlist-select ENTER pressed on:', this.focusedElement?.className, this.focusedElement?.dataset?.playlistName);
       this.focusedElement.click();
       e.preventDefault();
     }

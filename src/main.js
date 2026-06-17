@@ -1879,6 +1879,7 @@ function showPlaylistSelect(playlists) {
     const row = document.createElement('div');
     row.className = 'playlist-row';
     row.dataset.id = p.id;
+    row.dataset.playlistName = p.playlistName || 'Playlist';
     row.innerHTML = `
       <div class="playlist-row-main">
         <span class="playlist-row-name">${p.playlistName || 'Playlist'}</span>
@@ -1886,9 +1887,12 @@ function showPlaylistSelect(playlists) {
       </div>
       <button class="playlist-row-del" data-del="${p.id}" title="Remove playlist"><i data-lucide="trash-2"></i></button>
     `;
-    
-    // Clicking a row triggers switchToPlaylist
-    row.addEventListener('click', async (e) => {
+
+    // Make row keyboard focusable
+    row.setAttribute('tabindex', '0');
+
+    // Click handler for mouse/pointer clicks
+    const handleRowSelect = async (e) => {
       if (e.target.closest('.playlist-row-del')) return; // ignore delete click
 
       console.log('Playlist row clicked:', p.playlistName);
@@ -1910,6 +1914,16 @@ function showPlaylistSelect(playlists) {
         row.style.pointerEvents = 'auto';
         errorMsg.textContent = err.message || 'Login connection failed.';
         errorMsg.classList.remove('hidden');
+      }
+    };
+
+    row.addEventListener('click', handleRowSelect);
+
+    // Keyboard handler for TV remote (ENTER/OK key)
+    row.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleRowSelect({ target: row });
       }
     });
     
