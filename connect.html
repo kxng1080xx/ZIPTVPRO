@@ -196,6 +196,36 @@
       to { transform: rotate(360deg); }
     }
 
+    /* OR divider on form */
+    .login-or-divider {
+      display: flex;
+      align-items: center;
+      text-align: center;
+      margin: 18px 0;
+      color: var(--text-muted);
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      font-family: 'Outfit', sans-serif;
+      opacity: 0.8;
+      text-transform: uppercase;
+    }
+
+    .login-or-divider::before,
+    .login-or-divider::after {
+      content: '';
+      flex: 1;
+      border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
+    }
+
+    .login-or-divider:not(:empty)::before {
+      margin-right: 14px;
+    }
+
+    .login-or-divider:not(:empty)::after {
+      margin-left: 14px;
+    }
+
     /* Message Boxes */
     .msg-box {
       padding: 14px 16px;
@@ -285,22 +315,31 @@
 
       <div class="form-group">
         <label for="playlist-name">Playlist Name</label>
-        <input type="text" id="playlist-name" placeholder="e.g. My Remote Playlist" value="Xtream Codes" required>
+        <input type="text" id="playlist-name" placeholder="e.g. My Remote Playlist" value="Xtream Codes">
+      </div>
+
+      <div class="form-group">
+        <label for="m3u-url">Paste M3U URL (Auto-Extracts Login)</label>
+        <input type="url" id="m3u-url" placeholder="Paste your full M3U URL here" autocomplete="off">
+      </div>
+
+      <div class="login-or-divider">
+        <span>or enter credentials manually</span>
       </div>
 
       <div class="form-group">
         <label for="server-url">Server URL</label>
-        <input type="url" id="server-url" placeholder="e.g. http://your-provider.com:8080" required autocomplete="off">
+        <input type="url" id="server-url" placeholder="e.g. http://your-provider.com:8080" autocomplete="off">
       </div>
 
       <div class="form-group">
         <label for="username">Username</label>
-        <input type="text" id="username" placeholder="Enter Username" required autocomplete="off">
+        <input type="text" id="username" placeholder="Enter Username" autocomplete="off">
       </div>
 
       <div class="form-group">
         <label for="password">Password</label>
-        <input type="password" id="password" placeholder="Enter Password" required>
+        <input type="password" id="password" placeholder="Enter Password">
       </div>
 
       <button type="submit" id="btn-submit" class="btn-connect">
@@ -333,6 +372,44 @@
       e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
     });
 
+    // M3U URL Autoparser
+    function parseM3uUrl(urlStr) {
+      try {
+        const url = new URL(urlStr.trim());
+        const host = url.origin;
+        const username = url.searchParams.get('username') || url.searchParams.get('auth_username');
+        const password = url.searchParams.get('password') || url.searchParams.get('auth_password');
+        if (host && username && password) {
+          return { host, username, password };
+        }
+      } catch (e) {}
+      return null;
+    }
+
+    const m3uInput = document.getElementById('m3u-url');
+    if (m3uInput) {
+      const handleM3uInput = () => {
+        const val = m3uInput.value;
+        const parsed = parseM3uUrl(val);
+        if (parsed) {
+          document.getElementById('server-url').value = parsed.host;
+          document.getElementById('username').value = parsed.username;
+          document.getElementById('password').value = parsed.password;
+          
+          // Auto-set playlist name if empty or default
+          try {
+            const host = new URL(parsed.host).hostname;
+            const nameEl = document.getElementById('playlist-name');
+            if (nameEl && (!nameEl.value || nameEl.value === 'Xtream Codes')) {
+              nameEl.value = host;
+            }
+          } catch (e) {}
+        }
+      };
+      m3uInput.addEventListener('input', handleM3uInput);
+      m3uInput.addEventListener('paste', () => setTimeout(handleM3uInput, 20));
+    }
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       
@@ -344,12 +421,32 @@
         return;
       }
 
-      // Collect data
+      // Collect and parse data
       const deviceId = codeInput.value.trim();
       const playlistName = document.getElementById('playlist-name').value.trim();
+      const m3uUrl = m3uInput.value.trim();
       let serverUrl = document.getElementById('server-url').value.trim();
-      const username = document.getElementById('username').value.trim();
-      const password = document.getElementById('password').value.trim();
+      let username = document.getElementById('username').value.trim();
+      let password = document.getElementById('password').value.trim();
+
+      // If M3U is pasted, make sure we run the parser on submit too
+      if (m3uUrl && (!serverUrl || !username || !password)) {
+        const parsed = parseM3uUrl(m3uUrl);
+        if (parsed) {
+          serverUrl = parsed.host;
+          username = parsed.username;
+          password = parsed.password;
+          document.getElementById('server-url').value = parsed.host;
+          document.getElementById('username').value = parsed.username;
+          document.getElementById('password').value = parsed.password;
+        }
+      }
+
+      // Validate inputs
+      if (!serverUrl || !username || !password) {
+        showError('Please paste a valid M3U URL or enter your Server URL, Username, and Password manually.');
+        return;
+      }
 
       // Normalize server URL protocol
       if (!/^https?:\/\//i.test(serverUrl)) {
