@@ -1392,6 +1392,16 @@ function parseM3uUrl(urlStr) {
 }
 
 function bindGlobalEvents() {
+  // Remote manual login button handler
+  document.getElementById('remote-manual-login-btn')?.addEventListener('click', () => {
+    showManualLoginForm();
+  });
+
+  // Manual form back to remote activation button handler
+  document.getElementById('manual-back-btn')?.addEventListener('click', () => {
+    showRemoteActivation();
+  });
+
   // Auto-extract and populate credentials when pasting M3U URL
   const m3uInput = document.getElementById('m3u-url');
   if (m3uInput) {
@@ -1531,13 +1541,7 @@ function bindGlobalEvents() {
 
   // Bind the Add New Playlist / Show Login Form button on boot selection screen
   document.getElementById('login-show-form-btn')?.addEventListener('click', () => {
-    showManualLoginForm();
-    // Also show "Back to playlists" if there is at least one saved playlist
-    getPlaylists().then(({ playlists }) => {
-      if (playlists && playlists.length > 0) {
-        document.getElementById('login-back-btn')?.classList.remove('hidden');
-      }
-    }).catch(() => {});
+    showRemoteActivation();
   });
   // Close the dropdown when clicking outside of it
   document.addEventListener('click', (e) => {
@@ -1791,38 +1795,53 @@ async function triggerFullSync() {
 // SESSION SCREEN TRANSITIONS
 // ==========================================================================
 function showLogin() {
+  showRemoteActivation();
+}
+
+function showRemoteActivation() {
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('app-container').classList.add('hidden');
-  document.getElementById('login-back-btn')?.classList.add('hidden');
   document.getElementById('login-startup-loader')?.classList.add('hidden');
-  document.getElementById('login-form').classList.remove('hidden');
+  document.getElementById('login-form').classList.add('hidden');
   document.getElementById('login-playlist-select').classList.add('hidden');
   
-  // Show remote login box and start polling
   const box = document.getElementById('remote-login-box');
   if (box) box.classList.remove('hidden');
   startRemoteLoginPolling();
 
+  // Show back to playlists button if there are playlists
+  getPlaylists().then(({ playlists }) => {
+    const backBtn = document.getElementById('login-back-btn');
+    if (backBtn) {
+      if (playlists && playlists.length > 0) {
+        backBtn.classList.remove('hidden');
+      } else {
+        backBtn.classList.add('hidden');
+      }
+    }
+  }).catch(() => {});
+
   setTimeout(() => {
-    const defaultFocus = document.getElementById('m3u-url') || document.getElementById('playlist-name');
-    if (defaultFocus) {
-      navigation.setFocus('login', defaultFocus);
+    const manualBtn = document.getElementById('remote-manual-login-btn');
+    if (manualBtn) {
+      navigation.setFocus('login', manualBtn);
     }
   }, 150);
 }
 
 function showManualLoginForm() {
+  document.getElementById('login-screen').classList.remove('hidden');
+  document.getElementById('app-container').classList.add('hidden');
   document.getElementById('login-startup-loader')?.classList.add('hidden');
   document.getElementById('login-playlist-select').classList.add('hidden');
+  document.getElementById('remote-login-box').classList.add('hidden');
   document.getElementById('login-form').classList.remove('hidden');
   
-  // Show remote login box and start polling
-  const box = document.getElementById('remote-login-box');
-  if (box) box.classList.remove('hidden');
-  startRemoteLoginPolling();
+  // Hide global back-to-playlists (manual form has its own back button)
+  document.getElementById('login-back-btn')?.classList.add('hidden');
 
   setTimeout(() => {
-    const defaultFocus = document.getElementById('m3u-url') || document.getElementById('host-url');
+    const defaultFocus = document.getElementById('m3u-url') || document.getElementById('playlist-name');
     if (defaultFocus) {
       navigation.setFocus('login', defaultFocus);
     }
@@ -1835,15 +1854,13 @@ function showPlaylistSelect(playlists) {
   document.getElementById('login-back-btn')?.classList.add('hidden');
   document.getElementById('login-startup-loader')?.classList.add('hidden');
   
-  // Hide form, show selection
+  // Hide form and remote activation box, show selection list
   document.getElementById('login-form').classList.add('hidden');
+  document.getElementById('remote-login-box').classList.add('hidden');
+  stopRemoteLoginPolling();
+
   const container = document.getElementById('login-playlist-select');
   container.classList.remove('hidden');
-  
-  // Show remote login box and start polling
-  const box = document.getElementById('remote-login-box');
-  if (box) box.classList.remove('hidden');
-  startRemoteLoginPolling();
 
   const listEl = document.getElementById('login-playlists-list');
   listEl.innerHTML = '';
@@ -1909,7 +1926,7 @@ async function deletePlaylistFromLoginScreen(id) {
     const res = await removePlaylist(id);
     if (!res.remaining) {
       state.user = null;
-      showManualLoginForm();
+      showLogin();
       return;
     }
     // Refresh the list
@@ -2017,17 +2034,13 @@ async function deletePlaylist(id) {
 
 function showAddPlaylist() {
   closePlaylistDropdown();
-  document.getElementById('app-container').classList.add('hidden');
-  document.getElementById('login-screen').classList.remove('hidden');
-  document.getElementById('login-back-btn')?.classList.remove('hidden');
-  document.getElementById('login-startup-loader')?.classList.add('hidden');
-  document.getElementById('login-form').classList.remove('hidden');
-  document.getElementById('login-playlist-select').classList.add('hidden');
   document.getElementById('host-url').value = '';
   document.getElementById('username').value = '';
   document.getElementById('password').value = '';
   const err = document.getElementById('login-error');
   if (err) err.classList.add('hidden');
+
+  showRemoteActivation();
 }
 
 function showDashboard() {

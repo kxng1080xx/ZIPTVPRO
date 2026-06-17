@@ -34,6 +34,9 @@
       <div id="login-error" class="login-error-msg hidden">Invalid login details. Please check and try again.</div>
 
       <form id="login-form" class="hidden">
+        <button type="button" class="login-back-btn" id="manual-back-btn">
+          <i data-lucide="arrow-left"></i> Back to Device Activation
+        </button>
         <div class="form-group">
           <label for="playlist-name">Playlist Name</label>
           <input type="text" id="playlist-name" placeholder="e.g. My Cord Cutter Playlist" value="Xtream Codes">
@@ -89,6 +92,12 @@
         <p class="remote-login-instructions">
           Provide this Device Code to your service provider or administrator to activate your playlist remotely.
         </p>
+        <div class="login-or-divider">
+          <span>OR SIGN IN MANUALLY</span>
+        </div>
+        <button type="button" id="remote-manual-login-btn" class="playlist-add-btn">
+          <i data-lucide="keyboard"></i> Manual Login
+        </button>
       </div>
 
       <div class="login-credits">

@@ -3091,7 +3091,7 @@ body.vod-mode .now-next-bar {
 
 #login-form button.tv-focused,
 #login-show-form-btn.tv-focused,
-#login-back-btn.tv-focused,
+.login-back-btn.tv-focused,
 .playlist-add-btn.tv-focused {
   outline-offset: 1px;
 }
