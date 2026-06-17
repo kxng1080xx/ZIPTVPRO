@@ -82,6 +82,12 @@ export class VideoPlayer {
     this.onVideoEnded = null;
     this.isVod = false;
 
+    // Retry state — reset on every new loadStream() call
+    this._retryCount = 0;
+    this._retryTimer = null;
+    this._streamUrl = null;
+    this._streamIsVod = false;
+
     this.initEventListeners();
   }
 
@@ -342,11 +348,54 @@ export class VideoPlayer {
       this.watermark.classList.add('hidden');
     }
 
+    // Reset retry state for the new stream
+    clearTimeout(this._retryTimer);
+    this._retryCount = 0;
+    this._streamUrl = url;
+    this._streamIsVod = isVod;
+
     // Stop existing streams
     this.destroyHls();
     this.destroyMpegts();
     this.hlsNetworkRetries = 0;
 
+    this._startPlayback(url, isVod);
+  }
+
+  // Show a retrying message in the spinner area
+  _showRetrying(attempt) {
+    this.spinner.innerHTML =
+      `<div class="spinner"></div>` +
+      `<span>Retrying&hellip; (attempt ${attempt}/4)</span>`;
+    this.spinner.classList.remove('video-loader-error', 'hidden');
+  }
+
+  // Schedule a full stream reload after a short delay.
+  // Called when a fatal error occurs and we still have retries left.
+  _retryStream() {
+    const MAX_RETRIES = 4;
+    this._retryCount++;
+    if (this._retryCount > MAX_RETRIES) {
+      this.showError('Failed to load stream. Check your connection and try again.');
+      return;
+    }
+    const attempt = this._retryCount;
+    console.warn(`Stream lost — retry ${attempt}/${MAX_RETRIES} in 3 s…`);
+    this._showRetrying(attempt);
+    clearTimeout(this._retryTimer);
+    this._retryTimer = setTimeout(() => {
+      // Make sure a newer loadStream() didn't reset us in the meantime
+      if (this._retryCount !== attempt) return;
+      this.destroyHls();
+      this.destroyMpegts();
+      this.hlsNetworkRetries = 0;
+      this._startPlayback(this._streamUrl, this._streamIsVod);
+    }, 3000);
+  }
+
+  // Internal: set up the HLS / MPEG-TS / native player for a given URL.
+  // Called by loadStream() and _retryStream().
+  _startPlayback(url, isVod) {
     // VOD (movies / series episodes) is a single on-demand file addressed by its
     // real container extension, so match strictly on the file type. Live streams
     // keep the looser matching (and the /live/ path heuristic).
@@ -377,7 +426,7 @@ export class VideoPlayer {
         });
         this.hls.loadSource(url);
         this.hls.attachMedia(this.video);
-        
+
         this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
           this.video.play().catch(err => console.log('Playback auto-play blocked:', err));
           this.hideSpinner();
@@ -404,15 +453,11 @@ export class VideoPlayer {
 
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
-              this.hlsNetworkRetries++;
-              if (this.hlsNetworkRetries > 4) {
-                console.error('HLS network error limit reached, giving up.');
-                this.destroyHls();
-                this.showError(this.describeStreamError(httpCode));
-              } else {
-                console.warn(`Fatal network error in HLS, recovery attempt ${this.hlsNetworkRetries}...`);
-                this.hls.startLoad();
-              }
+              // Fully tear down and reload the source — this handles network
+              // switches and brief connectivity drops better than hls.startLoad().
+              console.warn('Fatal HLS network error, scheduling retry…', data);
+              this.destroyHls();
+              this._retryStream();
               break;
             case Hls.ErrorTypes.MEDIA_ERROR:
               console.warn('Fatal media error in HLS, attempting recovery...');
@@ -426,12 +471,17 @@ export class VideoPlayer {
           }
         });
       } else if (this.video.canPlayType('application/vnd.apple.mpegurl')) {
-        // Native HLS (Safari)
+        // Native HLS (Safari / Capacitor WebView)
         this.video.src = url;
         this.video.addEventListener('loadedmetadata', () => {
           this.video.play().catch(err => console.log('Playback blocked:', err));
           this.hideSpinner();
         });
+        // Retry on native video error
+        this.video.addEventListener('error', () => {
+          console.warn('Native HLS video error, scheduling retry…');
+          this._retryStream();
+        }, { once: true });
       } else {
         this.hideSpinner();
         alert('Your browser does not support HLS streaming.');
@@ -460,8 +510,15 @@ export class VideoPlayer {
         this.mpegtsPlayer.on(mpegts.Events.ERROR, (type, detail, info) => {
           console.error('MPEG-TS player error:', type, detail, info);
           this.hideSpinner();
-          // Live .ts failed — let the app fall back to the m3u8 backup.
-          if (!isVod && this.onFatalError) this.onFatalError();
+          if (this._retryCount < 4) {
+            // Still have retries — tear down and reconnect.
+            console.warn('MPEG-TS error — scheduling retry…');
+            this.destroyMpegts();
+            this._retryStream();
+          } else {
+            // Retries exhausted — if this is a live .ts, let the app try the m3u8 fallback.
+            if (!isVod && this.onFatalError) this.onFatalError();
+          }
         });
 
         // Set video tag loaded metadata callback
@@ -882,6 +939,9 @@ export class VideoPlayer {
       document.removeEventListener('fullscreenchange', this._onFullscreenChange);
       this._onFullscreenChange = null;
     }
+    // Cancel any pending retry timer
+    clearTimeout(this._retryTimer);
+    this._retryTimer = null;
     this.destroyHls();
     this.destroyMpegts();
     if (this.video) {
