@@ -399,8 +399,16 @@ app.get('/api/proxy', async (req, res) => {
   const decodedUrl = decodeURIComponent(url);
 
   try {
-    const response = await fetch(decodedUrl);
-    if (!response.ok) {
+    const fetchHeaders = {};
+    if (req.headers.range) {
+      fetchHeaders['range'] = req.headers.range;
+    }
+
+    const response = await fetch(decodedUrl, {
+      headers: fetchHeaders
+    });
+
+    if (!response.ok && response.status !== 206) {
       return res.status(response.status).send(`Error fetching stream: ${response.statusText}`);
     }
 
@@ -435,7 +443,21 @@ app.get('/api/proxy', async (req, res) => {
       res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
       return res.send(rewrittenText);
     } else {
-      // Stream chunks (e.g. .ts, .mp4) - pipe binary response
+      // Set status to 206 if the remote server returned 206
+      if (response.status === 206) {
+        res.status(206);
+      }
+      
+      // Forward range/content-length headers
+      const contentRange = response.headers.get('content-range');
+      if (contentRange) res.setHeader('Content-Range', contentRange);
+      
+      const contentLength = response.headers.get('content-length');
+      if (contentLength) res.setHeader('Content-Length', contentLength);
+      
+      const acceptRanges = response.headers.get('accept-ranges');
+      if (acceptRanges) res.setHeader('Accept-Ranges', acceptRanges || 'bytes');
+
       res.setHeader('Content-Type', contentType || 'video/mp2t');
       
       const reader = response.body.getReader();
