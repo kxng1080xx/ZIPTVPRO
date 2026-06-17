@@ -180,6 +180,7 @@ export class EPGGrid {
     if (navigation.currentZone === 'channels') {
       navigation.focusDefault('channels');
     }
+    navigation.triggerPendingFocus();
   }
 
   // Calculate times based on now + navigation offsets

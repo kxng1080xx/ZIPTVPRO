@@ -535,6 +535,7 @@ function renderMoviesCatalog(movies) {
   if (navigation.currentZone === 'grid') {
     navigation.focusDefault('grid');
   }
+  navigation.triggerPendingFocus();
 }
 
 // ==========================================================================
@@ -601,6 +602,7 @@ function renderSeriesCatalog(seriesList) {
   if (navigation.currentZone === 'grid') {
     navigation.focusDefault('grid');
   }
+  navigation.triggerPendingFocus();
 }
 
 // TV Series Playback Dashboard controllers

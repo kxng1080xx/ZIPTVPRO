@@ -2951,7 +2951,8 @@ body.vod-mode .now-next-bar {
 .settings-action-btn.tv-focused, 
 .settings-group select.tv-focused,
 .checkbox-group input.tv-focused,
-#series-season-select.tv-focused {
+#series-season-select.tv-focused,
+#seasons-dropdown.tv-focused {
   outline-offset: 1px;
 }
 

@@ -10,6 +10,7 @@ class TVNavigation {
   constructor() {
     this.currentZone = 'categories'; // 'tabs', 'categories', 'channels', 'grid', 'player', 'modal'
     this.focusedElement = null;
+    this.pendingZone = null;
     
     // Key codes map
     this.KEYS = {
@@ -58,6 +59,9 @@ class TVNavigation {
     this.currentZone = zone;
     this.focusedElement = element;
     this.focusedElement.classList.add('tv-focused');
+    
+    // Clear pending zone on successful focus
+    this.pendingZone = null;
 
     // Scroll into view if scrollable
     this.focusedElement.scrollIntoView({
@@ -94,8 +98,17 @@ class TVNavigation {
     }
   }
 
+  triggerPendingFocus() {
+    if (this.pendingZone) {
+      const zone = this.pendingZone;
+      this.focusDefault(zone);
+    }
+  }
+
   // Automatically focus the default element when views switch
   focusDefault(zone) {
+    this.pendingZone = zone;
+
     if (zone === 'categories') {
       const activeCat = document.querySelector('.category-item.active') || document.querySelector('.category-item');
       if (activeCat) {
@@ -115,8 +128,8 @@ class TVNavigation {
         return;
       }
     } else if (zone === 'grid') {
-      // VOD Grid
-      const firstCard = document.querySelector('.vod-card');
+      // VOD Grid: query only active grid to avoid selecting hidden card elements
+      const firstCard = document.querySelector('.view-panel.active .vod-grid .vod-card');
       if (firstCard) {
         this.setFocus('grid', firstCard);
         return;
@@ -161,6 +174,12 @@ class TVNavigation {
         e.preventDefault();
       }
       return; // let standard text input fields consume arrow keys/text keys
+    }
+
+    // Recovery: if focused element is null or detached from DOM, restore default focus for current zone
+    if (!this.focusedElement || !document.body.contains(this.focusedElement)) {
+      console.warn(`TV Focus lost or detached from DOM (zone: ${this.currentZone}). Recovering...`);
+      this.focusDefault(this.currentZone);
     }
 
     // Modal check (VOD or Settings overlay)
@@ -376,7 +395,43 @@ class TVNavigation {
 
   // 4. VOD / SERIES CATALOG GRID NAVIGATION
   handleGridNavigation(e) {
-    const cards = Array.from(document.querySelectorAll('.vod-grid .vod-card'));
+    const isPageBtn = this.focusedElement.classList.contains('page-btn');
+
+    if (isPageBtn) {
+      const btns = Array.from(document.querySelectorAll('.view-panel.active .vod-pagination .page-btn'));
+      const index = btns.indexOf(this.focusedElement);
+      if (index === -1) return;
+
+      if (e.key === this.KEYS.LEFT) {
+        if (index > 0) {
+          this.setFocus('grid', btns[index - 1]);
+        } else {
+          this.focusDefault('categories');
+        }
+        e.preventDefault();
+      } else if (e.key === this.KEYS.RIGHT) {
+        if (index < btns.length - 1) {
+          this.setFocus('grid', btns[index + 1]);
+        }
+        e.preventDefault();
+      } else if (e.key === this.KEYS.UP) {
+        // Focus the bottom row of cards
+        const cards = Array.from(document.querySelectorAll('.view-panel.active .vod-grid .vod-card'));
+        if (cards.length > 0) {
+          this.setFocus('grid', cards[cards.length - 1]);
+        } else {
+          this.focusDefault('tabs');
+        }
+        e.preventDefault();
+      } else if (e.key === this.KEYS.ENTER) {
+        this.focusedElement.click();
+        e.preventDefault();
+      }
+      return;
+    }
+
+    // Otherwise, navigate the cards grid
+    const cards = Array.from(document.querySelectorAll('.view-panel.active .vod-grid .vod-card'));
     const index = cards.indexOf(this.focusedElement);
     if (index === -1) return;
 
@@ -408,6 +463,13 @@ class TVNavigation {
     } else if (e.key === this.KEYS.DOWN) {
       if (index + cols < cards.length) {
         this.setFocus('grid', cards[index + cols]);
+      } else {
+        // We are at the bottom row, navigate to page buttons
+        const btns = Array.from(document.querySelectorAll('.view-panel.active .vod-pagination .page-btn'));
+        if (btns.length > 0) {
+          const activeBtn = btns.find(b => b.classList.contains('active')) || btns[0];
+          this.setFocus('grid', activeBtn);
+        }
       }
       e.preventDefault();
     } else if (e.key === this.KEYS.UP) {
