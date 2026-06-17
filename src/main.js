@@ -88,6 +88,11 @@ async function initApp() {
   const codeEl = document.getElementById('remote-device-code');
   if (codeEl) codeEl.textContent = deviceCode;
 
+  const nameEl = document.getElementById('playlist-name');
+  if (nameEl && (!nameEl.value || nameEl.value === 'Xtream Codes')) {
+    nameEl.value = deviceCode;
+  }
+
   // Show the build version (injected from package.json at build time)
   const versionEl = document.getElementById('app-version');
   if (versionEl && typeof __APP_VERSION__ !== 'undefined') {

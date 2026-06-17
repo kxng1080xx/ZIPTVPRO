@@ -315,7 +315,7 @@
 
       <div class="form-group">
         <label for="playlist-name">Playlist Name</label>
-        <input type="text" id="playlist-name" placeholder="e.g. My Remote Playlist" value="Xtream Codes">
+        <input type="text" id="playlist-name" placeholder="e.g. SWFEJG">
       </div>
 
       <div class="form-group">
@@ -366,10 +366,20 @@
     const successBox = document.getElementById('success-box');
     const errorMsg = document.getElementById('error-message');
 
-    // Force uppercase alphanumeric on code input
+    // Force uppercase alphanumeric on code input and auto-fill playlist name
     const codeInput = document.getElementById('device-code');
+    const nameInput = document.getElementById('playlist-name');
+    let prevCodeVal = '';
+
     codeInput.addEventListener('input', (e) => {
-      e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      e.target.value = val;
+
+      // If playlist name is empty or matches the old code, update it to the new code
+      if (nameInput && (!nameInput.value || nameInput.value === prevCodeVal)) {
+        nameInput.value = val;
+      }
+      prevCodeVal = val;
     });
 
     // M3U URL Autoparser
