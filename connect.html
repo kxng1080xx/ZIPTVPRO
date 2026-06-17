@@ -315,7 +315,7 @@
 
       <div class="form-group">
         <label for="playlist-name">Playlist Name</label>
-        <input type="text" id="playlist-name" placeholder="e.g. SWFEJG">
+        <input type="text" id="playlist-name" placeholder="e.g. TV CODE">
       </div>
 
       <div class="form-group">
@@ -452,9 +452,9 @@
         }
       }
 
-      // Validate inputs
+      // Validate: require EITHER valid M3U URL OR (server + username + password)
       if (!serverUrl || !username || !password) {
-        showError('Please paste a valid M3U URL or enter your Server URL, Username, and Password manually.');
+        showError('Please provide either:<br>1. A valid M3U URL, OR<br>2. Server URL, Username, and Password');
         return;
       }
 
