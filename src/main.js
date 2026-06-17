@@ -1400,16 +1400,55 @@ function startClock() {
   clockInterval = setInterval(update, 1000);
 }
 
+function parseM3uUrl(urlStr) {
+  try {
+    const url = new URL(urlStr.trim());
+    const host = url.origin;
+    const username = url.searchParams.get('username') || url.searchParams.get('auth_username');
+    const password = url.searchParams.get('password') || url.searchParams.get('auth_password');
+    if (host && username && password) {
+      return { host, username, password };
+    }
+  } catch (e) {}
+  return null;
+}
+
 function bindGlobalEvents() {
+  // Auto-extract and populate credentials when pasting M3U URL
+  const m3uInput = document.getElementById('m3u-url');
+  if (m3uInput) {
+    const handleM3uInput = () => {
+      const val = m3uInput.value;
+      const parsed = parseM3uUrl(val);
+      if (parsed) {
+        document.getElementById('host-url').value = parsed.host;
+        document.getElementById('username').value = parsed.username;
+        document.getElementById('password').value = parsed.password;
+        
+        // Auto-set playlist name if empty or default
+        try {
+          const host = new URL(parsed.host).hostname;
+          const nameEl = document.getElementById('playlist-name');
+          if (nameEl && (!nameEl.value || nameEl.value === 'Xtream Codes')) {
+            nameEl.value = host;
+          }
+        } catch (e) {}
+      }
+    };
+    m3uInput.addEventListener('input', handleM3uInput);
+    m3uInput.addEventListener('paste', () => setTimeout(handleM3uInput, 20));
+  }
+
   // Login Form Connect
   const loginForm = document.getElementById('login-form');
   loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const playlistName = document.getElementById('playlist-name').value;
-    const hostUrl = document.getElementById('host-url').value;
-    const username = document.getElementById('username').value;
-    const password = document.getElementById('password').value;
+    let hostUrl = document.getElementById('host-url').value;
+    let username = document.getElementById('username').value;
+    let password = document.getElementById('password').value;
+    const m3uUrl = document.getElementById('m3u-url').value;
 
     const errorMsg = document.getElementById('login-error');
     const btnText = document.querySelector('#login-btn .btn-text');
@@ -1418,6 +1457,33 @@ function bindGlobalEvents() {
     errorMsg.classList.add('hidden');
     btnText.classList.add('hidden');
     loader.classList.remove('hidden');
+
+    // Parse M3U URL on submit if fields are empty
+    if (m3uUrl && (!hostUrl || !username || !password)) {
+      const parsed = parseM3uUrl(m3uUrl);
+      if (parsed) {
+        hostUrl = parsed.host;
+        username = parsed.username;
+        password = parsed.password;
+        document.getElementById('host-url').value = hostUrl;
+        document.getElementById('username').value = username;
+        document.getElementById('password').value = password;
+      } else {
+        errorMsg.textContent = 'Could not extract login details from the M3U URL. Please check the URL or enter details manually.';
+        errorMsg.classList.remove('hidden');
+        btnText.classList.remove('hidden');
+        loader.classList.add('hidden');
+        return;
+      }
+    }
+
+    if (!hostUrl || !username || !password) {
+      errorMsg.textContent = 'Please enter either a valid M3U URL or your host, username, and password manually.';
+      errorMsg.classList.remove('hidden');
+      btnText.classList.remove('hidden');
+      loader.classList.add('hidden');
+      return;
+    }
 
     try {
       const res = await login(hostUrl, username, password, playlistName);
@@ -1562,11 +1628,16 @@ function bindGlobalEvents() {
     if (confirm('Are you sure you want to disconnect this playlist? This will erase local cache.')) {
       settingsModal.classList.add('hidden');
       playerInstance.stop();
-      const res = await logout();
-      if (res && res.remaining > 0) {
-        await switchToPlaylist(res.activeId);
-      } else {
-        state.user = null;
+      await logout();
+      state.user = null;
+      try {
+        const { playlists } = await getPlaylists();
+        if (playlists && playlists.length > 0) {
+          showPlaylistSelect(playlists);
+        } else {
+          showLogin();
+        }
+      } catch (err) {
         showLogin();
       }
     }
@@ -1745,19 +1816,36 @@ function showLogin() {
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('app-container').classList.add('hidden');
   document.getElementById('login-back-btn')?.classList.add('hidden');
+  document.getElementById('login-startup-loader')?.classList.add('hidden');
   document.getElementById('login-form').classList.remove('hidden');
   document.getElementById('login-playlist-select').classList.add('hidden');
+  
+  setTimeout(() => {
+    const defaultFocus = document.getElementById('m3u-url') || document.getElementById('playlist-name');
+    if (defaultFocus) {
+      navigation.setFocus('login', defaultFocus);
+    }
+  }, 150);
 }
 
 function showManualLoginForm() {
+  document.getElementById('login-startup-loader')?.classList.add('hidden');
   document.getElementById('login-playlist-select').classList.add('hidden');
   document.getElementById('login-form').classList.remove('hidden');
+  
+  setTimeout(() => {
+    const defaultFocus = document.getElementById('m3u-url') || document.getElementById('host-url');
+    if (defaultFocus) {
+      navigation.setFocus('login', defaultFocus);
+    }
+  }, 150);
 }
 
 function showPlaylistSelect(playlists) {
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('app-container').classList.add('hidden');
   document.getElementById('login-back-btn')?.classList.add('hidden');
+  document.getElementById('login-startup-loader')?.classList.add('hidden');
   
   // Hide form, show selection
   document.getElementById('login-form').classList.add('hidden');
@@ -1816,6 +1904,10 @@ function showPlaylistSelect(playlists) {
   });
 
   if (window.lucide) lucide.createIcons({ scope: listEl });
+
+  setTimeout(() => {
+    navigation.focusDefault('playlist-select');
+  }, 150);
 }
 
 async function deletePlaylistFromLoginScreen(id) {
@@ -1881,8 +1973,15 @@ async function togglePlaylistDropdown() {
   if (dd.classList.contains('hidden')) {
     await renderPlaylistDropdown();
     dd.classList.remove('hidden');
+    setTimeout(() => {
+      navigation.focusDefault('playlist-dropdown');
+    }, 150);
   } else {
     dd.classList.add('hidden');
+    const profileBtn = document.getElementById('profile-card-btn');
+    if (profileBtn) {
+      navigation.setFocus('tabs', profileBtn);
+    }
   }
 }
 
@@ -1928,6 +2027,9 @@ function showAddPlaylist() {
   document.getElementById('app-container').classList.add('hidden');
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('login-back-btn')?.classList.remove('hidden');
+  document.getElementById('login-startup-loader')?.classList.add('hidden');
+  document.getElementById('login-form').classList.remove('hidden');
+  document.getElementById('login-playlist-select').classList.add('hidden');
   document.getElementById('host-url').value = '';
   document.getElementById('username').value = '';
   document.getElementById('password').value = '';

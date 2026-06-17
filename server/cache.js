@@ -1,12 +1,13 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import os from 'os';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const DATA_DIR = (process.env.ELECTRON_RUNNING === 'true' && process.env.APPDATA)
-  ? path.join(process.env.APPDATA, 'ZIPTV Pro', 'data')
+const DATA_DIR = process.env.ELECTRON_RUNNING === 'true'
+  ? path.join(os.homedir(), '.ziptv_pro_data')
   : path.join(__dirname, 'data');
 
 const CREDS_FILE = path.join(DATA_DIR, 'credentials.json');
@@ -209,6 +210,14 @@ export function removePlaylist(id) {
     }
   }
   return { success: true, remaining: store.playlists.length, activeId: store.activeId, wasActive };
+}
+
+export function deactivateActivePlaylist() {
+  const store = readStore();
+  store.activeId = null;
+  writeStore(store);
+  clearPlaylistData();
+  return { success: true, remaining: store.playlists.length, activeId: null };
 }
 
 export function clearCredentials() {

@@ -469,7 +469,7 @@ export class EPGGrid {
     const listings = (this.epgData[String(streamId)] || [])
       .slice()
       .sort((a, b) => parseInt(a.start_timestamp) - parseInt(b.start_timestamp));
-    if (listings.length === 0) return { current: null, next: null };
+    if (listings.length === 0) return { current: null, next: null, upcoming: [] };
 
     const now = Date.now();
     const startMs = (p) => parseInt(p.start_timestamp) * 1000;
@@ -479,15 +479,19 @@ export class EPGGrid {
     // program that hasn't ended yet (handles schedule gaps / rounding).
     let idx = listings.findIndex((p) => now >= startMs(p) && now < endMs(p));
     if (idx === -1) idx = listings.findIndex((p) => endMs(p) > now);
-    if (idx === -1) return { current: null, next: null }; // everything is in the past
+    if (idx === -1) return { current: null, next: null, upcoming: [] }; // everything is in the past
 
-    return { current: listings[idx], next: listings[idx + 1] || null };
+    return { 
+      current: listings[idx], 
+      next: listings[idx + 1] || null,
+      upcoming: listings.slice(idx + 1, idx + 5) // return up to 4 upcoming programs
+    };
   }
 
   // Build the inline, time-sectioned guide markup shown on a channel row:
-  // a NOW segment (time + title) and a NEXT segment (time + title).
+  // a NOW segment and multiple upcoming NEXT segments.
   buildInlineGuide(nn) {
-    if (!nn || (!nn.current && !nn.next)) return '';
+    if (!nn || (!nn.current && (!nn.upcoming || nn.upcoming.length === 0))) return '';
     const seg = (p, cls) => {
       if (!p) return '';
       const ts = parseInt(p.start_timestamp);
@@ -499,7 +503,14 @@ export class EPGGrid {
         + `<span class="now-seg-title">${p.title || ''}</span>`
         + `</span>`;
     };
-    return seg(nn.current, 'is-now') + seg(nn.next, 'is-next');
+    
+    let html = seg(nn.current, 'is-now');
+    if (nn.upcoming && nn.upcoming.length > 0) {
+      nn.upcoming.forEach(prog => {
+        html += seg(prog, 'is-next');
+      });
+    }
+    return html;
   }
 
   getCurrentProgramBlock(streamId, startTime, endTime) {

@@ -309,17 +309,11 @@ export async function logout() {
     if (!response.ok) throw new Error('Logout failed');
     return response.json();
   } else {
-    // Disconnect the active playlist (keep any others) and clear cached data.
-    const activeId = getActiveIdLocal();
-    const list = readPlaylists().filter(p => p.id !== activeId);
-    writePlaylists(list);
-    const newActiveId = list[0] ? list[0].id : null;
-    setActiveIdLocal(newActiveId);
+    // Disconnect/deactivate the active playlist (but keep it saved in playlists list)
+    setActiveIdLocal(null);
     await clearLocalCache();
-    if (newActiveId) {
-      await loadPlaylistFavoritesAndHistoryIntoDB(list[0]);
-    }
-    return { success: true, remaining: list.length, activeId: getActiveIdLocal() };
+    const list = readPlaylists();
+    return { success: true, remaining: list.length, activeId: null };
   }
 }
 
@@ -454,7 +448,65 @@ export async function syncPlaylist(progressCallback = null) {
       const err = await response.json();
       throw new Error(err.error || 'Sync failed');
     }
-    return response.json();
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    let result = null;
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // Keep the last incomplete line in buffer
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (trimmed.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(trimmed.slice(6));
+            if (data.error) {
+              throw new Error(data.error);
+            }
+            if (data.progress && progressCallback) {
+              progressCallback(data.progress);
+            }
+            if (data.success) {
+              result = data;
+            }
+          } catch (e) {
+            console.error('Error parsing SSE chunk:', e);
+            if (e.message && e.message.includes('Sync failed')) {
+              throw e;
+            }
+          }
+        }
+      }
+    }
+
+    // Process any remaining text in buffer
+    if (buffer) {
+      const trimmed = buffer.trim();
+      if (trimmed.startsWith('data: ')) {
+        try {
+          const data = JSON.parse(trimmed.slice(6));
+          if (data.error) throw new Error(data.error);
+          if (data.progress && progressCallback) progressCallback(data.progress);
+          if (data.success) result = data;
+        } catch (e) {
+          console.error('Error parsing trailing SSE chunk:', e);
+          if (e.message && e.message.includes('Sync failed')) throw e;
+        }
+      }
+    }
+
+    if (result) {
+      return result;
+    }
+    throw new Error('Sync connection terminated without success status.');
   } else {
     const creds = getCredentialsLocal();
     if (!creds) throw new Error('No playlist credentials found');
@@ -713,11 +765,35 @@ export async function getEPG(streamId) {
 
     const decodeBase64Safe = (str) => {
       if (!str) return '';
-      try {
-        return atob(str);
-      } catch (e) {
-        return str;
-      }
+      const words = str.split(' ');
+      const decodedWords = words.map(word => {
+        if (!word) return '';
+        let padded = word;
+        while (padded.length % 4 !== 0) {
+          padded += '=';
+        }
+        const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+        if (!base64Regex.test(padded)) return word;
+        try {
+          const binaryString = atob(padded);
+          const len = binaryString.length;
+          const bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          
+          const decodedUtf8 = new TextDecoder('utf-8').decode(bytes);
+          const hasReplacement = decodedUtf8.includes('\ufffd');
+          const isPrintableUtf8 = /^[\x20-\x7E\r\n\t\u00A0-\uFFFF]*$/.test(decodedUtf8);
+          if (!hasReplacement && isPrintableUtf8) return decodedUtf8;
+          
+          const decodedLatin1 = new TextDecoder('windows-1252').decode(bytes);
+          const isPrintableLatin1 = /^[\x20-\x7E\r\n\t\x80-\xFF]*$/.test(decodedLatin1);
+          if (isPrintableLatin1) return decodedLatin1;
+        } catch (err) {}
+        return word;
+      });
+      return decodedWords.join(' ').replace(/\s+/g, ' ').trim();
     };
 
     const listings = rawListings.map(prog => {

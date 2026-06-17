@@ -26,26 +26,39 @@
         <h2>ZIPTV Pro</h2>
         <p>Connect your Xtream Codes subscription</p>
       </div>
-      
-      <form id="login-form">
+      <div id="login-startup-loader" class="login-startup-loader">
+        <div class="startup-spinner"></div>
+        <p class="startup-loading-text">Loading application session...</p>
+      </div>
+
+      <div id="login-error" class="login-error-msg hidden">Invalid login details. Please check and try again.</div>
+
+      <form id="login-form" class="hidden">
         <div class="form-group">
           <label for="playlist-name">Playlist Name</label>
           <input type="text" id="playlist-name" placeholder="e.g. My Cord Cutter Playlist" value="Xtream Codes">
         </div>
         <div class="form-group">
+          <label for="m3u-url">Paste M3U URL (Auto-Extracts Login)</label>
+          <input type="url" id="m3u-url" placeholder="Paste your full M3U URL here">
+        </div>
+        <div class="login-or-divider">
+          <span>OR ENTER CREDENTIALS MANUALLY</span>
+        </div>
+        <div class="form-group">
           <label for="host-url">Server URL (Host & Port)</label>
-          <input type="text" id="host-url" placeholder="e.g. http://your-provider-url.com:8080" required>
+          <input type="text" id="host-url" placeholder="e.g. http://your-provider-url.com:8080">
         </div>
-        <div class="form-group">
-          <label for="username">Username</label>
-          <input type="text" id="username" placeholder="Enter username" required>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="username">Username</label>
+            <input type="text" id="username" placeholder="Enter username">
+          </div>
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" placeholder="Enter password">
+          </div>
         </div>
-        <div class="form-group">
-          <label for="password">Password</label>
-          <input type="password" id="password" placeholder="Enter password" required>
-        </div>
-        
-        <div id="login-error" class="login-error-msg hidden">Invalid login details. Please check and try again.</div>
         
         <button type="submit" id="login-btn">
           <span class="btn-text">Connect Playlist</span>

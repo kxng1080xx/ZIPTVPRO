@@ -101,7 +101,8 @@ import {
   getFavorites,
   getPlaylistsList,
   setActivePlaylist,
-  removePlaylist
+  removePlaylist,
+  deactivateActivePlaylist
 } from './cache.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -260,11 +261,9 @@ app.get('/api/status', async (req, res) => {
   }
 });
 
-// 3. API: Logout (removes the active playlist; keeps any others)
+// 3. API: Logout (clears active playlist session, keeps saved playlists)
 app.post('/api/logout', (req, res) => {
-  const creds = getCredentials();
-  if (!creds) return res.json({ success: true, remaining: 0, activeId: null });
-  return res.json(removePlaylist(creds.id));
+  res.json(deactivateActivePlaylist());
 });
 
 // 3b. API: Playlists — list / switch / remove
@@ -305,33 +304,45 @@ app.post('/api/sync', async (req, res) => {
     return res.status(401).json({ error: 'No playlist configuration found' });
   }
 
+  // Set EventStream headers
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive'
+  });
+
+  const sendEvent = (data) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
   const baseApiUrl = `${creds.server_url}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}`;
 
   try {
-    // Run fetches sequentially to prevent throttling on cheaper IPTV services
-    console.log('Syncing categories...');
+    sendEvent({ progress: 'Syncing Live Categories...' });
     const liveCatRes = await fetchXtream(`${baseApiUrl}&action=get_live_categories`);
     const liveCategories = await liveCatRes.json();
 
+    sendEvent({ progress: 'Syncing Movies Categories...' });
     const vodCatRes = await fetchXtream(`${baseApiUrl}&action=get_vod_categories`);
     const vodCategories = await vodCatRes.json();
 
+    sendEvent({ progress: 'Syncing Series Categories...' });
     const seriesCatRes = await fetchXtream(`${baseApiUrl}&action=get_series_categories`);
     const seriesCategories = await seriesCatRes.json();
 
-    console.log('Syncing streams (live)...');
+    sendEvent({ progress: 'Downloading Live Streams...' });
     const liveStreamsRes = await fetchXtream(`${baseApiUrl}&action=get_live_streams`);
     const liveStreams = await liveStreamsRes.json();
 
-    console.log('Syncing streams (movies)...');
+    sendEvent({ progress: 'Downloading Movie Streams...' });
     const vodStreamsRes = await fetchXtream(`${baseApiUrl}&action=get_vod_streams`);
     const vodStreams = await vodStreamsRes.json();
 
-    console.log('Syncing streams (series)...');
+    sendEvent({ progress: 'Downloading Series List...' });
     const seriesRes = await fetchXtream(`${baseApiUrl}&action=get_series`);
     const seriesStreams = await seriesRes.json();
 
-    console.log('Saving all cached contents...');
+    sendEvent({ progress: 'Saving all cached contents...' });
     updatePlaylistCache({
       live_categories: Array.isArray(liveCategories) ? liveCategories : [],
       live_streams: Array.isArray(liveStreams) ? liveStreams : [],
@@ -341,17 +352,19 @@ app.post('/api/sync', async (req, res) => {
       series_streams: Array.isArray(seriesStreams) ? seriesStreams : []
     });
 
-    res.json({
+    sendEvent({
       success: true,
       counts: {
-        live: liveStreams.length,
-        movies: vodStreams.length,
-        series: seriesStreams.length
+        live: Array.isArray(liveStreams) ? liveStreams.length : 0,
+        movies: Array.isArray(vodStreams) ? vodStreams.length : 0,
+        series: Array.isArray(seriesStreams) ? seriesStreams.length : 0
       }
     });
+    res.end();
   } catch (err) {
     console.error('Sync error:', err);
-    res.status(500).json({ error: `Sync failed: ${err.message}` });
+    sendEvent({ error: `Sync failed: ${err.message}` });
+    res.end();
   }
 });
 
@@ -387,14 +400,29 @@ app.get('/api/streams', (req, res) => {
 // Base64 helper to safely decode strings
 function decodeBase64Safe(str) {
   if (!str) return '';
-  const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
-  if (!base64Regex.test(str)) return str;
-  try {
-    const decoded = Buffer.from(str, 'base64').toString('utf8');
-    const isPrintable = /^[\x20-\x7E\r\n\t\xA0-\xFF]*$/.test(decoded);
-    if (isPrintable) return decoded;
-  } catch (err) {}
-  return str;
+  const words = str.split(' ');
+  const decodedWords = words.map(word => {
+    if (!word) return '';
+    let padded = word;
+    while (padded.length % 4 !== 0) {
+      padded += '=';
+    }
+    const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+    if (!base64Regex.test(padded)) return word;
+    try {
+      const buf = Buffer.from(padded, 'base64');
+      const decodedUtf8 = buf.toString('utf8');
+      const hasReplacement = decodedUtf8.includes('\ufffd');
+      const isPrintableUtf8 = /^[\x20-\x7E\r\n\t\u00A0-\uFFFF]*$/.test(decodedUtf8);
+      if (!hasReplacement && isPrintableUtf8) return decodedUtf8;
+      
+      const decodedLatin1 = buf.toString('latin1');
+      const isPrintableLatin1 = /^[\x20-\x7E\r\n\t\x80-\xFF]*$/.test(decodedLatin1);
+      if (isPrintableLatin1) return decodedLatin1;
+    } catch (err) {}
+    return word;
+  });
+  return decodedWords.join(' ').replace(/\s+/g, ' ').trim();
 }
 
 // Normalize listing helper to decode base64 fields and standardize end_timestamp keys

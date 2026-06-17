@@ -98,6 +98,9 @@ class TVNavigation {
       inline: 'nearest'
     });
 
+    // Custom robust scroll into view helper to fix WebView/SmartTV scroll issues
+    this.ensureVisibleInScrollParent(element);
+
     // Native focus management to prevent Smart TV/Android Webview focus stealing/keyboard popups
     if (element.tagName !== 'INPUT') {
       if (!element.hasAttribute('tabindex')) {
@@ -123,6 +126,35 @@ class TVNavigation {
     if (this.focusedElement) {
       this.focusedElement.classList.remove('tv-focused');
       this.focusedElement = null;
+    }
+  }
+
+  // Ensure element is visible in its closest scrollable parent
+  ensureVisibleInScrollParent(element) {
+    if (!element) return;
+    
+    // Find closest parent that has overflow-y auto/scroll
+    let parent = element.parentElement;
+    while (parent && parent !== document.body) {
+      const style = window.getComputedStyle(parent);
+      const overflowY = style.getPropertyValue('overflow-y');
+      const isScrollable = (overflowY === 'auto' || overflowY === 'scroll') && parent.scrollHeight > parent.clientHeight;
+      
+      if (isScrollable) {
+        const parentRect = parent.getBoundingClientRect();
+        const elementRect = element.getBoundingClientRect();
+        const padding = 6; // small padding from container edge
+        
+        if (elementRect.top < parentRect.top + padding) {
+          // Scrolled above: align top
+          parent.scrollTop -= (parentRect.top + padding - elementRect.top);
+        } else if (elementRect.bottom > parentRect.bottom - padding) {
+          // Scrolled below: align bottom
+          parent.scrollTop += (elementRect.bottom - (parentRect.bottom - padding));
+        }
+        break; // Only scroll the nearest scrollable parent
+      }
+      parent = parent.parentElement;
     }
   }
 
@@ -187,6 +219,34 @@ class TVNavigation {
         this.setFocus('series-episodes', select);
         return;
       }
+    } else if (zone === 'login') {
+      const firstInput = document.getElementById('m3u-url') || document.getElementById('playlist-name');
+      if (firstInput) {
+        this.setFocus('login', firstInput);
+        return;
+      }
+    } else if (zone === 'playlist-select') {
+      const firstRow = document.querySelector('#login-playlists-list .playlist-row');
+      if (firstRow) {
+        this.setFocus('playlist-select', firstRow);
+        return;
+      }
+      const addBtn = document.getElementById('login-show-form-btn');
+      if (addBtn) {
+        this.setFocus('playlist-select', addBtn);
+        return;
+      }
+    } else if (zone === 'playlist-dropdown') {
+      const firstRow = document.querySelector('#playlist-dropdown-list .playlist-row');
+      if (firstRow) {
+        this.setFocus('playlist-dropdown', firstRow);
+        return;
+      }
+      const addBtn = document.getElementById('playlist-add-btn');
+      if (addBtn) {
+        this.setFocus('playlist-dropdown', addBtn);
+        return;
+      }
     }
     
     this.clearFocus();
@@ -200,15 +260,23 @@ class TVNavigation {
       return;
     }
 
-    // Ignore TV navigation if user is typing in search boxes
+    // Ignore TV navigation if user is typing in search boxes or inputs
     const activeEl = document.activeElement;
+    const isLoginInput = activeEl && activeEl.tagName === 'INPUT' && 
+      ['playlist-name', 'm3u-url', 'host-url', 'username', 'password'].includes(activeEl.id);
+
     if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
-      if (e.key === this.KEYS.ENTER && activeEl.id === 'categories-search') {
-        activeEl.blur(); // blur search box on enter
-        this.focusDefault('categories');
-        e.preventDefault();
+      if (isLoginInput && (e.key === this.KEYS.UP || e.key === this.KEYS.DOWN)) {
+        activeEl.blur();
+        // Allow fall-through to standard navigation below
+      } else {
+        if (e.key === this.KEYS.ENTER && activeEl.id === 'categories-search') {
+          activeEl.blur();
+          this.focusDefault('categories');
+          e.preventDefault();
+        }
+        return; // let standard text input fields consume arrow keys/text keys
       }
-      return; // let standard text input fields consume arrow keys/text keys
     }
 
     // Recovery: if focused element is null or detached from DOM, restore default focus for current zone
@@ -221,6 +289,12 @@ class TVNavigation {
     const activeModal = document.querySelector('.modal-overlay:not(.hidden)');
     if (activeModal) {
       this.handleModalNavigation(e, activeModal);
+      return;
+    }
+
+    const activeDropdown = document.querySelector('.playlist-dropdown:not(.hidden)');
+    if (activeDropdown) {
+      this.handlePlaylistDropdownNavigation(e);
       return;
     }
 
@@ -237,6 +311,9 @@ class TVNavigation {
       case 'tabs':
         this.handleTabsNavigation(e);
         break;
+      case 'playlist-dropdown':
+        this.handlePlaylistDropdownNavigation(e);
+        break;
       case 'categories':
         this.handleCategoriesNavigation(e);
         break;
@@ -252,6 +329,12 @@ class TVNavigation {
       case 'series-episodes':
         this.handleSeriesEpisodesNavigation(e);
         break;
+      case 'login':
+        this.handleLoginFormNavigation(e);
+        break;
+      case 'playlist-select':
+        this.handlePlaylistSelectNavigation(e);
+        break;
       default:
         // Default recovery
         this.focusDefault('categories');
@@ -262,23 +345,32 @@ class TVNavigation {
   // 1. TABS HEADER NAVIGATION
   handleTabsNavigation(e) {
     const tabs = Array.from(document.querySelectorAll('.nav-tab'));
-    const index = tabs.indexOf(this.focusedElement);
+    const profileBtn = document.getElementById('profile-card-btn');
+    const syncBtn = document.getElementById('sync-btn');
+    const settingsBtn = document.getElementById('settings-btn');
+    
+    const headerItems = [...tabs];
+    if (profileBtn && profileBtn.offsetParent !== null) headerItems.push(profileBtn);
+    if (syncBtn && syncBtn.offsetParent !== null) headerItems.push(syncBtn);
+    if (settingsBtn && settingsBtn.offsetParent !== null) headerItems.push(settingsBtn);
+
+    const index = headerItems.indexOf(this.focusedElement);
     if (index === -1) return;
 
     if (e.key === this.KEYS.LEFT) {
       if (index > 0) {
-        this.setFocus('tabs', tabs[index - 1]);
-        tabs[index - 1].click(); // click/change tab immediately
+        this.setFocus('tabs', headerItems[index - 1]);
+        if (headerItems[index - 1].classList.contains('nav-tab')) {
+          headerItems[index - 1].click();
+        }
       }
       e.preventDefault();
     } else if (e.key === this.KEYS.RIGHT) {
-      if (index < tabs.length - 1) {
-        this.setFocus('tabs', tabs[index + 1]);
-        tabs[index + 1].click();
-      } else {
-        // Move to Settings button
-        const settings = document.getElementById('settings-btn');
-        if (settings) this.setFocus('tabs', settings);
+      if (index < headerItems.length - 1) {
+        this.setFocus('tabs', headerItems[index + 1]);
+        if (headerItems[index + 1].classList.contains('nav-tab')) {
+          headerItems[index + 1].click();
+        }
       }
       e.preventDefault();
     } else if (e.key === this.KEYS.DOWN) {
@@ -288,20 +380,6 @@ class TVNavigation {
     } else if (e.key === this.KEYS.ENTER) {
       this.focusedElement.click();
       e.preventDefault();
-    }
-    
-    // Settings focus override
-    if (this.focusedElement.id === 'settings-btn') {
-      if (e.key === this.KEYS.LEFT) {
-        this.setFocus('tabs', tabs[tabs.length - 1]);
-        e.preventDefault();
-      } else if (e.key === this.KEYS.ENTER) {
-        this.focusedElement.click();
-        e.preventDefault();
-      } else if (e.key === this.KEYS.DOWN) {
-        this.focusDefault('categories');
-        e.preventDefault();
-      }
     }
   }
 
@@ -861,6 +939,235 @@ class TVNavigation {
     });
     
     return closest;
+  }
+  handleLoginFormNavigation(e) {
+    const backBtn = document.getElementById('login-back-btn');
+    const nameEl = document.getElementById('playlist-name');
+    const m3uEl = document.getElementById('m3u-url');
+    const hostEl = document.getElementById('host-url');
+    const userEl = document.getElementById('username');
+    const passEl = document.getElementById('password');
+    const loginBtn = document.getElementById('login-btn');
+
+    // Define the grid of elements
+    const grid = [];
+    if (backBtn && !backBtn.classList.contains('hidden') && backBtn.offsetParent !== null) {
+      grid.push([backBtn]);
+    }
+    if (nameEl && nameEl.offsetParent !== null) grid.push([nameEl]);
+    if (m3uEl && m3uEl.offsetParent !== null) grid.push([m3uEl]);
+    if (hostEl && hostEl.offsetParent !== null) grid.push([hostEl]);
+    
+    const row = [];
+    if (userEl && userEl.offsetParent !== null) row.push(userEl);
+    if (passEl && passEl.offsetParent !== null) row.push(passEl);
+    if (row.length > 0) grid.push(row);
+
+    if (loginBtn && loginBtn.offsetParent !== null) grid.push([loginBtn]);
+
+    // Find current position in grid
+    let r = -1;
+    let c = -1;
+    for (let i = 0; i < grid.length; i++) {
+      const colIdx = grid[i].indexOf(this.focusedElement);
+      if (colIdx !== -1) {
+        r = i;
+        c = colIdx;
+        break;
+      }
+    }
+
+    if (r === -1) {
+      // Fallback
+      const defaultFocus = document.getElementById('m3u-url') || document.getElementById('playlist-name');
+      if (defaultFocus) this.setFocus('login', defaultFocus);
+      return;
+    }
+
+    if (e.key === this.KEYS.DOWN) {
+      if (r < grid.length - 1) {
+        const nextRow = grid[r + 1];
+        const nextColIdx = Math.min(c, nextRow.length - 1);
+        this.setFocus('login', nextRow[nextColIdx]);
+      }
+      e.preventDefault();
+    } else if (e.key === this.KEYS.UP) {
+      if (r > 0) {
+        const prevRow = grid[r - 1];
+        const prevColIdx = Math.min(c, prevRow.length - 1);
+        this.setFocus('login', prevRow[prevColIdx]);
+      }
+      e.preventDefault();
+    } else if (e.key === this.KEYS.LEFT) {
+      if (grid[r].length > 1 && c > 0) {
+        this.setFocus('login', grid[r][c - 1]);
+        e.preventDefault();
+      }
+    } else if (e.key === this.KEYS.RIGHT) {
+      if (grid[r].length > 1 && c < grid[r].length - 1) {
+        this.setFocus('login', grid[r][c + 1]);
+        e.preventDefault();
+      }
+    } else if (e.key === this.KEYS.ENTER) {
+      if (this.focusedElement.tagName === 'INPUT') {
+        this.focusedElement.focus();
+      } else {
+        this.focusedElement.click();
+      }
+      e.preventDefault();
+    }
+  }
+
+  handlePlaylistSelectNavigation(e) {
+    const backBtn = document.getElementById('login-back-btn');
+    const rows = Array.from(document.querySelectorAll('#login-playlists-list .playlist-row'));
+    const addBtn = document.getElementById('login-show-form-btn');
+
+    // Create a flat list of focusable rows/buttons
+    const items = [];
+    if (backBtn && !backBtn.classList.contains('hidden') && backBtn.offsetParent !== null) {
+      items.push(backBtn);
+    }
+    items.push(...rows);
+    if (addBtn && addBtn.offsetParent !== null) {
+      items.push(addBtn);
+    }
+
+    // Find if focused element is a delete button
+    const isDelBtn = this.focusedElement && this.focusedElement.classList.contains('playlist-row-del');
+    let activeRow = null;
+    if (isDelBtn) {
+      activeRow = this.focusedElement.closest('.playlist-row');
+    }
+
+    const index = items.indexOf(isDelBtn ? activeRow : this.focusedElement);
+
+    if (index === -1) {
+      if (items[0]) this.setFocus('playlist-select', items[0]);
+      return;
+    }
+
+    if (e.key === this.KEYS.DOWN) {
+      if (index < items.length - 1) {
+        const nextItem = items[index + 1];
+        if (isDelBtn && nextItem.classList.contains('playlist-row')) {
+          const delBtn = nextItem.querySelector('.playlist-row-del');
+          this.setFocus('playlist-select', delBtn || nextItem);
+        } else {
+          this.setFocus('playlist-select', nextItem);
+        }
+      }
+      e.preventDefault();
+    } else if (e.key === this.KEYS.UP) {
+      if (index > 0) {
+        const prevItem = items[index - 1];
+        if (isDelBtn && prevItem.classList.contains('playlist-row')) {
+          const delBtn = prevItem.querySelector('.playlist-row-del');
+          this.setFocus('playlist-select', delBtn || prevItem);
+        } else {
+          this.setFocus('playlist-select', prevItem);
+        }
+      }
+      e.preventDefault();
+    } else if (e.key === this.KEYS.RIGHT) {
+      if (!isDelBtn && this.focusedElement.classList.contains('playlist-row')) {
+        const delBtn = this.focusedElement.querySelector('.playlist-row-del');
+        if (delBtn) {
+          this.setFocus('playlist-select', delBtn);
+        }
+      }
+      e.preventDefault();
+    } else if (e.key === this.KEYS.LEFT) {
+      if (isDelBtn && activeRow) {
+        this.setFocus('playlist-select', activeRow);
+      }
+      e.preventDefault();
+    } else if (e.key === this.KEYS.ENTER) {
+      this.focusedElement.click();
+      e.preventDefault();
+    }
+  }
+
+  handlePlaylistDropdownNavigation(e) {
+    const rows = Array.from(document.querySelectorAll('#playlist-dropdown-list .playlist-row'));
+    const addBtn = document.getElementById('playlist-add-btn');
+
+    // Create a flat list of focusable rows/buttons
+    const items = [...rows];
+    if (addBtn && addBtn.offsetParent !== null) {
+      items.push(addBtn);
+    }
+
+    // Find if focused element is a delete button
+    const isDelBtn = this.focusedElement && this.focusedElement.classList.contains('playlist-row-del');
+    let activeRow = null;
+    if (isDelBtn) {
+      activeRow = this.focusedElement.closest('.playlist-row');
+    }
+
+    const index = items.indexOf(isDelBtn ? activeRow : this.focusedElement);
+
+    if (index === -1) {
+      if (items[0]) this.setFocus('playlist-dropdown', items[0]);
+      return;
+    }
+
+    if (e.key === this.KEYS.DOWN) {
+      if (index < items.length - 1) {
+        const nextItem = items[index + 1];
+        if (isDelBtn && nextItem.classList.contains('playlist-row')) {
+          const delBtn = nextItem.querySelector('.playlist-row-del');
+          this.setFocus('playlist-dropdown', delBtn || nextItem);
+        } else {
+          this.setFocus('playlist-dropdown', nextItem);
+        }
+      }
+      e.preventDefault();
+    } else if (e.key === this.KEYS.UP) {
+      if (index > 0) {
+        const prevItem = items[index - 1];
+        if (isDelBtn && prevItem.classList.contains('playlist-row')) {
+          const delBtn = prevItem.querySelector('.playlist-row-del');
+          this.setFocus('playlist-dropdown', delBtn || prevItem);
+        } else {
+          this.setFocus('playlist-dropdown', prevItem);
+        }
+      } else {
+        // Close dropdown and focus profile button
+        const dd = document.getElementById('playlist-dropdown');
+        if (dd) dd.classList.add('hidden');
+        const profileBtn = document.getElementById('profile-card-btn');
+        if (profileBtn) {
+          this.setFocus('tabs', profileBtn);
+        }
+      }
+      e.preventDefault();
+    } else if (e.key === this.KEYS.RIGHT) {
+      if (!isDelBtn && this.focusedElement.classList.contains('playlist-row')) {
+        const delBtn = this.focusedElement.querySelector('.playlist-row-del');
+        if (delBtn) {
+          this.setFocus('playlist-dropdown', delBtn);
+        }
+      }
+      e.preventDefault();
+    } else if (e.key === this.KEYS.LEFT) {
+      if (isDelBtn && activeRow) {
+        this.setFocus('playlist-dropdown', activeRow);
+      }
+      e.preventDefault();
+    } else if (e.key === this.KEYS.ENTER) {
+      this.focusedElement.click();
+      e.preventDefault();
+    } else if (e.key === this.KEYS.ESCAPE || e.key === this.KEYS.BACKSPACE) {
+      // Close dropdown and focus profile button
+      const dd = document.getElementById('playlist-dropdown');
+      if (dd) dd.classList.add('hidden');
+      const profileBtn = document.getElementById('profile-card-btn');
+      if (profileBtn) {
+        this.setFocus('tabs', profileBtn);
+      }
+      e.preventDefault();
+    }
   }
 }
 
