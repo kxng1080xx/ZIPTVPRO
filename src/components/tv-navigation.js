@@ -235,6 +235,7 @@ class TVNavigation {
       }
     } else if (zone === 'playlist-select') {
       const firstRow = document.querySelector('#login-playlists-list .playlist-row');
+      console.log('focusDefault playlist-select: found firstRow?', !!firstRow);
       if (firstRow) {
         this.setFocus('playlist-select', firstRow);
         return;
@@ -1078,8 +1079,13 @@ class TVNavigation {
 
     const index = items.indexOf(isDelBtn ? activeRow : this.focusedElement);
 
+    console.log('handlePlaylistSelectNavigation:', { isDelBtn, currentIndex: index, key: e.key });
+
     if (index === -1) {
-      if (items[0]) this.setFocus('playlist-select', items[0]);
+      if (items[0]) {
+        console.log('Focus lost, resetting to first item');
+        this.setFocus('playlist-select', items[0]);
+      }
       return;
     }
 
@@ -1119,6 +1125,7 @@ class TVNavigation {
       }
       e.preventDefault();
     } else if (e.key === this.KEYS.ENTER) {
+      console.log('Playlist-select ENTER pressed on:', this.focusedElement?.className, this.focusedElement?.dataset?.id);
       this.focusedElement.click();
       e.preventDefault();
     }

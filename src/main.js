@@ -1854,11 +1854,13 @@ function showManualLoginForm() {
 }
 
 function showPlaylistSelect(playlists) {
+  console.log('showPlaylistSelect called with', playlists.length, 'playlists');
+
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('app-container').classList.add('hidden');
   document.getElementById('login-back-btn')?.classList.add('hidden');
   document.getElementById('login-startup-loader')?.classList.add('hidden');
-  
+
   // Hide form and remote activation box, show selection list
   document.getElementById('login-form').classList.add('hidden');
   document.getElementById('remote-login-box').classList.add('hidden');
@@ -1888,17 +1890,22 @@ function showPlaylistSelect(playlists) {
     // Clicking a row triggers switchToPlaylist
     row.addEventListener('click', async (e) => {
       if (e.target.closest('.playlist-row-del')) return; // ignore delete click
-      
+
+      console.log('Playlist row clicked:', p.playlistName);
+
       const errorMsg = document.getElementById('login-error');
       errorMsg.classList.add('hidden');
-      
+
       // Show loader or update row style
       row.style.opacity = '0.7';
       row.style.pointerEvents = 'none';
-      
+
       try {
+        console.log('Switching to playlist:', p.id);
         await switchToPlaylist(p.id);
+        console.log('Playlist switched successfully');
       } catch (err) {
+        console.error('Playlist switch error:', err);
         row.style.opacity = '1';
         row.style.pointerEvents = 'auto';
         errorMsg.textContent = err.message || 'Login connection failed.';
@@ -1920,7 +1927,10 @@ function showPlaylistSelect(playlists) {
 
   if (window.lucide) lucide.createIcons({ scope: listEl });
 
+  console.log('Playlist rows rendered, setting focus in 150ms');
+
   setTimeout(() => {
+    console.log('Setting focus to playlist-select zone');
     navigation.focusDefault('playlist-select');
   }, 150);
 }
@@ -2015,7 +2025,7 @@ async function switchToPlaylist(id) {
     await loadTabCategoriesAndContent();
   } catch (err) {
     console.error('Failed to switch playlist:', err);
-    alert('Could not switch playlist: ' + (err.message || err));
+    throw err; // Re-throw so the caller can handle it
   }
 }
 
@@ -2209,6 +2219,40 @@ async function ensureDevicePairingExists() {
   }
 }
 
+// Lightweight toast notification (auto-dismisses).
+function showToast(message, type = 'success', duration = 3500) {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  const icon = type === 'error' ? 'alert-circle' : (type === 'info' ? 'info' : 'check-circle');
+  toast.innerHTML = `
+    <span class="toast-icon"><i data-lucide="${icon}"></i></span>
+    <span class="toast-message">${message}</span>
+  `;
+  container.appendChild(toast);
+  if (window.lucide) lucide.createIcons({ scope: toast });
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(-20px)';
+    setTimeout(() => toast.remove(), 300);
+  }, duration);
+}
+
+// Report the remote-pairing outcome back to Supabase so the connect page knows.
+function reportPairingStatus(status) {
+  const updateUrl = `${SUPABASE_URL}/rest/v1/device_pairings?device_id=eq.${deviceCode}`;
+  return fetch(updateUrl, {
+    method: 'PATCH',
+    headers: {
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ status })
+  }).catch(e => console.error('Failed to report pairing status:', e));
+}
+
 async function saveRemotePlaylist(pairing) {
   try {
     // Use the shared login() helper — it works in both server mode and native
@@ -2225,20 +2269,16 @@ async function saveRemotePlaylist(pairing) {
       throw new Error('Login failed');
     }
 
-    const deleteUrl = `${SUPABASE_URL}/rest/v1/device_pairings?device_id=eq.${deviceCode}`;
-    await fetch(deleteUrl, {
-      method: 'DELETE',
-      headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-      }
-    });
+    // Tell the connect page it worked (don't delete yet, so the phone can read it).
+    await reportPairingStatus('connected');
 
     state.user = loginRes;
     showDashboard();
-    
+
     const box = document.getElementById('remote-login-box');
     if (box) box.classList.add('hidden');
+
+    showToast('Playlist connected', 'success');
 
     await triggerFullSync();
     state.activeCategory = null;
@@ -2248,19 +2288,11 @@ async function saveRemotePlaylist(pairing) {
     console.error('Failed to link remote playlist:', err);
     const codeEl = document.getElementById('remote-device-code');
     if (codeEl) codeEl.textContent = deviceCode;
-    
-    const updateUrl = `${SUPABASE_URL}/rest/v1/device_pairings?device_id=eq.${deviceCode}`;
-    fetch(updateUrl, {
-      method: 'PATCH',
-      headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ status: 'pending' })
-    }).catch(e => console.error(e));
 
-    alert('Failed to connect remote playlist: ' + err.message);
+    // Tell the connect page it failed, then resume polling for a retry.
+    await reportPairingStatus('failed');
+
+    showToast('Could not connect playlist: ' + err.message, 'error', 5000);
     startRemoteLoginPolling();
   }
 }

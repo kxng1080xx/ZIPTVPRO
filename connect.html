@@ -303,8 +303,8 @@
       <div class="success-icon-wrap">
         <i data-lucide="check-circle"></i>
       </div>
-      <h3>Playlist Connected!</h3>
-      <p>Your playlist has been sent. Your app should automatically refresh and connect in a few seconds.</p>
+      <h3>Playlist Loaded!</h3>
+      <p>Your TV confirmed it connected to this playlist successfully. You're all set.</p>
     </div>
 
     <form id="connect-form">
@@ -512,9 +512,12 @@
           throw new Error('Failed to upload credentials. Please try again.');
         }
 
-        // Show success
-        form.style.display = 'none';
-        successBox.style.display = 'flex';
+        // Credentials sent. Now wait for the TV to actually load the playlist
+        // and report back, so we show real feedback (not a premature success).
+        btnText.textContent = 'Waiting for your TV…';
+        btnText.style.display = 'block';
+        btnLoader.style.display = 'block';
+        pollForResult(deviceId);
 
       } catch (err) {
         showError(err.message);
@@ -523,6 +526,56 @@
         btnText.style.display = 'block';
       }
     });
+
+    // Poll the pairing record for the TV's outcome: 'connected' or 'failed'.
+    function pollForResult(deviceId) {
+      const startedAt = Date.now();
+      const poll = setInterval(async () => {
+        try {
+          const res = await fetch(`${SUPABASE_URL}/rest/v1/device_pairings?device_id=eq.${deviceId}&select=status`, {
+            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+          });
+          if (res.ok) {
+            const rows = await res.json();
+            const status = rows && rows[0] && rows[0].status;
+
+            if (status === 'connected') {
+              clearInterval(poll);
+              errorBox.style.display = 'none';
+              form.style.display = 'none';
+              successBox.style.display = 'flex';
+              // Tidy up the pairing record now that it's done.
+              fetch(`${SUPABASE_URL}/rest/v1/device_pairings?device_id=eq.${deviceId}`, {
+                method: 'DELETE',
+                headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+              }).catch(() => {});
+              return;
+            }
+
+            if (status === 'failed') {
+              clearInterval(poll);
+              resetButton();
+              showError('Your TV could not load this playlist. Double-check the M3U URL / credentials and try again.');
+              return;
+            }
+          }
+        } catch (e) {}
+
+        // Give up confirming after 90s (credentials were still sent).
+        if (Date.now() - startedAt > 90000) {
+          clearInterval(poll);
+          resetButton();
+          showError('Sent, but no confirmation from your TV yet. Make sure the app is open on the Device Activation screen, then try again.');
+        }
+      }, 3000);
+    }
+
+    function resetButton() {
+      submitBtn.disabled = false;
+      btnLoader.style.display = 'none';
+      btnText.textContent = 'Link Playlist';
+      btnText.style.display = 'block';
+    }
 
     function showError(message) {
       errorMsg.textContent = message;
