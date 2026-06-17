@@ -2943,13 +2943,15 @@ body.vod-mode .now-next-bar {
   outline-offset: 3px;
 }
 
-.episode-row.tv-focused {
+.episode-row.tv-focused,
+.episode-list-row.tv-focused {
   outline-offset: -2px;
 }
 
 .settings-action-btn.tv-focused, 
 .settings-group select.tv-focused,
-.checkbox-group input.tv-focused {
+.checkbox-group input.tv-focused,
+#series-season-select.tv-focused {
   outline-offset: 1px;
 }
 

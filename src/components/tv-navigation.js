@@ -127,6 +127,17 @@ class TVNavigation {
         this.setFocus('player', player);
         return;
       }
+    } else if (zone === 'series-episodes') {
+      const activeEp = document.querySelector('.episode-list-row.active') || document.querySelector('.episode-list-row');
+      if (activeEp) {
+        this.setFocus('series-episodes', activeEp);
+        return;
+      }
+      const select = document.getElementById('series-season-select');
+      if (select) {
+        this.setFocus('series-episodes', select);
+        return;
+      }
     }
     
     this.clearFocus();
@@ -183,6 +194,9 @@ class TVNavigation {
         break;
       case 'player':
         this.handlePlayerNavigation(e);
+        break;
+      case 'series-episodes':
+        this.handleSeriesEpisodesNavigation(e);
         break;
       default:
         // Default recovery
@@ -271,34 +285,44 @@ class TVNavigation {
       }
       e.preventDefault();
     } else if (e.key === this.KEYS.RIGHT || e.key === this.KEYS.ENTER) {
+      const activeTab = document.querySelector('.nav-tab.active')?.dataset.tab;
+      const playbackOpen = !document.getElementById('series-playback-container')?.classList.contains('hidden');
+
       if (this.focusedElement.id === 'pin-section-toggle') {
         if (e.key === this.KEYS.ENTER) {
           // Collapse/expand the pinned section and stay on the header.
           this.focusedElement.click();
         } else {
           // Right arrow moves into the content area.
-          const activeTab = document.querySelector('.nav-tab.active')?.dataset.tab;
-          this.focusDefault(activeTab === 'live' ? 'channels' : 'grid');
+          if (activeTab === 'live') {
+            this.focusDefault('channels');
+          } else if (activeTab === 'series' && playbackOpen) {
+            this.focusDefault('series-episodes');
+          } else {
+            this.focusDefault('grid');
+          }
         }
       } else if (this.focusedElement.id === 'categories-search') {
         if (e.key === this.KEYS.ENTER) {
           this.focusedElement.focus(); // Focus natively to open virtual keyboard
         } else {
-          // Right arrow moves focus directly to channels or grid
-          const activeTab = document.querySelector('.nav-tab.active')?.dataset.tab;
+          // Right arrow moves focus directly
           if (activeTab === 'live') {
             this.focusDefault('channels');
+          } else if (activeTab === 'series' && playbackOpen) {
+            this.focusDefault('series-episodes');
           } else {
             this.focusDefault('grid');
           }
         }
       } else {
-        // Select category and jump to EPG Channels list or VOD Grid
+        // Select category and jump
         this.focusedElement.click();
         
-        const activeTab = document.querySelector('.nav-tab.active')?.dataset.tab;
         if (activeTab === 'live') {
           this.focusDefault('channels');
+        } else if (activeTab === 'series' && playbackOpen) {
+          this.focusDefault('series-episodes');
         } else {
           this.focusDefault('grid');
         }
@@ -432,7 +456,56 @@ class TVNavigation {
     }
   }
 
-  // 6. MODAL OVERLAY NAVIGATION (VOD Details / settings)
+  // 6. SERIES EPISODES LIST NAVIGATION (TV SERIES PLAYBACK DASHBOARD)
+  handleSeriesEpisodesNavigation(e) {
+    const select = document.getElementById('series-season-select');
+    const episodes = Array.from(document.querySelectorAll('#series-episodes-list .episode-list-row'));
+    
+    const focusables = [];
+    if (select && select.offsetParent !== null) {
+      focusables.push(select);
+    }
+    episodes.forEach(ep => focusables.push(ep));
+    
+    const index = focusables.indexOf(this.focusedElement);
+    if (index === -1) {
+      if (focusables.length > 0) {
+        this.setFocus('series-episodes', focusables[0]);
+      }
+      e.preventDefault();
+      return;
+    }
+    
+    if (e.key === this.KEYS.DOWN) {
+      if (index < focusables.length - 1) {
+        this.setFocus('series-episodes', focusables[index + 1]);
+      }
+      e.preventDefault();
+    } else if (e.key === this.KEYS.UP) {
+      if (index > 0) {
+        this.setFocus('series-episodes', focusables[index - 1]);
+      } else {
+        // Go to top navbar tabs
+        this.focusDefault('tabs');
+      }
+      e.preventDefault();
+    } else if (e.key === this.KEYS.LEFT) {
+      this.focusDefault('categories');
+      e.preventDefault();
+    } else if (e.key === this.KEYS.RIGHT) {
+      this.focusDefault('tabs');
+      e.preventDefault();
+    } else if (e.key === this.KEYS.ENTER) {
+      if (this.focusedElement.tagName === 'SELECT') {
+        // Let browser handle native select expand
+      } else {
+        this.focusedElement.click();
+      }
+      e.preventDefault();
+    }
+  }
+
+  // 7. MODAL OVERLAY NAVIGATION (VOD Details / settings)
   handleModalNavigation(e, modal) {
     if (e.key === this.KEYS.BACKSPACE || e.key === this.KEYS.ESCAPE) {
       // Close active modal

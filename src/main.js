@@ -720,6 +720,7 @@ async function openSeriesPlaybackDashboard(series) {
     }
     
     loadSeasonEpisodes(seasons[0]);
+    navigation.focusDefault('series-episodes');
     
   } catch (err) {
     console.error('Failed to load Series details:', err);
@@ -892,6 +893,7 @@ function exitSeriesPlaybackDashboard() {
     if (videoContainer && livePlayerWrapper) {
       livePlayerWrapper.appendChild(videoContainer);
     }
+    navigation.focusDefault('grid');
   }
 }
 
