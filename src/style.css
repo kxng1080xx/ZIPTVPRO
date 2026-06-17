@@ -3490,6 +3490,81 @@ body.epg-fullscreen-active .epg-section-container {
 
 
 /* ==========================================================================
+   LANDSCAPE TABLET / PHONE OVERRIDES (any landscape device ≤ 1024px wide)
+   Cleans up the top bar so all icons are visible and nothing overflows.
+   ========================================================================== */
+@media (max-width: 1024px) and (orientation: landscape) {
+
+  .top-header {
+    height: 52px;
+    padding: 0 10px;
+    gap: 6px;
+    overflow: visible;
+  }
+
+  /* Hide the heavy left-side widgets — they eat too much space in landscape */
+  .header-left {
+    display: none !important;
+  }
+
+  /* Nav tabs group: allow shrink, hide text labels, show only icons */
+  .header-center {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    gap: 6px;
+  }
+
+  .header-center .logo-container {
+    display: none !important;
+  }
+
+  /* Make nav tabs icon-only in landscape to save space */
+  .nav-tab {
+    padding: 6px 10px;
+    font-size: 0.75rem;
+    gap: 4px;
+  }
+
+  .nav-tab i {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* Profile card: icon + short name only */
+  .profile-card {
+    padding: 4px 8px;
+    gap: 6px;
+  }
+
+  .profile-info {
+    display: none;
+  }
+
+  .profile-chevron {
+    display: none;
+  }
+
+  /* Right side icons: never shrink or clip */
+  .header-right {
+    flex-shrink: 0;
+    gap: 4px;
+    margin-left: auto;
+  }
+
+  .header-icon-btn {
+    width: 36px;
+    height: 36px;
+  }
+
+  /* TV Link badge: shorten or hide in landscape */
+  .header-tv-ip-badge {
+    display: none !important;
+  }
+}
+
+/* ==========================================================================
    LANDSCAPE PHONE OVERRIDES
    Applies when screen height is small (landscape on phones, ~360-500px tall)
    ========================================================================== */
