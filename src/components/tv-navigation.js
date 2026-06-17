@@ -165,9 +165,9 @@ class TVNavigation {
       return;
     }
 
-    // Ignore TV navigation if user is in login screen or typing in search boxes
+    // Ignore TV navigation if user is typing in search boxes
     const activeEl = document.activeElement;
-    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'SELECT' || activeEl.tagName === 'TEXTAREA')) {
+    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
       if (e.key === this.KEYS.ENTER && activeEl.id === 'categories-search') {
         activeEl.blur(); // blur search box on enter
         this.focusDefault('categories');
@@ -560,9 +560,9 @@ class TVNavigation {
     } else if (e.key === this.KEYS.ENTER) {
       if (this.focusedElement.tagName === 'SELECT') {
         // Let browser handle native select expand
-      } else {
-        this.focusedElement.click();
+        return;
       }
+      this.focusedElement.click();
       e.preventDefault();
     }
   }
@@ -618,6 +618,10 @@ class TVNavigation {
         }
         e.preventDefault();
       } else if (e.key === this.KEYS.ENTER) {
+        if (this.focusedElement.tagName === 'SELECT') {
+          // Let browser handle native select expand
+          return;
+        }
         this.focusedElement.click();
         e.preventDefault();
       }
@@ -650,10 +654,10 @@ class TVNavigation {
       } else if (e.key === this.KEYS.ENTER) {
         if (this.focusedElement.tagName === 'SELECT') {
           // let browser handle dropdown select expansion
-        } else {
-          this.focusedElement.click();
-          e.preventDefault();
+          return;
         }
+        this.focusedElement.click();
+        e.preventDefault();
       }
     }
   }
