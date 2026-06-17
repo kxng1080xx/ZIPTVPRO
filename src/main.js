@@ -14,6 +14,7 @@ import {
   switchPlaylist,
   removePlaylist
 } from './components/xtream-api.js';
+import { Capacitor } from '@capacitor/core';
 import { VideoPlayer } from './components/player.js';
 import { EPGGrid } from './components/epg.js';
 import { navigation } from './components/tv-navigation.js';
@@ -1681,6 +1682,11 @@ function showDashboard() {
 function updateHeaderTvIpBadge(status) {
   const badge = document.getElementById('header-tv-ip');
   const text = document.getElementById('header-tv-ip-text');
+  
+  if (Capacitor.isNativePlatform()) {
+    if (badge) badge.style.display = 'none';
+    return;
+  }
   
   if (badge && text && status && status.local_ips && status.local_ips.length > 0) {
     const ip = status.local_ips[0];
