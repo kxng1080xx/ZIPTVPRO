@@ -77,6 +77,7 @@ async function initApp() {
 
   // 2. Initialize Core Components
   playerInstance = new VideoPlayer();
+  window.playerInstance = playerInstance;
   
   // Set player skip handlers
   playerInstance.setOnPrevChannel(() => playPreviousChannel());
@@ -1155,6 +1156,7 @@ async function playVODStream(streamId, type, name, logo, description, containerE
     // VOD = on-demand file, played differently from live channels (seekable).
     playerInstance.setSeriesMode(false);
     playerInstance.loadStream(playUrl, name, logo, '', true);
+    playerInstance.enterFullscreen();
   } catch (err) {
     console.error('Failed to play VOD stream:', err);
     alert(`Failed to load stream: ${err.message}`);
@@ -1175,6 +1177,7 @@ function exitVodPlayer() {
     document.exitFullscreen().catch(() => {});
   }
   playerInstance.stop();
+  navigation.focusDefault('grid');
 }
 
 // ==========================================================================
@@ -1295,6 +1298,22 @@ function bindGlobalEvents() {
       document.getElementById('settings-proxy').checked = creds.proxy_streams ?? true;
       document.getElementById('settings-connected-server').textContent = creds.server_url;
     }
+    
+    // Populate network info if running on local server
+    const networkSection = document.getElementById('settings-network-section');
+    const networkIps = document.getElementById('settings-network-ips');
+    if (networkSection && networkIps) {
+      if (state.user && state.user.local_ips && state.user.local_ips.length > 0) {
+        const port = state.user.server_port || 3000;
+        networkIps.innerHTML = state.user.local_ips
+          .map(ip => `http://${ip}:${port}`)
+          .join('<br>');
+        networkSection.style.display = 'block';
+      } else {
+        networkSection.style.display = 'none';
+      }
+    }
+    
     settingsModal.classList.remove('hidden');
     navigation.focusDefault('modal');
   });
@@ -1654,4 +1673,25 @@ function showDashboard() {
 
   // Set SVG lucide icons
   lucide.createIcons();
+
+  // Update TV Connection IP badge in the top header
+  updateHeaderTvIpBadge(state.user);
+}
+
+function updateHeaderTvIpBadge(status) {
+  const badge = document.getElementById('header-tv-ip');
+  const text = document.getElementById('header-tv-ip-text');
+  
+  if (badge && text && status && status.local_ips && status.local_ips.length > 0) {
+    const ip = status.local_ips[0];
+    const port = status.server_port || 3000;
+    text.textContent = `TV Link: http://${ip}:${port}`;
+    badge.style.display = 'inline-flex';
+    
+    if (typeof lucide !== 'undefined') {
+      lucide.createIcons({ scope: badge });
+    }
+  } else if (badge) {
+    badge.style.display = 'none';
+  }
 }

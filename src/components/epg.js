@@ -1,6 +1,21 @@
 import { getEPG } from './xtream-api.js';
 import { navigation } from './tv-navigation.js';
 
+function getQualityTag(name) {
+  const n = String(name).toLowerCase();
+  if (n.includes('4k') || n.includes('uhd')) return '4K';
+  if (n.includes('fhd') || n.includes('1080')) return 'FHD';
+  if (n.includes('hd') || n.includes('720')) return 'HD';
+  if (n.includes('sd') || n.includes('480') || n.includes('576')) return 'SD';
+  return '';
+}
+
+function getQualityBadgeHtml(name) {
+  const tag = getQualityTag(name);
+  if (!tag) return '';
+  return `<span class="quality-badge badge-${tag.toLowerCase()}">${tag}</span>`;
+}
+
 export class EPGGrid {
   constructor(onChannelSelectCallback, onChannelFocusCallback) {
     this.onChannelSelect = onChannelSelectCallback;
@@ -291,12 +306,16 @@ export class EPGGrid {
       
       const logo = channel.stream_icon || '';
       const guideHtml = this.buildInlineGuide(this.getNowNext(streamId));
+      const qualityBadge = getQualityBadgeHtml(channel.name);
       chanRow.innerHTML = `
         <div class="epg-channel-row-logo">
           ${logo ? `<img src="${logo}" alt="" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2224%22 height=%2224%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%234b5563%22 stroke-width=%222%22><rect x=%222%22 y=%222%22 width=%2220%22 height=%2220%22 rx=%224%22/></svg>'">` : '<i data-lucide="tv" class="fallback-logo"></i>'}
         </div>
         <div class="epg-channel-row-meta">
-          <div class="epg-channel-row-name">${channel.name}</div>
+          <div class="epg-channel-row-name">
+            <span class="epg-channel-name-text">${channel.name}</span>
+            ${qualityBadge}
+          </div>
           <div class="epg-channel-row-now" data-now-for="${streamId}">${guideHtml}</div>
         </div>
         <button class="epg-channel-row-fav" data-id="${streamId}">

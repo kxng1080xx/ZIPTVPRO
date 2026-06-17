@@ -3,6 +3,21 @@ import mpegts from 'mpegts.js';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { ScreenOrientation } from '@capacitor/screen-orientation';
 
+function getQualityTag(name) {
+  const n = String(name).toLowerCase();
+  if (n.includes('4k') || n.includes('uhd')) return '4K';
+  if (n.includes('fhd') || n.includes('1080')) return 'FHD';
+  if (n.includes('hd') || n.includes('720')) return 'HD';
+  if (n.includes('sd') || n.includes('480') || n.includes('576')) return 'SD';
+  return '';
+}
+
+function getQualityBadgeHtml(name) {
+  const tag = getQualityTag(name);
+  if (!tag) return '';
+  return `<span class="quality-badge badge-${tag.toLowerCase()}">${tag}</span>`;
+}
+
 export class VideoPlayer {
   constructor() {
     this.video = document.getElementById('main-video-player');
@@ -21,6 +36,10 @@ export class VideoPlayer {
     this.watermarkImg = document.getElementById('watermark-img');
     this.pipBtn = document.getElementById('player-pip-btn');
     this.infoBtn = document.getElementById('player-info-btn');
+    this.fpsIndicatorEl = document.getElementById('player-fps-indicator');
+    this.currentFps = 30;
+    this.fpsInterval = null;
+    this.currentChannelName = '';
 
     // Channel info banner (brief OSD on channel change)
     this.channelInfoBanner = document.getElementById('channel-info-banner');
@@ -230,10 +249,17 @@ export class VideoPlayer {
       document.body.classList.remove('pip-mode-active');
     });
 
-    // Handle video end event (auto-play episodes)
-    this.video.addEventListener('ended', () => {
-      if (this.onVideoEnded) this.onVideoEnded();
+    // Dynamic quality and FPS tracking
+    this.video.addEventListener('loadedmetadata', () => this.updateQualityIndicator());
+    this.video.addEventListener('resize', () => this.updateQualityIndicator());
+    this.video.addEventListener('play', () => this.startFpsTracker());
+    this.video.addEventListener('playing', () => {
+      this.updateQualityIndicator();
+      this.startFpsTracker();
     });
+    this.video.addEventListener('pause', () => this.stopFpsTracker());
+    this.video.addEventListener('ended', () => this.stopFpsTracker());
+    this.video.addEventListener('emptied', () => this.stopFpsTracker());
   }
 
   setOnPrevChannel(callback) {
@@ -279,8 +305,16 @@ export class VideoPlayer {
   loadStream(url, name, logo, currentEpg = 'No schedule available', isVod = false) {
     this.isVod = isVod;
     this.showSpinner();
-    this.channelNameEl.textContent = name || 'Live Channel';
+    this.currentChannelName = name || 'Live Channel';
+    const qBadge = getQualityBadgeHtml(this.currentChannelName);
+    this.channelNameEl.innerHTML = `
+      <span class="player-channel-name-text">${this.currentChannelName}</span>
+      ${qBadge}
+    `;
     this.epgTitleEl.textContent = currentEpg;
+    if (this.fpsIndicatorEl) {
+      this.fpsIndicatorEl.textContent = 'Loading...';
+    }
 
     if (logo) {
       this.watermarkImg.src = logo;
@@ -443,7 +477,11 @@ export class VideoPlayer {
     } else {
       this.cibLogo.style.display = 'none';
     }
-    this.cibName.textContent = name;
+    const qBadge = getQualityBadgeHtml(name);
+    this.cibName.innerHTML = `
+      <span class="cib-name-text">${name}</span>
+      ${qBadge}
+    `;
 
     const now = new Date();
     const time = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
@@ -461,9 +499,13 @@ export class VideoPlayer {
           const row = document.createElement('div');
           row.className = 'cib-row' + (offset === 0 ? ' current' : '');
           const chLogo = ch.stream_icon || '';
+          const qBadgeLineup = getQualityBadgeHtml(ch.name);
           row.innerHTML = `
             <span class="cib-row-logo">${chLogo ? `<img src="${chLogo}" alt="">` : '<i data-lucide="tv"></i>'}</span>
-            <span class="cib-row-name">${ch.name || 'Channel'}</span>
+            <span class="cib-row-name" style="display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 8px;">
+              <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1;">${ch.name || 'Channel'}</span>
+              ${qBadgeLineup}
+            </span>
           `;
           this.cibList.appendChild(row);
         });
@@ -541,13 +583,18 @@ export class VideoPlayer {
   }
 
   stop() {
+    this.stopFpsTracker();
     this.video.pause();
     this.destroyHls();
     this.destroyMpegts();
     this.video.src = '';
     this.video.load();
+    this.currentChannelName = '';
     this.channelNameEl.textContent = 'No Channel Selected';
     this.epgTitleEl.textContent = 'Select a channel from the list to start watching';
+    if (this.fpsIndicatorEl) {
+      this.fpsIndicatorEl.textContent = '';
+    }
     this.watermark.classList.add('hidden');
     this.hideSpinner();
     this.setSeriesMode(false);
@@ -559,6 +606,82 @@ export class VideoPlayer {
       } catch (e) {
         console.error('Failed to notify stop state:', e);
       }
+    }
+  }
+
+  startFpsTracker() {
+    this.stopFpsTracker();
+    
+    let lastTime = performance.now();
+    let lastFrames = 0;
+    
+    this.fpsInterval = setInterval(() => {
+      if (this.video.paused || this.video.ended) return;
+      
+      const now = performance.now();
+      let frames = 0;
+      
+      if (typeof this.video.getVideoPlaybackQuality === 'function') {
+        const quality = this.video.getVideoPlaybackQuality();
+        frames = quality.totalVideoFrames;
+      } else if (this.video.webkitDecodedFrameCount) {
+        frames = this.video.webkitDecodedFrameCount;
+      } else if (this.video.mozDecodedFrames) {
+        frames = this.video.mozDecodedFrames;
+      }
+      
+      if (frames > 0 && lastFrames > 0) {
+        const elapsed = (now - lastTime) / 1000;
+        const deltaFrames = frames - lastFrames;
+        const fps = Math.round(deltaFrames / elapsed);
+        
+        if (fps > 0 && fps < 120) {
+          this.currentFps = fps;
+          this.updateQualityIndicator();
+        }
+      }
+      
+      lastTime = now;
+      lastFrames = frames;
+    }, 1000);
+  }
+  
+  stopFpsTracker() {
+    if (this.fpsInterval) {
+      clearInterval(this.fpsInterval);
+      this.fpsInterval = null;
+    }
+  }
+
+  updateQualityIndicator() {
+    const width = this.video.videoWidth;
+    const height = this.video.videoHeight;
+    
+    if (!width || !height) {
+      if (this.fpsIndicatorEl) this.fpsIndicatorEl.textContent = 'Loading...';
+      return;
+    }
+    
+    let quality = 'SD';
+    if (height >= 2160 || width >= 3840) {
+      quality = '4K';
+    } else if (height >= 1080 || width >= 1920) {
+      quality = 'FHD';
+    } else if (height >= 720 || width >= 1280) {
+      quality = 'HD';
+    }
+    
+    const fps = this.currentFps || 30;
+    if (this.fpsIndicatorEl) {
+      this.fpsIndicatorEl.textContent = `${quality} | ${fps} FPS`;
+    }
+    
+    if (this.channelNameEl && this.currentChannelName) {
+      const qBadge = `<span class="quality-badge badge-${quality.toLowerCase()}">${quality}</span>`;
+      this.channelNameEl.innerHTML = `
+        <span class="player-channel-name-text">${this.currentChannelName}</span>
+        ${qBadge}
+      `;
     }
   }
 

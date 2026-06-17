@@ -30,6 +30,34 @@ class TVNavigation {
   init() {
     window.addEventListener('keydown', (e) => this.handleKeyDown(e));
 
+    document.addEventListener('fullscreenchange', () => {
+      if (!document.fullscreenElement) {
+        if (document.body.classList.contains('vod-mode')) {
+          const backBtn = document.getElementById('player-back-btn');
+          if (backBtn) {
+            backBtn.click();
+            return;
+          }
+        }
+
+        const activeTab = document.querySelector('.nav-tab.active')?.dataset.tab;
+        if (activeTab === 'live') {
+          this.focusDefault('channels');
+        } else if (activeTab === 'series') {
+          const playbackOpen = !document.getElementById('series-playback-container')?.classList.contains('hidden');
+          if (playbackOpen) {
+            this.focusDefault('series-episodes');
+          } else {
+            this.focusDefault('grid');
+          }
+        } else {
+          this.focusDefault('grid');
+        }
+      } else {
+        this.focusDefault('player');
+      }
+    });
+
     if (Capacitor.isNativePlatform()) {
       App.addListener('backButton', () => {
         if (document.fullscreenElement) {
@@ -135,6 +163,14 @@ class TVNavigation {
         return;
       }
     } else if (zone === 'player') {
+      const isFullscreen = !!document.fullscreenElement;
+      if (isFullscreen) {
+        const playBtn = document.getElementById('player-play-pause-btn');
+        if (playBtn) {
+          this.setFocus('player', playBtn);
+          return;
+        }
+      }
       const player = document.getElementById('video-container');
       if (player) {
         this.setFocus('player', player);
@@ -157,10 +193,9 @@ class TVNavigation {
   }
 
   handleKeyDown(e) {
-    // If the video player is in fullscreen, pressing Backspace or Escape exits fullscreen and returns focus to the channels list
+    // If the video player is in fullscreen, pressing Backspace or Escape exits fullscreen
     if (document.fullscreenElement && (e.key === this.KEYS.ESCAPE || e.key === this.KEYS.BACKSPACE)) {
       document.exitFullscreen().catch(err => console.warn(err));
-      this.focusDefault('channels');
       e.preventDefault();
       return;
     }
@@ -488,31 +523,140 @@ class TVNavigation {
 
   // 5. PLAYER FOCUS DOCK (PLAYBACK HUD VIEWPORT)
   handlePlayerNavigation(e) {
-    if (e.key === this.KEYS.LEFT) {
-      // Move focus back to the EPG list
-      this.focusDefault('channels');
+    const isFullscreen = !!document.fullscreenElement;
+    const player = window.playerInstance;
+    
+    if (!isFullscreen || !player) {
+      // NON-FULLSCREEN behavior: keep current zapping and LEFT-arrow exit
+      if (e.key === this.KEYS.LEFT) {
+        this.focusDefault('channels');
+        e.preventDefault();
+      } else if (e.key === this.KEYS.ENTER || e.key === this.KEYS.SPACE) {
+        const playBtn = document.getElementById('player-play-pause-btn');
+        if (playBtn) playBtn.click();
+        e.preventDefault();
+      } else if (e.key === this.KEYS.UP) {
+        const prevBtn = document.getElementById('player-prev-btn');
+        if (prevBtn) prevBtn.click();
+        e.preventDefault();
+      } else if (e.key === this.KEYS.DOWN) {
+        const nextBtn = document.getElementById('player-next-btn');
+        if (nextBtn) nextBtn.click();
+        e.preventDefault();
+      } else if (e.key === this.KEYS.BACKSPACE || e.key === this.KEYS.ESCAPE) {
+        this.focusDefault('channels');
+        e.preventDefault();
+      }
+      return;
+    }
+
+    // FULLSCREEN BEHAVIOR: navigable HUD controls
+    // 1. Wake up controls if they are currently hidden
+    const controlsVisible = player.controls && parseFloat(player.controls.style.opacity) > 0;
+    
+    // BACKSPACE / ESCAPE exits fullscreen immediately
+    if (e.key === this.KEYS.BACKSPACE || e.key === this.KEYS.ESCAPE) {
+      document.exitFullscreen().catch(() => {});
       e.preventDefault();
-    } else if (e.key === this.KEYS.ENTER || e.key === this.KEYS.SPACE) {
-      // Play / Pause toggle
-      const playBtn = document.getElementById('player-play-pause-btn');
-      if (playBtn) playBtn.click();
+      return;
+    }
+
+    if (!controlsVisible) {
+      // Wake up controls and don't navigate on first press
+      player.showControlsTemporarily();
+      // Also, set default focus to the play/pause button if nothing was focused yet
+      if (!this.focusedElement || this.focusedElement.id === 'video-container') {
+        const playBtn = document.getElementById('player-play-pause-btn');
+        if (playBtn) this.setFocus('player', playBtn);
+      }
+      e.preventDefault();
+      return;
+    }
+
+    // Otherwise, controls are visible. Extend visibility timeout on every D-pad interaction
+    player.showControlsTemporarily();
+
+    // Get current grid of focusable controls
+    const rows = this.getPlayerRows();
+    if (rows.length === 0) return;
+
+    // Find current active element in the grid
+    let currentRowIdx = -1;
+    let currentColIdx = -1;
+    for (let r = 0; r < rows.length; r++) {
+      const colIdx = rows[r].indexOf(this.focusedElement);
+      if (colIdx !== -1) {
+        currentRowIdx = r;
+        currentColIdx = colIdx;
+        break;
+      }
+    }
+
+    // If focused element is not in rows (e.g. focused on parent container), default to play/pause button
+    if (currentRowIdx === -1) {
+      const playBtn = document.getElementById('player-play-pause-btn') || rows[0][0];
+      if (playBtn) this.setFocus('player', playBtn);
+      e.preventDefault();
+      return;
+    }
+
+    const currentEl = this.focusedElement;
+
+    // Check if the current element is a range slider (seek bar or volume slider)
+    const isSlider = currentEl.tagName === 'INPUT' && currentEl.type === 'range';
+
+    if (e.key === this.KEYS.LEFT) {
+      if (isSlider) {
+        // Slider value adjust
+        const slider = currentEl;
+        const val = parseFloat(slider.value);
+        const min = parseFloat(slider.min) || 0;
+        const step = parseFloat(slider.step) || 1;
+        const amt = currentEl.id === 'player-seek' ? 2 : 0.05; // seek 2% or change volume 5%
+        slider.value = Math.max(min, val - amt);
+        slider.dispatchEvent(new Event('input'));
+        slider.dispatchEvent(new Event('change'));
+      } else {
+        // Normal horizontal navigation
+        if (currentColIdx > 0) {
+          this.setFocus('player', rows[currentRowIdx][currentColIdx - 1]);
+        }
+      }
+      e.preventDefault();
+    } else if (e.key === this.KEYS.RIGHT) {
+      if (isSlider) {
+        // Slider value adjust
+        const slider = currentEl;
+        const val = parseFloat(slider.value);
+        const max = parseFloat(slider.max) || 100;
+        const step = parseFloat(slider.step) || 1;
+        const amt = currentEl.id === 'player-seek' ? 2 : 0.05; // seek 2% or change volume 5%
+        slider.value = Math.min(max, val + amt);
+        slider.dispatchEvent(new Event('input'));
+        slider.dispatchEvent(new Event('change'));
+      } else {
+        // Normal horizontal navigation
+        if (currentColIdx < rows[currentRowIdx].length - 1) {
+          this.setFocus('player', rows[currentRowIdx][currentColIdx + 1]);
+        }
+      }
       e.preventDefault();
     } else if (e.key === this.KEYS.UP) {
-      // Zap up: previous channel
-      const prevBtn = document.getElementById('player-prev-btn');
-      if (prevBtn) prevBtn.click();
+      if (currentRowIdx > 0) {
+        const targetEl = this.findClosestElement(currentEl, rows[currentRowIdx - 1]);
+        if (targetEl) this.setFocus('player', targetEl);
+      }
       e.preventDefault();
     } else if (e.key === this.KEYS.DOWN) {
-      // Zap down: next channel
-      const nextBtn = document.getElementById('player-next-btn');
-      if (nextBtn) nextBtn.click();
+      if (currentRowIdx < rows.length - 1) {
+        const targetEl = this.findClosestElement(currentEl, rows[currentRowIdx + 1]);
+        if (targetEl) this.setFocus('player', targetEl);
+      }
       e.preventDefault();
-    } else if (e.key === this.KEYS.BACKSPACE || e.key === this.KEYS.ESCAPE) {
-      // Exit player focus and go back to channels
-      this.focusDefault('channels');
-      // If player is fullscreen, exit it
-      if (document.fullscreenElement) {
-        document.exitFullscreen();
+    } else if (e.key === this.KEYS.ENTER) {
+      // For buttons, click them; for sliders, enter does nothing
+      if (!isSlider) {
+        currentEl.click();
       }
       e.preventDefault();
     }
@@ -660,6 +804,63 @@ class TVNavigation {
         e.preventDefault();
       }
     }
+  }
+
+  getPlayerRows() {
+    const rows = [];
+    
+    // Row 0: Back button
+    const row0 = [];
+    const back = document.getElementById('player-back-btn');
+    if (back && back.offsetParent !== null) row0.push(back);
+    if (row0.length > 0) rows.push(row0);
+    
+    // Row 1: Center controls
+    const row1 = [];
+    ['player-prev-btn', 'player-play-pause-btn', 'player-next-btn'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.offsetParent !== null) row1.push(el);
+    });
+    if (row1.length > 0) rows.push(row1);
+    
+    // Row 2: Seek bar
+    const row2 = [];
+    const seekInput = document.getElementById('player-seek');
+    if (seekInput && seekInput.offsetParent !== null) row2.push(seekInput);
+    if (row2.length > 0) rows.push(row2);
+    
+    // Row 3: Bottom icons
+    const row3 = [];
+    ['player-info-btn', 'player-cc-btn', 'player-volume-btn', 'player-pip-btn', 'player-fullscreen-btn'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.offsetParent !== null) row3.push(el);
+    });
+    if (row3.length > 0) rows.push(row3);
+    
+    return rows;
+  }
+
+  findClosestElement(element, targetRow) {
+    if (!targetRow || targetRow.length === 0) return null;
+    if (targetRow.length === 1) return targetRow[0];
+    
+    const rect = element.getBoundingClientRect();
+    const elementCenterX = rect.left + rect.width / 2;
+    
+    let closest = targetRow[0];
+    let minDistance = Infinity;
+    
+    targetRow.forEach(target => {
+      const targetRect = target.getBoundingClientRect();
+      const targetCenterX = targetRect.left + targetRect.width / 2;
+      const distance = Math.abs(elementCenterX - targetCenterX);
+      if (distance < minDistance) {
+        minDistance = distance;
+        closest = target;
+      }
+    });
+    
+    return closest;
   }
 }
 

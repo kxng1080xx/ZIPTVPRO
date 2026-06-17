@@ -3,6 +3,86 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import os from 'os';
+
+function getLocalIpAddresses() {
+  const interfaces = os.networkInterfaces();
+
+  // Adapter name patterns that indicate virtual/software/VPN-only interfaces.
+  // Case-insensitive so "vEthernet", "TAP-NordVPN", "WireGuard", etc. all match.
+  const VIRTUAL_PATTERNS = [
+    // Hypervisors / containers
+    /vethernet/i,     // Hyper-V virtual switches
+    /vmware/i,        // VMware host-only / NAT adapters
+    /virtualbox/i,    // VirtualBox host-only adapters
+    /vbox/i,          // VirtualBox short name
+    /docker/i,        // Docker Desktop virtual adapters
+    /wsl/i,           // Windows Subsystem for Linux
+    // Tunnels / software loopback
+    /loopback/i,      // Software loopback adapters
+    /pseudo/i,        // Pseudo / tunnel adapters
+    /teredo/i,        // Teredo tunneling
+    /isatap/i,        // ISATAP tunneling
+    /6to4/i,          // 6to4 tunneling adapters
+    // VPN clients
+    /\btap\b/i,       // OpenVPN TAP adapters (TAP-Windows, TAP-NordVPN, etc.)
+    /openvpn/i,       // OpenVPN
+    /nordvpn/i,       // NordVPN
+    /expressvpn/i,    // ExpressVPN
+    /protonvpn/i,     // ProtonVPN
+    /mullvad/i,       // Mullvad VPN
+    /wireguard/i,     // WireGuard
+    /tailscale/i,     // Tailscale mesh VPN
+    /zerotier/i,      // ZeroTier virtual network
+    /anyconnect/i,    // Cisco AnyConnect
+    /globalprotect/i, // Palo Alto GlobalProtect
+    /pulse.?secure/i, // Pulse Secure / Ivanti
+    /fortinet/i,      // Fortinet VPN
+    /forticlient/i,   // FortiClient VPN
+    /checkpoint/i,    // Check Point VPN
+    /sonicwall/i,     // SonicWall VPN
+    /citrix/i,        // Citrix VPN
+    /pulsevpn/i,      // Pulse VPN
+    /cloudflare/i,    // Cloudflare WARP
+    /warp/i,          // Cloudflare WARP (short name)
+    /vpn/i,           // Generic catch-all for any adapter with "vpn" in its name
+  ];
+
+  // Score an IPv4 address — higher = more likely to be a real LAN address.
+  // 192.168.x.x and 10.x.x.x are typical home/office LAN ranges.
+  // 172.16-31.x.x is the third private range (less common on home nets).
+  // Anything else (e.g. a VPN tunnel like 100.64.x.x or 172.x.x.x outside the
+  // private range) scores lowest so it is only returned as a last resort.
+  function lanScore(ip) {
+    if (/^192\.168\./.test(ip)) return 3;   // Home / office LAN — best
+    if (/^10\./.test(ip))       return 2;   // Corporate LAN — great
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) return 1; // RFC-1918 range B
+    return 0;                               // Unknown / VPN tunnel range
+  }
+
+  const candidates = [];
+  try {
+    for (const name of Object.keys(interfaces)) {
+      // Skip any adapter whose name matches a virtual/VPN/tunnel pattern
+      if (VIRTUAL_PATTERNS.some(re => re.test(name))) continue;
+
+      for (const iface of interfaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          candidates.push({ ip: iface.address, score: lanScore(iface.address) });
+        }
+      }
+    }
+  } catch (e) {}
+
+  // Sort so real LAN IPs come first; drop any that scored 0 (non-LAN) unless
+  // there are no LAN IPs at all (graceful fallback).
+  candidates.sort((a, b) => b.score - a.score);
+  const lanOnly = candidates.filter(c => c.score > 0);
+  return (lanOnly.length ? lanOnly : candidates).map(c => c.ip);
+}
+
+
+
 import {
   initCache,
   getCredentials,
@@ -134,7 +214,11 @@ app.post('/api/login', async (req, res) => {
 app.get('/api/status', async (req, res) => {
   const creds = getCredentials();
   if (!creds) {
-    return res.json({ loggedIn: false });
+    return res.json({ 
+      loggedIn: false,
+      server_port: PORT,
+      local_ips: getLocalIpAddresses()
+    });
   }
 
   const testUrl = `${creds.server_url}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}`;
@@ -153,7 +237,9 @@ app.get('/api/status', async (req, res) => {
       },
       user_info: data.user_info || {},
       server_info: data.server_info || {},
-      favorites: getFavorites()
+      favorites: getFavorites(),
+      server_port: PORT,
+      local_ips: getLocalIpAddresses()
     });
   } catch (err) {
     // If server is offline, still return loggedIn: true but with local credentials
@@ -167,7 +253,9 @@ app.get('/api/status', async (req, res) => {
         stream_format: creds.stream_format,
         proxy_streams: creds.proxy_streams
       },
-      favorites: getFavorites()
+      favorites: getFavorites(),
+      server_port: PORT,
+      local_ips: getLocalIpAddresses()
     });
   }
 });
@@ -556,4 +644,11 @@ if (fs.existsSync(distPath)) {
 
 app.listen(PORT, () => {
   console.log(`IPTV Player backend listening on http://localhost:${PORT}`);
+  try {
+    const ips = getLocalIpAddresses();
+    if (ips.length > 0) {
+      console.log('Exposed on your local network at:');
+      ips.forEach(ip => console.log(`  http://${ip}:${PORT}`));
+    }
+  } catch (e) {}
 });

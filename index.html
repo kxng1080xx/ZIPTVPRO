@@ -91,8 +91,12 @@
 
       <!-- Top Center: Logo & Tabs -->
       <div class="header-center">
-        <div class="logo-container">
+        <div class="logo-container" style="display: flex; align-items: center;">
           <img src="/src/assets/logo.png" alt="ZIPTV Pro Logo" class="logo-img header-logo animate-glow">
+          <span id="header-tv-ip" class="header-tv-ip-badge" style="display: none;">
+            <i data-lucide="tv"></i>
+            <span id="header-tv-ip-text">TV Link: Loading...</span>
+          </span>
         </div>
         <nav class="navigation-tabs">
           <button class="nav-tab active" data-tab="live">
@@ -203,7 +207,7 @@
                   <div class="controls-top">
                     <button class="player-back-btn vod-only" id="player-back-btn" title="Back"><i data-lucide="arrow-left"></i></button>
                     <span class="live-tag">LIVE</span>
-                    <span class="fps-indicator">HD | 30 FPS</span>
+                    <span class="fps-indicator" id="player-fps-indicator">Loading...</span>
                     <span class="vod-title-tag vod-only" id="player-vod-title"></span>
                   </div>
                   
@@ -604,6 +608,12 @@
             <i data-lucide="refresh-cw"></i> Sync Playlists & Cache Now
           </button>
           <span class="settings-help">Force download all channels, movies, and series lists from your Xtream server.</span>
+        </div>
+
+        <div class="settings-section" id="settings-network-section" style="display: none;">
+          <h3>Local Network Access (Smart TV)</h3>
+          <p class="settings-help">To use ZIPTV Pro on your Smart TV web browser, make sure your TV is connected to the same Wi-Fi, then go to:</p>
+          <div id="settings-network-ips" class="gold-text" style="font-family: monospace; font-size: 1.1rem; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 4px; margin-top: 5px; word-break: break-all;"></div>
         </div>
 
         <div class="settings-section logout-section">

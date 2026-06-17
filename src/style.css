@@ -1323,9 +1323,10 @@ body.vod-mode .now-next-bar {
 .player-playing-title {
   font-size: 0.9rem;
   font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
 }
 
 .player-playing-epg {
@@ -3854,3 +3855,117 @@ body.epg-fullscreen-active .epg-section-container {
 .video-container.series-mode .now-next-bar {
   display: flex !important;
 }
+
+/* Tailored D-pad focus outlines for player overlay buttons & sliders */
+.player-skip-btn.tv-focused,
+.player-play-btn.tv-focused,
+.player-back-btn.tv-focused {
+  outline-offset: 2px !important;
+  border-radius: 50% !important;
+}
+
+.player-control-icon.tv-focused {
+  outline-offset: 3px !important;
+  border-radius: 4px !important;
+}
+
+.player-seek-bar.tv-focused,
+.player-volume-slider.tv-focused {
+  outline-offset: 4px !important;
+  border-radius: 3px !important;
+}
+
+/* Quality Badge & Flex Grid Alignments for Channel Names */
+.epg-channel-row-name {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+  width: 100% !important;
+}
+
+.epg-channel-name-text {
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  flex: 1 !important;
+}
+
+.quality-badge {
+  display: inline-block !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  padding: 1px 5px !important;
+  border-radius: 3px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  line-height: 1.2 !important;
+  flex-shrink: 0 !important;
+}
+
+.badge-4k {
+  background-color: #ef4444 !important;
+  color: #ffffff !important;
+}
+
+.badge-fhd {
+  background-color: #3b82f6 !important;
+  color: #ffffff !important;
+}
+
+.badge-hd {
+  background-color: #06b6d4 !important;
+  color: #ffffff !important;
+}
+
+.badge-sd {
+  background-color: #6b7280 !important;
+  color: #ffffff !important;
+}
+
+/* Player HUD & OSD Alignments for Quality Badges */
+.player-channel-name-text {
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  flex: 1 !important;
+}
+
+.cib-name {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.cib-name-text {
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 250px !important;
+}
+
+/* Header TV connection badge styling */
+.header-tv-ip-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  background: rgba(0, 243, 255, 0.08) !important;
+  border: 1px solid rgba(0, 243, 255, 0.25) !important;
+  color: #00f3ff !important;
+  padding: 3px 10px !important;
+  border-radius: 12px !important;
+  font-size: 0.72rem !important;
+  font-weight: 700 !important;
+  margin-left: 12px !important;
+  font-family: monospace !important;
+  box-shadow: 0 0 10px rgba(0, 243, 255, 0.1) !important;
+  vertical-align: middle !important;
+}
+
+.header-tv-ip-badge i {
+  width: 13px !important;
+  height: 13px !important;
+  color: #00f3ff !important;
+}
+
+
