@@ -163,10 +163,13 @@ async function loadTabCategoriesAndContent() {
     // 2. Render categories sidebar list
     renderCategoriesList(res.categories);
 
-    // 3. Do NOT auto-load a category. The default "All" category can contain
-    // thousands of channels and loading it on startup makes the app crawl.
-    // Wait for the user to pick a category, and show a hint until then.
-    showSelectCategoryHint();
+    // 3. Auto-load the "All" category for movies and series, but show selection hint for live TV
+    // (Live TV can contain thousands of channels, making startup crawl).
+    if (state.activeTab === 'movies' || state.activeTab === 'series') {
+      await selectCategory('all');
+    } else {
+      showSelectCategoryHint();
+    }
 
     // TV Navigation: default focus categories
     navigation.focusDefault('categories');
