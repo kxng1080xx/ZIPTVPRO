@@ -2211,21 +2211,18 @@ async function ensureDevicePairingExists() {
 
 async function saveRemotePlaylist(pairing) {
   try {
-    const loginPayload = {
-      hostUrl: pairing.server_url,
-      username: pairing.username,
-      password: pairing.password,
-      playlistName: pairing.playlist_name || 'Remote Playlist'
-    };
-
-    const res = await fetch('/api/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(loginPayload)
-    });
-    const loginRes = await res.json();
-    if (!res.ok || loginRes.error) {
-      throw new Error(loginRes.error || 'Login failed');
+    // Use the shared login() helper — it works in both server mode and native
+    // (APK) client mode. Calling /api/login directly fails on the TV because
+    // there's no Express server there (the WebView returns index.html → the
+    // "Unexpected token < in JSON" error).
+    const loginRes = await login(
+      pairing.server_url,
+      pairing.username,
+      pairing.password,
+      pairing.playlist_name || 'Remote Playlist'
+    );
+    if (!loginRes || !loginRes.success) {
+      throw new Error('Login failed');
     }
 
     const deleteUrl = `${SUPABASE_URL}/rest/v1/device_pairings?device_id=eq.${deviceCode}`;
