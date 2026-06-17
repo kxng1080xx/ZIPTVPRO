@@ -122,7 +122,12 @@ async function fetchXtream(url, timeoutMs = 15000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { signal: controller.signal });
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'VLC/3.0.20'
+      }
+    });
     clearTimeout(id);
     return res;
   } catch (err) {
@@ -513,15 +518,24 @@ app.get('/api/proxy', async (req, res) => {
   if (!url) return res.status(400).send('Missing url parameter');
 
   const decodedUrl = decodeURIComponent(url);
+  const controller = new AbortController();
+
+  // Abort the remote fetch request immediately when the client closes the connection
+  req.on('close', () => {
+    controller.abort();
+  });
 
   try {
-    const fetchHeaders = {};
+    const fetchHeaders = {
+      'User-Agent': 'VLC/3.0.20'
+    };
     if (req.headers.range) {
       fetchHeaders['range'] = req.headers.range;
     }
 
     const response = await fetch(decodedUrl, {
-      headers: fetchHeaders
+      headers: fetchHeaders,
+      signal: controller.signal
     });
 
     if (!response.ok && response.status !== 206) {
