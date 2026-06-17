@@ -745,6 +745,7 @@ async function playSeriesEpisode(epStreamId, epName, logo, plot, epExt, epIndex,
   try {
     const playUrl = await getStreamUrl(epStreamId, 'series', epExt);
     playerInstance.loadStream(playUrl, epName, logo, '', true);
+    playerInstance.enterFullscreen();
   } catch (err) {
     console.error('Failed to play Series episode:', err);
     alert(`Failed to load stream: ${err.message}`);
