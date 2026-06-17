@@ -22,6 +22,14 @@ import { VideoPlayer } from './components/player.js';
 import { EPGGrid } from './components/epg.js';
 import { navigation } from './components/tv-navigation.js';
 
+// Supabase Configuration for Remote Playlist Pairing
+// Swap these with your own Supabase project credentials
+const SUPABASE_URL = '';
+const SUPABASE_ANON_KEY = '';
+
+let remoteLoginInterval = null;
+let deviceCode = null;
+
 // Application State
 const state = {
   user: null,
@@ -74,6 +82,11 @@ document.addEventListener('DOMContentLoaded', () => {
 async function initApp() {
   // 1. Initialize time clock
   startClock();
+
+  // Initialize device code for remote login
+  deviceCode = getOrCreateDeviceCode();
+  const codeEl = document.getElementById('remote-device-code');
+  if (codeEl) codeEl.textContent = deviceCode;
 
   // Show the build version (injected from package.json at build time)
   const versionEl = document.getElementById('app-version');
@@ -1820,6 +1833,11 @@ function showLogin() {
   document.getElementById('login-form').classList.remove('hidden');
   document.getElementById('login-playlist-select').classList.add('hidden');
   
+  // Show remote login box and start polling
+  const box = document.getElementById('remote-login-box');
+  if (box) box.classList.remove('hidden');
+  startRemoteLoginPolling();
+
   setTimeout(() => {
     const defaultFocus = document.getElementById('m3u-url') || document.getElementById('playlist-name');
     if (defaultFocus) {
@@ -1833,6 +1851,11 @@ function showManualLoginForm() {
   document.getElementById('login-playlist-select').classList.add('hidden');
   document.getElementById('login-form').classList.remove('hidden');
   
+  // Show remote login box and start polling
+  const box = document.getElementById('remote-login-box');
+  if (box) box.classList.remove('hidden');
+  startRemoteLoginPolling();
+
   setTimeout(() => {
     const defaultFocus = document.getElementById('m3u-url') || document.getElementById('host-url');
     if (defaultFocus) {
@@ -1852,6 +1875,11 @@ function showPlaylistSelect(playlists) {
   const container = document.getElementById('login-playlist-select');
   container.classList.remove('hidden');
   
+  // Show remote login box and start polling
+  const box = document.getElementById('remote-login-box');
+  if (box) box.classList.remove('hidden');
+  startRemoteLoginPolling();
+
   const listEl = document.getElementById('login-playlists-list');
   listEl.innerHTML = '';
   
@@ -2041,6 +2069,11 @@ function showDashboard() {
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('app-container').classList.remove('hidden');
   document.getElementById('login-back-btn')?.classList.add('hidden');
+  
+  // Hide remote login box and stop polling
+  const box = document.getElementById('remote-login-box');
+  if (box) box.classList.add('hidden');
+  stopRemoteLoginPolling();
 
   // Set topbar credentials details
   if (state.user && state.user.credentials) {
@@ -2106,5 +2139,160 @@ function updateHeaderTvIpBadge(status) {
     }
   } else if (badge) {
     badge.style.display = 'none';
+  }
+}
+
+// ==========================================================================
+// SUPABASE REMOTE LOGIN SYSTEM
+// ==========================================================================
+function getOrCreateDeviceCode() {
+  let code = localStorage.getItem('ziptv_device_code');
+  if (!code) {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Avoid confusing characters
+    code = '';
+    for (let i = 0; i < 6; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    localStorage.setItem('ziptv_device_code', code);
+  }
+  return code;
+}
+
+function startRemoteLoginPolling() {
+  if (remoteLoginInterval) return;
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    console.warn('Supabase URL or Anon Key is missing. Remote login polling disabled.');
+    const portalUrlEl = document.getElementById('remote-portal-url');
+    if (portalUrlEl) {
+      portalUrlEl.textContent = 'Please configure Supabase credentials in src/main.js';
+      portalUrlEl.style.color = '#ef4444';
+    }
+    return;
+  }
+
+  // Update instructions with connection portal URL
+  const portalUrlEl = document.getElementById('remote-portal-url');
+  if (portalUrlEl) {
+    const origin = window.location.origin;
+    portalUrlEl.innerHTML = `<a href="${origin}/connect.html" target="_blank" class="remote-login-url">${origin.replace(/^https?:\/\//, '')}/connect.html</a>`;
+  }
+
+  // Insert base pairing record if not exists
+  ensureDevicePairingExists();
+
+  remoteLoginInterval = setInterval(async () => {
+    try {
+      const url = `${SUPABASE_URL}/rest/v1/device_pairings?device_id=eq.${deviceCode}&select=*`;
+      const res = await fetch(url, {
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+        }
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data && data.length > 0) {
+        const pairing = data[0];
+        if (pairing.status === 'loaded' && pairing.server_url && pairing.username && pairing.password) {
+          stopRemoteLoginPolling();
+          
+          // Show connecting status on screen
+          const codeEl = document.getElementById('remote-device-code');
+          if (codeEl) codeEl.textContent = 'LINKING…';
+
+          // Attempt login/save credentials
+          await saveRemotePlaylist(pairing);
+        }
+      }
+    } catch (err) {
+      console.error('Error polling remote login status:', err);
+    }
+  }, 4000);
+}
+
+function stopRemoteLoginPolling() {
+  if (remoteLoginInterval) {
+    clearInterval(remoteLoginInterval);
+    remoteLoginInterval = null;
+  }
+}
+
+async function ensureDevicePairingExists() {
+  try {
+    const url = `${SUPABASE_URL}/rest/v1/device_pairings`;
+    await fetch(url, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify({
+        device_id: deviceCode,
+        status: 'pending'
+      })
+    });
+  } catch (err) {
+    console.error('Error ensuring device pairing record exists:', err);
+  }
+}
+
+async function saveRemotePlaylist(pairing) {
+  try {
+    const loginPayload = {
+      hostUrl: pairing.server_url,
+      username: pairing.username,
+      password: pairing.password,
+      playlistName: pairing.playlist_name || 'Remote Playlist'
+    };
+
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(loginPayload)
+    });
+    const loginRes = await res.json();
+    if (!res.ok || loginRes.error) {
+      throw new Error(loginRes.error || 'Login failed');
+    }
+
+    const deleteUrl = `${SUPABASE_URL}/rest/v1/device_pairings?device_id=eq.${deviceCode}`;
+    await fetch(deleteUrl, {
+      method: 'DELETE',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+      }
+    });
+
+    state.user = loginRes;
+    showDashboard();
+    
+    const box = document.getElementById('remote-login-box');
+    if (box) box.classList.add('hidden');
+
+    await triggerFullSync();
+    state.activeCategory = null;
+    await loadTabCategoriesAndContent();
+
+  } catch (err) {
+    console.error('Failed to link remote playlist:', err);
+    const codeEl = document.getElementById('remote-device-code');
+    if (codeEl) codeEl.textContent = deviceCode;
+    
+    const updateUrl = `${SUPABASE_URL}/rest/v1/device_pairings?device_id=eq.${deviceCode}`;
+    fetch(updateUrl, {
+      method: 'PATCH',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ status: 'pending' })
+    }).catch(e => console.error(e));
+
+    alert('Failed to connect remote playlist: ' + err.message);
+    startRemoteLoginPolling();
   }
 }

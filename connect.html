@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZIPTV Pro - Connect Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    :root {
+      --bg-base: #030712;
+      --bg-panel: #0b0f19;
+      --bg-surface: #111827;
+      --bg-surface-hover: #1f2937;
+      --accent-cyan: #00f3ff;
+      --accent-blue: #2563eb;
+      --text-primary: #f3f4f6;
+      --text-secondary: #9ca3af;
+      --text-muted: #6b7280;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-radius-lg: 16px;
+      --border-radius-md: 12px;
+      --border-radius-sm: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-primary);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    /* Decorative background glow */
+    body::before {
+      content: '';
+      position: absolute;
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, rgba(6, 182, 212, 0.15) 0%, rgba(37, 99, 235, 0.05) 50%, transparent 100%);
+      top: -100px;
+      right: -100px;
+      z-index: 0;
+      pointer-events: none;
+    }
+    body::after {
+      content: '';
+      position: absolute;
+      width: 450px;
+      height: 450px;
+      background: radial-gradient(circle, rgba(37, 99, 235, 0.12) 0%, rgba(6, 182, 212, 0.04) 50%, transparent 100%);
+      bottom: -150px;
+      left: -150px;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 480px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius-lg);
+      padding: 32px 24px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+      z-index: 10;
+      backdrop-filter: blur(10px);
+      transition: all 0.3s ease;
+    }
+
+    .logo-header {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+    .logo-header h1 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 2rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #fff 0%, var(--accent-cyan) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 6px;
+      letter-spacing: -0.5px;
+    }
+
+    .logo-header p {
+      color: var(--text-secondary);
+      font-size: 0.88rem;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    label {
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-secondary);
+    }
+
+    input {
+      width: 100%;
+      padding: 12px 16px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius-sm);
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 0.92rem;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    input:focus {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 12px rgba(6, 182, 212, 0.25);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .device-code-input {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.4rem;
+      font-weight: 700;
+      text-align: center;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      color: var(--accent-cyan);
+      border-color: rgba(6, 182, 212, 0.3);
+      background: rgba(6, 182, 212, 0.05);
+    }
+
+    .device-code-input:focus {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 16px rgba(6, 182, 212, 0.4);
+    }
+
+    .btn-connect {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, var(--accent-blue) 0%, #0891b2 100%);
+      border: none;
+      border-radius: var(--border-radius-sm);
+      color: white;
+      font-family: inherit;
+      font-weight: 700;
+      font-size: 0.95rem;
+      cursor: pointer;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3);
+      margin-top: 10px;
+    }
+
+    .btn-connect:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.45);
+    }
+
+    .btn-connect:active {
+      transform: translateY(1px);
+    }
+
+    .btn-loader {
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: none;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Message Boxes */
+    .msg-box {
+      padding: 14px 16px;
+      border-radius: var(--border-radius-sm);
+      font-size: 0.85rem;
+      line-height: 1.4;
+      margin-bottom: 20px;
+      display: none;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .msg-error {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      color: #f87171;
+    }
+
+    .msg-success {
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+      color: #34d399;
+      text-align: center;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px;
+      gap: 16px;
+    }
+
+    .success-icon-wrap {
+      width: 48px;
+      height: 48px;
+      background: rgba(16, 185, 129, 0.15);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #10b981;
+    }
+
+    .success-icon-wrap i {
+      width: 24px;
+      height: 24px;
+    }
+
+    .msg-success h3 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: white;
+    }
+
+    .msg-success p {
+      color: var(--text-secondary);
+      font-size: 0.88rem;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="logo-header">
+      <h1>ZIPTV Pro</h1>
+      <p>Remote Playlist Loader</p>
+    </div>
+
+    <!-- Error state -->
+    <div id="error-box" class="msg-box msg-error">
+      <i data-lucide="alert-circle" style="flex-shrink:0; width:18px; height:18px;"></i>
+      <span id="error-message"></span>
+    </div>
+
+    <!-- Success state -->
+    <div id="success-box" class="msg-box msg-success">
+      <div class="success-icon-wrap">
+        <i data-lucide="check-circle"></i>
+      </div>
+      <h3>Playlist Connected!</h3>
+      <p>Your playlist has been sent. Your app should automatically refresh and connect in a few seconds.</p>
+    </div>
+
+    <form id="connect-form">
+      <div class="form-group">
+        <label for="device-code">Device Code</label>
+        <input type="text" id="device-code" class="device-code-input" placeholder="XXXXXX" maxlength="6" required autocomplete="off" autofocus>
+      </div>
+
+      <div class="form-group">
+        <label for="playlist-name">Playlist Name</label>
+        <input type="text" id="playlist-name" placeholder="e.g. My Remote Playlist" value="Xtream Codes" required>
+      </div>
+
+      <div class="form-group">
+        <label for="server-url">Server URL</label>
+        <input type="url" id="server-url" placeholder="e.g. http://your-provider.com:8080" required autocomplete="off">
+      </div>
+
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" placeholder="Enter Username" required autocomplete="off">
+      </div>
+
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="Enter Password" required>
+      </div>
+
+      <button type="submit" id="btn-submit" class="btn-connect">
+        <i data-lucide="link" style="width:16px; height:16px;"></i>
+        <span id="btn-text">Link Playlist</span>
+        <div id="btn-loader" class="btn-loader"></div>
+      </button>
+    </form>
+  </div>
+
+  <script>
+    // Supabase Configuration
+    // Swap these with your own Supabase project credentials
+    const SUPABASE_URL = ''; 
+    const SUPABASE_ANON_KEY = '';
+
+    lucide.createIcons();
+
+    const form = document.getElementById('connect-form');
+    const submitBtn = document.getElementById('btn-submit');
+    const btnText = document.getElementById('btn-text');
+    const btnLoader = document.getElementById('btn-loader');
+    const errorBox = document.getElementById('error-box');
+    const successBox = document.getElementById('success-box');
+    const errorMsg = document.getElementById('error-message');
+
+    // Force uppercase alphanumeric on code input
+    const codeInput = document.getElementById('device-code');
+    codeInput.addEventListener('input', (e) => {
+      e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      // Reset status messages
+      errorBox.style.display = 'none';
+      
+      if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+        showError('Supabase config credentials are missing. Please edit connect.html and provide SUPABASE_URL and SUPABASE_ANON_KEY.');
+        return;
+      }
+
+      // Collect data
+      const deviceId = codeInput.value.trim();
+      const playlistName = document.getElementById('playlist-name').value.trim();
+      let serverUrl = document.getElementById('server-url').value.trim();
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value.trim();
+
+      // Normalize server URL protocol
+      if (!/^https?:\/\//i.test(serverUrl)) {
+        serverUrl = 'http://' + serverUrl;
+      }
+      if (serverUrl.endsWith('/')) {
+        serverUrl = serverUrl.slice(0, -1);
+      }
+
+      // Show loading state
+      submitBtn.disabled = true;
+      btnLoader.style.display = 'block';
+      btnText.style.display = 'none';
+
+      try {
+        // Query to check if pairing record exists
+        const queryUrl = `${SUPABASE_URL}/rest/v1/device_pairings?device_id=eq.${deviceId}&select=*`;
+        const queryRes = await fetch(queryUrl, {
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          }
+        });
+
+        if (!queryRes.ok) {
+          throw new Error('Could not connect to the database. Verify Anon Key.');
+        }
+
+        const data = await queryRes.json();
+        if (!data || data.length === 0) {
+          throw new Error(`Device code "${deviceId}" not found. Ensure the IPTV Player app is open on the login screen.`);
+        }
+
+        // Perform patch update
+        const patchUrl = `${SUPABASE_URL}/rest/v1/device_pairings?device_id=eq.${deviceId}`;
+        const patchRes = await fetch(patchUrl, {
+          method: 'PATCH',
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            playlist_name: playlistName,
+            server_url: serverUrl,
+            username: username,
+            password: password,
+            status: 'loaded'
+          })
+        });
+
+        if (!patchRes.ok) {
+          throw new Error('Failed to upload credentials. Please try again.');
+        }
+
+        // Show success
+        form.style.display = 'none';
+        successBox.style.display = 'flex';
+
+      } catch (err) {
+        showError(err.message);
+        submitBtn.disabled = false;
+        btnLoader.style.display = 'none';
+        btnText.style.display = 'block';
+      }
+    });
+
+    function showError(message) {
+      errorMsg.textContent = message;
+      errorBox.style.display = 'flex';
+      errorBox.scrollIntoView({ behavior: 'smooth' });
+    }
+  </script>
+</body>
+</html>
