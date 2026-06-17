@@ -4,6 +4,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import os from 'os';
+import http from 'http';
+import https from 'https';
 
 function getLocalIpAddresses() {
   const interfaces = os.networkInterfaces();
@@ -513,104 +515,117 @@ app.post('/api/play-track', (req, res) => {
 });
 
 // 11. CORS Stream Proxy
-app.get('/api/proxy', async (req, res) => {
+app.get('/api/proxy', (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).send('Missing url parameter');
 
   const decodedUrl = decodeURIComponent(url);
-  const controller = new AbortController();
+  const maxRedirects = 5;
 
-  // Abort the remote fetch request immediately when the client closes the connection
-  req.on('close', () => {
-    controller.abort();
-  });
+  const fetchHeaders = {
+    'User-Agent': 'VLC/3.0.20'
+  };
+  if (req.headers.range) {
+    fetchHeaders['range'] = req.headers.range;
+  }
 
-  try {
-    const fetchHeaders = {
-      'User-Agent': 'VLC/3.0.20'
-    };
-    if (req.headers.range) {
-      fetchHeaders['range'] = req.headers.range;
+  const handleRequest = (currentUrl, redirectCount = 0) => {
+    if (redirectCount > maxRedirects) {
+      if (!res.headersSent) res.status(500).send('Too many redirects');
+      return;
     }
 
-    const response = await fetch(decodedUrl, {
-      headers: fetchHeaders,
-      signal: controller.signal
+    const protocol = currentUrl.startsWith('https') ? https : http;
+    
+    const clientReq = protocol.get(currentUrl, { headers: fetchHeaders }, (clientRes) => {
+      // Handle HTTP redirects (301, 302, 307, 308)
+      if ([301, 302, 307, 308].includes(clientRes.statusCode)) {
+        let location = clientRes.headers.location;
+        if (location) {
+          if (!location.startsWith('http')) {
+            // Resolve relative redirect location
+            const parsed = new URL(currentUrl);
+            location = parsed.origin + location;
+          }
+          clientReq.destroy();
+          handleRequest(location, redirectCount + 1);
+          return;
+        }
+      }
+
+      if (clientRes.statusCode !== 200 && clientRes.statusCode !== 206) {
+        if (!res.headersSent) {
+          res.status(clientRes.statusCode).send(`Error fetching stream: ${clientRes.statusMessage}`);
+        }
+        return;
+      }
+
+      const contentType = clientRes.headers['content-type'] || '';
+      const isM3u8 = currentUrl.includes('.m3u8') || 
+                     contentType.includes('mpegurl') || 
+                     contentType.includes('application/x-mpegURL');
+
+      // Set CORS headers
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', '*');
+
+      if (isM3u8) {
+        // Accumulate text data for HLS playlist URL rewriting
+        let data = '';
+        clientRes.setEncoding('utf8');
+        clientRes.on('data', (chunk) => {
+          data += chunk;
+        });
+        clientRes.on('end', () => {
+          const baseUrl = currentUrl.substring(0, currentUrl.lastIndexOf('/') + 1);
+          const rewrittenText = data.split('\n').map(line => {
+            const trimmed = line.trim();
+            if (trimmed.length === 0 || trimmed.startsWith('#')) {
+              return line;
+            }
+            let absoluteUrl = trimmed;
+            if (!trimmed.startsWith('http')) {
+              absoluteUrl = baseUrl + trimmed;
+            }
+            return `/api/proxy?url=${encodeURIComponent(absoluteUrl)}`;
+          }).join('\n');
+          
+          res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+          res.send(rewrittenText);
+        });
+      } else {
+        // Direct binary stream piping for TS / MP4 and other video assets
+        res.status(clientRes.statusCode);
+        
+        // Forward select stream-related headers
+        for (const key of Object.keys(clientRes.headers)) {
+          if (['content-range', 'content-length', 'accept-ranges', 'content-type'].includes(key)) {
+            res.setHeader(key, clientRes.headers[key]);
+          }
+        }
+        if (!res.getHeader('content-type')) {
+          res.setHeader('Content-Type', 'video/mp2t');
+        }
+
+        clientRes.pipe(res);
+      }
     });
 
-    if (!response.ok && response.status !== 206) {
-      return res.status(response.status).send(`Error fetching stream: ${response.statusText}`);
-    }
-
-    const contentType = response.headers.get('content-type') || '';
-    
-    // Set CORS headers
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', '*');
-
-    // Handle HLS playlist rewriting to keep segments running through proxy
-    if (decodedUrl.includes('.m3u8') || contentType.includes('mpegurl') || contentType.includes('application/x-mpegURL')) {
-      const text = await response.text();
-      const baseUrl = decodedUrl.substring(0, decodedUrl.lastIndexOf('/') + 1);
-      
-      const rewrittenText = text.split('\n').map(line => {
-        const trimmed = line.trim();
-        if (trimmed.length === 0 || trimmed.startsWith('#')) {
-          return line;
-        }
-        
-        let absoluteUrl = trimmed;
-        if (!trimmed.startsWith('http')) {
-          // Resolve relative URL
-          absoluteUrl = baseUrl + trimmed;
-        }
-        
-        // Rewrite segment or sub-playlist URL to route through proxy
-        return `/api/proxy?url=${encodeURIComponent(absoluteUrl)}`;
-      }).join('\n');
-      
-      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-      return res.send(rewrittenText);
-    } else {
-      // Set status to 206 if the remote server returned 206
-      if (response.status === 206) {
-        res.status(206);
+    clientReq.on('error', (err) => {
+      console.error('Proxy request failed:', err);
+      if (!res.headersSent) {
+        res.status(500).send(`Proxy error: ${err.message}`);
       }
-      
-      // Forward range/content-length headers
-      const contentRange = response.headers.get('content-range');
-      if (contentRange) res.setHeader('Content-Range', contentRange);
-      
-      const contentLength = response.headers.get('content-length');
-      if (contentLength) res.setHeader('Content-Length', contentLength);
-      
-      const acceptRanges = response.headers.get('accept-ranges');
-      if (acceptRanges) res.setHeader('Accept-Ranges', acceptRanges || 'bytes');
+    });
 
-      res.setHeader('Content-Type', contentType || 'video/mp2t');
-      
-      const reader = response.body.getReader();
-      const pump = async () => {
-        try {
-          const { done, value } = await reader.read();
-          if (done) {
-            res.end();
-            return;
-          }
-          res.write(Buffer.from(value));
-          await pump();
-        } catch (err) {
-          console.error('Error pumping stream chunks:', err);
-          res.end();
-        }
-      };
-      await pump();
-    }
-  } catch (err) {
-    console.error('Proxy request failed:', err);
-    res.status(500).send(`Proxy error: ${err.message}`);
-  }
+    // Abort the active request if the client disconnects
+    req.on('close', () => {
+      clientReq.destroy();
+    });
+  };
+
+  handleRequest(decodedUrl);
 });
 
 // API: Get direct or proxied stream URL
