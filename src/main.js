@@ -640,6 +640,17 @@ async function openSeriesPlaybackDashboard(series) {
   
   if (rating) lucide.createIcons({ scope: rating });
   
+  if (playerInstance) {
+    playerInstance.setOnPrevChannel(() => playPreviousEpisode());
+    playerInstance.setOnNextChannel(() => playNextEpisode());
+    playerInstance.onExitVod = () => {
+      exitSeriesPlaybackDashboard();
+    };
+    playerInstance.onVideoEnded = () => {
+      playNextEpisode();
+    };
+  }
+  
   try {
     const info = await getStreamInfo(series.series_id, 'series');
     const infoMeta = info.info || {};
@@ -675,7 +686,7 @@ async function openSeriesPlaybackDashboard(series) {
         return;
       }
       
-      episodes.forEach(ep => {
+      episodes.forEach((ep, epIdx) => {
         const row = document.createElement('div');
         row.className = 'episode-list-row';
         row.dataset.episodeId = ep.id;
@@ -695,7 +706,7 @@ async function openSeriesPlaybackDashboard(series) {
           const epExt = ep.container_extension || ep.info?.container_extension || '';
           const epName = `${infoMeta.name || 'Series'} - S${seasonNum}E${ep.episode_num}: ${ep.title}`;
           
-          await playSeriesEpisode(epStreamId, epName, infoMeta.cover, ep.info?.plot || '', epExt);
+          await playSeriesEpisode(epStreamId, epName, infoMeta.cover, ep.info?.plot || '', epExt, epIdx, episodes, seasonNum, info);
         });
         
         episodesList.appendChild(row);
@@ -717,12 +728,19 @@ async function openSeriesPlaybackDashboard(series) {
   }
 }
 
-async function playSeriesEpisode(epStreamId, epName, logo, plot, epExt) {
+async function playSeriesEpisode(epStreamId, epName, logo, plot, epExt, epIndex, episodesListForSeason, seasonNum, seriesInfo) {
   if (!playerInstance) return;
   playerInstance.showSpinner();
   if (playerInstance.vodTitleTag) {
     playerInstance.vodTitleTag.textContent = epName || '';
   }
+  
+  state.seriesPlayback = {
+    seriesInfo: seriesInfo,
+    activeSeason: seasonNum,
+    episodes: episodesListForSeason,
+    currentIndex: epIndex
+  };
   
   try {
     const playUrl = await getStreamUrl(epStreamId, 'series', epExt);
@@ -731,6 +749,124 @@ async function playSeriesEpisode(epStreamId, epName, logo, plot, epExt) {
     console.error('Failed to play Series episode:', err);
     alert(`Failed to load stream: ${err.message}`);
     playerInstance.hideSpinner();
+  }
+}
+
+async function playNextEpisode() {
+  if (!state.seriesPlayback || !state.seriesPlayback.seriesInfo) return;
+  
+  const { seriesInfo, activeSeason, episodes, currentIndex } = state.seriesPlayback;
+  const select = document.getElementById('series-season-select');
+  
+  if (currentIndex + 1 < episodes.length) {
+    const nextEp = episodes[currentIndex + 1];
+    
+    const rows = document.querySelectorAll('.episode-list-row');
+    rows.forEach(r => r.classList.remove('active'));
+    const targetRow = document.querySelector(`.episode-list-row[data-episode-id="${nextEp.id}"]`);
+    if (targetRow) {
+      targetRow.classList.add('active');
+      targetRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+    
+    const epExt = nextEp.container_extension || nextEp.info?.container_extension || '';
+    const epName = `${seriesInfo.info?.name || 'Series'} - S${activeSeason}E${nextEp.episode_num}: ${nextEp.title}`;
+    await playSeriesEpisode(nextEp.id, epName, seriesInfo.info?.cover, nextEp.info?.plot || '', epExt, currentIndex + 1, episodes, activeSeason, seriesInfo);
+  } else {
+    const episodesMap = seriesInfo.episodes || {};
+    const seasons = Object.keys(episodesMap).sort((a, b) => parseInt(a) - parseInt(b));
+    const currentSeasonIdx = seasons.indexOf(String(activeSeason));
+    
+    if (currentSeasonIdx !== -1 && currentSeasonIdx + 1 < seasons.length) {
+      const nextSeasonNum = seasons[currentSeasonIdx + 1];
+      
+      if (select) {
+        select.value = nextSeasonNum;
+      }
+      
+      const nextSeasonEpisodes = episodesMap[nextSeasonNum] || [];
+      if (nextSeasonEpisodes.length > 0) {
+        if (select) {
+          const event = new Event('change');
+          select.dispatchEvent(event);
+        }
+        
+        const firstEp = nextSeasonEpisodes[0];
+        setTimeout(async () => {
+          const rows = document.querySelectorAll('.episode-list-row');
+          rows.forEach(r => r.classList.remove('active'));
+          const targetRow = document.querySelector(`.episode-list-row[data-episode-id="${firstEp.id}"]`);
+          if (targetRow) {
+            targetRow.classList.add('active');
+            targetRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          }
+          
+          const epExt = firstEp.container_extension || firstEp.info?.container_extension || '';
+          const epName = `${seriesInfo.info?.name || 'Series'} - S${nextSeasonNum}E${firstEp.episode_num}: ${firstEp.title}`;
+          await playSeriesEpisode(firstEp.id, epName, seriesInfo.info?.cover, seriesInfo.info?.cover, epExt, 0, nextSeasonEpisodes, nextSeasonNum, seriesInfo);
+        }, 100);
+      }
+    }
+  }
+}
+
+async function playPreviousEpisode() {
+  if (!state.seriesPlayback || !state.seriesPlayback.seriesInfo) return;
+  
+  const { seriesInfo, activeSeason, episodes, currentIndex } = state.seriesPlayback;
+  const select = document.getElementById('series-season-select');
+  
+  if (currentIndex - 1 >= 0) {
+    const prevEp = episodes[currentIndex - 1];
+    
+    const rows = document.querySelectorAll('.episode-list-row');
+    rows.forEach(r => r.classList.remove('active'));
+    const targetRow = document.querySelector(`.episode-list-row[data-episode-id="${prevEp.id}"]`);
+    if (targetRow) {
+      targetRow.classList.add('active');
+      targetRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+    
+    const epExt = prevEp.container_extension || prevEp.info?.container_extension || '';
+    const epName = `${seriesInfo.info?.name || 'Series'} - S${activeSeason}E${prevEp.episode_num}: ${prevEp.title}`;
+    await playSeriesEpisode(prevEp.id, epName, seriesInfo.info?.cover, seriesInfo.info?.cover, epExt, currentIndex - 1, episodes, activeSeason, seriesInfo);
+  } else {
+    const episodesMap = seriesInfo.episodes || {};
+    const seasons = Object.keys(episodesMap).sort((a, b) => parseInt(a) - parseInt(b));
+    const currentSeasonIdx = seasons.indexOf(String(activeSeason));
+    
+    if (currentSeasonIdx > 0) {
+      const prevSeasonNum = seasons[currentSeasonIdx - 1];
+      
+      if (select) {
+        select.value = prevSeasonNum;
+      }
+      
+      const prevSeasonEpisodes = episodesMap[prevSeasonNum] || [];
+      if (prevSeasonEpisodes.length > 0) {
+        if (select) {
+          const event = new Event('change');
+          select.dispatchEvent(event);
+        }
+        
+        const lastEpIdx = prevSeasonEpisodes.length - 1;
+        const lastEp = prevSeasonEpisodes[lastEpIdx];
+        
+        setTimeout(async () => {
+          const rows = document.querySelectorAll('.episode-list-row');
+          rows.forEach(r => r.classList.remove('active'));
+          const targetRow = document.querySelector(`.episode-list-row[data-episode-id="${lastEp.id}"]`);
+          if (targetRow) {
+            targetRow.classList.add('active');
+            targetRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          }
+          
+          const epExt = lastEp.container_extension || lastEp.info?.container_extension || '';
+          const epName = `${seriesInfo.info?.name || 'Series'} - S${prevSeasonNum}E${lastEp.episode_num}: ${lastEp.title}`;
+          await playSeriesEpisode(lastEp.id, epName, seriesInfo.info?.cover, seriesInfo.info?.cover, epExt, lastEpIdx, prevSeasonEpisodes, prevSeasonNum, seriesInfo);
+        }, 100);
+      }
+    }
   }
 }
 
@@ -744,6 +880,10 @@ function exitSeriesPlaybackDashboard() {
     
     if (playerInstance) {
       playerInstance.stop();
+      playerInstance.setOnPrevChannel(() => playPreviousChannel());
+      playerInstance.setOnNextChannel(() => playNextChannel());
+      playerInstance.onExitVod = exitVodPlayer;
+      playerInstance.onVideoEnded = null;
     }
     
     const videoContainer = document.getElementById('video-container');

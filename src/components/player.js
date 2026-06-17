@@ -57,6 +57,8 @@ export class VideoPlayer {
     this.controlsTimeout = null;
     this.onPrevChannelCallback = null;
     this.onNextChannelCallback = null;
+    this.onVideoEnded = null;
+    this.isVod = false;
 
     this.initEventListeners();
   }
@@ -227,6 +229,11 @@ export class VideoPlayer {
     this.video.addEventListener('leavepictureinpicture', () => {
       document.body.classList.remove('pip-mode-active');
     });
+
+    // Handle video end event (auto-play episodes)
+    this.video.addEventListener('ended', () => {
+      if (this.onVideoEnded) this.onVideoEnded();
+    });
   }
 
   setOnPrevChannel(callback) {
@@ -238,6 +245,7 @@ export class VideoPlayer {
   }
 
   loadStream(url, name, logo, currentEpg = 'No schedule available', isVod = false) {
+    this.isVod = isVod;
     this.showSpinner();
     this.channelNameEl.textContent = name || 'Live Channel';
     this.epgTitleEl.textContent = currentEpg;
