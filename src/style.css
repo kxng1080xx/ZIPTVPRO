@@ -3133,11 +3133,12 @@ body.vod-mode .now-next-bar {
   /* Adjust top bar header container */
   .top-header {
     height: 60px;
-    padding: 0 12px;
-    gap: 8px;
+    padding: 0 8px 0 8px;
+    gap: 6px;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    overflow: visible;
   }
   
   .header-left {
@@ -3146,8 +3147,11 @@ body.vod-mode .now-next-bar {
   
   .header-center {
     flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
     justify-content: flex-start;
     gap: 8px;
+    overflow: hidden;
   }
   
   .header-center .logo-container {
@@ -3155,7 +3159,9 @@ body.vod-mode .now-next-bar {
   }
   
   .header-right {
-    gap: 6px;
+    gap: 4px;
+    flex-shrink: 0;
+    margin-left: auto;
   }
 
   .header-icon-btn {
