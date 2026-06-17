@@ -52,7 +52,20 @@
           <span class="btn-loader hidden"></span>
         </button>
       </form>
+      
+      <!-- Playlist select screen on boot if login/reachability fails -->
+      <div id="login-playlist-select" class="hidden">
+        <div class="login-playlists-title">Select a Saved Playlist</div>
+        <div id="login-playlists-list" class="login-playlists-list">
+          <!-- Dynamic playlist rows go here -->
+        </div>
+        <button type="button" id="login-show-form-btn" class="playlist-add-btn">
+          <i data-lucide="plus"></i> Add New Playlist
+        </button>
+      </div>
+
       <div class="login-credits">
+
         Designed by: Leon Goulbourne
       </div>
       <div class="app-version" id="app-version"></div>

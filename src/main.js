@@ -112,7 +112,7 @@ async function initApp() {
   // 4. Check Connection Status
   try {
     const status = await getStatus();
-    if (status.loggedIn) {
+    if (status.loggedIn && !status.offline) {
       state.user = status;
       showDashboard();
       
@@ -124,11 +124,37 @@ async function initApp() {
       // Initial categories and streams load
       await loadTabCategoriesAndContent();
     } else {
-      showLogin();
+      // Failed to login or server offline at boot!
+      // Check if there are saved playlists
+      const { playlists } = await getPlaylists();
+      if (playlists && playlists.length > 0) {
+        showPlaylistSelect(playlists);
+        
+        // Also show connection error message if it was offline/failed
+        if (status.offline) {
+          const errorMsg = document.getElementById('login-error');
+          if (errorMsg) {
+            errorMsg.textContent = 'Server unavailable. Check the server URL and your internet connection.';
+            errorMsg.classList.remove('hidden');
+          }
+        }
+      } else {
+        showLogin();
+      }
     }
   } catch (err) {
     console.error('Failed to initialize app session:', err);
-    showLogin();
+    // Check if there are saved playlists anyway
+    try {
+      const { playlists } = await getPlaylists();
+      if (playlists && playlists.length > 0) {
+        showPlaylistSelect(playlists);
+      } else {
+        showLogin();
+      }
+    } catch (e) {
+      showLogin();
+    }
   }
 }
 
@@ -1441,9 +1467,33 @@ function bindGlobalEvents() {
     }
   });
   document.getElementById('login-back-btn')?.addEventListener('click', () => {
-    document.getElementById('login-screen').classList.add('hidden');
-    document.getElementById('app-container').classList.remove('hidden');
-    document.getElementById('login-back-btn').classList.add('hidden');
+    if (state.user && state.user.loggedIn) {
+      document.getElementById('login-screen').classList.add('hidden');
+      document.getElementById('app-container').classList.remove('hidden');
+      document.getElementById('login-back-btn').classList.add('hidden');
+    } else {
+      // Go back to playlist selection screen
+      getPlaylists().then(({ playlists }) => {
+        if (playlists && playlists.length > 0) {
+          showPlaylistSelect(playlists);
+        } else {
+          showLogin();
+        }
+      }).catch(() => {
+        showLogin();
+      });
+    }
+  });
+
+  // Bind the Add New Playlist / Show Login Form button on boot selection screen
+  document.getElementById('login-show-form-btn')?.addEventListener('click', () => {
+    showManualLoginForm();
+    // Also show "Back to playlists" if there is at least one saved playlist
+    getPlaylists().then(({ playlists }) => {
+      if (playlists && playlists.length > 0) {
+        document.getElementById('login-back-btn')?.classList.remove('hidden');
+      }
+    }).catch(() => {});
   });
   // Close the dropdown when clicking outside of it
   document.addEventListener('click', (e) => {
@@ -1695,6 +1745,94 @@ function showLogin() {
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('app-container').classList.add('hidden');
   document.getElementById('login-back-btn')?.classList.add('hidden');
+  document.getElementById('login-form').classList.remove('hidden');
+  document.getElementById('login-playlist-select').classList.add('hidden');
+}
+
+function showManualLoginForm() {
+  document.getElementById('login-playlist-select').classList.add('hidden');
+  document.getElementById('login-form').classList.remove('hidden');
+}
+
+function showPlaylistSelect(playlists) {
+  document.getElementById('login-screen').classList.remove('hidden');
+  document.getElementById('app-container').classList.add('hidden');
+  document.getElementById('login-back-btn')?.classList.add('hidden');
+  
+  // Hide form, show selection
+  document.getElementById('login-form').classList.add('hidden');
+  const container = document.getElementById('login-playlist-select');
+  container.classList.remove('hidden');
+  
+  const listEl = document.getElementById('login-playlists-list');
+  listEl.innerHTML = '';
+  
+  playlists.forEach(p => {
+    let domain = p.server_url;
+    try { domain = new URL(p.server_url).hostname; } catch (e) {}
+    
+    const row = document.createElement('div');
+    row.className = 'playlist-row';
+    row.dataset.id = p.id;
+    row.innerHTML = `
+      <div class="playlist-row-main">
+        <span class="playlist-row-name">${p.playlistName || 'Playlist'}</span>
+        <span class="playlist-row-server">${domain} · ${p.username}</span>
+      </div>
+      <button class="playlist-row-del" data-del="${p.id}" title="Remove playlist"><i data-lucide="trash-2"></i></button>
+    `;
+    
+    // Clicking a row triggers switchToPlaylist
+    row.addEventListener('click', async (e) => {
+      if (e.target.closest('.playlist-row-del')) return; // ignore delete click
+      
+      const errorMsg = document.getElementById('login-error');
+      errorMsg.classList.add('hidden');
+      
+      // Show loader or update row style
+      row.style.opacity = '0.7';
+      row.style.pointerEvents = 'none';
+      
+      try {
+        await switchToPlaylist(p.id);
+      } catch (err) {
+        row.style.opacity = '1';
+        row.style.pointerEvents = 'auto';
+        errorMsg.textContent = err.message || 'Login connection failed.';
+        errorMsg.classList.remove('hidden');
+      }
+    });
+    
+    listEl.appendChild(row);
+  });
+  
+  // Delete handler
+  listEl.querySelectorAll('.playlist-row-del').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.del;
+      await deletePlaylistFromLoginScreen(id);
+    });
+  });
+
+  if (window.lucide) lucide.createIcons({ scope: listEl });
+}
+
+async function deletePlaylistFromLoginScreen(id) {
+  if (!confirm('Remove this playlist?')) return;
+  try {
+    const res = await removePlaylist(id);
+    if (!res.remaining) {
+      state.user = null;
+      showManualLoginForm();
+      return;
+    }
+    // Refresh the list
+    const { playlists } = await getPlaylists();
+    showPlaylistSelect(playlists);
+  } catch (err) {
+    alert('Could not remove playlist: ' + (err.message || err));
+  }
 }
 
 // ==========================================================================

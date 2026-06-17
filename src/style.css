@@ -4098,4 +4098,40 @@ body.epg-fullscreen-active .epg-section-container {
   color: #00f3ff !important;
 }
 
+/* Playlist Select Screen on Boot */
+.login-playlists-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin-bottom: 15px;
+  color: var(--text-primary);
+  text-align: center;
+  font-family: 'Outfit', sans-serif;
+  letter-spacing: 0.3px;
+}
+
+.login-playlists-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.login-playlists-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.login-playlists-list::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 3px;
+}
+
+.login-playlists-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+
 
