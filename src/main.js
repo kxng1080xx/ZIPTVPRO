@@ -122,52 +122,17 @@ async function initApp() {
   // 3. Bind Global UI Events (Tabs, Logins, Settings, Modal Closers)
   bindGlobalEvents();
 
-  // 4. Check Connection Status
+  // 4. Check Saved Playlists on Boot
   try {
-    const status = await getStatus();
-    if (status.loggedIn && !status.offline) {
-      state.user = status;
-      showDashboard();
-      
-      // Load favorites from local state cache
-      if (status.favorites) {
-        state.favorites = status.favorites;
-      }
-      
-      // Initial categories and streams load
-      await loadTabCategoriesAndContent();
+    const { playlists } = await getPlaylists();
+    if (playlists && playlists.length > 0) {
+      showPlaylistSelect(playlists);
     } else {
-      // Failed to login or server offline at boot!
-      // Check if there are saved playlists
-      const { playlists } = await getPlaylists();
-      if (playlists && playlists.length > 0) {
-        showPlaylistSelect(playlists);
-        
-        // Also show connection error message if it was offline/failed
-        if (status.offline) {
-          const errorMsg = document.getElementById('login-error');
-          if (errorMsg) {
-            errorMsg.textContent = 'Server unavailable. Check the server URL and your internet connection.';
-            errorMsg.classList.remove('hidden');
-          }
-        }
-      } else {
-        showLogin();
-      }
+      showLogin();
     }
   } catch (err) {
     console.error('Failed to initialize app session:', err);
-    // Check if there are saved playlists anyway
-    try {
-      const { playlists } = await getPlaylists();
-      if (playlists && playlists.length > 0) {
-        showPlaylistSelect(playlists);
-      } else {
-        showLogin();
-      }
-    } catch (e) {
-      showLogin();
-    }
+    showLogin();
   }
 }
 
