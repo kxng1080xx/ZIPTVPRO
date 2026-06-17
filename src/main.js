@@ -2162,19 +2162,7 @@ function startRemoteLoginPolling() {
   if (remoteLoginInterval) return;
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     console.warn('Supabase URL or Anon Key is missing. Remote login polling disabled.');
-    const portalUrlEl = document.getElementById('remote-portal-url');
-    if (portalUrlEl) {
-      portalUrlEl.textContent = 'Please configure Supabase credentials in src/main.js';
-      portalUrlEl.style.color = '#ef4444';
-    }
     return;
-  }
-
-  // Update instructions with connection portal URL
-  const portalUrlEl = document.getElementById('remote-portal-url');
-  if (portalUrlEl) {
-    const origin = window.location.origin;
-    portalUrlEl.innerHTML = `<a href="${origin}/connect.html" target="_blank" class="remote-login-url">${origin.replace(/^https?:\/\//, '')}/connect.html</a>`;
   }
 
   // Insert base pairing record if not exists
