@@ -2077,11 +2077,6 @@ body.vod-mode .now-next-bar {
   cursor: pointer;
   background-color: var(--bg-panel);
   transition: background var(--transition-fast);
-  /* Skip layout/paint for off-screen rows — native virtual scroll for the browser.
-     contain-intrinsic-size must match the actual row height (64px) so the
-     scrollbar thumb stays the correct size even before rows are rendered. */
-  content-visibility: auto;
-  contain-intrinsic-block-size: auto 64px;
 }
 
 .epg-channel-row:hover {
@@ -2383,6 +2378,130 @@ body.vod-mode .now-next-bar {
   flex-direction: column;
   cursor: pointer;
   transition: all var(--transition-normal);
+}
+
+/* ==========================================================================
+   CONTINUE WATCHING ROW (movies / series)
+   ========================================================================== */
+.continue-row {
+  padding: 16px 24px 4px;
+}
+
+.continue-row.hidden {
+  display: none;
+}
+
+.continue-row-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.continue-row-cards {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  scrollbar-width: thin;
+}
+
+.continue-card {
+  flex: 0 0 150px;
+  width: 150px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+}
+
+.continue-poster {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--border-radius-md);
+  overflow: hidden;
+  background: var(--bg-base);
+  border: 1px solid var(--border-color);
+}
+
+.continue-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.continue-poster .poster-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.continue-resume-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.continue-resume-overlay i {
+  width: 44px;
+  height: 44px;
+  color: #fff;
+  background: rgba(6, 182, 212, 0.85);
+  border-radius: 50%;
+  padding: 9px;
+}
+
+.continue-card:hover .continue-resume-overlay,
+.continue-card.tv-focused .continue-resume-overlay {
+  opacity: 1;
+}
+
+.continue-card.tv-focused .continue-poster {
+  outline: 3px solid var(--accent-cyan);
+}
+
+.continue-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.continue-progress-fill {
+  height: 100%;
+  background: var(--accent-cyan);
+}
+
+.continue-card-title {
+  margin-top: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.continue-card-sub {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent-cyan);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .vod-poster-wrapper {
@@ -3600,9 +3719,11 @@ body.epg-fullscreen-active .epg-section-container {
 
 .series-top-row {
   display: grid;
-  grid-template-columns: 1.62fr 1fr;
+  /* Player dominates the width (16:9); details panel sits beside it, sized to
+     its content (top-aligned) so it never becomes a big empty box. */
+  grid-template-columns: 1.7fr 1fr;
   gap: 20px;
-  height: 380px;
+  align-items: start;
   margin-bottom: 20px;
   min-height: 0;
 }
@@ -3616,7 +3737,8 @@ body.epg-fullscreen-active .epg-section-container {
   display: flex;
   align-items: stretch;
   justify-content: stretch;
-  height: 100%;
+  width: 100%;
+  aspect-ratio: 16 / 9;
 }
 
 /* Ensure the video container matches the height */
@@ -3634,7 +3756,9 @@ body.epg-fullscreen-active .epg-section-container {
   flex-direction: column;
   gap: 16px;
   overflow-y: auto;
-  height: 100%;
+  align-self: start;
+  height: auto;
+  max-height: 100%;
 }
 
 .series-details-header {
@@ -3644,8 +3768,8 @@ body.epg-fullscreen-active .epg-section-container {
 }
 
 .series-cover-wrapper {
-  width: 84px;
-  height: 120px;
+  width: 64px;
+  height: 64px;
   border-radius: var(--border-radius-sm);
   overflow: hidden;
   flex-shrink: 0;
@@ -3720,14 +3844,13 @@ body.epg-fullscreen-active .epg-section-container {
 }
 
 .series-bottom-section {
-  flex-grow: 1;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-md);
   background: var(--bg-panel);
   overflow: hidden;
-  min-height: 200px;
 }
 
 .series-bottom-header {
@@ -3768,7 +3891,9 @@ body.epg-fullscreen-active .epg-section-container {
 }
 
 .series-episodes-list {
-  flex-grow: 1;
+  flex: 0 0 auto;
+  /* Show ~4 episodes, scroll for the rest */
+  max-height: 248px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;

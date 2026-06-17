@@ -390,6 +390,45 @@ export async function removePlaylist(id) {
   return { success: true, remaining: list.length, activeId: getActiveIdLocal(), wasActive };
 }
 
+// ---------------------------------------------------------------------------
+// Continue Watching — tracks where the user stopped in movies/series episodes.
+// Stored in localStorage, scoped per active playlist. Works in any mode.
+// ---------------------------------------------------------------------------
+const CW_PREFIX = 'cw_';
+
+function cwKey() {
+  return CW_PREFIX + (getActiveIdLocal() || 'default');
+}
+
+export function getContinueWatching(type = null) {
+  let list = [];
+  try {
+    const raw = localStorage.getItem(cwKey());
+    if (raw) list = JSON.parse(raw);
+  } catch (e) {}
+  if (!Array.isArray(list)) list = [];
+  list.sort((a, b) => (b.lastWatched || 0) - (a.lastWatched || 0));
+  return type ? list.filter(i => i.type === type) : list;
+}
+
+export function saveWatchProgress(item) {
+  if (!item || !item.id) return;
+  let list = getContinueWatching();
+  list = list.filter(i => String(i.id) !== String(item.id));
+  list.unshift({ ...item, lastWatched: Date.now() });
+  if (list.length > 30) list = list.slice(0, 30);
+  try {
+    localStorage.setItem(cwKey(), JSON.stringify(list));
+  } catch (e) {}
+}
+
+export function removeWatchProgress(id) {
+  const list = getContinueWatching().filter(i => String(i.id) !== String(id));
+  try {
+    localStorage.setItem(cwKey(), JSON.stringify(list));
+  } catch (e) {}
+}
+
 export async function updateSettings(settings) {
   if (isServerMode) {
     const response = await fetch('/api/settings', {

@@ -91,9 +91,9 @@ class TVNavigation {
     // Clear pending zone on successful focus
     this.pendingZone = null;
 
-    // Scroll into view if scrollable
+    // Scroll into view if scrollable (use 'auto' / instant to prevent queueing animations and layout freezes on Smart TVs)
     this.focusedElement.scrollIntoView({
-      behavior: 'smooth',
+      behavior: 'auto',
       block: 'nearest',
       inline: 'nearest'
     });

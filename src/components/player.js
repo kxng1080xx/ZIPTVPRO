@@ -70,6 +70,9 @@ export class VideoPlayer {
     this.onExitVod = null;
     this.isSeeking = false;
     this.onFatalError = null; // live: invoked when the primary (.ts) stream fails
+    this.onVodProgress = null; // VOD/series: (currentTime, duration) for Continue Watching
+    this.pendingSeek = 0; // resume position to seek to once metadata loads
+    this.isVodActive = false;
 
     this.hls = null;
     this.mpegtsPlayer = null;
@@ -154,18 +157,31 @@ export class VideoPlayer {
     // VOD seek bar (movies / series only)
     if (this.seek) {
       this.video.addEventListener('timeupdate', () => {
-        if (this.isSeeking) return;
-        const d = this.video.duration;
-        if (d && isFinite(d)) {
-          this.seek.value = (this.video.currentTime / d) * 100;
-          this.timeCurrent.textContent = this.formatTime(this.video.currentTime);
+        if (!this.isSeeking) {
+          const d = this.video.duration;
+          if (d && isFinite(d)) {
+            this.seek.value = (this.video.currentTime / d) * 100;
+            this.timeCurrent.textContent = this.formatTime(this.video.currentTime);
+          }
+        }
+        // Report progress for Continue Watching (VOD / series only)
+        if (this.isVodActive && this.onVodProgress) {
+          this.onVodProgress(this.video.currentTime, this.video.duration);
         }
       });
       const refreshDuration = () => {
         const d = this.video.duration;
         this.timeDuration.textContent = (d && isFinite(d)) ? this.formatTime(d) : '';
       };
+      const seekToResume = () => {
+        if (this.pendingSeek > 0 && isFinite(this.video.duration)) {
+          try { this.video.currentTime = this.pendingSeek; } catch (e) {}
+          this.pendingSeek = 0;
+        }
+      };
       this.video.addEventListener('loadedmetadata', refreshDuration);
+      this.video.addEventListener('loadedmetadata', seekToResume);
+      this.video.addEventListener('canplay', seekToResume);
       this.video.addEventListener('durationchange', refreshDuration);
       this.seek.addEventListener('input', () => { this.isSeeking = true; });
       this.seek.addEventListener('change', () => {
@@ -303,8 +319,10 @@ export class VideoPlayer {
     }, 15000); // Display for 15 seconds
   }
 
-  loadStream(url, name, logo, currentEpg = 'No schedule available', isVod = false) {
+  loadStream(url, name, logo, currentEpg = 'No schedule available', isVod = false, resumeTime = 0) {
     this.isVod = isVod;
+    this.isVodActive = isVod;
+    this.pendingSeek = isVod ? (resumeTime || 0) : 0;
     this.showSpinner();
     this.currentChannelName = name || 'Live Channel';
     const qBadge = getQualityBadgeHtml(this.currentChannelName);

@@ -12,7 +12,10 @@ import {
   getStreamInfo,
   getPlaylists,
   switchPlaylist,
-  removePlaylist
+  removePlaylist,
+  getContinueWatching,
+  saveWatchProgress,
+  removeWatchProgress
 } from './components/xtream-api.js';
 import { Capacitor } from '@capacitor/core';
 import { VideoPlayer } from './components/player.js';
@@ -56,6 +59,8 @@ const state = {
 let playerInstance = null;
 let epgGridInstance = null;
 let liveFallbackTried = false; // guards the one-time .ts → m3u8 live fallback
+let currentVodItem = null;     // metadata of the movie/episode currently playing (for Continue Watching)
+let lastProgressSave = 0;      // throttle progress writes
 
 // Clock update timer
 let clockInterval = null;
@@ -84,6 +89,7 @@ async function initApp() {
   playerInstance.setOnPrevChannel(() => playPreviousChannel());
   playerInstance.setOnNextChannel(() => playNextChannel());
   playerInstance.onExitVod = exitVodPlayer;
+  playerInstance.onVodProgress = saveCurrentProgress;
 
   epgGridInstance = new EPGGrid(
     (channel, program) => {
@@ -169,6 +175,7 @@ async function loadTabCategoriesAndContent() {
     // (Live TV can contain thousands of channels, making startup crawl).
     if (state.activeTab === 'movies' || state.activeTab === 'series') {
       await selectCategory('all');
+      refreshContinueWatching(); // Continue Watching row (movies / series only)
     } else {
       showSelectCategoryHint();
     }
@@ -613,11 +620,18 @@ function renderSeriesCatalog(seriesList) {
 }
 
 // TV Series Playback Dashboard controllers
-async function openSeriesPlaybackDashboard(series) {
+async function openSeriesPlaybackDashboard(series, resumeOpts = null) {
   const playbackContainer = document.getElementById('series-playback-container');
   const catalogContainer = document.getElementById('series-catalog-container');
-  
+
   if (!playbackContainer || !catalogContainer) return;
+
+  // Remember series metadata for Continue Watching entries.
+  state.currentSeriesMeta = {
+    id: series.series_id,
+    name: series.name,
+    cover: series.stream_icon || series.cover || series.cover_big || ''
+  };
 
   const title = document.getElementById('series-title');
   const rating = document.getElementById('series-rating');
@@ -727,10 +741,30 @@ async function openSeriesPlaybackDashboard(series) {
     if (select) {
       select.onchange = (e) => loadSeasonEpisodes(e.target.value);
     }
-    
-    loadSeasonEpisodes(seasons[0]);
-    navigation.focusDefault('series-episodes');
-    
+
+    // Resume a specific episode (from Continue Watching), else load season 1.
+    if (resumeOpts && resumeOpts.episodeId) {
+      const rSeason = episodesMap[resumeOpts.season] ? String(resumeOpts.season) : seasons[0];
+      if (select) select.value = rSeason;
+      loadSeasonEpisodes(rSeason);
+      const epsArr = episodesMap[rSeason] || [];
+      const idx = epsArr.findIndex(e => String(e.id) === String(resumeOpts.episodeId));
+      if (idx !== -1) {
+        const ep = epsArr[idx];
+        const epExt = ep.container_extension || ep.info?.container_extension || '';
+        const epName = `${infoMeta.name || series.name || 'Series'} - S${rSeason}E${ep.episode_num}: ${ep.title}`;
+        const targetRow = document.querySelector(`.episode-list-row[data-episode-id="${ep.id}"]`);
+        if (targetRow) {
+          document.querySelectorAll('.episode-list-row').forEach(r => r.classList.remove('active'));
+          targetRow.classList.add('active');
+        }
+        await playSeriesEpisode(ep.id, epName, infoMeta.cover, ep.info?.plot || '', epExt, idx, epsArr, rSeason, info, resumeOpts.position || 0);
+      }
+    } else {
+      loadSeasonEpisodes(seasons[0]);
+      navigation.focusDefault('series-episodes');
+    }
+
   } catch (err) {
     console.error('Failed to load Series details:', err);
     if (plot) plot.textContent = 'Failed to load details from server.';
@@ -738,24 +772,41 @@ async function openSeriesPlaybackDashboard(series) {
   }
 }
 
-async function playSeriesEpisode(epStreamId, epName, logo, plot, epExt, epIndex, episodesListForSeason, seasonNum, seriesInfo) {
+async function playSeriesEpisode(epStreamId, epName, logo, plot, epExt, epIndex, episodesListForSeason, seasonNum, seriesInfo, resumeTime = 0) {
   if (!playerInstance) return;
   playerInstance.showSpinner();
   if (playerInstance.vodTitleTag) {
     playerInstance.vodTitleTag.textContent = epName || '';
   }
-  
+
   state.seriesPlayback = {
     seriesInfo: seriesInfo,
     activeSeason: seasonNum,
     episodes: episodesListForSeason,
     currentIndex: epIndex
   };
-  
+
+  // Track this episode for Continue Watching.
+  const ep = episodesListForSeason[epIndex] || {};
+  const sm = state.currentSeriesMeta || {};
+  currentVodItem = {
+    id: String(epStreamId),
+    type: 'series',
+    name: epName,
+    cardTitle: sm.name || seriesInfo.info?.name || 'Series',
+    logo: sm.cover || logo || '',
+    containerExtension: epExt,
+    seriesId: sm.id,
+    seriesName: sm.name || seriesInfo.info?.name || 'Series',
+    season: String(seasonNum),
+    episodeLabel: `S${seasonNum}E${ep.episode_num || (epIndex + 1)}`
+  };
+  lastProgressSave = 0;
+
   try {
     const playUrl = await getStreamUrl(epStreamId, 'series', epExt);
     playerInstance.setSeriesMode(true);
-    playerInstance.loadStream(playUrl, epName, logo, '', true);
+    playerInstance.loadStream(playUrl, epName, logo, '', true, resumeTime);
 
     // Show Now/Next Episode bar for Series
     const currentEp = episodesListForSeason[epIndex];
@@ -909,11 +960,14 @@ async function playPreviousEpisode() {
 function exitSeriesPlaybackDashboard() {
   const playbackContainer = document.getElementById('series-playback-container');
   const catalogContainer = document.getElementById('series-catalog-container');
-  
+
   if (playbackContainer && !playbackContainer.classList.contains('hidden')) {
+    flushProgress();
+    currentVodItem = null;
     playbackContainer.classList.add('hidden');
     if (catalogContainer) catalogContainer.classList.remove('hidden');
-    
+    refreshContinueWatching();
+
     if (playerInstance) {
       playerInstance.stop();
       playerInstance.setOnPrevChannel(() => playPreviousChannel());
@@ -1003,7 +1057,7 @@ function setPage(type, pageNum) {
 // ==========================================================================
 // MOVIE & SERIES DETAILS MODALS
 // ==========================================================================
-async function openVODDetailsModal(vodData, type) {
+async function openVODDetailsModal(vodData, type, resumeTime = 0) {
   const modal = document.getElementById('vod-modal');
   const title = document.getElementById('vod-modal-title');
   const rating = document.getElementById('vod-modal-rating');
@@ -1052,11 +1106,15 @@ async function openVODDetailsModal(vodData, type) {
       const runTime = infoMeta.duration_secs ? `${Math.floor(infoMeta.duration_secs / 60)}m` : infoMeta.duration || 'N/A';
       duration.textContent = runTime;
 
-      // Play Movie Action
+      // Play Movie Action — "Resume" when there's saved progress, else "Play Now"
       const movieExt = info.movie_data?.container_extension || infoMeta.container_extension || '';
+      playBtn.innerHTML = resumeTime > 0
+        ? `<i data-lucide="play-circle"></i> Resume playing · ${formatClock(resumeTime)}`
+        : `<i data-lucide="play-circle"></i> Play Now`;
+      lucide.createIcons({ scope: playBtn });
       playBtn.onclick = async () => {
         modal.classList.add('hidden');
-        await playVODStream(queryId, 'movie', vodData.name, vodData.stream_icon, plot.textContent, movieExt);
+        await playVODStream(queryId, 'movie', vodData.name, vodData.stream_icon, plot.textContent, movieExt, resumeTime);
       };
     } else if (type === 'series') {
       // It's a Series, hide direct play button and show Episode Lists
@@ -1137,7 +1195,11 @@ function renderSeriesSeasons(seriesInfo) {
   loadSeasonEpisodes(seasons[0]);
 }
 
-async function playVODStream(streamId, type, name, logo, description, containerExtension = '') {
+async function playVODStream(streamId, type, name, logo, description, containerExtension = '', resumeTime = 0) {
+  // Track this movie for Continue Watching.
+  currentVodItem = { id: String(streamId), type: 'movie', name, cardTitle: name, logo, containerExtension };
+  lastProgressSave = 0;
+
   // VOD plays in its own full-screen player overlay (movies/series), NOT the
   // Live-TV layout. We don't switch tabs — the overlay sits over the catalog.
   document.body.classList.add('vod-mode');
@@ -1156,7 +1218,7 @@ async function playVODStream(streamId, type, name, logo, description, containerE
 
     // VOD = on-demand file, played differently from live channels (seekable).
     playerInstance.setSeriesMode(false);
-    playerInstance.loadStream(playUrl, name, logo, '', true);
+    playerInstance.loadStream(playUrl, name, logo, '', true, resumeTime);
     playerInstance.enterFullscreen();
   } catch (err) {
     console.error('Failed to play VOD stream:', err);
@@ -1167,8 +1229,9 @@ async function playVODStream(streamId, type, name, logo, description, containerE
 
 // Leave the VOD player overlay and return to the catalog grid.
 function exitVodPlayer() {
+  flushProgress();
   document.body.classList.remove('vod-mode');
-  
+
   // Programmatically restore layout elements
   document.querySelector('.sidebar')?.classList.remove('hidden');
   document.querySelector('.top-header')?.classList.remove('hidden');
@@ -1178,7 +1241,111 @@ function exitVodPlayer() {
     document.exitFullscreen().catch(() => {});
   }
   playerInstance.stop();
+  currentVodItem = null;
+  refreshContinueWatching();
   navigation.focusDefault('grid');
+}
+
+// ==========================================================================
+// CONTINUE WATCHING
+// ==========================================================================
+function formatClock(sec) {
+  if (!sec || !isFinite(sec)) return '0:00';
+  sec = Math.floor(sec);
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// Persist the current play position (called from the player on a throttle).
+function saveCurrentProgress(currentTime, duration) {
+  if (!currentVodItem || !currentTime || currentTime < 5) return;
+  const now = Date.now();
+  if (now - lastProgressSave < 8000) return;
+  lastProgressSave = now;
+  persistProgress(currentTime, duration);
+}
+
+function persistProgress(currentTime, duration) {
+  if (!currentVodItem || !currentTime || currentTime < 5) return;
+  // Finished (or nearly) → drop from Continue Watching.
+  if (duration && isFinite(duration) && currentTime / duration > 0.95) {
+    removeWatchProgress(currentVodItem.id);
+    return;
+  }
+  saveWatchProgress({
+    ...currentVodItem,
+    position: currentTime,
+    duration: isFinite(duration) ? duration : 0
+  });
+}
+
+function flushProgress() {
+  if (!currentVodItem || !playerInstance || !playerInstance.video) return;
+  persistProgress(playerInstance.video.currentTime, playerInstance.video.duration);
+}
+
+function refreshContinueWatching() {
+  renderContinueWatching('movie');
+  renderContinueWatching('series');
+}
+
+function renderContinueWatching(type) {
+  const container = document.getElementById(type === 'movie' ? 'movies-continue' : 'series-continue');
+  if (!container) return;
+  const items = getContinueWatching(type);
+  if (!items.length) {
+    container.innerHTML = '';
+    container.classList.add('hidden');
+    return;
+  }
+  container.classList.remove('hidden');
+
+  const icon = type === 'series' ? 'tv' : 'film';
+  let html = '<div class="continue-row-title">Continue Watching</div><div class="continue-row-cards">';
+  items.forEach(it => {
+    const pct = (it.duration && it.position) ? Math.min(100, (it.position / it.duration) * 100) : 0;
+    const sub = type === 'series'
+      ? `${it.episodeLabel || 'Episode'} · ${formatClock(it.position)}`
+      : `Resume · ${formatClock(it.position)}`;
+    html += `
+      <div class="continue-card" data-id="${it.id}" tabindex="-1">
+        <div class="continue-poster">
+          ${it.logo ? `<img src="${it.logo}" alt="" loading="lazy">` : `<div class="poster-placeholder"><i data-lucide="${icon}"></i></div>`}
+          <div class="continue-resume-overlay"><i data-lucide="play"></i></div>
+          <div class="continue-progress"><div class="continue-progress-fill" style="width:${pct}%"></div></div>
+        </div>
+        <span class="continue-card-title">${it.cardTitle || it.name}</span>
+        <span class="continue-card-sub">${sub}</span>
+      </div>`;
+  });
+  html += '</div>';
+  container.innerHTML = html;
+
+  container.querySelectorAll('.continue-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const item = getContinueWatching(type).find(i => String(i.id) === String(card.dataset.id));
+      if (item) resumeContinueWatching(item);
+    });
+  });
+  if (window.lucide) lucide.createIcons({ scope: container });
+}
+
+function resumeContinueWatching(item) {
+  if (item.type === 'series') {
+    openSeriesPlaybackDashboard(
+      { series_id: item.seriesId, name: item.seriesName, cover: item.logo },
+      { episodeId: item.id, season: item.season, position: item.position }
+    );
+  } else {
+    openVODDetailsModal(
+      { stream_id: item.id, name: item.name, stream_icon: item.logo },
+      'movie',
+      item.position
+    );
+  }
 }
 
 // ==========================================================================
