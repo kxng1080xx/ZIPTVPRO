@@ -244,6 +244,38 @@ export class VideoPlayer {
     this.onNextChannelCallback = callback;
   }
 
+  setSeriesMode(active) {
+    if (!this.container) return;
+    if (active) {
+      this.container.classList.add('series-mode');
+    } else {
+      this.container.classList.remove('series-mode');
+    }
+  }
+
+  showSeriesNowNext(currentEpTitle, nextEpTitle) {
+    if (!this.nowNextBar) return;
+
+    this.nnbNowTime.textContent = '';
+    this.nnbNowTitle.textContent = currentEpTitle;
+
+    if (nextEpTitle) {
+      this.nnbNextTime.textContent = '';
+      this.nnbNextTitle.textContent = nextEpTitle;
+      this.nnbNext.style.display = '';
+      this.nnbSep.style.display = '';
+    } else {
+      this.nnbNext.style.display = 'none';
+      this.nnbSep.style.display = 'none';
+    }
+
+    this.nowNextBar.classList.add('visible');
+    clearTimeout(this.nowNextTimeout);
+    this.nowNextTimeout = setTimeout(() => {
+      this.nowNextBar.classList.remove('visible');
+    }, 15000); // Display for 15 seconds
+  }
+
   loadStream(url, name, logo, currentEpg = 'No schedule available', isVod = false) {
     this.isVod = isVod;
     this.showSpinner();
@@ -518,6 +550,7 @@ export class VideoPlayer {
     this.epgTitleEl.textContent = 'Select a channel from the list to start watching';
     this.watermark.classList.add('hidden');
     this.hideSpinner();
+    this.setSeriesMode(false);
     
     if (Capacitor.isNativePlatform()) {
       try {

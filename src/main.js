@@ -312,6 +312,7 @@ async function selectAndPlayChannel(channel, programBlock) {
     const streamUrl = await getStreamUrl(channel.stream_id, 'live');
 
     // Load to player
+    playerInstance.setSeriesMode(false);
     playerInstance.loadStream(streamUrl, channel.name, channel.stream_icon, epgTitle);
 
     // If the primary (.ts) stream fails, fall back once to the m3u8 backup.
@@ -322,6 +323,7 @@ async function selectAndPlayChannel(channel, programBlock) {
       console.warn('Primary (.ts) stream failed — falling back to m3u8…');
       try {
         const fbUrl = await getStreamUrl(channel.stream_id, 'live', '', 'm3u8');
+        playerInstance.setSeriesMode(false);
         playerInstance.loadStream(fbUrl, channel.name, channel.stream_icon, epgTitle);
       } catch (e) {
         console.error('m3u8 fallback failed:', e);
@@ -747,7 +749,32 @@ async function playSeriesEpisode(epStreamId, epName, logo, plot, epExt, epIndex,
   
   try {
     const playUrl = await getStreamUrl(epStreamId, 'series', epExt);
+    playerInstance.setSeriesMode(true);
     playerInstance.loadStream(playUrl, epName, logo, '', true);
+
+    // Show Now/Next Episode bar for Series
+    const currentEp = episodesListForSeason[epIndex];
+    const currentEpTitle = `S${seasonNum}E${currentEp.episode_num || (epIndex + 1)}: ${currentEp.title || 'Episode'}`;
+    
+    let nextEpName = '';
+    if (epIndex + 1 < episodesListForSeason.length) {
+      const nextEp = episodesListForSeason[epIndex + 1];
+      nextEpName = `S${seasonNum}E${nextEp.episode_num || (epIndex + 2)}: ${nextEp.title || 'Episode'}`;
+    } else {
+      const episodesMap = seriesInfo.episodes || {};
+      const seasons = Object.keys(episodesMap).sort((a, b) => parseInt(a) - parseInt(b));
+      const currentSeasonIdx = seasons.indexOf(String(seasonNum));
+      if (currentSeasonIdx !== -1 && currentSeasonIdx + 1 < seasons.length) {
+        const nextSeasonNum = seasons[currentSeasonIdx + 1];
+        const nextSeasonEpisodes = episodesMap[nextSeasonNum] || [];
+        if (nextSeasonEpisodes.length > 0) {
+          const firstEp = nextSeasonEpisodes[0];
+          nextEpName = `S${nextSeasonNum}E${firstEp.episode_num || 1}: ${firstEp.title || 'Episode'}`;
+        }
+      }
+    }
+    playerInstance.showSeriesNowNext(currentEpTitle, nextEpName);
+
     playerInstance.enterFullscreen();
   } catch (err) {
     console.error('Failed to play Series episode:', err);
@@ -1123,6 +1150,7 @@ async function playVODStream(streamId, type, name, logo, description, containerE
     const playUrl = await getStreamUrl(streamId, type, containerExtension);
 
     // VOD = on-demand file, played differently from live channels (seekable).
+    playerInstance.setSeriesMode(false);
     playerInstance.loadStream(playUrl, name, logo, '', true);
   } catch (err) {
     console.error('Failed to play VOD stream:', err);

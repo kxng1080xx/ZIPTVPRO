@@ -3849,3 +3849,8 @@ body.epg-fullscreen-active .epg-section-container {
 .series-player-wrapper .now-next-bar {
   display: none !important;
 }
+
+/* Enable now-next-bar to be shown specifically during series playback */
+.video-container.series-mode .now-next-bar {
+  display: flex !important;
+}
