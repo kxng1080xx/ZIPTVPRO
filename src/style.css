@@ -3437,8 +3437,60 @@ body.vod-mode .now-next-bar {
   .settings-card {
     width: 92%;
     max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .settings-body {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    flex: 1 1 auto;
+    min-height: 0;
   }
 }
+
+/* Settings modal in landscape orientation - scrollable and compact */
+@media (max-width: 1024px) and (orientation: landscape) {
+  .settings-card {
+    width: min(680px, 90vw);
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .settings-header {
+    padding: 14px 20px;
+    flex-shrink: 0;
+  }
+
+  .settings-header h2 {
+    font-size: 1.1rem;
+  }
+
+  .settings-body {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 16px 20px;
+    gap: 16px;
+  }
+
+  .settings-section {
+    padding-bottom: 14px;
+    gap: 10px;
+  }
+
+  .settings-section h3 {
+    font-size: 0.7rem;
+  }
+
+  .settings-action-btn {
+    padding: 10px 16px;
+    font-size: 0.85rem;
+  }
+}
+
 
 /* Picture-in-Picture Mode Overrides */
 body.pip-mode-active .top-header,
