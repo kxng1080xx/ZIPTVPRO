@@ -112,8 +112,8 @@ export class VideoPlayer {
     this.fullscreenBtn.addEventListener('click', () => this.toggleFullscreen());
     this.video.addEventListener('dblclick', () => this.toggleFullscreen());
 
-    // Listen to fullscreenchange to lock screen to landscape in fullscreen mode
-    document.addEventListener('fullscreenchange', () => {
+    // Store handler as a named property so it can be removed in destroy()
+    this._onFullscreenChange = () => {
       if (document.fullscreenElement) {
         if (Capacitor.isNativePlatform()) {
           ScreenOrientation.lock({ orientation: 'landscape' })
@@ -135,7 +135,8 @@ export class VideoPlayer {
         document.body.style.cursor = 'default';
       }
       lucide.createIcons({ scope: this.fullscreenBtn });
-    });
+    };
+    document.addEventListener('fullscreenchange', this._onFullscreenChange);
 
     // CC Toggle
     this.ccBtn.addEventListener('click', () => this.toggleCaptions());
@@ -345,7 +346,14 @@ export class VideoPlayer {
         // Live wants a short, low-latency buffer; VOD wants normal buffering so
         // it can seek and won't stall.
         this.hls = new Hls({
-          maxMaxBufferLength: isVod ? 60 : 10,
+          // --- Memory limits for low-RAM devices ---
+          // Keep the forward buffer short and cap total RAM used by media data.
+          // backBufferLength: 5 frees segments older than 5 s behind the playhead
+          // (default is Infinity — old segments were never released).
+          maxBufferLength:    isVod ? 15 : 8,    // seconds to buffer ahead (default: 30)
+          maxMaxBufferLength: isVod ? 30 : 8,    // hard ceiling (was 60 for VOD)
+          maxBufferSize:      20 * 1000 * 1000,  // 20 MB cap (default: 60 MB)
+          backBufferLength:   5,                 // free segments >5 s behind playhead
           enableWorker: true,
           lowLatencyMode: !isVod
         });
@@ -418,8 +426,14 @@ export class VideoPlayer {
           isLive: !isVod,
           url: url
         }, {
-          enableStashBuffer: isVod,
-          liveBufferLatencyChaser: !isVod
+          enableStashBuffer:              isVod,
+          stashInitialSize:               128,   // 128 KB stash (down from 384 KB default)
+          liveBufferLatencyChaser:        !isVod,
+          // Auto-evict old data from the MSE SourceBuffer so it never grows unbounded.
+          // Without these, the SourceBuffer accumulates forever and causes OOM on 1-2 GB devices.
+          autoCleanupSourceBuffer:        true,  // default is false — critical fix
+          autoCleanupMinBackwardDuration: 10,    // keep 10 s behind playhead
+          autoCleanupMaxBackwardDuration: 20,    // hard-evict anything >20 s behind
         });
         this.mpegtsPlayer.attachMediaElement(this.video);
         this.mpegtsPlayer.load();
@@ -841,6 +855,21 @@ export class VideoPlayer {
     try {
       if (window.lucide) lucide.createIcons({ scope: this.spinner });
     } catch (e) {}
+  }
+
+  // Release all resources held by this player instance.
+  // Call this if the player element is ever removed from the DOM.
+  destroy() {
+    if (this._onFullscreenChange) {
+      document.removeEventListener('fullscreenchange', this._onFullscreenChange);
+      this._onFullscreenChange = null;
+    }
+    this.destroyHls();
+    this.destroyMpegts();
+    if (this.video) {
+      this.video.src = '';
+      this.video.load();
+    }
   }
 }
 export default VideoPlayer;

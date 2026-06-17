@@ -309,7 +309,7 @@ export class EPGGrid {
       const qualityBadge = getQualityBadgeHtml(channel.name);
       chanRow.innerHTML = `
         <div class="epg-channel-row-logo">
-          ${logo ? `<img src="${logo}" alt="" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2224%22 height=%2224%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%234b5563%22 stroke-width=%222%22><rect x=%222%22 y=%222%22 width=%2220%22 height=%2220%22 rx=%224%22/></svg>'">` : '<i data-lucide="tv" class="fallback-logo"></i>'}
+          ${logo ? `<img src="${logo}" loading="lazy" alt="" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2224%22 height=%2224%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%234b5563%22 stroke-width=%222%22><rect x=%222%22 y=%222%22 width=%2220%22 height=%2220%22 rx=%224%22/></svg>'">` : '<i data-lucide="tv" class="fallback-logo"></i>'}
         </div>
         <div class="epg-channel-row-meta">
           <div class="epg-channel-row-name">
