@@ -24,7 +24,7 @@ import { navigation } from './components/tv-navigation.js';
 
 // Supabase Configuration for Remote Playlist Pairing
 // Swap these with your own Supabase project credentials
-const SUPABASE_URL = '';
+const SUPABASE_URL = 'https://jnocgdemunelygygnozw.supabase.co';
 const SUPABASE_ANON_KEY = '';
 
 let remoteLoginInterval = null;
