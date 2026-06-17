@@ -1147,8 +1147,149 @@ button {
 
 .controls-bottom {
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.controls-bottom-row {
+  display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+/* ==========================================================================
+   VOD PLAYER MODE (movies / series) — a full-screen player over the catalog,
+   with the live chrome hidden and a seek bar shown.
+   ========================================================================== */
+.vod-only {
+  display: none !important;
+}
+
+body.vod-mode .vod-only {
+  display: flex !important;
+}
+
+body.vod-mode #live-view {
+  display: flex !important;
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  background: #000;
+}
+
+body.vod-mode .live-top-row {
+  display: block !important;
+  max-height: none !important;
+  height: 100% !important;
+  border: none !important;
+}
+
+body.vod-mode .program-details-panel,
+body.vod-mode .epg-section-container {
+  display: none !important;
+}
+
+body.vod-mode .player-wrapper {
+  width: 100% !important;
+  height: 100% !important;
+  aspect-ratio: auto !important;
+}
+
+body.vod-mode .video-container {
+  height: 100% !important;
+}
+
+/* Hide live-only chrome while in VOD mode */
+body.vod-mode .live-tag,
+body.vod-mode .fps-indicator,
+body.vod-mode #player-prev-btn,
+body.vod-mode #player-next-btn,
+body.vod-mode .player-channel-logo-watermark,
+body.vod-mode .channel-info-banner,
+body.vod-mode .now-next-bar {
+  display: none !important;
+}
+
+.player-back-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  border: none;
+  color: #fff;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin-right: 10px;
+  flex-shrink: 0;
+}
+
+.player-back-btn:hover {
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.player-back-btn i {
+  width: 22px;
+  height: 22px;
+}
+
+.vod-title-tag {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #fff;
+  align-items: center;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 55vw;
+  margin-right: auto;
+}
+
+.player-seek {
+  align-items: center;
+  gap: 12px;
+  padding: 0 4px 6px;
+}
+
+.player-seek-time {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fff;
+  flex-shrink: 0;
+  min-width: 46px;
+  text-align: center;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.player-seek-bar {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+}
+
+.player-seek-bar::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-cyan);
+  cursor: pointer;
+}
+
+.player-seek-bar::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent-cyan);
+  cursor: pointer;
 }
 
 .control-row-left {
@@ -3404,4 +3545,306 @@ body.epg-fullscreen-active .epg-section-container {
     gap: 12px;
     padding: 0 16px;
   }
+}
+
+/* ==========================================================================
+   TV SERIES PLAYBACK DASHBOARD
+   ========================================================================== */
+.series-playback-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  padding: 10px 24px 24px;
+}
+
+.series-playback-container.hidden {
+  display: none !important;
+}
+
+.series-back-bar {
+  padding-bottom: 12px;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 16px;
+}
+
+.series-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--accent-cyan);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: var(--border-radius-sm);
+}
+
+.series-back-btn:hover {
+  background: rgba(6, 182, 212, 0.08);
+}
+
+.series-top-row {
+  display: grid;
+  grid-template-columns: 1.62fr 1fr;
+  gap: 20px;
+  height: 380px;
+  margin-bottom: 20px;
+  min-height: 0;
+}
+
+.series-player-wrapper {
+  background: #000;
+  border-radius: var(--border-radius-md);
+  overflow: hidden;
+  position: relative;
+  border: 1px solid var(--border-color);
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  height: 100%;
+}
+
+/* Ensure the video container matches the height */
+.series-player-wrapper .video-container {
+  width: 100%;
+  height: 100%;
+}
+
+.series-details-panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-md);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  height: 100%;
+}
+
+.series-details-header {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.series-cover-wrapper {
+  width: 84px;
+  height: 120px;
+  border-radius: var(--border-radius-sm);
+  overflow: hidden;
+  flex-shrink: 0;
+  border: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.series-cover-wrapper img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.series-meta-text {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.series-meta-text h3 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.3;
+}
+
+.series-badge-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.series-rating-badge,
+.series-year-badge {
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.series-rating-badge {
+  background: rgba(234, 179, 8, 0.12);
+  color: var(--accent-gold);
+}
+
+.series-rating-badge i {
+  width: 12px;
+  height: 12px;
+}
+
+.series-year-badge {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+}
+
+.series-plot-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.series-plot-section p {
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.series-bottom-section {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-md);
+  background: var(--bg-panel);
+  overflow: hidden;
+  min-height: 200px;
+}
+
+.series-bottom-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border-color);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.season-select-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.season-select-wrapper select {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 5px 28px 5px 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'><path d='m6 9 6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+
+.series-episodes-count {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.series-episodes-list {
+  flex-grow: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+}
+
+.episode-list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.episode-list-row:hover {
+  background: var(--bg-surface-hover);
+}
+
+.episode-list-row.active {
+  background: rgba(6, 182, 212, 0.12);
+  border-left: 3px solid var(--accent-cyan);
+  border-radius: 0 var(--border-radius-sm) var(--border-radius-sm) 0;
+}
+
+.episode-row-left-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex-grow: 1;
+  padding-right: 12px;
+}
+
+.episode-row-title-text {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.episode-row-duration-text {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.episode-row-play-icon {
+  color: var(--text-muted);
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.episode-list-row:hover .episode-row-play-icon,
+.episode-list-row.active .episode-row-play-icon {
+  color: var(--accent-cyan);
+}
+
+@media (max-width: 1024px) {
+  .series-top-row {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  .series-player-wrapper {
+    aspect-ratio: 16/9;
+  }
+  .series-details-panel {
+    height: auto;
+  }
+}
+
+/* Show VOD controls and hide live elements when player is in series wrapper */
+.series-player-wrapper .vod-only {
+  display: flex !important;
+}
+.series-player-wrapper .live-tag,
+.series-player-wrapper .fps-indicator,
+.series-player-wrapper #player-prev-btn,
+.series-player-wrapper #player-next-btn,
+.series-player-wrapper .player-channel-logo-watermark,
+.series-player-wrapper .channel-info-banner,
+.series-player-wrapper .now-next-bar {
+  display: none !important;
 }

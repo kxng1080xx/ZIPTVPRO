@@ -201,8 +201,10 @@
                 <div class="player-controls-overlay" id="player-controls">
                   <!-- Top controls (indicators) -->
                   <div class="controls-top">
+                    <button class="player-back-btn vod-only" id="player-back-btn" title="Back"><i data-lucide="arrow-left"></i></button>
                     <span class="live-tag">LIVE</span>
                     <span class="fps-indicator">HD | 30 FPS</span>
+                    <span class="vod-title-tag vod-only" id="player-vod-title"></span>
                   </div>
                   
                   <!-- Center play/pause & skip -->
@@ -214,13 +216,20 @@
                   
                   <!-- Bottom controls bar -->
                   <div class="controls-bottom">
+                    <!-- VOD seek/progress bar (movies & series only) -->
+                    <div class="player-seek vod-only" id="player-seek-wrap">
+                      <span class="player-seek-time" id="player-time-current">0:00</span>
+                      <input type="range" class="player-seek-bar" id="player-seek" min="0" max="100" value="0" step="0.1">
+                      <span class="player-seek-time" id="player-time-duration">0:00</span>
+                    </div>
+                    <div class="controls-bottom-row">
                     <div class="control-row-left">
                       <div class="player-playing-details">
                         <span class="player-playing-title" id="player-channel-name">No Channel Selected</span>
                         <span class="player-playing-epg" id="player-epg-title">Select a channel from the list to start watching</span>
                       </div>
                     </div>
-                    
+
                     <div class="control-row-right">
                       <button class="player-control-icon" id="player-info-btn" title="Channel Info"><i data-lucide="info"></i></button>
                       <button class="player-control-icon" id="player-cc-btn" title="Subtitles"><i data-lucide="subtitles"></i></button>
@@ -228,6 +237,7 @@
                       <input type="range" class="player-volume-slider" id="player-volume-slider" min="0" max="1" step="0.05" value="0.8">
                       <button class="player-control-icon" id="player-pip-btn" title="Picture in Picture"><i data-lucide="picture-in-picture"></i></button>
                       <button class="player-control-icon" id="player-fullscreen-btn" title="Fullscreen"><i data-lucide="maximize"></i></button>
+                    </div>
                     </div>
                   </div>
                 </div>
@@ -417,31 +427,92 @@
 
         <!-- 3. SERIES VIEW -->
         <div id="series-view" class="view-panel">
-          <div class="vod-view-header">
-            <h2>TV Series Catalog</h2>
-            <div class="vod-filters">
-              <div class="vod-search-box">
-                <i data-lucide="search"></i>
-                <input type="text" id="series-search" placeholder="Search series...">
+          <!-- Catalog Screen -->
+          <div id="series-catalog-container" class="series-catalog-container">
+            <div class="vod-view-header">
+              <h2>TV Series Catalog</h2>
+              <div class="vod-filters">
+                <div class="vod-search-box">
+                  <i data-lucide="search"></i>
+                  <input type="text" id="series-search" placeholder="Search series...">
+                </div>
+                <div class="vod-sort-select">
+                  <select id="series-sort">
+                    <option value="added">Recently Added</option>
+                    <option value="name">Name (A-Z)</option>
+                    <option value="rating">Rating</option>
+                  </select>
+                </div>
               </div>
-              <div class="vod-sort-select">
-                <select id="series-sort">
-                  <option value="added">Recently Added</option>
-                  <option value="name">Name (A-Z)</option>
-                  <option value="rating">Rating</option>
-                </select>
-              </div>
+            </div>
+
+            <!-- Series Grid -->
+            <div class="vod-grid" id="series-grid">
+              <!-- Dynamic Series Poster Cards -->
+            </div>
+
+            <!-- Pagination -->
+            <div class="vod-pagination" id="series-pagination">
+              <!-- Dynamic Pagination Buttons -->
             </div>
           </div>
 
-          <!-- Series Grid -->
-          <div class="vod-grid" id="series-grid">
-            <!-- Dynamic Series Poster Cards -->
-          </div>
+          <!-- Playback Dashboard Screen -->
+          <div id="series-playback-container" class="series-playback-container hidden">
+            <!-- Back bar -->
+            <div class="series-back-bar">
+              <button class="series-back-btn" id="series-back-btn">
+                <i data-lucide="arrow-left"></i> Back to Catalog
+              </button>
+            </div>
 
-          <!-- Pagination -->
-          <div class="vod-pagination" id="series-pagination">
-            <!-- Dynamic Pagination Buttons -->
+            <!-- Split Top Row: Video Player (left) and Series Details (right) -->
+            <div class="series-top-row">
+              <!-- Player Wrapper (for hosting the dynamic #video-container) -->
+              <div class="series-player-wrapper">
+                <!-- #video-container will be appended here dynamically in JS -->
+              </div>
+              
+              <!-- Series Details Panel -->
+              <div class="series-details-panel">
+                <div class="series-details-header">
+                  <div class="series-cover-wrapper">
+                    <img id="series-cover-img" src="" alt="" class="fallback-logo">
+                  </div>
+                  <div class="series-meta-text">
+                    <h3 id="series-title">Select a Series</h3>
+                    <div class="series-badge-row">
+                      <span class="series-rating-badge" id="series-rating"><i data-lucide="star"></i> N/A</span>
+                      <span class="series-year-badge" id="series-year">N/A</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="series-plot-section">
+                  <div class="info-label">Plot Summary</div>
+                  <p id="series-plot">No summary available.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Bottom Section: Season Selector and Episodes list -->
+            <div class="series-bottom-section">
+              <div class="series-bottom-header">
+                <div class="season-select-wrapper">
+                  <span>Season</span>
+                  <select id="series-season-select">
+                    <!-- Season options will insert here dynamically -->
+                  </select>
+                </div>
+                <div class="series-episodes-count">
+                  Episodes <span id="series-episodes-count-num">(0)</span>
+                </div>
+              </div>
+              
+              <!-- Episodes list, styled like Live TV channels list -->
+              <div class="series-episodes-list" id="series-episodes-list">
+                <!-- Episode items will insert here dynamically -->
+              </div>
+            </div>
           </div>
         </div>
 
@@ -514,8 +585,8 @@
           <div class="settings-group">
             <label for="settings-format">Stream Format</label>
             <select id="settings-format">
-              <option value="m3u8">HLS (.m3u8) - Recommended</option>
-              <option value="ts">MPEG-TS (.ts)</option>
+              <option value="ts">MPEG-TS (.ts) - Recommended</option>
+              <option value="m3u8">HLS (.m3u8) - Fallback</option>
             </select>
           </div>
           <div class="settings-group checkbox-group">

@@ -54,6 +54,7 @@ const state = {
 // Global Components instances
 let playerInstance = null;
 let epgGridInstance = null;
+let liveFallbackTried = false; // guards the one-time .ts → m3u8 live fallback
 
 // Clock update timer
 let clockInterval = null;
@@ -80,6 +81,7 @@ async function initApp() {
   // Set player skip handlers
   playerInstance.setOnPrevChannel(() => playPreviousChannel());
   playerInstance.setOnNextChannel(() => playNextChannel());
+  playerInstance.onExitVod = exitVodPlayer;
 
   epgGridInstance = new EPGGrid(
     (channel, program) => {
@@ -126,6 +128,9 @@ async function initApp() {
 // TABS & VIEW ROUTER
 // ==========================================================================
 async function switchTab(tabId) {
+  if (tabId !== 'series' || state.activeTab === 'series') {
+    exitSeriesPlaybackDashboard();
+  }
   state.activeTab = tabId;
   state.activeCategory = null;
 
@@ -298,13 +303,30 @@ async function selectAndPlayChannel(channel, programBlock) {
     console.warn('History tracking failed:', err);
   }
 
+  // Live playback uses the Live-TV layout, never the VOD overlay.
+  document.body.classList.remove('vod-mode');
+
   // Get stream URL (direct or proxy based on settings)
   try {
-    const streamUrl = await getStreamUrl(channel.stream_id, 'live');
-    
-    // Load to player
     const epgTitle = programBlock?.title || 'No Information';
+    const streamUrl = await getStreamUrl(channel.stream_id, 'live');
+
+    // Load to player
     playerInstance.loadStream(streamUrl, channel.name, channel.stream_icon, epgTitle);
+
+    // If the primary (.ts) stream fails, fall back once to the m3u8 backup.
+    liveFallbackTried = false;
+    playerInstance.onFatalError = async () => {
+      if (liveFallbackTried) return;
+      liveFallbackTried = true;
+      console.warn('Primary (.ts) stream failed — falling back to m3u8…');
+      try {
+        const fbUrl = await getStreamUrl(channel.stream_id, 'live', '', 'm3u8');
+        playerInstance.loadStream(fbUrl, channel.name, channel.stream_icon, epgTitle);
+      } catch (e) {
+        console.error('m3u8 fallback failed:', e);
+      }
+    };
 
     // Show the channel-info banner with a short lineup (prev / current / next 2)
     const channelList = epgGridInstance?.channels || [];
@@ -570,7 +592,7 @@ function renderSeriesCatalog(seriesList) {
     // In Xtream Codes, TV Series items contain series_id instead of stream_id
     card.addEventListener('click', () => {
       navigation.setFocus('grid', card);
-      openVODDetailsModal(series, 'series');
+      openSeriesPlaybackDashboard(series);
     });
     grid.appendChild(card);
   });
@@ -578,6 +600,157 @@ function renderSeriesCatalog(seriesList) {
   lucide.createIcons({ scope: grid });
   if (navigation.currentZone === 'grid') {
     navigation.focusDefault('grid');
+  }
+}
+
+// TV Series Playback Dashboard controllers
+async function openSeriesPlaybackDashboard(series) {
+  const playbackContainer = document.getElementById('series-playback-container');
+  const catalogContainer = document.getElementById('series-catalog-container');
+  
+  if (!playbackContainer || !catalogContainer) return;
+
+  const title = document.getElementById('series-title');
+  const rating = document.getElementById('series-rating');
+  const yearBadge = document.getElementById('series-year');
+  const coverImg = document.getElementById('series-cover-img');
+  const plot = document.getElementById('series-plot');
+  const select = document.getElementById('series-season-select');
+  const episodesList = document.getElementById('series-episodes-list');
+  const countNum = document.getElementById('series-episodes-count-num');
+  
+  if (title) title.textContent = series.name;
+  if (rating) rating.innerHTML = `<i data-lucide="star"></i> ${parseFloat(series.rating)?.toFixed(1) || 'N/A'}`;
+  if (yearBadge) yearBadge.textContent = series.releaseDate || series.year || 'N/A';
+  if (coverImg) coverImg.src = series.stream_icon || series.cover || series.cover_big || '';
+  if (plot) plot.textContent = 'Loading description details...';
+  if (select) select.innerHTML = '';
+  if (episodesList) episodesList.innerHTML = '<div class="spinner-center"><div class="spinner"></div></div>';
+  if (countNum) countNum.textContent = '(0)';
+  
+  catalogContainer.classList.add('hidden');
+  playbackContainer.classList.remove('hidden');
+  
+  // Relocate #video-container dynamically to series player wrapper
+  const videoContainer = document.getElementById('video-container');
+  const seriesPlayerWrapper = document.querySelector('.series-player-wrapper');
+  if (videoContainer && seriesPlayerWrapper) {
+    seriesPlayerWrapper.appendChild(videoContainer);
+  }
+  
+  if (rating) lucide.createIcons({ scope: rating });
+  
+  try {
+    const info = await getStreamInfo(series.series_id, 'series');
+    const infoMeta = info.info || {};
+    
+    if (plot) plot.textContent = infoMeta.plot || infoMeta.description || 'No summary available.';
+    if (yearBadge) yearBadge.textContent = infoMeta.releasedate || infoMeta.releaseDate || infoMeta.year || yearBadge.textContent;
+    
+    const episodesMap = info.episodes || {};
+    const seasons = Object.keys(episodesMap).sort((a, b) => parseInt(a) - parseInt(b));
+    
+    if (seasons.length === 0) {
+      if (episodesList) episodesList.innerHTML = '<div class="no-results">No episodes available.</div>';
+      return;
+    }
+    
+    if (select) {
+      seasons.forEach(seasonNum => {
+        const opt = document.createElement('option');
+        opt.value = seasonNum;
+        opt.textContent = `Season ${seasonNum}`;
+        select.appendChild(opt);
+      });
+    }
+    
+    const loadSeasonEpisodes = (seasonNum) => {
+      if (!episodesList) return;
+      episodesList.innerHTML = '';
+      const episodes = episodesMap[seasonNum] || [];
+      if (countNum) countNum.textContent = `(${episodes.length})`;
+      
+      if (episodes.length === 0) {
+        episodesList.innerHTML = '<div class="no-results">No episodes in this season.</div>';
+        return;
+      }
+      
+      episodes.forEach(ep => {
+        const row = document.createElement('div');
+        row.className = 'episode-list-row';
+        row.dataset.episodeId = ep.id;
+        row.innerHTML = `
+          <div class="episode-row-left-details">
+            <span class="episode-row-title-text">Ep ${ep.episode_num || '0'}: ${ep.title || 'Episode'}</span>
+            <span class="episode-row-duration-text">Duration: ${ep.info?.duration || 'N/A'}</span>
+          </div>
+          <i data-lucide="play-circle" class="episode-row-play-icon"></i>
+        `;
+        
+        row.addEventListener('click', async () => {
+          document.querySelectorAll('.episode-list-row').forEach(r => r.classList.remove('active'));
+          row.classList.add('active');
+          
+          const epStreamId = ep.id;
+          const epExt = ep.container_extension || ep.info?.container_extension || '';
+          const epName = `${infoMeta.name || 'Series'} - S${seasonNum}E${ep.episode_num}: ${ep.title}`;
+          
+          await playSeriesEpisode(epStreamId, epName, infoMeta.cover, ep.info?.plot || '', epExt);
+        });
+        
+        episodesList.appendChild(row);
+      });
+      
+      lucide.createIcons({ scope: episodesList });
+    };
+    
+    if (select) {
+      select.onchange = (e) => loadSeasonEpisodes(e.target.value);
+    }
+    
+    loadSeasonEpisodes(seasons[0]);
+    
+  } catch (err) {
+    console.error('Failed to load Series details:', err);
+    if (plot) plot.textContent = 'Failed to load details from server.';
+    if (episodesList) episodesList.innerHTML = '<div class="error-msg">Failed to load episodes.</div>';
+  }
+}
+
+async function playSeriesEpisode(epStreamId, epName, logo, plot, epExt) {
+  if (!playerInstance) return;
+  playerInstance.showSpinner();
+  if (playerInstance.vodTitleTag) {
+    playerInstance.vodTitleTag.textContent = epName || '';
+  }
+  
+  try {
+    const playUrl = await getStreamUrl(epStreamId, 'series', epExt);
+    playerInstance.loadStream(playUrl, epName, logo, '', true);
+  } catch (err) {
+    console.error('Failed to play Series episode:', err);
+    alert(`Failed to load stream: ${err.message}`);
+    playerInstance.hideSpinner();
+  }
+}
+
+function exitSeriesPlaybackDashboard() {
+  const playbackContainer = document.getElementById('series-playback-container');
+  const catalogContainer = document.getElementById('series-catalog-container');
+  
+  if (playbackContainer && !playbackContainer.classList.contains('hidden')) {
+    playbackContainer.classList.add('hidden');
+    if (catalogContainer) catalogContainer.classList.remove('hidden');
+    
+    if (playerInstance) {
+      playerInstance.stop();
+    }
+    
+    const videoContainer = document.getElementById('video-container');
+    const livePlayerWrapper = document.querySelector('#live-view .player-wrapper');
+    if (videoContainer && livePlayerWrapper) {
+      livePlayerWrapper.appendChild(videoContainer);
+    }
   }
 }
 
@@ -788,36 +961,44 @@ function renderSeriesSeasons(seriesInfo) {
 }
 
 async function playVODStream(streamId, type, name, logo, description, containerExtension = '') {
-  // 1. Switch back to Live TV tab (where main player lives)
-  await switchTab('live');
+  // VOD plays in its own full-screen player overlay (movies/series), NOT the
+  // Live-TV layout. We don't switch tabs — the overlay sits over the catalog.
+  document.body.classList.add('vod-mode');
+  
+  // Programmatically hide the sidebar, header, EPG guide, and details panel
+  document.querySelector('.sidebar')?.classList.add('hidden');
+  document.querySelector('.top-header')?.classList.add('hidden');
+  document.querySelector('.epg-section-container')?.classList.add('hidden');
+  document.querySelector('.program-details-panel')?.classList.add('hidden');
 
-  // 2. Fetch play URL
+  if (playerInstance.vodTitleTag) playerInstance.vodTitleTag.textContent = name || '';
+
   playerInstance.showSpinner();
   try {
     const playUrl = await getStreamUrl(streamId, type, containerExtension);
-    
-    // 3. Play stream (VOD = on-demand file, played differently from live channels)
-    playerInstance.loadStream(playUrl, name, logo, 'Watching VOD', true);
 
-    // 4. Update details panel dummy data
-    const mockChannel = {
-      stream_id: streamId,
-      name,
-      stream_icon: logo,
-      category_id: 'vod'
-    };
-    const mockProgram = {
-      title: 'VOD Playback',
-      start_timestamp: String(Math.floor(Date.now() / 1000)),
-      end_timestamp: String(Math.floor((Date.now() + 2 * 60 * 60 * 1000) / 1000)),
-      description: description || 'Playing VOD content.'
-    };
-    updateDetailsPanel(mockChannel, mockProgram);
+    // VOD = on-demand file, played differently from live channels (seekable).
+    playerInstance.loadStream(playUrl, name, logo, '', true);
   } catch (err) {
     console.error('Failed to play VOD stream:', err);
     alert(`Failed to load stream: ${err.message}`);
     playerInstance.hideSpinner();
   }
+}
+
+// Leave the VOD player overlay and return to the catalog grid.
+function exitVodPlayer() {
+  document.body.classList.remove('vod-mode');
+  
+  // Programmatically restore layout elements
+  document.querySelector('.sidebar')?.classList.remove('hidden');
+  document.querySelector('.top-header')?.classList.remove('hidden');
+  document.querySelector('.epg-section-container')?.classList.remove('hidden');
+
+  if (document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {});
+  }
+  playerInstance.stop();
 }
 
 // ==========================================================================
@@ -934,7 +1115,7 @@ function bindGlobalEvents() {
     // Populate settings
     if (state.user && state.user.credentials) {
       const creds = state.user.credentials;
-      document.getElementById('settings-format').value = creds.stream_format || 'm3u8';
+      document.getElementById('settings-format').value = creds.stream_format || 'ts';
       document.getElementById('settings-proxy').checked = creds.proxy_streams ?? true;
       document.getElementById('settings-connected-server').textContent = creds.server_url;
     }
@@ -1094,6 +1275,11 @@ function bindGlobalEvents() {
       loadSeriesGrid();
     }, 450);
   });
+
+  // TV Series Playback Back button
+  document.getElementById('series-back-btn')?.addEventListener('click', () => {
+    exitSeriesPlaybackDashboard();
+  });
 }
 
 async function updatePreferences(prefs) {
@@ -1203,6 +1389,7 @@ async function switchToPlaylist(id) {
   closePlaylistDropdown();
   try {
     playerInstance.stop();
+    exitSeriesPlaybackDashboard();
     await switchPlaylist(id);
     const status = await getStatus();
     state.user = status;

@@ -808,10 +808,11 @@ export async function trackPlayback(id) {
   }
 }
 
-export async function getStreamUrl(streamId, type = 'live', containerExtension = '') {
+export async function getStreamUrl(streamId, type = 'live', containerExtension = '', formatOverride = '') {
   if (isServerMode) {
     const params = new URLSearchParams({ type });
     if (containerExtension) params.set('ext', containerExtension);
+    if (formatOverride) params.set('format', formatOverride);
     const response = await fetch(`/api/stream-url/${encodeURIComponent(streamId)}?${params.toString()}`);
     if (!response.ok) throw new Error('Failed to get stream URL');
     const data = await response.json();
@@ -821,10 +822,10 @@ export async function getStreamUrl(streamId, type = 'live', containerExtension =
     const creds = getCredentialsLocal();
     if (!creds) throw new Error('Not logged in');
 
-    // On hosted web we must proxy the stream; HLS (.m3u8) is segmented so it can
-    // be relayed through the serverless function, whereas a continuous .ts stream
-    // would hold the function open. Force m3u8 in that case.
-    const format = USE_WEB_PROXY ? 'm3u8' : (creds.stream_format || 'ts');
+    // Live default is .ts (most reliable); m3u8 is the fallback. On hosted web we
+    // must force m3u8 since a continuous .ts would hold the serverless proxy open.
+    // formatOverride lets the player request the backup format on failure.
+    const format = formatOverride || (USE_WEB_PROXY ? 'm3u8' : (creds.stream_format || 'ts'));
     // VOD (movies/series episodes) are individual files addressed by their own
     // container extension (mp4, mkv, …). Live channels use the stream_format.
     const ext = containerExtension ? `.${containerExtension}` : '';

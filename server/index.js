@@ -118,7 +118,7 @@ app.post('/api/login', async (req, res) => {
     server_url: normalizedHost,
     username,
     password,
-    stream_format: 'm3u8', // Default to HLS
+    stream_format: 'ts', // Default to .ts (most reliable); m3u8 is the fallback
     proxy_streams: true // Default to using local CORS proxy
   };
   saveCredentials(credentials);
@@ -464,12 +464,14 @@ app.get('/api/proxy', async (req, res) => {
 // API: Get direct or proxied stream URL
 app.get('/api/stream-url/:stream_id', (req, res) => {
   const { stream_id } = req.params;
-  const { type, ext } = req.query; // 'live', 'movie', 'series' + container extension for VOD
+  const { type, ext, format: formatOverride } = req.query; // + optional format override for live fallback
 
   const creds = getCredentials();
   if (!creds) return res.status(401).json({ error: 'Not logged in' });
 
-  const format = creds.stream_format || 'm3u8';
+  // Live default is .ts (most reliable); m3u8 is the fallback. A ?format= override
+  // lets the client request the backup format when the primary stream fails.
+  const format = formatOverride || creds.stream_format || 'ts';
   // VOD (movies/series episodes) are individual files keyed by their own
   // container extension (mp4, mkv, …); without it the provider returns a 404.
   const vodExt = ext ? `.${ext}` : '';

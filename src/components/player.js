@@ -42,6 +42,16 @@ export class VideoPlayer {
     this.nnbSep = document.getElementById('nnb-sep');
     this.nowNextTimeout = null;
 
+    // VOD-only controls (movies / series)
+    this.backBtn = document.getElementById('player-back-btn');
+    this.seek = document.getElementById('player-seek');
+    this.timeCurrent = document.getElementById('player-time-current');
+    this.timeDuration = document.getElementById('player-time-duration');
+    this.vodTitleTag = document.getElementById('player-vod-title');
+    this.onExitVod = null;
+    this.isSeeking = false;
+    this.onFatalError = null; // live: invoked when the primary (.ts) stream fails
+
     this.hls = null;
     this.mpegtsPlayer = null;
     this.controlsTimeout = null;
@@ -116,6 +126,37 @@ export class VideoPlayer {
         if (topRow) {
           topRow.classList.toggle('details-collapsed');
         }
+      });
+    }
+
+    // VOD seek bar (movies / series only)
+    if (this.seek) {
+      this.video.addEventListener('timeupdate', () => {
+        if (this.isSeeking) return;
+        const d = this.video.duration;
+        if (d && isFinite(d)) {
+          this.seek.value = (this.video.currentTime / d) * 100;
+          this.timeCurrent.textContent = this.formatTime(this.video.currentTime);
+        }
+      });
+      const refreshDuration = () => {
+        const d = this.video.duration;
+        this.timeDuration.textContent = (d && isFinite(d)) ? this.formatTime(d) : '';
+      };
+      this.video.addEventListener('loadedmetadata', refreshDuration);
+      this.video.addEventListener('durationchange', refreshDuration);
+      this.seek.addEventListener('input', () => { this.isSeeking = true; });
+      this.seek.addEventListener('change', () => {
+        const d = this.video.duration;
+        if (d && isFinite(d)) this.video.currentTime = (this.seek.value / 100) * d;
+        this.isSeeking = false;
+      });
+    }
+
+    // VOD back button → exit the VOD player and return to the catalog
+    if (this.backBtn) {
+      this.backBtn.addEventListener('click', () => {
+        if (this.onExitVod) this.onExitVod();
       });
     }
 
@@ -313,6 +354,8 @@ export class VideoPlayer {
         this.mpegtsPlayer.on(mpegts.Events.ERROR, (type, detail, info) => {
           console.error('MPEG-TS player error:', type, detail, info);
           this.hideSpinner();
+          // Live .ts failed — let the app fall back to the m3u8 backup.
+          if (!isVod && this.onFatalError) this.onFatalError();
         });
 
         // Set video tag loaded metadata callback
@@ -437,6 +480,16 @@ export class VideoPlayer {
     this.nowNextTimeout = setTimeout(() => {
       this.nowNextBar.classList.remove('visible');
     }, 20000);
+  }
+
+  formatTime(sec) {
+    if (!sec || !isFinite(sec)) return '0:00';
+    sec = Math.floor(sec);
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    return `${m}:${String(s).padStart(2, '0')}`;
   }
 
   togglePlay() {
