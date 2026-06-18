@@ -1,22 +1,63 @@
 /**
- * Renderer-side casting UI (PC/Electron build only).
+ * Renderer-side casting UI. Two backends:
+ *  - Electron (PC): window.electronCast bridge → Node castv2/dlnacasts, casting a
+ *    server-relative /cast path that the main process makes LAN-absolute.
+ *  - Native phone (Android): the Cast Capacitor plugin → Google Cast SDK, casting
+ *    the public provider URL directly (the receiver fetches it).
  *
- * Talks to the Electron main process via the `window.electronCast` preload bridge
- * to discover and drive Chromecast/Android-TV (Google Cast) and Samsung/DLNA
- * receivers. Absent on web/Android, where `window.electronCast` is undefined and
- * the Cast button stays hidden.
- *
- * Receivers fetch the media themselves and cannot play raw live MPEG-TS, so for
- * live channels we force the HLS (m3u8) variant; VOD is passed as-is (mp4/mkv).
- * The main process turns server-relative proxy paths into LAN-absolute URLs.
+ * Receivers can't play raw live MPEG-TS, so live is sent as HLS (m3u8); VOD is
+ * passed through (mp4/mkv).
  */
+import { Capacitor, registerPlugin } from '@capacitor/core';
+import { getStreamUrl } from './xtream-api.js';
+
+const NativeCast = (() => {
+  try {
+    return (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') ? registerPlugin('Cast') : null;
+  } catch (e) {
+    return null;
+  }
+})();
+
 let castCtx = null;        // { streamId, type, title, isLive, ext }
 let devices = [];
 let activeDeviceId = null;
 let overlayEl = null;
 
+function getBackend() {
+  if (window.electronCast && window.electronCast.available) return 'electron';
+  if (NativeCast) return 'native';
+  return null;
+}
+
 export function isCastAvailable() {
-  return !!(window.electronCast && window.electronCast.available);
+  return getBackend() !== null;
+}
+
+// --- Backend operations (dispatch to Electron or native plugin) -------------
+async function backendList() {
+  const b = getBackend();
+  if (b === 'electron') return (await window.electronCast.list()) || [];
+  if (b === 'native') { const r = await NativeCast.list(); return (r && r.devices) || []; }
+  return [];
+}
+
+function backendOnDevices(cb) {
+  const b = getBackend();
+  if (b === 'electron') return window.electronCast.onDevices(cb);
+  if (b === 'native') NativeCast.addListener('devices', (e) => cb((e && e.devices) || []));
+}
+
+async function backendPlay({ deviceId, path, mediaUrl, title, contentType, isLive }) {
+  const b = getBackend();
+  if (b === 'electron') return window.electronCast.play({ deviceId, path, title, contentType, isLive });
+  if (b === 'native') return NativeCast.play({ deviceId, url: mediaUrl, title, contentType, isLive });
+}
+
+async function backendStop() {
+  const b = getBackend();
+  if (b === 'electron') return window.electronCast.control({ deviceId: activeDeviceId, action: 'stop' });
+  if (b === 'native') return NativeCast.stop();
 }
 
 // Called by the player whenever something starts playing, so the Cast button
@@ -46,7 +87,7 @@ export function initCastUI() {
   if (overlayStop) overlayStop.addEventListener('click', stopCasting);
 
   // Push updates as new devices are discovered while the picker is open.
-  window.electronCast.onDevices((list) => {
+  backendOnDevices((list) => {
     devices = list || [];
     if (overlayEl) render();
   });
@@ -60,7 +101,7 @@ async function openCastPicker() {
   buildOverlay();
   render();
   try {
-    devices = await window.electronCast.list();
+    devices = await backendList();
     render();
   } catch (e) {
     console.error('[cast] device list failed:', e);
@@ -93,7 +134,7 @@ function buildOverlay() {
   overlayEl.querySelector('.cast-modal-close').addEventListener('click', closeOverlay);
   overlayEl.querySelector('.cast-rescan-btn').addEventListener('click', async () => {
     setStatus('Scanning…');
-    try { devices = await window.electronCast.list(); } catch (e) {}
+    try { devices = await backendList(); } catch (e) {}
     setStatus('');
     render();
   });
@@ -157,21 +198,29 @@ const VOD_MIME = {
 // Uses the short /cast/<kind>/<id>.<ext> endpoint (clean, extension-bearing URL)
 // instead of the long /api/proxy?url=… form, which Samsung DLNA truncates / can't
 // type-sniff (→ UPnP 716). Chromecast plays HLS for live; DLNA gets MPEG-TS.
-function buildCastMedia(ctx, isDlna) {
+async function buildCastMedia(ctx, isDlna) {
+  // Native phone (Google Cast): cast the PUBLIC provider URL directly — the
+  // Chromecast fetches it. Live → HLS; VOD → its container.
+  if (getBackend() === 'native') {
+    const format = ctx.isLive ? 'm3u8' : '';
+    const mediaUrl = await getStreamUrl(ctx.streamId, ctx.type, ctx.ext || '', format);
+    const ext = (ctx.ext || 'mp4').toLowerCase();
+    const contentType = ctx.isLive ? 'application/x-mpegurl' : (VOD_MIME[ext] || 'video/mp4');
+    return { mediaUrl, contentType };
+  }
+
+  // Electron (PC): short /cast/<kind>/<id>.<ext> path served by the local proxy
+  // (clean, extension-bearing URL). Chromecast → HLS for live; DLNA → MPEG-TS.
   const kind = ctx.type === 'movie' ? 'movie' : ctx.type === 'series' ? 'series' : 'live';
   let ext;
   let contentType;
-
   if (ctx.isLive) {
     ext = isDlna ? 'ts' : 'm3u8';
-    // DLNA: advertise as the MPEG-TS profile the TV accepts (video/mpeg →
-    // MPEG_TS_NA_ISO is applied server/DIDL side). Chromecast wants HLS.
     contentType = isDlna ? 'video/mpeg' : 'application/x-mpegurl';
   } else {
     ext = (ctx.ext || 'mp4').toLowerCase();
     contentType = VOD_MIME[ext] || 'video/mp4';
   }
-
   const path = `/cast/${kind}/${encodeURIComponent(ctx.streamId)}.${ext}`;
   return { path, contentType };
 }
@@ -186,14 +235,15 @@ async function castToDevice(deviceId) {
   markRowBusy(deviceId, true);
 
   try {
-    const { path, contentType } = await buildCastMedia(castCtx, isDlna);
-    console.log('[cast] sending to', name, '|', contentType, '|', path);
+    const { path, mediaUrl, contentType } = await buildCastMedia(castCtx, isDlna);
+    console.log('[cast] sending to', name, '|', contentType, '|', mediaUrl || path);
 
     // Don't let an unresponsive receiver hang the UI indefinitely.
     await withTimeout(
-      window.electronCast.play({
+      backendPlay({
         deviceId,
         path,
+        mediaUrl,
         title: castCtx.title || 'ZIPTV Pro',
         contentType,
         isLive: !!castCtx.isLive
@@ -238,7 +288,7 @@ function withTimeout(promise, ms, message) {
 async function stopCasting() {
   if (!activeDeviceId) return;
   try {
-    await window.electronCast.control({ deviceId: activeDeviceId, action: 'stop' });
+    await backendStop();
   } catch (e) {
     console.error('[cast] stop failed:', e);
   }

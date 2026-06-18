@@ -17,6 +17,7 @@ public class MainActivity extends BridgeActivity {
         // into the bridge and its JS calls silently no-op.
         registerPlugin(PipPlugin.class);
         registerPlugin(ApkInstallerPlugin.class);
+        registerPlugin(CastPlugin.class);
         super.onCreate(savedInstanceState);
     }
 
