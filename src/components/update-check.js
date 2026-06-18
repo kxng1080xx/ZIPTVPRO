@@ -2,7 +2,14 @@
  * Background update check. Fetches the published version manifest, compares it
  * to this build's version, and — if a newer one exists and the user hasn't
  * skipped it — shows an "update available" prompt with Cancel / Skip / Download.
+ *
+ * On Android (incl. Fire TV, whose browser can't install APKs) the Download
+ * action downloads the APK in-app and launches the system installer via the
+ * native ApkInstaller plugin. Elsewhere it opens the installer URL.
  */
+import { Capacitor, registerPlugin } from '@capacitor/core';
+
+const ApkInstaller = registerPlugin('ApkInstaller');
 
 const VERSION_URL = 'https://ziptvpro.vercel.app/version.json';
 const SKIP_KEY = 'skip_update_version';
@@ -37,13 +44,36 @@ function downloadUrlFor(manifest) {
   return manifest.apk || 'https://ziptvpro.vercel.app/app.apk';
 }
 
-function openDownload(url) {
-  // Electron: open in the system browser; otherwise a normal new tab / download.
-  if (window.appHost && typeof window.appHost.openExternal === 'function') {
-    window.appHost.openExternal(url);
-  } else {
-    window.open(url, '_blank');
+function isAndroidNative() {
+  try {
+    return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
+  } catch (e) {
+    return false;
   }
+}
+
+// Download + install the app. On Android, do it in-app via the native installer
+// (browser can't on Fire TV). On Electron, open the .exe link in the system
+// browser. On plain web, open the link. Returns a small status object.
+export async function downloadApp(url, onStatus) {
+  if (isAndroidNative()) {
+    if (onStatus) onStatus('Downloading update…');
+    try {
+      await ApkInstaller.downloadAndInstall({ url });
+      return { ok: true };
+    } catch (e) {
+      const msg = (e && (e.message || e.errorMessage)) || String(e);
+      if (msg.includes('NEEDS_PERMISSION')) return { ok: false, needsPermission: true };
+      return { ok: false, error: msg };
+    }
+  }
+
+  if (window.appHost && typeof window.appHost.openExternal === 'function') {
+    window.appHost.openExternal(url); // Electron → system browser
+  } else {
+    window.open(url, '_blank'); // web
+  }
+  return { ok: true };
 }
 
 export async function checkForUpdate() {
@@ -91,9 +121,29 @@ function showUpdateModal(remote, local, manifest) {
     try { localStorage.setItem(SKIP_KEY, remote); } catch (e) {}
     close();
   });
-  overlay.querySelector('[data-action="download"]').addEventListener('click', () => {
-    openDownload(downloadUrlFor(manifest));
-    close();
+  overlay.querySelector('[data-action="download"]').addEventListener('click', async () => {
+    const actions = overlay.querySelector('.update-modal-actions');
+    const textEl = overlay.querySelector('.update-modal-text');
+    const setText = (msg) => { if (textEl) textEl.textContent = msg; };
+
+    // On Android, keep the modal up and show progress; the system installer
+    // takes over on success. Elsewhere, just open the link and close.
+    if (isAndroidNative()) {
+      if (actions) actions.style.display = 'none';
+      const res = await downloadApp(downloadUrlFor(manifest), setText);
+      if (res.ok) {
+        close();
+      } else if (res.needsPermission) {
+        setText('Allow "Install unknown apps" for ZIPTV Pro, then press Download again.');
+        if (actions) actions.style.display = '';
+      } else {
+        setText(`Update failed: ${res.error || 'unknown error'}`);
+        if (actions) actions.style.display = '';
+      }
+    } else {
+      downloadApp(downloadUrlFor(manifest));
+      close();
+    }
   });
 
   if (window.lucide) lucide.createIcons({ scope: overlay });

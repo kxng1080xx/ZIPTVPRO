@@ -22,7 +22,7 @@ import { VideoPlayer } from './components/player.js';
 import { EPGGrid } from './components/epg.js';
 import { navigation } from './components/tv-navigation.js';
 import { initCastUI, setCastContext } from './components/cast.js';
-import { checkForUpdate } from './components/update-check.js';
+import { checkForUpdate, downloadApp } from './components/update-check.js';
 
 // Supabase Configuration for Remote Playlist Pairing
 // Swap these with your own Supabase project credentials
@@ -118,6 +118,20 @@ async function initApp() {
     } else {
       dlBtn.href = 'https://ziptvpro.vercel.app/app.apk';
       if (dlLabel) dlLabel.textContent = 'Download Latest Version';
+    }
+
+    // On Android (Fire TV's browser can't install APKs) download + install in
+    // app via the native installer instead of opening the link.
+    if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+      dlBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const label = dlLabel ? dlLabel.textContent : '';
+        if (dlLabel) dlLabel.textContent = 'Downloading…';
+        const res = await downloadApp('https://ziptvpro.vercel.app/app.apk', (m) => { if (dlLabel) dlLabel.textContent = m; });
+        if (dlLabel) dlLabel.textContent = res.needsPermission
+          ? 'Allow "Install unknown apps", then retry'
+          : (res.ok ? label : 'Download failed — retry');
+      });
     }
   }
 

@@ -16,6 +16,7 @@ public class MainActivity extends BridgeActivity {
         // during super.onCreate(), so a plugin registered afterwards never makes it
         // into the bridge and its JS calls silently no-op.
         registerPlugin(PipPlugin.class);
+        registerPlugin(ApkInstallerPlugin.class);
         super.onCreate(savedInstanceState);
     }
 
