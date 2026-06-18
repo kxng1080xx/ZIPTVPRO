@@ -4711,4 +4711,41 @@ body.epg-fullscreen-active .epg-section-container {
 .update-btn-primary { background: #00f3ff; color: #00131a; border-color: #00f3ff; }
 .update-btn-primary:hover { filter: brightness(1.08); }
 
+/* ==========================================================================
+   "PLAYING ON TV" CAST OVERLAY (covers the player while casting)
+   ========================================================================== */
+.player-cast-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: radial-gradient(circle at center, #0b1b2e 0%, #05080f 100%);
+  text-align: center;
+  padding: 24px;
+}
+.player-cast-overlay.hidden { display: none !important; }
+.cast-overlay-icon { width: 56px; height: 56px; color: #00f3ff; }
+.cast-overlay-title { font-size: 1.4rem; font-weight: 700; color: #fff; }
+.cast-overlay-device { font-size: 1rem; color: var(--text-secondary, #9fb0c8); }
+.cast-overlay-stop {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 20px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 107, 107, 0.5);
+  background: rgba(255, 107, 107, 0.12);
+  color: #ff6b6b;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cast-overlay-stop:hover { background: rgba(255, 107, 107, 0.22); }
+.cast-overlay-stop i { width: 17px; height: 17px; }
+
 

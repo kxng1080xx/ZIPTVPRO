@@ -296,7 +296,17 @@
                     </div>
                   </div>
                 </div>
-                
+
+                <!-- Casting state overlay (covers the video while a cast is active) -->
+                <div class="player-cast-overlay hidden" id="player-cast-overlay">
+                  <i data-lucide="cast" class="cast-overlay-icon"></i>
+                  <div class="cast-overlay-title">Playing on TV</div>
+                  <div class="cast-overlay-device" id="cast-overlay-device"></div>
+                  <button class="cast-overlay-stop" id="cast-overlay-stop">
+                    <i data-lucide="square"></i> Stop Casting
+                  </button>
+                </div>
+
                 <!-- Channel Logo Overlay (Watermark top left when overlay hidden) -->
                 <div class="player-channel-logo-watermark hidden" id="player-watermark">
                   <img src="" alt="" id="watermark-img">

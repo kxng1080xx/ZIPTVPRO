@@ -23,6 +23,12 @@ export function isCastAvailable() {
 // knows what to send. `ext` is the VOD container extension (mp4/mkv/…).
 export function setCastContext(ctx) {
   castCtx = ctx;
+  // If a cast is already active, follow the new selection to the TV instead of
+  // letting it play locally (it just started in loadStream — stop it and recast).
+  if (activeDeviceId && window.playerInstance) {
+    window.playerInstance.stopLocalPlayback();
+    castToDevice(activeDeviceId);
+  }
 }
 
 export function initCastUI() {
@@ -35,6 +41,10 @@ export function initCastUI() {
     btn.style.display = '';
     btn.addEventListener('click', openCastPicker);
   }
+  // "Stop Casting" button on the player's casting overlay.
+  const overlayStop = document.getElementById('cast-overlay-stop');
+  if (overlayStop) overlayStop.addEventListener('click', stopCasting);
+
   // Push updates as new devices are discovered while the picker is open.
   window.electronCast.onDevices((list) => {
     devices = list || [];
@@ -195,8 +205,15 @@ async function castToDevice(deviceId) {
     activeDeviceId = deviceId;
     setStatus(`Casting to ${name}`);
     render();
-    // Mute local playback so the two audio streams don't overlap.
-    try { window.playerInstance && window.playerInstance.video && (window.playerInstance.video.muted = true); } catch (e) {}
+    // Stop the duplicate local stream (the TV is playing it now) and show the
+    // "Playing on TV" overlay, then close the picker.
+    try {
+      if (window.playerInstance) {
+        window.playerInstance.stopLocalPlayback();
+        window.playerInstance.setCastOverlayDevice(name);
+      }
+    } catch (e) {}
+    closeOverlay();
   } catch (e) {
     console.error('[cast] play failed:', e);
     markRowBusy(deviceId, false);
@@ -226,6 +243,7 @@ async function stopCasting() {
     console.error('[cast] stop failed:', e);
   }
   activeDeviceId = null;
-  try { window.playerInstance && window.playerInstance.video && (window.playerInstance.video.muted = false); } catch (e) {}
+  // Resume local playback and hide the "Playing on TV" overlay.
+  try { if (window.playerInstance) window.playerInstance.resumeLocalPlayback(); } catch (e) {}
   render();
 }

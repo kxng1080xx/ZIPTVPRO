@@ -383,6 +383,7 @@ export class VideoPlayer {
   // Schedule a full stream reload after a short delay.
   // Called when a fatal error occurs and we still have retries left.
   _retryStream() {
+    if (this._castMode) return; // casting — don't restart local playback
     const MAX_RETRIES = 4;
     this._retryCount++;
     if (this._retryCount > MAX_RETRIES) {
@@ -410,6 +411,7 @@ export class VideoPlayer {
   // bails to the fallback path if reconnects fire back-to-back (a stream that
   // genuinely won't play, rather than one that just needs re-opening).
   _reconnectLive() {
+    if (this._castMode) return; // casting — local playback is intentionally stopped
     if (this._streamIsVod) return;
 
     const now = Date.now();
@@ -870,6 +872,36 @@ export class VideoPlayer {
       }
       this.mpegtsPlayer = null;
     }
+  }
+
+  // --- Casting: stop local streaming while the TV plays it, then resume --------
+  // Tears down the local decoders (stops the duplicate network stream) but keeps
+  // _streamUrl so playback can resume when casting ends. _castMode blocks the
+  // auto-retry/reconnect timers from restarting local playback meanwhile.
+  stopLocalPlayback() {
+    this._castMode = true;
+    clearTimeout(this._retryTimer);
+    clearTimeout(this._reconnectTimer);
+    this.destroyHls();
+    this.destroyMpegts();
+    try { this.video.pause(); } catch (e) {}
+    this.hideSpinner();
+    const overlay = document.getElementById('player-cast-overlay');
+    if (overlay) overlay.classList.remove('hidden');
+  }
+
+  resumeLocalPlayback() {
+    this._castMode = false;
+    const overlay = document.getElementById('player-cast-overlay');
+    if (overlay) overlay.classList.add('hidden');
+    if (this._streamUrl) {
+      this._startPlayback(this._streamUrl, this._streamIsVod);
+    }
+  }
+
+  setCastOverlayDevice(name) {
+    const el = document.getElementById('cast-overlay-device');
+    if (el) el.textContent = name || '';
   }
 
   updateVolumeIcon() {

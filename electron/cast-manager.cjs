@@ -75,11 +75,12 @@ try {
       // the server's dlnaProfile() so the DIDL protocolInfo matches the actual
       // media response. video/mpeg = live MPEG-TS; video/mp4 = AVC MP4 VOD.
       if (ct.includes('mpeg') && !ct.includes('mpegurl')) {
+        // Live MPEG-TS: the TV accepts this generic profile and plays the H.264 inside.
         options.dlnaFeatures = `DLNA.ORG_PN=MPEG_TS_NA_ISO;DLNA.ORG_OP=00;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=${FLAGS}`;
-      } else if (ct.includes('mp4')) {
-        options.dlnaFeatures = `DLNA.ORG_PN=AVC_MP4_MP_SD_AAC_MULT5;DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=${FLAGS}`;
       } else {
-        options.dlnaFeatures = 'DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000';
+        // VOD (mp4 etc.): no PN — let the TV sniff the real media (a wrong PN
+        // makes it reject as "file not supported"). Keep in sync with server.
+        options.dlnaFeatures = `DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=${FLAGS}`;
       }
     }
     return origLoad.call(this, url, options, callback);

@@ -602,16 +602,24 @@ app.get('/cast/:kind/:file', (req, res) => {
   const { mime, features } = dlnaProfile(isLive, ext);
 
   // DLNA renderers send a HEAD probe (with getcontentFeatures.dlna.org) BEFORE
-  // playing to validate the resource. Answer it immediately with the DLNA
-  // headers and no body — do NOT open the upstream stream, or the HEAD hangs
-  // forever (the live response never "finishes") and the TV reports 716.
+  // playing to validate the resource. Answer with the DLNA headers and no body —
+  // do NOT open the streaming pipe, or the HEAD hangs forever and the TV reports
+  // 716. For VOD (a finite file) the renderer needs Content-Length to set up
+  // playback, so fetch it from the provider first; live is a stream (no length).
   if (req.method === 'HEAD') {
     res.setHeader('Content-Type', mime);
     res.setHeader('transferMode.dlna.org', 'Streaming');
     res.setHeader('contentFeatures.dlna.org', features);
-    res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Access-Control-Allow-Origin', '*');
-    return res.status(200).end();
+    if (isLive) {
+      res.setHeader('Accept-Ranges', 'none');
+      return res.status(200).end();
+    }
+    return fetchUpstreamLength(targetUrl, (len) => {
+      res.setHeader('Accept-Ranges', 'bytes');
+      if (len) res.setHeader('Content-Length', String(len));
+      res.status(200).end();
+    });
   }
 
   // Live .ts to a cast receiver: the TV holds one long GET, so when the provider
@@ -627,6 +635,33 @@ app.get('/cast/:kind/:file', (req, res) => {
     dlnaContentFeatures: features
   });
 });
+
+// Fetch a VOD file's total size from the provider (for the DLNA HEAD probe).
+// Uses a 1-byte ranged GET so it works even when the provider ignores HEAD;
+// parses the total from Content-Range, falling back to Content-Length.
+function fetchUpstreamLength(url, cb, redirects = 0) {
+  let done = false;
+  const finish = (len) => { if (!done) { done = true; cb(len); } };
+  const protocol = url.startsWith('https') ? https : http;
+  const r = protocol.get(url, { headers: { 'User-Agent': 'VLC/3.0.20', 'Range': 'bytes=0-0' } }, (up) => {
+    if ([301, 302, 307, 308].includes(up.statusCode) && up.headers.location && redirects < 5) {
+      let loc = up.headers.location;
+      if (!loc.startsWith('http')) { try { loc = new URL(url).origin + loc; } catch (e) {} }
+      up.destroy();
+      return fetchUpstreamLength(loc, (len) => finish(len), redirects + 1);
+    }
+    let total = null;
+    const cr = up.headers['content-range']; // e.g. "bytes 0-0/123456"
+    if (cr) { const m = /\/(\d+)\s*$/.exec(cr); if (m) total = parseInt(m[1], 10); }
+    if (total == null && up.statusCode === 200 && up.headers['content-length']) {
+      total = parseInt(up.headers['content-length'], 10);
+    }
+    up.destroy();
+    finish(Number.isFinite(total) ? total : null);
+  });
+  r.on('error', () => finish(null));
+  r.setTimeout(8000, () => { try { r.destroy(); } catch (e) {} finish(null); });
+}
 
 // Continuous live proxy: keeps one client connection open and transparently
 // reconnects to the provider whenever it drops the source, so a cast receiver
@@ -701,11 +736,12 @@ function dlnaProfile(isLive, ext) {
     // IPTV live is 188-byte MPEG-TS → MPEG_TS_NA_ISO (video/mpeg), no seek.
     return { mime: 'video/mpeg', features: `DLNA.ORG_PN=MPEG_TS_NA_ISO;DLNA.ORG_OP=00;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=${FLAGS}` };
   }
-  if (ext === 'mp4' || ext === 'm4v') {
-    return { mime: 'video/mp4', features: `DLNA.ORG_PN=AVC_MP4_MP_SD_AAC_MULT5;DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=${FLAGS}` };
-  }
-  // Other containers: advertise without a PN (best effort).
-  return { mime: CAST_MIME[ext] || 'video/mp4', features: `DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000` };
+  // VOD: do NOT claim a specific DLNA.ORG_PN. IPTV files vary in codec/profile/
+  // resolution, and a wrong PN (e.g. AVC SD for an HD file) makes strict
+  // renderers reject with "file not supported". Omitting the PN lets the TV
+  // sniff the actual media and play it if it can decode it (this TV decodes
+  // H.264 fine — live proves it). Just advertise byte-seek + streaming flags.
+  return { mime: CAST_MIME[ext] || 'video/mp4', features: `DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=${FLAGS}` };
 }
 
 function proxyStream(decodedUrl, req, res, opts = {}) {
