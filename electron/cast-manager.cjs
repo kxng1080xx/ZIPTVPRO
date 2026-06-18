@@ -53,15 +53,30 @@ function makeId(type, player) {
   return `${type}:${player.name || 'device'}:${player.host || ''}`;
 }
 
-// First non-internal IPv4 address — the address a TV on the same LAN can reach.
-function lanIp() {
+// All non-internal IPv4 addresses on this host.
+function localIpv4s() {
+  const out = [];
   const ifaces = os.networkInterfaces();
   for (const name of Object.keys(ifaces)) {
     for (const iface of ifaces[name] || []) {
-      if (iface.family === 'IPv4' && !iface.internal) return iface.address;
+      if (iface.family === 'IPv4' && !iface.internal) out.push(iface.address);
     }
   }
-  return '127.0.0.1';
+  return out;
+}
+
+// Pick the local IPv4 the receiver can actually reach. A PC often has several
+// adapters (VPN, Hyper-V, VMware, WSL) whose IPs aren't on the TV's network, so
+// when we know the receiver's host we prefer our address on the same /24 subnet
+// — otherwise the TV reports "resource not found" (UPnP 716) fetching the media.
+function lanIpFor(deviceHost) {
+  const ips = localIpv4s();
+  if (deviceHost && /^\d+\.\d+\.\d+\.\d+$/.test(deviceHost)) {
+    const prefix = deviceHost.split('.').slice(0, 3).join('.') + '.';
+    const sameSubnet = ips.find((ip) => ip.startsWith(prefix));
+    if (sameSubnet) return sameSubnet;
+  }
+  return ips[0] || '127.0.0.1';
 }
 
 function initCast({ getWindow, getServerPort }) {
@@ -87,8 +102,8 @@ function initCast({ getWindow, getServerPort }) {
   if (cc) cc.on('update', register('chromecast'));
   if (dl) dl.on('update', register('dlna'));
 
-  function baseUrl() {
-    return `http://${lanIp()}:${getServerPort()}`;
+  function baseUrlFor(deviceHost) {
+    return `http://${lanIpFor(deviceHost)}:${getServerPort()}`;
   }
 
   function rescan() {
@@ -110,9 +125,11 @@ function initCast({ getWindow, getServerPort }) {
     if (!d) throw new Error('Cast device not found (try rescanning)');
 
     // Renderer passes a server-relative path (/api/...) or an absolute URL.
-    // Relative paths must be made LAN-absolute so the receiver can fetch them.
+    // Relative paths must be made LAN-absolute (on the receiver's own subnet)
+    // so the device can fetch them.
     let url = path;
-    if (typeof path === 'string' && path.startsWith('/')) url = baseUrl() + path;
+    if (typeof path === 'string' && path.startsWith('/')) url = baseUrlFor(d.player.host) + path;
+    console.log(`[cast] play -> ${d.name} (${d.player.host}) : ${url}`);
 
     const opts = {
       title: title || 'ZIPTV Pro',
