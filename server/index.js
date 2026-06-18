@@ -519,7 +519,11 @@ app.get('/api/proxy', (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).send('Missing url parameter');
 
-  const decodedUrl = decodeURIComponent(url);
+  // Express has already URL-decoded the query param once. Do NOT decode again:
+  // a second decodeURIComponent corrupts HLS segment URLs whose tokens contain
+  // percent-encoded characters (e.g. base64 "==" arrives as "%3D%3D" and a second
+  // decode turns it into "==", producing a 404 from the provider's CDN).
+  const decodedUrl = url;
   const maxRedirects = 5;
 
   const fetchHeaders = {
@@ -578,15 +582,21 @@ app.get('/api/proxy', (req, res) => {
           data += chunk;
         });
         clientRes.on('end', () => {
-          const baseUrl = currentUrl.substring(0, currentUrl.lastIndexOf('/') + 1);
           const rewrittenText = data.split('\n').map(line => {
             const trimmed = line.trim();
             if (trimmed.length === 0 || trimmed.startsWith('#')) {
               return line;
             }
-            let absoluteUrl = trimmed;
-            if (!trimmed.startsWith('http')) {
-              absoluteUrl = baseUrl + trimmed;
+            // Resolve against the (possibly redirected) playlist URL. The URL
+            // constructor correctly handles all three forms providers emit:
+            // absolute (http://…), root-relative (/hlsr/…), and directory-
+            // relative (seg.ts). Naive baseUrl+path concatenation breaks the
+            // root-relative case (produces …/live/u/p//hlsr/… → 401/404).
+            let absoluteUrl;
+            try {
+              absoluteUrl = new URL(trimmed, currentUrl).href;
+            } catch (e) {
+              absoluteUrl = trimmed;
             }
             return `/api/proxy?url=${encodeURIComponent(absoluteUrl)}`;
           }).join('\n');

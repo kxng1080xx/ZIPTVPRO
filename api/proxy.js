@@ -31,7 +31,10 @@ export default async function handler(req, res) {
     return;
   }
 
-  const target = decodeURIComponent(Array.isArray(rawUrl) ? rawUrl[0] : rawUrl);
+  // req.query is already URL-decoded once by the platform; decoding again would
+  // corrupt HLS segment tokens that contain percent-encoded characters (e.g.
+  // base64 "%3D%3D" -> "==", causing 404s from the provider's CDN).
+  const target = Array.isArray(rawUrl) ? rawUrl[0] : rawUrl;
 
   // Only allow http(s) targets (basic SSRF guard).
   let parsed;
@@ -66,11 +69,15 @@ export default async function handler(req, res) {
   if (isM3u8) {
     const text = await upstream.text();
 
+    // Resolve segment URLs against the FINAL (post-redirect) playlist URL, not the
+    // originally requested one — providers often 302 to a load-balancer host whose
+    // root-relative segment paths (/hlsr/…) must resolve against that final origin.
+    const baseUrl = upstream.url || target;
     const toProxy = (u) => {
       let abs;
       try {
         // Resolves relative, "./", "../" and root-absolute paths against the playlist URL.
-        abs = new URL(u, target).href;
+        abs = new URL(u, baseUrl).href;
       } catch {
         abs = u;
       }

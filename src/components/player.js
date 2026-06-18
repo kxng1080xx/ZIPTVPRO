@@ -350,9 +350,13 @@ export class VideoPlayer {
 
     // Reset retry state for the new stream
     clearTimeout(this._retryTimer);
+    clearTimeout(this._reconnectTimer);
     this._retryCount = 0;
     this._streamUrl = url;
     this._streamIsVod = isVod;
+    // Bumped on every new stream so a pending live reconnect for an old
+    // channel cancels itself once the user has switched away.
+    this._streamGen = (this._streamGen || 0) + 1;
 
     // Stop existing streams
     this.destroyHls();
@@ -393,8 +397,62 @@ export class VideoPlayer {
     }, 3000);
   }
 
+  // Seamlessly reconnect a live stream after the provider closes the upstream
+  // connection (a clean end-of-stream, not an error). Unlike _retryStream this
+  // does NOT show a "Retrying…" overlay or count against the fatal-error budget,
+  // because for many providers this is normal ~60s behaviour. A rapid-loop guard
+  // bails to the fallback path if reconnects fire back-to-back (a stream that
+  // genuinely won't play, rather than one that just needs re-opening).
+  _reconnectLive() {
+    if (this._streamIsVod) return;
+
+    const now = Date.now();
+    if (now - (this._lastLiveReconnect || 0) < 2000) {
+      this._liveReconnectFails = (this._liveReconnectFails || 0) + 1;
+    } else {
+      this._liveReconnectFails = 0;
+    }
+    this._lastLiveReconnect = now;
+
+    // Three reconnects within ~2s of each other = the stream isn't really
+    // serving video. Stop hammering the provider and fall back / error out.
+    if (this._liveReconnectFails >= 3) {
+      this._liveReconnectFails = 0;
+      this.destroyMpegts();
+      if (this.onFatalError) this.onFatalError();
+      else this.showError('This stream could not be played.');
+      return;
+    }
+
+    const gen = this._streamGen;
+    clearTimeout(this._reconnectTimer);
+    this._reconnectTimer = setTimeout(() => {
+      if (gen !== this._streamGen) return; // user switched channels meanwhile
+
+      // Prefer a lightweight reconnect on the existing player: unload()/load()
+      // restarts the upstream connection while keeping the same MediaSource
+      // attached to the <video>, so the picture freezes on the last frame for a
+      // moment instead of going black. The LOADING_COMPLETE listener stays bound,
+      // so the next ~60s cycle reconnects the same way. Fall back to a full
+      // rebuild only if the player is gone or the light path throws.
+      const p = this.mpegtsPlayer;
+      if (p) {
+        try {
+          p.unload();
+          p.load();
+          p.play().catch(() => {});
+          return;
+        } catch (err) {
+          console.warn('Light live reconnect failed, rebuilding player:', err);
+        }
+      }
+      this.destroyMpegts();
+      this._startPlayback(this._streamUrl, this._streamIsVod);
+    }, 200);
+  }
+
   // Internal: set up the HLS / MPEG-TS / native player for a given URL.
-  // Called by loadStream() and _retryStream().
+  // Called by loadStream(), _retryStream() and _reconnectLive().
   _startPlayback(url, isVod) {
     // VOD (movies / series episodes) is a single on-demand file addressed by its
     // real container extension, so match strictly on the file type. Live streams
@@ -520,6 +578,19 @@ export class VideoPlayer {
             if (!isVod && this.onFatalError) this.onFatalError();
           }
         });
+
+        // Live streams: many Xtream providers close the upstream .ts connection
+        // after a short window (~60s). mpegts.js reports that as a clean end of
+        // stream (LOADING_COMPLETE), NOT an error, so the ERROR handler above
+        // never fires and playback just stops once the buffer drains ("looks
+        // paused"). Reconnect seamlessly — there's still buffered video playing,
+        // so a fresh connection started now continues without a visible gap.
+        if (!isVod) {
+          this.mpegtsPlayer.on(mpegts.Events.LOADING_COMPLETE, () => {
+            console.warn('Live stream ended (provider closed connection) — reconnecting…');
+            this._reconnectLive();
+          });
+        }
 
         // Set video tag loaded metadata callback
         this.video.onloadedmetadata = () => {

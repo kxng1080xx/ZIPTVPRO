@@ -33,7 +33,14 @@ function proxify(url) {
   return USE_WEB_PROXY ? `/api/proxy?url=${encodeURIComponent(url)}` : url;
 }
 
-// Helper: Check if backend server is active
+// Helper: Check if backend server is active. Memoized so the detection runs
+// (and is awaited) exactly once, including before the first playlist read on boot.
+let serverModePromise = null;
+function ensureServerMode() {
+  if (!serverModePromise) serverModePromise = checkServerMode();
+  return serverModePromise;
+}
+
 async function checkServerMode() {
   try {
     const res = await fetch('/api/status', { signal: AbortSignal.timeout(1500) });
@@ -319,6 +326,7 @@ export async function logout() {
 
 // List saved playlists and which one is active.
 export async function getPlaylists() {
+  await ensureServerMode();
   if (isServerMode) {
     const response = await fetch('/api/playlists');
     if (!response.ok) throw new Error('Failed to load playlists');
