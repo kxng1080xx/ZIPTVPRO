@@ -411,7 +411,7 @@ async function selectAndPlayChannel(channel, programBlock) {
     playerInstance.showProgramGuide(current || programBlock, next);
 
     // Automatically enter fullscreen
-    playerInstance.enterFullscreen();
+    playerInstance.autoFullscreen();
 
     // Set navigation focus to player zone
     navigation.focusDefault('player');
@@ -892,7 +892,7 @@ async function playSeriesEpisode(epStreamId, epName, logo, plot, epExt, epIndex,
     }
     playerInstance.showSeriesNowNext(currentEpTitle, nextEpName);
 
-    playerInstance.enterFullscreen();
+    playerInstance.autoFullscreen();
   } catch (err) {
     console.error('Failed to play Series episode:', err);
     alert(`Failed to load stream: ${err.message}`);
@@ -1281,7 +1281,7 @@ async function playVODStream(streamId, type, name, logo, description, containerE
     playerInstance.setSeriesMode(false);
     playerInstance.loadStream(playUrl, name, logo, '', true, resumeTime);
     setCastContext({ streamId, type, title: name, isLive: false, ext: containerExtension });
-    playerInstance.enterFullscreen();
+    playerInstance.autoFullscreen();
   } catch (err) {
     console.error('Failed to play VOD stream:', err);
     alert(`Failed to load stream: ${err.message}`);

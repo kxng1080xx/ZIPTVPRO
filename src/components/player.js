@@ -289,6 +289,36 @@ export class VideoPlayer {
       if (typeof this.onVideoEnded === 'function') this.onVideoEnded();
     });
     this.video.addEventListener('emptied', () => this.stopFpsTracker());
+
+    // Orientation-aware fullscreen (phones): while a stream is active, rotating
+    // to landscape enters fullscreen; rotating back to portrait exits it. Auto-
+    // fullscreen on play only happens in landscape (see autoFullscreen()).
+    try {
+      this._landscapeMql = window.matchMedia('(orientation: landscape)');
+      const onOrient = (e) => {
+        if (!this.hasStream) return;
+        if (e.matches) this.enterFullscreen();
+        else this.exitFullscreen();
+      };
+      if (this._landscapeMql.addEventListener) this._landscapeMql.addEventListener('change', onOrient);
+      else if (this._landscapeMql.addListener) this._landscapeMql.addListener(onOrient); // legacy WebView
+    } catch (e) {}
+  }
+
+  isLandscape() {
+    try { return window.matchMedia('(orientation: landscape)').matches; } catch (e) { return true; }
+  }
+
+  // Auto-fullscreen on play — but only in landscape. In portrait we stay inline
+  // so the user can keep browsing; rotating to landscape fullscreens it.
+  autoFullscreen() {
+    if (this.isLandscape()) this.enterFullscreen();
+  }
+
+  exitFullscreen() {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    }
   }
 
   setOnPrevChannel(callback) {
@@ -334,6 +364,7 @@ export class VideoPlayer {
   loadStream(url, name, logo, currentEpg = 'No schedule available', isVod = false, resumeTime = 0) {
     this.isVod = isVod;
     this.isVodActive = isVod;
+    this.hasStream = true; // gates orientation-driven fullscreen
     this.pendingSeek = isVod ? (resumeTime || 0) : 0;
     this.showSpinner();
     this.currentChannelName = name || 'Live Channel';
@@ -754,6 +785,7 @@ export class VideoPlayer {
 
   stop() {
     this.stopFpsTracker();
+    this.hasStream = false; // no active stream → no orientation fullscreen
     this.video.pause();
     this.destroyHls();
     this.destroyMpegts();
