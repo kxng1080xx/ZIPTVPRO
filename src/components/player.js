@@ -564,10 +564,12 @@ export class VideoPlayer {
           isLive: !isVod,
           url: url
         }, {
-          // Demux/remux the TS off the main thread. This is the big win on weak
-          // TV browsers (Tizen etc.): in-thread transmux starves playback and
-          // hitches. Guarded so it degrades gracefully where Worker is missing.
-          enableWorker:                   typeof Worker !== 'undefined',
+          // NOTE: enableWorker is intentionally OFF. mpegts.js's worker fails to
+          // initialize under the Vite bundle (its worker self-reference breaks),
+          // which throws an immediate ERROR and makes streams "retry" before
+          // they ever play. Keep transmux on the main thread until the worker is
+          // bundled correctly.
+          enableWorker:                   false,
           // A small input stash absorbs network jitter to avoid underrun hitches.
           enableStashBuffer:              true,
           stashInitialSize:               isVod ? 384 : 256,
