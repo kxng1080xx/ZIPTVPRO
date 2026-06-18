@@ -254,7 +254,9 @@ button {
 }
 
 .animate-glow {
-  animation: pulseGlow 3s infinite ease-in-out;
+  /* No infinite animation: pulseGlow animated text-shadow (invisible on an
+     <img>) yet forced a repaint of the always-visible header logo every frame,
+     adding constant load on weak TV browsers. Removed for performance. */
 }
 
 .login-logo-header h2 {
@@ -3049,7 +3051,10 @@ body.vod-mode .now-next-bar {
   outline-offset: -1px;
   z-index: 50 !important;
   background-color: var(--bg-surface-hover) !important;
-  animation: tv-focus-pulse 1.3s infinite alternate ease-in-out !important;
+  /* Static focus ring — no infinite animation / scale. The old pulse animated
+     box-shadow blur + transform every frame, which pegs weak TV-browser CPUs
+     and makes D-pad navigation crawl. A painted-once glow is effectively free. */
+  box-shadow: 0 0 10px rgba(0, 243, 255, 0.5) !important;
 }
 
 .nav-tab.tv-focused {

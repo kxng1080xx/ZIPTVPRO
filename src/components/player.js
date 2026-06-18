@@ -480,15 +480,19 @@ export class VideoPlayer {
         // it can seek and won't stall.
         this.hls = new Hls({
           // --- Memory limits for low-RAM devices ---
-          // Keep the forward buffer short and cap total RAM used by media data.
-          // backBufferLength: 5 frees segments older than 5 s behind the playhead
-          // (default is Infinity — old segments were never released).
-          maxBufferLength:    isVod ? 15 : 8,    // seconds to buffer ahead (default: 30)
-          maxMaxBufferLength: isVod ? 30 : 8,    // hard ceiling (was 60 for VOD)
-          maxBufferSize:      20 * 1000 * 1000,  // 20 MB cap (default: 60 MB)
-          backBufferLength:   5,                 // free segments >5 s behind playhead
-          enableWorker: true,
-          lowLatencyMode: !isVod
+          // backBufferLength frees old segments; caps keep RAM bounded on TVs.
+          // Live gets MORE forward lookahead than before (was 8s) so weak TV
+          // browsers don't underrun and stutter — lookahead doesn't add latency,
+          // it just cushions jitter. Latency is set by liveSyncDurationCount.
+          maxBufferLength:    isVod ? 30 : 12,   // seconds to buffer ahead
+          maxMaxBufferLength: isVod ? 60 : 24,   // hard ceiling
+          maxBufferSize:      24 * 1000 * 1000,  // 24 MB cap
+          backBufferLength:   isVod ? 10 : 6,    // free segments behind the playhead
+          enableWorker: true,                    // parse/demux off the main thread
+          // LL-HLS chasing stutters on weak TV browsers; keep a small, stable
+          // sync window (~3 segments behind live = low latency without thrash).
+          lowLatencyMode: false,
+          liveSyncDurationCount: 3
         });
         this.hls.loadSource(url);
         this.hls.attachMedia(this.video);
@@ -560,14 +564,23 @@ export class VideoPlayer {
           isLive: !isVod,
           url: url
         }, {
-          enableStashBuffer:              isVod,
-          stashInitialSize:               128,   // 128 KB stash (down from 384 KB default)
-          liveBufferLatencyChaser:        !isVod,
-          // Auto-evict old data from the MSE SourceBuffer so it never grows unbounded.
-          // Without these, the SourceBuffer accumulates forever and causes OOM on 1-2 GB devices.
-          autoCleanupSourceBuffer:        true,  // default is false — critical fix
-          autoCleanupMinBackwardDuration: 10,    // keep 10 s behind playhead
-          autoCleanupMaxBackwardDuration: 20,    // hard-evict anything >20 s behind
+          // Demux/remux the TS off the main thread. This is the big win on weak
+          // TV browsers (Tizen etc.): in-thread transmux starves playback and
+          // hitches. Guarded so it degrades gracefully where Worker is missing.
+          enableWorker:                   typeof Worker !== 'undefined',
+          // A small input stash absorbs network jitter to avoid underrun hitches.
+          enableStashBuffer:              true,
+          stashInitialSize:               isVod ? 384 : 256,
+          // Gently keep live near the edge for low latency WITHOUT the aggressive
+          // seeking that stutters. (Replaces the old non-existent option name.)
+          liveBufferLatencyChasing:       !isVod,
+          liveBufferLatencyMaxLatency:    5.0,
+          liveBufferLatencyMinRemain:     1.0,
+          lazyLoad:                       false, // don't suspend the live feed
+          // Auto-evict old SourceBuffer data so it never grows unbounded (OOM).
+          autoCleanupSourceBuffer:        true,
+          autoCleanupMinBackwardDuration: 10,
+          autoCleanupMaxBackwardDuration: 20,
         });
         this.mpegtsPlayer.attachMediaElement(this.video);
         this.mpegtsPlayer.load();
