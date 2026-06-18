@@ -540,6 +540,32 @@ function buildProviderUrl(creds, type, streamId, ext, formatOverride) {
   return `${creds.server_url}/live/${u}/${p}/${streamId}.${format}`;
 }
 
+// --- Cast request debug log -------------------------------------------------
+// Records exactly what a DLNA/Cast receiver requests from /cast/* (method, Range,
+// User-Agent, DLNA probe header) and what we returned. Read it from any device
+// at http://<pc-ip>:<port>/cast-debug to see if/how the TV fetches the stream.
+const castDebugLog = [];
+app.use('/cast', (req, res, next) => {
+  const entry = {
+    t: new Date().toISOString().slice(11, 19),
+    method: req.method,
+    path: req.originalUrl,
+    range: req.headers['range'] || null,
+    ua: req.headers['user-agent'] || null,
+    wantContentFeatures: req.headers['getcontentfeatures.dlna.org'] || null
+  };
+  res.on('finish', () => {
+    entry.status = res.statusCode;
+    entry.contentType = res.getHeader('content-type') || null;
+    entry.contentFeatures = res.getHeader('contentFeatures.dlna.org') || null;
+    entry.contentLength = res.getHeader('content-length') || null;
+  });
+  castDebugLog.push(entry);
+  if (castDebugLog.length > 40) castDebugLog.shift();
+  next();
+});
+app.get('/cast-debug', (_req, res) => res.json(castDebugLog.slice().reverse()));
+
 // Cast-friendly endpoint: a SHORT, clean, extension-bearing URL that DLNA
 // renderers (Samsung especially) accept, unlike the long query-string form of
 // /api/proxy?url=… which they truncate or can't type-sniff (→ UPnP 716). The
@@ -574,11 +600,97 @@ app.get('/cast/:kind/:file', (req, res) => {
   // Map our streams to the profiles a typical Samsung lists (mirror its FLAGS
   // value ED10…). A browser ignores all of this, which is why it played there.
   const { mime, features } = dlnaProfile(isLive, ext);
+
+  // DLNA renderers send a HEAD probe (with getcontentFeatures.dlna.org) BEFORE
+  // playing to validate the resource. Answer it immediately with the DLNA
+  // headers and no body — do NOT open the upstream stream, or the HEAD hangs
+  // forever (the live response never "finishes") and the TV reports 716.
+  if (req.method === 'HEAD') {
+    res.setHeader('Content-Type', mime);
+    res.setHeader('transferMode.dlna.org', 'Streaming');
+    res.setHeader('contentFeatures.dlna.org', features);
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    return res.status(200).end();
+  }
+
+  // Live .ts to a cast receiver: the TV holds one long GET, so when the provider
+  // closes the upstream (~60s) we must reconnect server-side and keep feeding the
+  // same connection — otherwise the stream just ends and the TV stops. (HLS/m3u8
+  // for Chromecast is segmented, so it uses the normal proxy.)
+  if (isLive && ext === 'ts') {
+    return proxyLiveStream(targetUrl, req, res, { contentType: mime, dlnaContentFeatures: features });
+  }
+
   proxyStream(targetUrl, req, res, {
     contentType: mime,
     dlnaContentFeatures: features
   });
 });
+
+// Continuous live proxy: keeps one client connection open and transparently
+// reconnects to the provider whenever it drops the source, so a cast receiver
+// sees an unbroken stream. A tight-loop guard bails if the source keeps dying.
+function proxyLiveStream(targetUrl, req, res, opts) {
+  res.status(200);
+  res.setHeader('Content-Type', opts.contentType || 'video/mpeg');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Accept-Ranges', 'none');
+  if (opts.dlnaContentFeatures) {
+    res.setHeader('transferMode.dlna.org', 'Streaming');
+    res.setHeader('contentFeatures.dlna.org', opts.dlnaContentFeatures);
+  }
+
+  let upstream = null;
+  let closed = false;
+  let recentReconnects = 0;
+  let lastConnectAt = 0;
+
+  const stop = () => {
+    closed = true;
+    if (upstream) { try { upstream.destroy(); } catch (e) {} }
+  };
+  res.on('close', stop);
+  req.on('close', stop);
+
+  const connect = (url, redirects = 0) => {
+    if (closed) return;
+
+    const now = Date.now();
+    if (now - lastConnectAt < 1000) recentReconnects++; else recentReconnects = 0;
+    lastConnectAt = now;
+    if (recentReconnects > 6) { // source is dying immediately — give up cleanly
+      try { res.end(); } catch (e) {}
+      return;
+    }
+
+    const protocol = url.startsWith('https') ? https : http;
+    const upReq = protocol.get(url, { headers: { 'User-Agent': 'VLC/3.0.20' } }, (up) => {
+      if ([301, 302, 307, 308].includes(up.statusCode) && up.headers.location && redirects < 5) {
+        let loc = up.headers.location;
+        if (!loc.startsWith('http')) { try { loc = new URL(url).origin + loc; } catch (e) {} }
+        up.destroy();
+        return connect(loc, redirects + 1);
+      }
+      if (up.statusCode !== 200 && up.statusCode !== 206) {
+        if (!closed) setTimeout(() => connect(targetUrl), 800); // retry original
+        return;
+      }
+
+      upstream = up;
+      up.on('data', (chunk) => {
+        if (closed) return;
+        if (!res.write(chunk)) { up.pause(); res.once('drain', () => up.resume()); }
+      });
+      // Provider closed the source → immediately reconnect to the original URL.
+      up.on('end', () => { if (!closed) connect(targetUrl); });
+      up.on('error', () => { if (!closed) setTimeout(() => connect(targetUrl), 500); });
+    });
+    upReq.on('error', () => { if (!closed) setTimeout(() => connect(targetUrl), 500); });
+  };
+
+  connect(targetUrl);
+}
 
 // Map a stream to a Content-Type + DLNA.ORG_PN profile string the renderer
 // accepts. Kept in sync with the DIDL protocolInfo built in the Electron cast
