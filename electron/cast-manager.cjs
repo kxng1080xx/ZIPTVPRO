@@ -208,20 +208,34 @@ function initCast({ getWindow, getServerPort }) {
     console.log(`[cast] preflight ${pre} for ${url}`);
 
     return new Promise((resolve, reject) => {
+      // Guarantee the IPC handler always replies. Some "[Cast]" devices that
+      // aren't real Google Cast receivers — notably Amazon Fire TV / Firestick
+      // (model AFT*) — accept the TLS connection attempt but never complete the
+      // cast, so the play callback never fires. Without this the handler would
+      // hang and Electron reports "reply was never sent".
+      let settled = false;
+      const finish = (fn, arg) => { if (!settled) { settled = true; clearTimeout(timer); fn(arg); } };
+
+      const isFireTv = /\bAFT|fire\s*tv|firestick/i.test(d.name || '');
+      const timer = setTimeout(() => {
+        const hint = isFireTv
+          ? `${d.name} looks like an Amazon Fire TV / Firestick, which can't receive casts (Amazon blocks Google Cast). Install the Android APK on it instead.`
+          : `${d.name} didn't respond.`;
+        finish(reject, new Error(hint));
+      }, 15000);
+
       const done = (err) => {
-        if (!err) return resolve({ ok: true, url });
+        if (!err) return finish(resolve, { ok: true, url });
         const reason = err.message || err.code || 'play failed';
-        // On DLNA failure, ask the TV what video formats it actually accepts
-        // (ConnectionManager GetProtocolInfo → Sink). That tells us which
-        // DLNA.ORG_PN profile it requires instead of guessing.
         if (d.type === 'dlna') {
           getDlnaSinks(d.player).then((sinks) => {
-            reject(new Error(`${reason} | server ${pre || 'no response'} | ${url} | TV-accepts: ${sinks || 'unknown'}`));
+            finish(reject, new Error(`${reason} | server ${pre || 'no response'} | ${url} | TV-accepts: ${sinks || 'unknown'}`));
           });
         } else {
-          reject(new Error(`${reason} | server ${pre || 'no response'} | ${url}`));
+          finish(reject, new Error(`${reason} | server ${pre || 'no response'} | ${url}`));
         }
       };
+
       try {
         d.player.play(url, opts, done);
       } catch (err) {
