@@ -7,6 +7,18 @@ let mainWindow;
 let serverPort = 0;
 let castInitialized = false;
 
+// The cast libraries open their own sockets to TVs — Chromecast over TLS (port
+// 8009), DLNA over HTTP — and a device dropping a connection (e.g. "socket
+// disconnected before secure TLS connection was established") surfaces as an
+// error on an internal socket we can't attach a handler to. Don't let those
+// transient network errors crash the app with Electron's fatal-error dialog.
+process.on('uncaughtException', (err) => {
+  console.error('[main] uncaughtException (ignored):', err && err.message ? err.message : err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[main] unhandledRejection (ignored):', reason && reason.message ? reason.message : reason);
+});
+
 // Only allow a single instance. A second launch would otherwise spin up another
 // server and fight over the port, which is what caused the EADDRINUSE crash.
 const gotLock = app.requestSingleInstanceLock();
