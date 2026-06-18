@@ -21,6 +21,7 @@ import { Capacitor } from '@capacitor/core';
 import { VideoPlayer } from './components/player.js';
 import { EPGGrid } from './components/epg.js';
 import { navigation } from './components/tv-navigation.js';
+import { initCastUI, setCastContext } from './components/cast.js';
 
 // Supabase Configuration for Remote Playlist Pairing
 // Swap these with your own Supabase project credentials
@@ -126,6 +127,10 @@ async function initApp() {
 
   // 3. Bind Global UI Events (Tabs, Logins, Settings, Modal Closers)
   bindGlobalEvents();
+
+  // Casting (Electron/PC only — no-op elsewhere). Shows the Cast button when
+  // the preload bridge is present.
+  initCastUI();
 
   // 4. Check Saved Playlists on Boot
   try {
@@ -335,6 +340,9 @@ async function selectAndPlayChannel(channel, programBlock) {
     // Load to player
     playerInstance.setSeriesMode(false);
     playerInstance.loadStream(streamUrl, channel.name, channel.stream_icon, epgTitle);
+
+    // Remember what's playing so the Cast button can send it to a TV (live → HLS).
+    setCastContext({ streamId: channel.stream_id, type: 'live', title: channel.name, isLive: true });
 
     // If the primary (.ts) stream fails, fall back once to the m3u8 backup.
     liveFallbackTried = false;
@@ -817,6 +825,8 @@ async function playSeriesEpisode(epStreamId, epName, logo, plot, epExt, epIndex,
     playerInstance.setSeriesMode(true);
     playerInstance.loadStream(playUrl, epName, logo, '', true, resumeTime);
 
+    setCastContext({ streamId: epStreamId, type: 'series', title: epName, isLive: false, ext: epExt });
+
     // Show Now/Next Episode bar for Series
     const currentEp = episodesListForSeason[epIndex];
     const currentEpTitle = `S${seasonNum}E${currentEp.episode_num || (epIndex + 1)}: ${currentEp.title || 'Episode'}`;
@@ -1228,6 +1238,7 @@ async function playVODStream(streamId, type, name, logo, description, containerE
     // VOD = on-demand file, played differently from live channels (seekable).
     playerInstance.setSeriesMode(false);
     playerInstance.loadStream(playUrl, name, logo, '', true, resumeTime);
+    setCastContext({ streamId, type, title: name, isLive: false, ext: containerExtension });
     playerInstance.enterFullscreen();
   } catch (err) {
     console.error('Failed to play VOD stream:', err);

@@ -1,8 +1,11 @@
 const { app, BrowserWindow } = require('electron');
 const net = require('net');
+const path = require('path');
+const { initCast } = require('./electron/cast-manager.cjs');
 
 let mainWindow;
 let serverPort = 0;
+let castInitialized = false;
 
 // Only allow a single instance. A second launch would otherwise spin up another
 // server and fight over the port, which is what caused the EADDRINUSE crash.
@@ -69,9 +72,22 @@ function createWindow() {
     backgroundColor: '#070a13',
     webPreferences: {
       nodeIntegration: false,
-      contextIsolation: true
+      contextIsolation: true,
+      preload: path.join(__dirname, 'electron', 'preload.cjs')
     }
   });
+
+  // Set up casting (Chromecast/Android TV + DLNA) once the window exists. The
+  // manager pushes LAN-reachable URLs to receivers, so it needs the live server
+  // port (random in the packaged app) and the current window for IPC events.
+  if (!castInitialized) {
+    castInitialized = true;
+    try {
+      initCast({ getWindow: () => mainWindow, getServerPort: () => serverPort });
+    } catch (err) {
+      console.error('[Electron] Cast init failed:', err);
+    }
+  }
 
   loadWhenServerReady();
 
