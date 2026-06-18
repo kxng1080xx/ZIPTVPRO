@@ -8,6 +8,7 @@
  * native ApkInstaller plugin. Elsewhere it opens the installer URL.
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import navigation from './tv-navigation.js';
 
 const ApkInstaller = registerPlugin('ApkInstaller');
 
@@ -164,4 +165,10 @@ function showUpdateModal(remote, local, manifest) {
   });
 
   if (window.lucide) lucide.createIcons({ scope: overlay });
+
+  // Focus the Download button so the D-pad lands on the prompt (not the UI behind).
+  try {
+    const dl = overlay.querySelector('[data-action="download"]');
+    if (dl && navigation && navigation.setFocus) navigation.setFocus('update-modal', dl);
+  } catch (e) {}
 }

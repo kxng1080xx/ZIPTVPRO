@@ -3262,7 +3262,16 @@ body.vod-mode .now-next-bar {
     padding: 12px;
     max-height: 160px;
   }
-  
+
+  /* The channel-info OSD banner + now/next bar are sized for the big landscape /
+     fullscreen player; in the small portrait player they overlap the loading
+     state and the channel list below. Hide them in portrait — the list already
+     shows the channel + schedule. They reappear in landscape/fullscreen. */
+  .channel-info-banner,
+  .now-next-bar {
+    display: none !important;
+  }
+
   /* Only force the stacked flex layout when Live TV is the active tab.
      Without the .active qualifier this ID selector (specificity 1,0,0)
      overrides `.view-panel { display:none }` and leaves the player + EPG

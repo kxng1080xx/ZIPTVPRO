@@ -2,6 +2,13 @@
   "appId": "com.iptv.player.zero",
   "appName": "ZIPTV Pro",
   "webDir": "dist",
+  "android": {
+    "allowMixedContent": true
+  },
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
   "plugins": {
     "CapacitorHttp": {
       "enabled": true

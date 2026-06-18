@@ -377,6 +377,14 @@ class TVNavigation {
       this.focusDefault(this.currentZone);
     }
 
+    // Update-available prompt is the topmost overlay — trap the D-pad here so it
+    // doesn't navigate the UI behind it.
+    const updateOverlay = document.getElementById('update-modal-overlay');
+    if (updateOverlay) {
+      this.handleUpdateModalNavigation(e, updateOverlay);
+      return;
+    }
+
     // Modal check (VOD or Settings overlay)
     const activeModal = document.querySelector('.modal-overlay:not(.hidden)');
     if (activeModal) {
@@ -921,6 +929,35 @@ class TVNavigation {
         return;
       }
       this.focusedElement.click();
+      e.preventDefault();
+    }
+  }
+
+  // Update-available prompt: Cancel / Skip / Download.
+  handleUpdateModalNavigation(e, overlay) {
+    const btns = Array.from(overlay.querySelectorAll('.update-btn'));
+    if (!btns.length) return;
+
+    let idx = btns.indexOf(this.focusedElement);
+    if (idx === -1) {
+      // No button focused yet → focus the primary (Download / last).
+      this.setFocus('update-modal', btns[btns.length - 1]);
+      e.preventDefault();
+      return;
+    }
+
+    if (e.key === this.KEYS.LEFT || e.key === this.KEYS.UP) {
+      if (idx > 0) this.setFocus('update-modal', btns[idx - 1]);
+      e.preventDefault();
+    } else if (e.key === this.KEYS.RIGHT || e.key === this.KEYS.DOWN) {
+      if (idx < btns.length - 1) this.setFocus('update-modal', btns[idx + 1]);
+      e.preventDefault();
+    } else if (e.key === this.KEYS.ENTER) {
+      this.focusedElement.click();
+      e.preventDefault();
+    } else if (e.key === this.KEYS.ESCAPE || e.key === this.KEYS.BACKSPACE) {
+      const cancel = overlay.querySelector('[data-action="cancel"]');
+      if (cancel) cancel.click();
       e.preventDefault();
     }
   }
