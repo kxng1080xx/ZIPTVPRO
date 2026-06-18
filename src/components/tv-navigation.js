@@ -59,20 +59,103 @@ class TVNavigation {
     });
 
     if (Capacitor.isNativePlatform()) {
-      App.addListener('backButton', () => {
-        if (document.fullscreenElement) {
-          document.exitFullscreen().catch(err => console.warn(err));
-          this.focusDefault('channels');
-        } else {
-          if (document.body.classList.contains('epg-fullscreen-active')) {
-            const fullBtn = document.getElementById('epg-full-btn');
-            if (fullBtn) fullBtn.click();
-          } else {
-            App.exitApp();
-          }
-        }
-      });
+      App.addListener('backButton', () => this.handleBack());
     }
+  }
+
+  // Hardware / remote BACK: undo the last step instead of exiting. Walks up the
+  // UI hierarchy (overlay → fullscreen → player → list → categories → tabs) and
+  // only exits the app on a confirmed double-back at the root.
+  handleBack() {
+    // 1) Transient overlays — close the topmost first.
+    const updateOverlay = document.getElementById('update-modal-overlay');
+    if (updateOverlay) { updateOverlay.remove(); return; }
+
+    const castOverlay = document.querySelector('.cast-modal-overlay:not(.hidden)');
+    if (castOverlay) { castOverlay.classList.add('hidden'); return; }
+
+    const dropdown = document.querySelector('.playlist-dropdown:not(.hidden)');
+    if (dropdown) { dropdown.classList.add('hidden'); this.focusDefault('tabs'); return; }
+
+    const activeModal = document.querySelector('.modal-overlay:not(.hidden)');
+    if (activeModal) {
+      const closeBtn = activeModal.querySelector('.modal-close-btn');
+      if (closeBtn) closeBtn.click(); else activeModal.classList.add('hidden');
+      this.focusDefault(activeModal.id === 'vod-modal' ? 'grid' : 'tabs');
+      return;
+    }
+
+    // 2) Fullscreen video → drop back to the list, don't exit.
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+      return;
+    }
+
+    // 3) Full-screen EPG guide.
+    if (document.body.classList.contains('epg-fullscreen-active')) {
+      const fullBtn = document.getElementById('epg-full-btn');
+      if (fullBtn) fullBtn.click();
+      return;
+    }
+
+    // 4) VOD player overlay (movie playing) → back to the catalog grid.
+    if (document.body.classList.contains('vod-mode')) {
+      const backBtn = document.getElementById('player-back-btn');
+      if (backBtn) { backBtn.click(); this.focusDefault('grid'); return; }
+    }
+
+    // 5) Series playback dashboard → back to the series catalog.
+    const seriesPlayback = document.getElementById('series-playback-container');
+    if (seriesPlayback && !seriesPlayback.classList.contains('hidden')) {
+      const sb = document.getElementById('series-back-btn');
+      if (sb) { sb.click(); this.focusDefault('grid'); return; }
+    }
+
+    // 6) Walk up the focus hierarchy.
+    switch (this.currentZone) {
+      case 'player':
+        this.focusDefault('channels');
+        return;
+      case 'channels':
+      case 'grid':
+      case 'series-episodes':
+        this.focusDefault('categories');
+        return;
+      case 'categories':
+        this.focusDefault('tabs');
+        return;
+      case 'tabs':
+      default:
+        this.confirmExit();
+        return;
+    }
+  }
+
+  // Require two quick BACK presses at the root to exit (with a toast hint).
+  confirmExit() {
+    if (this._armedExit) {
+      clearTimeout(this._armedExitTimer);
+      if (Capacitor.isNativePlatform()) App.exitApp();
+      return;
+    }
+    this._armedExit = true;
+    this.showBackToast('Press back again to exit');
+    clearTimeout(this._armedExitTimer);
+    this._armedExitTimer = setTimeout(() => { this._armedExit = false; }, 2200);
+  }
+
+  showBackToast(msg) {
+    let t = document.getElementById('back-exit-toast');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'back-exit-toast';
+      t.className = 'back-exit-toast';
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => t.classList.remove('show'), 2000);
   }
 
   // Set focus to a specific element within a zone

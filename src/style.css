@@ -4759,3 +4759,27 @@ body.epg-fullscreen-active .epg-section-container {
 .cast-overlay-stop i { width: 17px; height: 17px; }
 
 
+
+/* "Press back again to exit" toast */
+.back-exit-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 40px;
+  transform: translateX(-50%) translateY(20px);
+  z-index: 6000;
+  background: rgba(13, 19, 32, 0.96);
+  color: #fff;
+  border: 1px solid var(--border-color, #1e2a3e);
+  border-radius: 999px;
+  padding: 10px 20px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+}
+.back-exit-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
