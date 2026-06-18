@@ -20,3 +20,9 @@ contextBridge.exposeInMainWorld('electronCast', {
     return () => ipcRenderer.removeListener('cast:devices', handler);
   }
 });
+
+// Host helpers for the renderer (e.g. open a download link in the system browser
+// rather than a child Electron window).
+contextBridge.exposeInMainWorld('appHost', {
+  openExternal: (url) => ipcRenderer.invoke('open-external', url)
+});

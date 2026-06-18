@@ -4663,4 +4663,52 @@ body.epg-fullscreen-active .epg-section-container {
 .cast-modal-footer button i { width: 15px; height: 15px; }
 .cast-stop-btn { color: #ff6b6b; border-color: rgba(255, 107, 107, 0.4) !important; }
 
+/* ==========================================================================
+   UPDATE-AVAILABLE MODAL
+   ========================================================================== */
+.update-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+}
+.update-modal {
+  width: min(420px, 92vw);
+  background: var(--bg-panel, #0d1320);
+  border: 1px solid var(--border-color, #1e2a3e);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  padding: 28px 24px 22px;
+  text-align: center;
+}
+.update-modal-icon i { width: 44px; height: 44px; color: #00f3ff; }
+.update-modal-title { margin: 12px 0 6px; font-size: 1.25rem; font-weight: 700; }
+.update-modal-text { color: var(--text-secondary, #9fb0c8); font-size: 0.92rem; margin-bottom: 20px; }
+.update-modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.update-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border-radius: 9px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border-color, #1e2a3e);
+}
+.update-btn i { width: 16px; height: 16px; }
+.update-btn-ghost { background: var(--bg-surface, #131c2c); color: var(--text-primary, #eef); }
+.update-btn-ghost:hover { background: var(--bg-surface-hover, #1a2436); }
+.update-btn-primary { background: #00f3ff; color: #00131a; border-color: #00f3ff; }
+.update-btn-primary:hover { filter: brightness(1.08); }
+
 

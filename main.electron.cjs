@@ -1,7 +1,14 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const net = require('net');
 const path = require('path');
 const { initCast } = require('./electron/cast-manager.cjs');
+
+// Open download/update links in the user's default browser, not a child window.
+ipcMain.handle('open-external', (_e, url) => {
+  if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
+    shell.openExternal(url);
+  }
+});
 
 let mainWindow;
 let serverPort = 0;

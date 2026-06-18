@@ -25,6 +25,6 @@
     }
   ],
   "rewrites": [
-    { "source": "/((?!api/|app.apk|latest.exe).*)", "destination": "/index.html" }
+    { "source": "/((?!api/|app.apk|latest.exe|version.json).*)", "destination": "/index.html" }
   ]
 }

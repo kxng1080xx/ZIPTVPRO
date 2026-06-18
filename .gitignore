@@ -32,3 +32,6 @@ android/.idea/
 # OS Files
 .DS_Store
 Thumbs.db
+
+# Generated at build time
+public/version.json

@@ -22,6 +22,7 @@ import { VideoPlayer } from './components/player.js';
 import { EPGGrid } from './components/epg.js';
 import { navigation } from './components/tv-navigation.js';
 import { initCastUI, setCastContext } from './components/cast.js';
+import { checkForUpdate } from './components/update-check.js';
 
 // Supabase Configuration for Remote Playlist Pairing
 // Swap these with your own Supabase project credentials
@@ -151,6 +152,9 @@ async function initApp() {
   // Casting (Electron/PC only — no-op elsewhere). Shows the Cast button when
   // the preload bridge is present.
   initCastUI();
+
+  // Background update check — prompts if a newer build is published.
+  checkForUpdate();
 
   // 4. Check Saved Playlists on Boot
   try {
