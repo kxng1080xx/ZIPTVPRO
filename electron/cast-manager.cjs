@@ -24,6 +24,29 @@ let dlnacasts = null;
 try { chromecasts = require('chromecasts'); } catch (e) { console.error('[cast] chromecasts unavailable:', e.message); }
 try { dlnacasts = require('dlnacasts'); } catch (e) { console.error('[cast] dlnacasts unavailable:', e.message); }
 
+// --- DLNA compatibility shim -------------------------------------------------
+// Many renderers (notably Samsung TVs) implement ConnectionManager's optional
+// PrepareForConnection action but then reject it — UPnP error 701 "incompatible
+// protocol info" or 704 "local restrictions" — and upnp-mediarenderer-client
+// treats that as fatal, so nothing ever plays. Mainstream DLNA controllers
+// (BubbleUPnP, etc.) skip PrepareForConnection and just drive the default
+// connection (InstanceID 0). Short-circuit it so the client proceeds straight
+// to SetAVTransportURI. Only affects DLNA; Chromecast uses a different stack.
+try {
+  const MediaRenderer = require('upnp-mediarenderer-client');
+  const origCallAction = MediaRenderer.prototype.callAction;
+  MediaRenderer.prototype.callAction = function (service, action, params, cb) {
+    if (service === 'ConnectionManager' && action === 'PrepareForConnection') {
+      // ENOACTION is the client's "not implemented" signal → it then keeps
+      // the default InstanceID 0 and continues.
+      return cb({ code: 'ENOACTION' });
+    }
+    return origCallAction.call(this, service, action, params, cb);
+  };
+} catch (e) {
+  console.error('[cast] could not apply DLNA PrepareForConnection shim:', e.message);
+}
+
 const devices = new Map(); // id -> { id, name, type, player }
 
 function makeId(type, player) {
