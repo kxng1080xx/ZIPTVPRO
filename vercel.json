@@ -17,7 +17,14 @@
       ]
     }
   ],
+  "redirects": [
+    {
+      "source": "/latest.exe",
+      "destination": "https://github.com/kxng1080xx/ZIPTVPRO/releases/latest/download/latest.exe",
+      "permanent": false
+    }
+  ],
   "rewrites": [
-    { "source": "/((?!api/|app.apk).*)", "destination": "/index.html" }
+    { "source": "/((?!api/|app.apk|latest.exe).*)", "destination": "/index.html" }
   ]
 }

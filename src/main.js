@@ -100,6 +100,26 @@ async function initApp() {
     versionEl.textContent = `v${__APP_VERSION__}`;
   }
 
+  // "Download latest version" button — point it at the right installer for the
+  // platform. Windows/desktop → the PC .exe; everything else → the Android APK.
+  // Both are hardwired to the public host so it also works as an update link
+  // from inside the native apps.
+  const dlBtn = document.getElementById('download-app-btn');
+  const dlLabel = document.getElementById('download-app-label');
+  if (dlBtn) {
+    const ua = navigator.userAgent || '';
+    const isAndroid = /Android/i.test(ua);
+    const isWindowsDesktop = /Windows NT/i.test(ua) && !isAndroid;
+    if (isWindowsDesktop) {
+      dlBtn.href = 'https://ziptvpro.vercel.app/latest.exe';
+      dlBtn.removeAttribute('download'); // cross-origin redirect handles the download
+      if (dlLabel) dlLabel.textContent = 'Download Latest Version (PC)';
+    } else {
+      dlBtn.href = 'https://ziptvpro.vercel.app/app.apk';
+      if (dlLabel) dlLabel.textContent = 'Download Latest Version';
+    }
+  }
+
   // 2. Initialize Core Components
   playerInstance = new VideoPlayer();
   window.playerInstance = playerInstance;
