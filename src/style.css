@@ -744,10 +744,15 @@ button {
   text-transform: uppercase;
   color: var(--text-secondary);
   letter-spacing: 0.05em;
-  margin-bottom: 12px;
+  /* Padding + radius give the D-pad focus ring/background visible room (the row
+     has no padding otherwise, so the static focus highlight was barely showing).
+     Negative horizontal margin keeps the text aligned with the sidebar. */
+  padding: 6px 8px;
+  margin: 0 -8px 8px;
+  border-radius: 6px;
   cursor: pointer;
   user-select: none;
-  transition: color var(--transition-fast), margin var(--transition-normal);
+  transition: color var(--transition-fast);
 }
 
 .pin-title-row:hover {
