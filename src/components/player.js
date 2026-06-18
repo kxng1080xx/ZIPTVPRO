@@ -281,7 +281,13 @@ export class VideoPlayer {
       this.startFpsTracker();
     });
     this.video.addEventListener('pause', () => this.stopFpsTracker());
-    this.video.addEventListener('ended', () => this.stopFpsTracker());
+    this.video.addEventListener('ended', () => {
+      this.stopFpsTracker();
+      // Auto-advance: for series this triggers the next episode (set in main.js).
+      // Null for movies/live, so it safely no-ops there. Was dropped in v2.7.0
+      // when FPS tracking replaced this handler, breaking series autoplay.
+      if (typeof this.onVideoEnded === 'function') this.onVideoEnded();
+    });
     this.video.addEventListener('emptied', () => this.stopFpsTracker());
   }
 
