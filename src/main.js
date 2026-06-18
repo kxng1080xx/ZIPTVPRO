@@ -134,11 +134,15 @@ async function initApp() {
 
   // 4. Check Saved Playlists on Boot
   try {
-    const { playlists } = await getPlaylists();
-    if (playlists && playlists.length > 0) {
-      showPlaylistSelect(playlists);
-    } else {
+    const { playlists, activeId } = await getPlaylists();
+    if (!playlists || playlists.length === 0) {
       showLogin();
+    } else if (playlists.length === 1) {
+      // Only one playlist — no point showing a one-row picker. Go straight in,
+      // loading from cache when we have it (a re-sync would be the slow part).
+      await autoEnterSinglePlaylist(playlists[0].id, activeId);
+    } else {
+      showPlaylistSelect(playlists);
     }
   } catch (err) {
     console.error('Failed to initialize app session:', err);
@@ -2032,6 +2036,43 @@ async function togglePlaylistDropdown() {
     if (profileBtn) {
       navigation.setFocus('tabs', profileBtn);
     }
+  }
+}
+
+// Boot straight into the only saved playlist, skipping the selection screen.
+// Crucially, avoid the forced full re-sync when a cached catalog already exists:
+// load instantly from cache and refresh in the background. Switching is only
+// needed if this playlist isn't already the active one (switchPlaylist wipes
+// the cache, which is the slow part we're trying to avoid).
+async function autoEnterSinglePlaylist(id, activeId) {
+  try {
+    if (activeId !== id) {
+      await switchPlaylist(id);
+    }
+    const status = await getStatus();
+    state.user = status;
+    if (status.favorites) state.favorites = status.favorites;
+    showDashboard();
+
+    // Detect an existing cache cheaply via the (small) live category list.
+    let hasCache = false;
+    try {
+      const cats = await getCategories('live');
+      hasCache = !!(cats && Array.isArray(cats.categories) && cats.categories.length > 0);
+    } catch (e) {}
+
+    if (hasCache) {
+      state.activeCategory = null;
+      await loadTabCategoriesAndContent();   // instant, from cache
+      syncPlaylist().catch(() => {});         // silent background refresh
+    } else {
+      await triggerFullSync();                // first run: nothing cached yet
+      state.activeCategory = null;
+      await loadTabCategoriesAndContent();
+    }
+  } catch (err) {
+    console.error('Auto-enter single playlist failed:', err);
+    showLogin();
   }
 }
 
