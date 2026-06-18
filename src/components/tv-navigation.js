@@ -905,9 +905,10 @@ class TVNavigation {
       const format = document.getElementById('settings-format');
       const proxy = document.getElementById('settings-proxy');
       const syncBtn = document.getElementById('settings-sync-now');
+      const checkUpdateBtn = document.getElementById('settings-check-update');
       const logoutBtn = document.getElementById('settings-logout');
-      
-      const focusables = [format, proxy, syncBtn, logoutBtn];
+
+      const focusables = [format, proxy, syncBtn, checkUpdateBtn, logoutBtn].filter(Boolean);
       let index = focusables.indexOf(this.focusedElement);
 
       if (index === -1) {

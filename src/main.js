@@ -22,7 +22,7 @@ import { VideoPlayer } from './components/player.js';
 import { EPGGrid } from './components/epg.js';
 import { navigation } from './components/tv-navigation.js';
 import { initCastUI, setCastContext } from './components/cast.js';
-import { checkForUpdate, downloadApp } from './components/update-check.js';
+import { checkForUpdate, downloadApp, startPeriodicUpdateCheck } from './components/update-check.js';
 
 // Supabase Configuration for Remote Playlist Pairing
 // Swap these with your own Supabase project credentials
@@ -167,8 +167,22 @@ async function initApp() {
   // the preload bridge is present.
   initCastUI();
 
-  // Background update check — prompts if a newer build is published.
+  // Update checks: on every launch, plus every 3 hours on Windows desktop.
   checkForUpdate();
+  if (/Windows NT/i.test(navigator.userAgent)) {
+    startPeriodicUpdateCheck(3 * 60 * 60 * 1000);
+  }
+
+  // Settings → Check for Update button (manual; always reports a result).
+  const checkUpdateBtn = document.getElementById('settings-check-update');
+  const updateStatusEl = document.getElementById('settings-update-status');
+  const currentVerEl = document.getElementById('settings-current-version');
+  if (currentVerEl && typeof __APP_VERSION__ !== 'undefined') currentVerEl.textContent = `v${__APP_VERSION__}`;
+  if (checkUpdateBtn) {
+    checkUpdateBtn.addEventListener('click', () => {
+      checkForUpdate({ manual: true, onStatus: (m) => { if (updateStatusEl) updateStatusEl.textContent = m; } });
+    });
+  }
 
   // 4. Check Saved Playlists on Boot
   try {

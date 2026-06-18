@@ -76,23 +76,40 @@ export async function downloadApp(url, onStatus) {
   return { ok: true };
 }
 
-export async function checkForUpdate() {
+// Background or manual update check. For a manual check (Settings button) we
+// report status (incl. "you're on the latest version") and ignore a prior skip.
+export async function checkForUpdate({ manual = false, onStatus } = {}) {
+  const status = (m) => { if (manual && onStatus) onStatus(m); };
+  status('Checking for updates…');
+
   let manifest;
   try {
     const res = await fetch(`${VERSION_URL}?t=${Date.now()}`, { cache: 'no-store' });
-    if (!res.ok) return;
+    if (!res.ok) { status('Could not check for updates.'); return; }
     manifest = await res.json();
   } catch (e) {
-    return; // offline / unreachable — silently skip
+    status('Could not check for updates (offline?).');
+    return;
   }
-  if (!manifest || !manifest.version) return;
+  if (!manifest || !manifest.version) { status('Could not check for updates.'); return; }
 
   const remote = manifest.version;
   const local = localVersion();
-  if (!isNewer(remote, local)) return;
-  if (localStorage.getItem(SKIP_KEY) === remote) return; // user chose to skip this one
-
+  if (!isNewer(remote, local)) {
+    status(`You're on the latest version (v${local}).`);
+    return;
+  }
+  // Background checks honour a skipped version; a manual check always prompts.
+  if (!manual && localStorage.getItem(SKIP_KEY) === remote) return;
+  status(`Update available: v${remote}`);
   showUpdateModal(remote, local, manifest);
+}
+
+// Periodic background check (used on Windows desktop: every launch + every 3h).
+let periodicTimer = null;
+export function startPeriodicUpdateCheck(intervalMs = 3 * 60 * 60 * 1000) {
+  if (periodicTimer) return;
+  periodicTimer = setInterval(() => { checkForUpdate(); }, intervalMs);
 }
 
 function showUpdateModal(remote, local, manifest) {
