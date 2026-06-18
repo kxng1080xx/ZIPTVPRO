@@ -68,6 +68,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
+    title: 'ZIPTV Pro',
     autoHideMenuBar: true,
     backgroundColor: '#070a13',
     webPreferences: {
