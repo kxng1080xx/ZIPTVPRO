@@ -3253,7 +3253,11 @@ body.vod-mode .now-next-bar {
     max-height: 160px;
   }
   
-  #live-view {
+  /* Only force the stacked flex layout when Live TV is the active tab.
+     Without the .active qualifier this ID selector (specificity 1,0,0)
+     overrides `.view-panel { display:none }` and leaves the player + EPG
+     "CHANNELS" bar visible on the Movies/Series tabs in portrait. */
+  #live-view.active {
     display: flex;
     flex-direction: column;
     height: 100%;
