@@ -367,19 +367,17 @@ class TVNavigation {
     if (index === -1) return;
 
     if (e.key === this.KEYS.LEFT) {
+      // Only move the focus highlight between header items. Do NOT switch/load
+      // the tab on pass-through — the user must press Enter to select it.
+      // Otherwise scrolling past Movies/Series (e.g. on the way to Settings)
+      // would load those tabs and reset navigation.
       if (index > 0) {
         this.setFocus('tabs', headerItems[index - 1]);
-        if (headerItems[index - 1].classList.contains('nav-tab')) {
-          headerItems[index - 1].click();
-        }
       }
       e.preventDefault();
     } else if (e.key === this.KEYS.RIGHT) {
       if (index < headerItems.length - 1) {
         this.setFocus('tabs', headerItems[index + 1]);
-        if (headerItems[index + 1].classList.contains('nav-tab')) {
-          headerItems[index + 1].click();
-        }
       }
       e.preventDefault();
     } else if (e.key === this.KEYS.DOWN) {
