@@ -17,7 +17,25 @@
  * raw live MPEG-TS).
  */
 const os = require('os');
+const http = require('http');
 const { ipcMain } = require('electron');
+
+// Quick reachability probe of a media URL from this host (the same address the
+// TV is asked to use). Returns the HTTP status code, or 0 on failure/timeout.
+function preflight(url) {
+  return new Promise((resolve) => {
+    try {
+      const req = http.get(url, { timeout: 5000 }, (res) => {
+        res.destroy();
+        resolve(res.statusCode || 0);
+      });
+      req.on('error', () => resolve(0));
+      req.on('timeout', () => { req.destroy(); resolve(0); });
+    } catch (e) {
+      resolve(0);
+    }
+  });
+}
 
 let chromecasts = null;
 let dlnacasts = null;
@@ -43,8 +61,31 @@ try {
     }
     return origCallAction.call(this, service, action, params, cb);
   };
+
+  // Samsung (and many renderers) reject media advertised with a bare
+  // protocolInfo "http-get:*:<mime>:*" (→ UPnP 716). They require DLNA.ORG
+  // flags describing transfer/seek capabilities. Inject sensible defaults
+  // based on whether the stream is live (no seek) or VOD (byte-seek).
+  const origLoad = MediaRenderer.prototype.load;
+  MediaRenderer.prototype.load = function (url, options, callback) {
+    if (options && typeof options === 'object' && !options.dlnaFeatures) {
+      const ct = (options.contentType || '').toLowerCase();
+      const FLAGS = 'ED100000000000000000000000000000'; // mirror Samsung's advertised flags
+      // Use the DLNA.ORG_PN profiles the TV lists as sinks. Kept in sync with
+      // the server's dlnaProfile() so the DIDL protocolInfo matches the actual
+      // media response. video/mpeg = live MPEG-TS; video/mp4 = AVC MP4 VOD.
+      if (ct.includes('mpeg') && !ct.includes('mpegurl')) {
+        options.dlnaFeatures = `DLNA.ORG_PN=MPEG_TS_NA_ISO;DLNA.ORG_OP=00;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=${FLAGS}`;
+      } else if (ct.includes('mp4')) {
+        options.dlnaFeatures = `DLNA.ORG_PN=AVC_MP4_MP_SD_AAC_MULT5;DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=${FLAGS}`;
+      } else {
+        options.dlnaFeatures = 'DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000';
+      }
+    }
+    return origLoad.call(this, url, options, callback);
+  };
 } catch (e) {
-  console.error('[cast] could not apply DLNA PrepareForConnection shim:', e.message);
+  console.error('[cast] could not apply DLNA renderer shims:', e.message);
 }
 
 const devices = new Map(); // id -> { id, name, type, player }
@@ -77,6 +118,29 @@ function lanIpFor(deviceHost) {
     if (sameSubnet) return sameSubnet;
   }
   return ips[0] || '127.0.0.1';
+}
+
+// Ask a DLNA renderer which protocolInfos it can sink (play). Returns a short
+// summary of the video-capable entries so we can match its required profile.
+function getDlnaSinks(player) {
+  return new Promise((resolve) => {
+    try {
+      const client = player && player.client;
+      if (!client || !client.callAction) return resolve('');
+      client.callAction('ConnectionManager', 'GetProtocolInfo', {}, (err, res) => {
+        if (err || !res || !res.Sink) return resolve('');
+        const all = String(res.Sink).split(',');
+        const video = all.filter((s) => /video/i.test(s));
+        // Surface the profiles we care about: mp4 (VOD) and mpeg/ts (live).
+        const mp4s = video.filter((s) => /mp4/i.test(s)).slice(0, 5);
+        const tss = video.filter((s) => /mpeg|tts/i.test(s)).slice(0, 3);
+        const pick = [...mp4s, ...tss].join('  ||  ') || (video.length ? video : all).slice(0, 8).join('  ||  ');
+        resolve(pick);
+      });
+    } catch (e) {
+      resolve('');
+    }
+  });
 }
 
 function initCast({ getWindow, getServerPort }) {
@@ -137,11 +201,31 @@ function initCast({ getWindow, getServerPort }) {
     };
     if (isLive) opts.streamType = 'LIVE';
 
+    // Preflight: confirm OUR server actually serves this URL on the IP we're
+    // handing the TV. If this fails, the problem is our proxy/IP; if it succeeds
+    // but the TV still reports 716, the TV simply can't reach us (firewall).
+    const pre = await preflight(url);
+    console.log(`[cast] preflight ${pre} for ${url}`);
+
     return new Promise((resolve, reject) => {
+      const done = (err) => {
+        if (!err) return resolve({ ok: true, url });
+        const reason = err.message || err.code || 'play failed';
+        // On DLNA failure, ask the TV what video formats it actually accepts
+        // (ConnectionManager GetProtocolInfo → Sink). That tells us which
+        // DLNA.ORG_PN profile it requires instead of guessing.
+        if (d.type === 'dlna') {
+          getDlnaSinks(d.player).then((sinks) => {
+            reject(new Error(`${reason} | server ${pre || 'no response'} | ${url} | TV-accepts: ${sinks || 'unknown'}`));
+          });
+        } else {
+          reject(new Error(`${reason} | server ${pre || 'no response'} | ${url}`));
+        }
+      };
       try {
-        d.player.play(url, opts, (err) => (err ? reject(err) : resolve({ ok: true, url })));
+        d.player.play(url, opts, done);
       } catch (err) {
-        reject(err);
+        done(err);
       }
     });
   });

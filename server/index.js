@@ -523,7 +523,80 @@ app.get('/api/proxy', (req, res) => {
   // a second decodeURIComponent corrupts HLS segment URLs whose tokens contain
   // percent-encoded characters (e.g. base64 "==" arrives as "%3D%3D" and a second
   // decode turns it into "==", producing a 404 from the provider's CDN).
-  const decodedUrl = url;
+  proxyStream(url, req, res);
+});
+
+// Build the upstream provider URL for a stream (shared by stream-url + cast).
+function buildProviderUrl(creds, type, streamId, ext, formatOverride) {
+  const u = encodeURIComponent(creds.username);
+  const p = encodeURIComponent(creds.password);
+  if (type === 'movie') {
+    return `${creds.server_url}/movie/${u}/${p}/${streamId}${ext ? '.' + ext : ''}`;
+  }
+  if (type === 'series') {
+    return `${creds.server_url}/series/${u}/${p}/${streamId}${ext ? '.' + ext : ''}`;
+  }
+  const format = formatOverride || creds.stream_format || 'ts';
+  return `${creds.server_url}/live/${u}/${p}/${streamId}.${format}`;
+}
+
+// Cast-friendly endpoint: a SHORT, clean, extension-bearing URL that DLNA
+// renderers (Samsung especially) accept, unlike the long query-string form of
+// /api/proxy?url=… which they truncate or can't type-sniff (→ UPnP 716). The
+// path carries the kind + id + extension, e.g. /cast/movie/12345.mp4 or
+// /cast/live/678.ts ; the real provider URL is rebuilt server-side and streamed.
+const CAST_MIME = {
+  mp4: 'video/mp4', m4v: 'video/mp4', mkv: 'video/x-matroska',
+  avi: 'video/avi', mov: 'video/quicktime', ts: 'video/mpeg', m3u8: 'application/x-mpegurl'
+};
+
+app.get('/cast/:kind/:file', (req, res) => {
+  const creds = getCredentials();
+  if (!creds) return res.status(401).send('Not logged in');
+
+  const kind = req.params.kind; // 'live' | 'movie' | 'series'
+  const file = req.params.file; // '<id>.<ext>'
+  const dot = file.lastIndexOf('.');
+  const streamId = dot >= 0 ? file.slice(0, dot) : file;
+  const ext = (dot >= 0 ? file.slice(dot + 1) : '').toLowerCase();
+
+  const isLive = kind === 'live';
+  let targetUrl;
+  if (isLive) {
+    // For live the extension IS the format (ts / m3u8).
+    targetUrl = buildProviderUrl(creds, 'live', streamId, '', ext || undefined);
+  } else {
+    targetUrl = buildProviderUrl(creds, kind, streamId, ext);
+  }
+
+  // DLNA renderers (Samsung) validate the media HTTP RESPONSE too, not just the
+  // DIDL metadata, AND require a DLNA.ORG_PN profile they advertise as a sink.
+  // Map our streams to the profiles a typical Samsung lists (mirror its FLAGS
+  // value ED10…). A browser ignores all of this, which is why it played there.
+  const { mime, features } = dlnaProfile(isLive, ext);
+  proxyStream(targetUrl, req, res, {
+    contentType: mime,
+    dlnaContentFeatures: features
+  });
+});
+
+// Map a stream to a Content-Type + DLNA.ORG_PN profile string the renderer
+// accepts. Kept in sync with the DIDL protocolInfo built in the Electron cast
+// manager. FLAGS mirror what Samsung advertises (ED10…).
+function dlnaProfile(isLive, ext) {
+  const FLAGS = 'ED100000000000000000000000000000';
+  if (isLive) {
+    // IPTV live is 188-byte MPEG-TS → MPEG_TS_NA_ISO (video/mpeg), no seek.
+    return { mime: 'video/mpeg', features: `DLNA.ORG_PN=MPEG_TS_NA_ISO;DLNA.ORG_OP=00;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=${FLAGS}` };
+  }
+  if (ext === 'mp4' || ext === 'm4v') {
+    return { mime: 'video/mp4', features: `DLNA.ORG_PN=AVC_MP4_MP_SD_AAC_MULT5;DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=${FLAGS}` };
+  }
+  // Other containers: advertise without a PN (best effort).
+  return { mime: CAST_MIME[ext] || 'video/mp4', features: `DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000` };
+}
+
+function proxyStream(decodedUrl, req, res, opts = {}) {
   const maxRedirects = 5;
 
   const fetchHeaders = {
@@ -607,13 +680,24 @@ app.get('/api/proxy', (req, res) => {
       } else {
         // Direct binary stream piping for TS / MP4 and other video assets
         res.status(clientRes.statusCode);
-        
+
         // Forward select stream-related headers
         for (const key of Object.keys(clientRes.headers)) {
           if (['content-range', 'content-length', 'accept-ranges', 'content-type'].includes(key)) {
             res.setHeader(key, clientRes.headers[key]);
           }
         }
+
+        // Cast (DLNA) responses: force the right Content-Type and advertise the
+        // DLNA capabilities on the HTTP response, which Samsung validates before
+        // playing. Also guarantee Accept-Ranges so the renderer can seek.
+        if (opts.contentType) res.setHeader('Content-Type', opts.contentType);
+        if (opts.dlnaContentFeatures) {
+          res.setHeader('transferMode.dlna.org', 'Streaming');
+          res.setHeader('contentFeatures.dlna.org', opts.dlnaContentFeatures);
+          if (!res.getHeader('accept-ranges')) res.setHeader('Accept-Ranges', 'bytes');
+        }
+
         if (!res.getHeader('content-type')) {
           res.setHeader('Content-Type', 'video/mp2t');
         }
@@ -636,7 +720,7 @@ app.get('/api/proxy', (req, res) => {
   };
 
   handleRequest(decodedUrl);
-});
+}
 
 // API: Get direct or proxied stream URL
 app.get('/api/stream-url/:stream_id', (req, res) => {

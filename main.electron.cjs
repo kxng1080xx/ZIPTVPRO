@@ -50,9 +50,23 @@ function getFreePort() {
   });
 }
 
+// Is a specific TCP port free on all interfaces?
+function isPortFree(port) {
+  return new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.on('error', () => resolve(false));
+    srv.listen(port, () => srv.close(() => resolve(true)));
+  });
+}
+
+// Preferred stable port for the in-process server. A fixed port keeps the LAN
+// cast URL predictable (testable from a phone, firewall rules stay valid across
+// launches) and only falls back to a random free port if it's taken.
+const PREFERRED_PORT = 56789;
+
 async function startExpressServer() {
   process.env.ELECTRON_RUNNING = 'true';
-  serverPort = (await getFreePort()) || 3000;
+  serverPort = (await isPortFree(PREFERRED_PORT)) ? PREFERRED_PORT : ((await getFreePort()) || 3000);
   process.env.PORT = String(serverPort);
 
   // server/index.js is an ES Module, imported dynamically from CommonJS.

@@ -10,8 +10,6 @@
  * live channels we force the HLS (m3u8) variant; VOD is passed as-is (mp4/mkv).
  * The main process turns server-relative proxy paths into LAN-absolute URLs.
  */
-import { getStreamUrl } from './xtream-api.js';
-
 let castCtx = null;        // { streamId, type, title, isLive, ext }
 let devices = [];
 let activeDeviceId = null;
@@ -136,21 +134,35 @@ function render() {
   if (window.lucide) lucide.createIcons({ scope: overlayEl });
 }
 
+const VOD_MIME = {
+  mp4: 'video/mp4',
+  mkv: 'video/x-matroska',
+  avi: 'video/x-msvideo',
+  mov: 'video/quicktime',
+  m4v: 'video/mp4',
+  ts: 'video/mp2t'
+};
+
 // Build the media descriptor for the current stream, tuned to the receiver type.
-// Chromecast plays HLS; DLNA renderers (Samsung) generally don't, so live is
-// sent to them as raw MPEG-TS instead. VOD is a plain mp4 either way.
-async function buildCastMedia(ctx, isDlna) {
-  let format = '';
-  if (ctx.isLive) format = isDlna ? 'ts' : 'm3u8';
-
-  const path = await getStreamUrl(ctx.streamId, ctx.type, ctx.ext || '', format);
-
+// Uses the short /cast/<kind>/<id>.<ext> endpoint (clean, extension-bearing URL)
+// instead of the long /api/proxy?url=… form, which Samsung DLNA truncates / can't
+// type-sniff (→ UPnP 716). Chromecast plays HLS for live; DLNA gets MPEG-TS.
+function buildCastMedia(ctx, isDlna) {
+  const kind = ctx.type === 'movie' ? 'movie' : ctx.type === 'series' ? 'series' : 'live';
+  let ext;
   let contentType;
+
   if (ctx.isLive) {
-    contentType = isDlna ? 'video/mp2t' : 'application/x-mpegurl';
+    ext = isDlna ? 'ts' : 'm3u8';
+    // DLNA: advertise as the MPEG-TS profile the TV accepts (video/mpeg →
+    // MPEG_TS_NA_ISO is applied server/DIDL side). Chromecast wants HLS.
+    contentType = isDlna ? 'video/mpeg' : 'application/x-mpegurl';
   } else {
-    contentType = /m3u8/i.test(path) ? 'application/x-mpegurl' : 'video/mp4';
+    ext = (ctx.ext || 'mp4').toLowerCase();
+    contentType = VOD_MIME[ext] || 'video/mp4';
   }
+
+  const path = `/cast/${kind}/${encodeURIComponent(ctx.streamId)}.${ext}`;
   return { path, contentType };
 }
 
