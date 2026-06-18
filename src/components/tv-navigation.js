@@ -517,6 +517,13 @@ class TVNavigation {
 
   // 4. VOD / SERIES CATALOG GRID NAVIGATION
   handleGridNavigation(e) {
+    // The Continue Watching row sits above the catalog grid. Its cards share the
+    // 'grid' zone but aren't .vod-cards, so route them to a dedicated handler.
+    if (this.focusedElement.classList.contains('continue-card')) {
+      this.handleContinueRowNavigation(e);
+      return;
+    }
+
     const isPageBtn = this.focusedElement.classList.contains('page-btn');
 
     if (isPageBtn) {
@@ -598,12 +605,51 @@ class TVNavigation {
       if (index - cols >= 0) {
         this.setFocus('grid', cards[index - cols]);
       } else {
-        // Focus header tabs
-        this.focusDefault('tabs');
+        // Top row: drop into the Continue Watching row if it's visible,
+        // otherwise jump to the header tabs.
+        const cwCards = Array.from(document.querySelectorAll('.view-panel.active .continue-row:not(.hidden) .continue-card'));
+        if (cwCards.length > 0) {
+          const target = this.findClosestElement(this.focusedElement, cwCards) || cwCards[0];
+          this.setFocus('grid', target);
+        } else {
+          this.focusDefault('tabs');
+        }
       }
       e.preventDefault();
     } else if (e.key === this.KEYS.ENTER) {
       this.focusedElement.click(); // opens detail modal
+      e.preventDefault();
+    }
+  }
+
+  // 4b. CONTINUE WATCHING ROW NAVIGATION (sits above the VOD/Series grid)
+  handleContinueRowNavigation(e) {
+    const cards = Array.from(document.querySelectorAll('.view-panel.active .continue-row:not(.hidden) .continue-card'));
+    const index = cards.indexOf(this.focusedElement);
+    if (index === -1) return;
+
+    if (e.key === this.KEYS.RIGHT) {
+      if (index < cards.length - 1) this.setFocus('grid', cards[index + 1]);
+      e.preventDefault();
+    } else if (e.key === this.KEYS.LEFT) {
+      if (index > 0) this.setFocus('grid', cards[index - 1]);
+      else this.focusDefault('categories'); // off the left edge → sidebar
+      e.preventDefault();
+    } else if (e.key === this.KEYS.UP) {
+      this.focusDefault('tabs');
+      e.preventDefault();
+    } else if (e.key === this.KEYS.DOWN) {
+      // Drop into the first row of the catalog grid, aligned by horizontal position.
+      const gridCards = Array.from(document.querySelectorAll('.view-panel.active .vod-grid .vod-card'));
+      if (gridCards.length > 0) {
+        const firstTop = gridCards[0].offsetTop;
+        const firstRow = gridCards.filter(c => c.offsetTop === firstTop);
+        const target = this.findClosestElement(this.focusedElement, firstRow) || gridCards[0];
+        this.setFocus('grid', target);
+      }
+      e.preventDefault();
+    } else if (e.key === this.KEYS.ENTER) {
+      this.focusedElement.click(); // resume playback
       e.preventDefault();
     }
   }
