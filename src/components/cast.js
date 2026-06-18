@@ -98,11 +98,12 @@ function closeOverlay() {
   if (overlayEl) overlayEl.classList.add('hidden');
 }
 
-function setStatus(msg) {
+function setStatus(msg, isError) {
   const el = overlayEl && overlayEl.querySelector('#cast-status');
   if (el) {
     el.textContent = msg || '';
-    el.style.display = msg ? '' : 'none';
+    el.style.display = msg ? 'block' : 'none';
+    el.style.color = isError ? '#ff6b6b' : '#00f3ff';
   }
 }
 
@@ -135,37 +136,74 @@ function render() {
   if (window.lucide) lucide.createIcons({ scope: overlayEl });
 }
 
-// Build the LAN/HLS media descriptor for the current stream.
-async function buildCastMedia(ctx) {
-  // Receivers cannot play raw live MPEG-TS — force the HLS variant for live.
-  const format = ctx.isLive ? 'm3u8' : '';
+// Build the media descriptor for the current stream, tuned to the receiver type.
+// Chromecast plays HLS; DLNA renderers (Samsung) generally don't, so live is
+// sent to them as raw MPEG-TS instead. VOD is a plain mp4 either way.
+async function buildCastMedia(ctx, isDlna) {
+  let format = '';
+  if (ctx.isLive) format = isDlna ? 'ts' : 'm3u8';
+
   const path = await getStreamUrl(ctx.streamId, ctx.type, ctx.ext || '', format);
-  const isHls = ctx.isLive || /m3u8/i.test(path);
-  const contentType = isHls ? 'application/x-mpegurl' : 'video/mp4';
+
+  let contentType;
+  if (ctx.isLive) {
+    contentType = isDlna ? 'video/mp2t' : 'application/x-mpegurl';
+  } else {
+    contentType = /m3u8/i.test(path) ? 'application/x-mpegurl' : 'video/mp4';
+  }
   return { path, contentType };
 }
 
 async function castToDevice(deviceId) {
   if (!castCtx) return;
-  setStatus('Preparing stream…');
+  const dev = devices.find((d) => d.id === deviceId);
+  const name = (dev && dev.name) || 'device';
+  const isDlna = !!(dev && dev.type === 'dlna');
+
+  setStatus(`Connecting to ${name}…`);
+  markRowBusy(deviceId, true);
+
   try {
-    const { path, contentType } = await buildCastMedia(castCtx);
-    await window.electronCast.play({
-      deviceId,
-      path,
-      title: castCtx.title || 'ZIPTV Pro',
-      contentType,
-      isLive: !!castCtx.isLive
-    });
+    const { path, contentType } = await buildCastMedia(castCtx, isDlna);
+    console.log('[cast] sending to', name, '|', contentType, '|', path);
+
+    // Don't let an unresponsive receiver hang the UI indefinitely.
+    await withTimeout(
+      window.electronCast.play({
+        deviceId,
+        path,
+        title: castCtx.title || 'ZIPTV Pro',
+        contentType,
+        isLive: !!castCtx.isLive
+      }),
+      20000,
+      `${name} didn't respond (is it on and on the same network?)`
+    );
+
     activeDeviceId = deviceId;
-    setStatus('');
+    setStatus(`Casting to ${name}`);
     render();
     // Mute local playback so the two audio streams don't overlap.
     try { window.playerInstance && window.playerInstance.video && (window.playerInstance.video.muted = true); } catch (e) {}
   } catch (e) {
     console.error('[cast] play failed:', e);
-    setStatus(`Could not cast: ${e.message || 'unknown error'}`);
+    markRowBusy(deviceId, false);
+    const hint = isDlna ? ' This TV may not support this stream over DLNA.' : '';
+    setStatus(`Couldn't cast to ${name}: ${e.message || 'unknown error'}.${hint}`, true);
   }
+}
+
+function markRowBusy(deviceId, busy) {
+  const row = overlayEl && overlayEl.querySelector(`.cast-device-row[data-id="${CSS.escape(deviceId)}"]`);
+  if (row) row.classList.toggle('busy', busy);
+}
+
+function withTimeout(promise, ms, message) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message || 'Timed out')), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 async function stopCasting() {
