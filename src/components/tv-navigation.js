@@ -1157,12 +1157,14 @@ class TVNavigation {
     const isRemoteActive = remoteBox && remoteBox.offsetParent !== null;
 
     if (isRemoteActive) {
-      // Remote Activation screen: only the Manual Login button is focusable
+      // Remote Activation screen: Manual Login button and Download button
       const manualBtn = document.getElementById('remote-manual-login-btn');
       const backBtn = document.getElementById('login-back-btn');
       const items = [];
       if (backBtn && !backBtn.classList.contains('hidden') && backBtn.offsetParent !== null) items.push(backBtn);
       if (manualBtn && manualBtn.offsetParent !== null) items.push(manualBtn);
+      const dlBtn = document.getElementById('download-app-btn');
+      if (dlBtn && dlBtn.offsetParent !== null) items.push(dlBtn);
 
       if (e.key === this.KEYS.ENTER) {
         if (this.focusedElement) this.focusedElement.click();
@@ -1203,6 +1205,8 @@ class TVNavigation {
     if (row.length > 0) grid.push(row);
 
     if (loginBtn && loginBtn.offsetParent !== null) grid.push([loginBtn]);
+    const dlBtn = document.getElementById('download-app-btn');
+    if (dlBtn && dlBtn.offsetParent !== null) grid.push([dlBtn]);
 
     // Find current position in grid
     let r = -1;
@@ -1270,6 +1274,10 @@ class TVNavigation {
     items.push(...rows);
     if (addBtn && addBtn.offsetParent !== null) {
       items.push(addBtn);
+    }
+    const dlBtn = document.getElementById('download-app-btn');
+    if (dlBtn && dlBtn.offsetParent !== null) {
+      items.push(dlBtn);
     }
 
     // Get current row (if on delete button, get parent row)
