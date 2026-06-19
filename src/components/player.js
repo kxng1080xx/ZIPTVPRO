@@ -307,10 +307,14 @@ export class VideoPlayer {
     });
 
     // Dynamic quality and FPS tracking
-    this.video.addEventListener('loadedmetadata', () => this.updateQualityIndicator());
+    this.video.addEventListener('loadedmetadata', () => {
+      clearTimeout(this._vodLoadTimeout);
+      this.updateQualityIndicator();
+    });
     this.video.addEventListener('resize', () => this.updateQualityIndicator());
     this.video.addEventListener('play', () => this.startFpsTracker());
     this.video.addEventListener('playing', () => {
+      clearTimeout(this._vodLoadTimeout);
       this.updateQualityIndicator();
       this.startFpsTracker();
     });
@@ -454,6 +458,7 @@ export class VideoPlayer {
     // Reset retry state for the new stream
     clearTimeout(this._retryTimer);
     clearTimeout(this._reconnectTimer);
+    clearTimeout(this._vodLoadTimeout);
     this._retryCount = 0;
     this._streamUrl = url;
     this._streamIsVod = isVod;
@@ -719,6 +724,16 @@ export class VideoPlayer {
       // Direct VOD media files (mp4, mkv, etc.)
       this.video.src = url;
       this.video.load();
+
+      // Set a 3.5-second timeout to detect silent stalls/blocks (e.g. mixed content blocks)
+      clearTimeout(this._vodLoadTimeout);
+      this._vodLoadTimeout = setTimeout(() => {
+        if (this.video.readyState < 1 && this.hasStream && !this.hls && !this.mpegtsPlayer) {
+          console.warn('Direct VOD playback timed out (readyState < 1) — triggering fallback.');
+          this._handleVodPlaybackFallback({ code: 4, message: 'Playback load timeout' });
+        }
+      }, 3500);
+
       this.video.play()
         .then(() => {
           this.hideSpinner();
@@ -726,6 +741,7 @@ export class VideoPlayer {
         .catch(err => {
           console.error('Error playing direct VOD stream:', err);
           if (err.name === 'NotAllowedError') {
+            clearTimeout(this._vodLoadTimeout);
             this.hideSpinner();
             this.video.pause();
           }
@@ -735,6 +751,7 @@ export class VideoPlayer {
 
   // Common VOD fallback format router
   _handleVodPlaybackFallback(err) {
+    clearTimeout(this._vodLoadTimeout);
     const url = this._streamUrl;
     const isVod = this._streamIsVod;
 
@@ -899,6 +916,7 @@ export class VideoPlayer {
   }
 
   stop() {
+    clearTimeout(this._vodLoadTimeout);
     this.stopFpsTracker();
     this.hasStream = false; // no active stream → no orientation fullscreen
     this.video.pause();
@@ -1193,6 +1211,7 @@ export class VideoPlayer {
   // Release all resources held by this player instance.
   // Call this if the player element is ever removed from the DOM.
   destroy() {
+    clearTimeout(this._vodLoadTimeout);
     if (this._onFullscreenChange) {
       document.removeEventListener('fullscreenchange', this._onFullscreenChange);
       this._onFullscreenChange = null;
