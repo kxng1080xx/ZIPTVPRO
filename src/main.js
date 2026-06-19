@@ -1881,6 +1881,7 @@ function bindGlobalEvents() {
     };
 
     pinToggle.addEventListener('click', togglePinSection);
+    window.addEventListener('toggle-pin-section', togglePinSection);
     pinToggle.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
