@@ -553,16 +553,16 @@ class TVNavigation {
   // 2. CATEGORIES SIDEBAR NAVIGATION
   handleCategoriesNavigation(e) {
     const pinToggle = document.getElementById('pin-section-toggle');
-    const searchInput = document.getElementById('categories-search');
+    const searchBtn = document.getElementById('categories-search-btn');
     const items = Array.from(document.querySelectorAll('#categories-list .category-item:not(.hidden)'));
     const pinItems = Array.from(document.querySelectorAll('.pin-item'));
 
     // Top-to-bottom focus order: the "Pin top section" header, the pinned items
-    // (only when the section is expanded/visible), the search box, then categories.
+    // (only when the section is expanded/visible), the search button, then categories.
     const allItems = [];
     if (pinToggle) allItems.push(pinToggle);
     pinItems.forEach(p => { if (p.offsetParent !== null) allItems.push(p); });
-    if (searchInput && searchInput.offsetParent !== null) allItems.push(searchInput);
+    if (searchBtn && searchBtn.offsetParent !== null) allItems.push(searchBtn);
     allItems.push(...items);
 
     const index = allItems.indexOf(this.focusedElement);
@@ -601,9 +601,9 @@ class TVNavigation {
             this.focusDefault('grid');
           }
         }
-      } else if (this.focusedElement.id === 'categories-search') {
+      } else if (this.focusedElement.id === 'categories-search-btn') {
         if (e.key === this.KEYS.ENTER) {
-          this.focusedElement.focus(); // Focus natively to open virtual keyboard
+          this.focusedElement.click(); // Open the D-pad keyboard overlay
         } else {
           // Right arrow moves focus directly
           if (activeTab === 'live') {

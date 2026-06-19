@@ -1820,17 +1820,33 @@ function bindGlobalEvents() {
     });
   });
 
-  // Categories list Search
-  const catSearch = document.getElementById('categories-search');
-  catSearch.addEventListener('input', (e) => {
-    const query = e.target.value.toLowerCase();
-    document.querySelectorAll('#categories-list .category-item').forEach(item => {
-      const label = item.querySelector('.cat-label').textContent.toLowerCase();
-      // Keep "all channels" visible or apply query
-      if (item.dataset.category === 'all') return;
-      item.classList.toggle('hidden', !label.includes(query));
+  // Categories list Search (TV-navigable D-pad keyboard overlay)
+  const catSearchBtn = document.getElementById('categories-search-btn');
+  const catSearchLabel = document.getElementById('categories-search-label');
+  let currentCategorySearch = '';
+
+  if (catSearchBtn) {
+    catSearchBtn.addEventListener('click', () => {
+      openSearchKeyboard({
+        title: 'Search Categories',
+        initial: currentCategorySearch,
+        onChange: (q) => {
+          currentCategorySearch = q;
+          const query = q.toLowerCase();
+          document.querySelectorAll('#categories-list .category-item').forEach(item => {
+            const label = item.querySelector('.cat-label').textContent.toLowerCase();
+            // Keep "all channels" visible or apply query
+            if (item.dataset.category === 'all') return;
+            item.classList.toggle('hidden', !label.includes(query));
+          });
+        },
+        onClose: (q) => {
+          if (catSearchLabel) catSearchLabel.textContent = q ? `“${q}”` : 'Search categories';
+          navigation.setFocus('categories', catSearchBtn);
+        }
+      });
     });
-  });
+  }
 
 
 
