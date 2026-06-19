@@ -2391,6 +2391,18 @@ body.vod-mode .now-next-bar {
   color: var(--text-primary);
 }
 
+/* The Series catalog has an extra wrapper (#series-catalog-container) that
+   Movies doesn't. Make it transparent to the flex layout — a column that fills
+   the panel — so the .vod-grid inside it scrolls exactly like the Movies grid
+   (without this it defaults to display:block/auto-height and the grid can't
+   scroll on touch). */
+.series-catalog-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
 .vod-grid {
   flex-grow: 1;
   display: grid;
