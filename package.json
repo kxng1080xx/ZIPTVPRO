@@ -1,7 +1,7 @@
 {
   "name": "iptv-player-zero",
   "productName": "ZIPTV Pro",
-  "version": "3.17.0",
+  "version": "3.19.0",
   "description": "Premium IPTV Player - ZIPTV Pro",
   "main": "main.electron.cjs",
   "type": "module",
@@ -15,7 +15,7 @@
     "start": "node server/index.js",
     "electron:start": "electron .",
     "electron:dist": "npm run bump && npm run build && electron-builder",
-    "apk": "npm run build && npx cap sync android && cd android && gradlew.bat assembleDebug && cd .. && copy /Y android\\app\\build\\outputs\\apk\\debug\\app-debug.apk app.apk && copy /Y app.apk ZIPTV-Pro.apk && echo APK ready: app.apk + ZIPTV-Pro.apk"
+    "apk": "npm run bump && npm run build && npx cap sync android && cd android && gradlew.bat assembleDebug && cd .. && copy /Y android\\app\\build\\outputs\\apk\\debug\\app-debug.apk app.apk && copy /Y app.apk ZIPTV-Pro.apk && echo APK ready: app.apk + ZIPTV-Pro.apk"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.0",
