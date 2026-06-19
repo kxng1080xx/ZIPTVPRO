@@ -30,6 +30,12 @@ function lucide(scope) {
   if (window.lucide) { try { window.lucide.createIcons({ scope }); } catch (e) {} }
 }
 
+// Running inside the Electron desktop build (the .exe)? The preload exposes
+// these bridges; they're absent on web / Android.
+function isElectron() {
+  return !!(window.electronCast || window.appHost);
+}
+
 export function openSearchKeyboard({ title = 'Search', initial = '', onChange, onClose } = {}) {
   closeSearchKeyboard(); // ensure single instance
 
@@ -39,10 +45,14 @@ export function openSearchKeyboard({ title = 'Search', initial = '', onChange, o
     <div class="tvk-modal">
       <div class="tvk-header">
         <span class="tvk-title"><i data-lucide="search"></i> ${title}</span>
-        <button class="tvk-close" title="Close"><i data-lucide="x"></i></button>
+        <div class="tvk-header-btns">
+          <button class="tvk-toggle" title="Hide on-screen keyboard"><i data-lucide="keyboard"></i></button>
+          <button class="tvk-close" title="Close"><i data-lucide="x"></i></button>
+        </div>
       </div>
       <div class="tvk-query">
-        <input class="tvk-input" type="text" placeholder="Type to search…"
+        <input class="tvk-input" type="text" placeholder="Type to search…" tabindex="-1"
+               readonly inputmode="none"
                autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
       </div>
       <div class="tvk-keys"></div>
@@ -50,9 +60,12 @@ export function openSearchKeyboard({ title = 'Search', initial = '', onChange, o
     </div>`;
   document.body.appendChild(overlay);
 
-  // Portrait (phones): use the device keyboard. Landscape/TV: on-screen keyboard.
-  const isPortrait = (() => { try { return window.matchMedia('(orientation: portrait)').matches; } catch (e) { return false; } })();
-  if (isPortrait) overlay.classList.add('tvk-device-mode');
+  // The on-screen keyboard is always shown (touch users tap it; D-pad users
+  // drive it; physical-keyboard users can also just type — see kbKeyHandler).
+  // On the PC build (.exe) you usually have a real keyboard, so we offer a
+  // toggle to collapse the on-screen keys out of the way.
+  const electron = isElectron();
+  if (electron) overlay.classList.add('tvk-can-hide');
 
   // Build key grid (each cell carries its row/col for D-pad movement).
   const keysEl = overlay.querySelector('.tvk-keys');
@@ -79,17 +92,18 @@ export function openSearchKeyboard({ title = 'Search', initial = '', onChange, o
     r: 1,
     c: 0,
     changeTimer: null,
-    deviceMode: isPortrait,
+    keysHidden: false,
     input: overlay.querySelector('.tvk-input')
   };
 
-  // Text input accepts typing from the device (or a physical) keyboard, in
-  // addition to the on-screen keys.
+  // The input is a read-only display of the query (it never receives focus, so
+  // it never pops the native Android IME — we want our own on-screen keyboard
+  // shown instead). All typing flows through kbKeyHandler.
   kb.input.value = kb.query;
-  kb.input.addEventListener('input', (e) => { kb.query = e.target.value; emitChange(); });
-  kb.input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); done(); } });
 
   overlay.querySelector('.tvk-close').addEventListener('click', () => done());
+  const toggleBtn = overlay.querySelector('.tvk-toggle');
+  if (toggleBtn) toggleBtn.addEventListener('click', () => toggleKeys());
   overlay.querySelectorAll('.tvk-key').forEach((btn) => {
     btn.addEventListener('click', () => {
       kb.r = parseInt(btn.dataset.r, 10);
@@ -103,15 +117,30 @@ export function openSearchKeyboard({ title = 'Search', initial = '', onChange, o
   renderQuery();
 
   const hint = overlay.querySelector('.tvk-hint');
-  if (kb.deviceMode) {
-    if (hint) hint.textContent = 'Type with your keyboard';
-    // Pop the device keyboard.
-    setTimeout(() => { try { kb.input.focus(); } catch (e) {} }, 60);
-  } else {
-    if (hint) hint.textContent = 'Arrows to move • OK to type • Back to close';
-    focusCurrent();
+  if (hint) {
+    hint.textContent = electron
+      ? 'Type on your keyboard • or tap keys • Esc to close'
+      : 'Type on your keyboard • arrows + OK • tap keys • Back to close';
   }
+  focusCurrent();
   lucide(overlay);
+}
+
+// Collapse / restore the on-screen keys (PC build, where a physical keyboard is
+// the norm). Physical typing keeps working either way via kbKeyHandler.
+function toggleKeys() {
+  if (!kb) return;
+  kb.keysHidden = !kb.keysHidden;
+  kb.overlay.classList.toggle('tvk-keys-collapsed', kb.keysHidden);
+  const btn = kb.overlay.querySelector('.tvk-toggle');
+  if (btn) {
+    btn.title = kb.keysHidden ? 'Show on-screen keyboard' : 'Hide on-screen keyboard';
+    btn.innerHTML = kb.keysHidden
+      ? '<i data-lucide="keyboard"></i>'
+      : '<i data-lucide="keyboard-off"></i>';
+    lucide(btn);
+  }
+  if (!kb.keysHidden) focusCurrent();
 }
 
 export function closeSearchKeyboard() {
@@ -184,21 +213,24 @@ function kbKeyHandler(e) {
   if (!kb) return;
   const k = e.key;
 
-  // When the text input has focus (device / physical keyboard), let it handle
-  // everything — only Escape closes. Enter is handled by the input's own
-  // listener. This keeps device-keyboard typing working alongside the overlay.
-  if (document.activeElement === kb.input) {
-    if (k === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); done(); }
+  // Physical keyboard (PC .exe or a hardware/Bluetooth keyboard on the APK):
+  // printable single characters type straight into the query, alongside the
+  // on-screen keys. Ignore modifier combos (Ctrl/Alt/Cmd shortcuts).
+  if (k && k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (k === ' ') { pressKey('SPACE'); } else { kb.query += k; renderQuery(); emitChange(); }
     return;
   }
 
-  const isNav = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', ' ', 'Backspace', 'Escape'].includes(k);
-  if (!isNav) return; // let physical-keyboard typing fall through if ever present
+  const isNav = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Backspace', 'Escape'].includes(k);
+  if (!isNav) return;
   e.preventDefault();
   e.stopImmediatePropagation(); // keep the global TV nav out of this overlay
 
-  if (k === 'Escape' || k === 'Backspace') { done(); return; }
-  if (k === 'Enter' || k === ' ') {
+  if (k === 'Escape') { done(); return; }
+  if (k === 'Backspace') { pressKey('BACK'); return; } // physical Backspace deletes a character
+  if (k === 'Enter') {
     const el = keyAt(kb.r, kb.c);
     if (el) pressKey(el.dataset.key);
     focusCurrent();

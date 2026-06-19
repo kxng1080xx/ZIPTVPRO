@@ -3355,15 +3355,15 @@ body.vod-mode .now-next-bar {
   }
   
   /* Make buttons icon-only to save space */
-  #epg-search-btn, #epg-edit-btn, #epg-full-btn {
+  #epg-edit-btn, #epg-full-btn {
     font-size: 0 !important;
     padding: 8px !important;
     width: 36px !important;
     height: 36px !important;
     justify-content: center !important;
   }
-  
-  #epg-search-btn i, #epg-edit-btn i, #epg-full-btn i {
+
+  #epg-edit-btn i, #epg-full-btn i {
     margin: 0 !important;
     width: 16px !important;
     height: 16px !important;
@@ -4982,9 +4982,21 @@ body.epg-fullscreen-active .epg-section-container {
 .tvk-key-space { flex: 3 1 0; }
 .tvk-hint { text-align: center; color: var(--text-muted, #7d8ba3); font-size: 0.78rem; margin-top: 14px; }
 
-/* Portrait phones: device keyboard only — hide the on-screen keys. */
-.tvk-device-mode .tvk-keys { display: none; }
-.tvk-device-mode .tvk-modal { width: min(560px, 94vw); }
+/* Header buttons (hide-keyboard toggle + close). */
+.tvk-header-btns { display: flex; align-items: center; gap: 4px; }
+.tvk-toggle {
+  display: none; /* only shown on the PC build via .tvk-can-hide */
+  background: transparent;
+  border: none;
+  color: var(--text-muted, #8aa);
+  cursor: pointer;
+  padding: 4px;
+}
+.tvk-toggle i { width: 18px; height: 18px; }
+.tvk-can-hide .tvk-toggle { display: inline-flex; }
+
+/* Collapsed state (PC): on-screen keys hidden, keep typing via real keyboard. */
+.tvk-keys-collapsed .tvk-keys { display: none; }
 
 /* --- Sort dropdown --- */
 .tvsort-modal {
