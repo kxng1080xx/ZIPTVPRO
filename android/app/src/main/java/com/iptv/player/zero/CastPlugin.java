@@ -2,6 +2,7 @@ package com.iptv.player.zero;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Build;
 
 import androidx.mediarouter.media.MediaRouteSelector;
 import androidx.mediarouter.media.MediaRouter;
@@ -12,6 +13,9 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.PermissionState;
+import com.getcapacitor.annotation.PermissionCallback;
+import android.content.Intent;
 import com.google.android.gms.cast.CastMediaControlIntent;
 import com.google.android.gms.cast.MediaInfo;
 import com.google.android.gms.cast.MediaLoadRequestData;
@@ -53,8 +57,18 @@ import android.content.Context;
  * proxy is needed. No-ops where Google Play services / Cast is unavailable
  * (e.g. Amazon Fire TV).
  */
-@CapacitorPlugin(name = "Cast")
+@CapacitorPlugin(
+    name = "Cast",
+    permissions = {
+        @com.getcapacitor.annotation.Permission(
+            strings = { "android.permission.POST_NOTIFICATIONS" },
+            alias = "notifications"
+        )
+    }
+)
 public class CastPlugin extends Plugin {
+
+    private static CastPlugin instance;
 
     private CastContext castContext;
     private MediaRouter mediaRouter;
@@ -82,6 +96,7 @@ public class CastPlugin extends Plugin {
 
     @Override
     public void load() {
+        instance = this;
         try {
             proxyServer = new LocalProxyServer();
             proxyServer.start();
@@ -101,6 +116,19 @@ public class CastPlugin extends Plugin {
                     @Override public void onRouteChanged(MediaRouter r, MediaRouter.RouteInfo info) { addRoute(info); }
                     @Override public void onRouteRemoved(MediaRouter r, MediaRouter.RouteInfo info) { removeRoute(info); }
                 };
+
+                castContext.getSessionManager().addSessionManagerListener(new SessionManagerListener<CastSession>() {
+                    @Override public void onSessionStarted(CastSession s, String id) {}
+                    @Override public void onSessionStartFailed(CastSession s, int e) { stopForegroundService(); }
+                    @Override public void onSessionEnded(CastSession s, int e) { stopForegroundService(); }
+                    @Override public void onSessionEnding(CastSession s) {}
+                    @Override public void onSessionResumeFailed(CastSession s, int e) { stopForegroundService(); }
+                    @Override public void onSessionResumed(CastSession s, boolean w) {}
+                    @Override public void onSessionResuming(CastSession s, String id) {}
+                    @Override public void onSessionStarting(CastSession s) {}
+                    @Override public void onSessionSuspended(CastSession s, int r) { stopForegroundService(); }
+                }, CastSession.class);
+
                 startScan();
             } catch (Throwable t) {
                 // Cast not available on this device — methods will simply find no routes.
@@ -158,6 +186,7 @@ public class CastPlugin extends Plugin {
 
     @Override
     protected void handleOnDestroy() {
+        stopForegroundService();
         if (proxyServer != null) {
             proxyServer.stop();
         }
@@ -219,6 +248,7 @@ public class CastPlugin extends Plugin {
 
                 if (current != null && current.isConnected()) {
                     loadMedia(current, url, contentType, title, isLive);
+                    startForegroundService(title);
                     call.resolve();
                     return;
                 }
@@ -227,6 +257,7 @@ public class CastPlugin extends Plugin {
                     @Override public void onSessionStarted(CastSession session, String sessionId) {
                         sm.removeSessionManagerListener(this, CastSession.class);
                         loadMedia(session, url, contentType, title, isLive);
+                        startForegroundService(title);
                         call.resolve();
                     }
                     @Override public void onSessionStartFailed(CastSession session, int error) {
@@ -270,6 +301,7 @@ public class CastPlugin extends Plugin {
 
     @PluginMethod
     public void stop(PluginCall call) {
+        stopForegroundService();
         if (activeDlnaDeviceId != null) {
             final String deviceId = activeDlnaDeviceId;
             activeDlnaDeviceId = null;
@@ -297,6 +329,59 @@ public class CastPlugin extends Plugin {
             } catch (Exception e) {}
             call.resolve();
         });
+    }
+
+    @PluginMethod
+    public void requestNotificationPermission(PluginCall call) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) { // Android 13+
+            if (getPermissionState("notifications") != PermissionState.GRANTED) {
+                requestPermissionForAlias("notifications", call, "notificationsCallback");
+            } else {
+                JSObject ret = new JSObject();
+                ret.put("status", "granted");
+                call.resolve(ret);
+            }
+        } else {
+            JSObject ret = new JSObject();
+            ret.put("status", "granted");
+            call.resolve(ret);
+        }
+    }
+
+    @PermissionCallback
+    private void notificationsCallback(PluginCall call) {
+        JSObject ret = new JSObject();
+        if (getPermissionState("notifications") == PermissionState.GRANTED) {
+            ret.put("status", "granted");
+        } else {
+            ret.put("status", "denied");
+        }
+        call.resolve(ret);
+    }
+
+    public static void onNotificationAction(String action) {
+        if (instance != null) {
+            JSObject data = new JSObject();
+            data.put("action", action);
+            instance.notifyListeners("notificationAction", data);
+        }
+    }
+
+    private void startForegroundService(String title) {
+        Context context = getContext().getApplicationContext();
+        Intent intent = new Intent(context, CastService.class);
+        intent.putExtra("title", title);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(intent);
+        } else {
+            context.startService(intent);
+        }
+    }
+
+    private void stopForegroundService() {
+        Context context = getContext().getApplicationContext();
+        Intent intent = new Intent(context, CastService.class);
+        context.stopService(intent);
     }
 
     // --- DLNA / SSDP Discovery & Controls -----------------------------------
@@ -518,6 +603,7 @@ public class CastPlugin extends Plugin {
             String playSoap = buildPlaySoap();
             sendSoapRequest(dev.controlUrl, "urn:schemas-upnp-org:service:AVTransport:1#Play", playSoap);
             
+            startForegroundService(title);
             call.resolve();
         } catch (Exception e) {
             call.reject("DLNA playback failed: " + e.getMessage());
@@ -723,13 +809,33 @@ public class CastPlugin extends Plugin {
                     writer.print("Content-Type: " + mime + "\r\n");
                     writer.print("transferMode.dlna.org: Streaming\r\n");
                     writer.print("contentFeatures.dlna.org: " + dlnaFeatures + "\r\n");
+                    
+                    if (isLive) {
+                        writer.print("Accept-Ranges: none\r\n");
+                    } else {
+                        writer.print("Accept-Ranges: bytes\r\n");
+                        long len = fetchUpstreamLength(targetUrl);
+                        if (len != -1) {
+                            writer.print("Content-Length: " + len + "\r\n");
+                        }
+                    }
+                    
                     writer.print("Connection: close\r\n\r\n");
                     writer.flush();
                     client.close();
                     return;
                 }
                 
-                proxyGet(client, targetUrl, mime, dlnaFeatures, requestHeaders);
+                if (method.equalsIgnoreCase("GET")) {
+                    if (isLive) {
+                        proxyLiveGet(client, targetUrl, mime, dlnaFeatures);
+                    } else {
+                        proxyGet(client, targetUrl, mime, dlnaFeatures, requestHeaders);
+                    }
+                    return;
+                }
+                
+                sendError(client, 405, "Method Not Allowed");
                 
             } catch (Exception e) {
                 e.printStackTrace();
@@ -737,17 +843,138 @@ public class CastPlugin extends Plugin {
             }
         }
         
+        private HttpURLConnection connectWithRedirects(String targetUrl, String rangeHeader, int redirects) throws Exception {
+            if (redirects > 5) {
+                throw new Exception("Too many redirects");
+            }
+            
+            URL url = new URL(targetUrl);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(8000);
+            conn.setReadTimeout(8000);
+            conn.setInstanceFollowRedirects(false); // follow manually
+            
+            conn.setRequestProperty("User-Agent", "VLC/3.0.20");
+            if (rangeHeader != null) {
+                conn.setRequestProperty("Range", rangeHeader);
+            }
+            
+            int status = conn.getResponseCode();
+            if (status == HttpURLConnection.HTTP_MULT_CHOICE || 
+                status == HttpURLConnection.HTTP_MOVED_PERM || 
+                status == HttpURLConnection.HTTP_MOVED_TEMP || 
+                status == 307 || status == 308) {
+                
+                String newUrl = conn.getHeaderField("Location");
+                if (newUrl != null) {
+                    if (!newUrl.startsWith("http")) {
+                        newUrl = new URL(url, newUrl).toString();
+                    }
+                    conn.disconnect();
+                    return connectWithRedirects(newUrl, rangeHeader, redirects + 1);
+                }
+            }
+            
+            return conn;
+        }
+        
+        private long fetchUpstreamLength(String targetUrl) {
+            HttpURLConnection conn = null;
+            try {
+                conn = connectWithRedirects(targetUrl, "bytes=0-0", 0);
+                int status = conn.getResponseCode();
+                if (status == 200 || status == 206) {
+                    String range = conn.getHeaderField("Content-Range");
+                    if (range != null) {
+                        int slash = range.indexOf('/');
+                        if (slash != -1) {
+                            return Long.parseLong(range.substring(slash + 1).trim());
+                        }
+                    }
+                    long len = conn.getContentLengthLong();
+                    if (len != -1) return len;
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+            return -1;
+        }
+        
+        private void proxyLiveGet(Socket client, String targetUrl, String mime, String dlnaFeatures) {
+            HttpURLConnection conn = null;
+            OutputStream out = null;
+            boolean closed = false;
+            
+            try {
+                out = client.getOutputStream();
+                PrintWriter writer = new PrintWriter(new OutputStreamWriter(out, "UTF-8"));
+                writer.print("HTTP/1.1 200 OK\r\n");
+                writer.print("Content-Type: " + mime + "\r\n");
+                writer.print("transferMode.dlna.org: Streaming\r\n");
+                writer.print("contentFeatures.dlna.org: " + dlnaFeatures + "\r\n");
+                writer.print("Accept-Ranges: none\r\n");
+                writer.print("Connection: close\r\n\r\n");
+                writer.flush();
+                
+                byte[] buf = new byte[16384];
+                int recentReconnects = 0;
+                long lastConnectAt = 0;
+                
+                while (true) {
+                    if (System.currentTimeMillis() - lastConnectAt < 1000) {
+                        recentReconnects++;
+                    } else {
+                        recentReconnects = 0;
+                    }
+                    lastConnectAt = System.currentTimeMillis();
+                    if (recentReconnects > 6) {
+                        break;
+                    }
+                    
+                    try {
+                        conn = connectWithRedirects(targetUrl, null, 0);
+                        int status = conn.getResponseCode();
+                        if (status != 200 && status != 206) {
+                            conn.disconnect();
+                            Thread.sleep(800);
+                            continue;
+                        }
+                        
+                        InputStream in = conn.getInputStream();
+                        int n;
+                        while ((n = in.read(buf)) != -1) {
+                            try {
+                                out.write(buf, 0, n);
+                            } catch (Exception writeEx) {
+                                closed = true;
+                                break;
+                            }
+                        }
+                        in.close();
+                        conn.disconnect();
+                        
+                        if (closed) break;
+                        Thread.sleep(200);
+                    } catch (Exception connectEx) {
+                        if (conn != null) conn.disconnect();
+                        try { Thread.sleep(500); } catch (Exception e) {}
+                    }
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            } finally {
+                if (conn != null) conn.disconnect();
+                try { client.close(); } catch (Exception e) {}
+            }
+        }
+        
         private void proxyGet(Socket client, String targetUrl, String mime, String dlnaFeatures, Map<String, String> requestHeaders) {
             HttpURLConnection conn = null;
             try {
-                URL url = new URL(targetUrl);
-                conn = (HttpURLConnection) url.openConnection();
-                conn.setConnectTimeout(8000);
-                conn.setReadTimeout(8000);
-                
-                if (requestHeaders.containsKey("range")) {
-                    conn.setRequestProperty("Range", requestHeaders.get("range"));
-                }
+                String rangeHeader = requestHeaders.get("range");
+                conn = connectWithRedirects(targetUrl, rangeHeader, 0);
                 
                 int responseCode = conn.getResponseCode();
                 
@@ -776,14 +1003,14 @@ public class CastPlugin extends Plugin {
                 writer.flush();
                 
                 InputStream in = conn.getInputStream();
-                byte[] buf = new byte[8192];
+                byte[] buf = new byte[16384];
                 int n;
                 while ((n = in.read(buf)) != -1) {
                     out.write(buf, 0, n);
                 }
                 out.flush();
             } catch (Exception e) {
-                // connection reset or client disconnected
+                // client disconnected
             } finally {
                 if (conn != null) conn.disconnect();
                 try { client.close(); } catch (Exception e) {}

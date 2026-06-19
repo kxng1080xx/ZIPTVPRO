@@ -91,6 +91,27 @@ export function initCastUI() {
     devices = list || [];
     if (overlayEl) render();
   });
+
+  // Listen to background notification controls on native Android
+  if (NativeCast) {
+    NativeCast.addListener('notificationAction', ({ action }) => {
+      console.log('[cast] notification action received:', action);
+      if (!action) return;
+      if (action === 'com.iptv.player.zero.ACTION_STOP') {
+        stopCasting();
+      } else if (window.playerInstance) {
+        if (action === 'com.iptv.player.zero.ACTION_NEXT') {
+          if (window.playerInstance.onNextChannelCallback) {
+            window.playerInstance.onNextChannelCallback();
+          }
+        } else if (action === 'com.iptv.player.zero.ACTION_PREV') {
+          if (window.playerInstance.onPrevChannelCallback) {
+            window.playerInstance.onPrevChannelCallback();
+          }
+        }
+      }
+    });
+  }
 }
 
 async function openCastPicker() {
@@ -229,6 +250,16 @@ async function buildCastMedia(ctx, isDlna) {
 
 async function castToDevice(deviceId) {
   if (!castCtx) return;
+
+  // Request notifications permission on Android 13+ if using native backend
+  if (NativeCast && NativeCast.requestNotificationPermission) {
+    try {
+      await NativeCast.requestNotificationPermission();
+    } catch (e) {
+      console.warn('[cast] notification permission request failed:', e);
+    }
+  }
+
   const dev = devices.find((d) => d.id === deviceId);
   const name = (dev && dev.name) || 'device';
   const isDlna = !!(dev && dev.type === 'dlna');
