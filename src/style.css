@@ -4923,37 +4923,50 @@ body.epg-fullscreen-active .epg-section-container {
 .tvk-title i { width: 18px; height: 18px; color: #00f3ff; }
 .tvk-close { background: transparent; border: none; color: var(--text-muted, #8aa); cursor: pointer; padding: 4px; }
 .tvk-query {
-  min-height: 44px;
   display: flex;
   align-items: center;
-  padding: 8px 14px;
   margin-bottom: 14px;
+}
+.tvk-input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 14px;
   background: var(--bg-surface, #131c2c);
   border: 1px solid var(--border-color, #1e2a3e);
   border-radius: 10px;
+  color: var(--text-primary, #eef);
   font-size: 1.15rem;
   letter-spacing: 0.02em;
+  outline: none;
 }
-.tvk-caret { color: #00f3ff; animation: tvk-blink 1s step-end infinite; margin-left: 1px; }
-@keyframes tvk-blink { 50% { opacity: 0; } }
-.tvk-keys { display: flex; flex-direction: column; gap: 8px; }
-.tvk-row { display: flex; gap: 8px; justify-content: center; }
+.tvk-input:focus { border-color: #00f3ff; }
+
+/* Keys fill the row width evenly so they never overflow the modal (the old
+   fixed min-width clipped rows off-screen on narrow phones). */
+.tvk-keys { display: flex; flex-direction: column; gap: 6px; }
+.tvk-row { display: flex; gap: 6px; }
 .tvk-key {
-  min-width: 52px;
-  height: 52px;
-  padding: 0 10px;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 50px;
+  padding: 0 4px;
   border-radius: 10px;
   border: 1px solid var(--border-color, #1e2a3e);
   background: var(--bg-surface, #131c2c);
   color: var(--text-primary, #eef);
-  font-size: 1.1rem;
+  font-size: 1.05rem;
   font-weight: 700;
   cursor: pointer;
 }
-.tvk-key-special { font-size: 0.85rem; font-weight: 600; min-width: 80px; }
+.tvk-key-special { font-size: 0.8rem; font-weight: 600; flex: 1.4 1 0; }
 .tvk-key-done { background: #00f3ff; color: #00131a; border-color: #00f3ff; }
-.tvk-key-space { min-width: 200px; }
+.tvk-key-space { flex: 3 1 0; }
 .tvk-hint { text-align: center; color: var(--text-muted, #7d8ba3); font-size: 0.78rem; margin-top: 14px; }
+
+/* Portrait phones: device keyboard only — hide the on-screen keys. */
+.tvk-device-mode .tvk-keys { display: none; }
+.tvk-device-mode .tvk-modal { width: min(560px, 94vw); }
 
 /* --- Sort dropdown --- */
 .tvsort-modal {
@@ -4987,4 +5000,11 @@ body.epg-fullscreen-active .epg-section-container {
   .series-details-panel {
     display: none !important;
   }
+
+  /* Catalog header: title on its own row, Search + Sort share the next row so
+     they don't run off-screen / clip on narrow phones. */
+  .vod-view-header { flex-wrap: wrap; gap: 10px; }
+  .vod-view-header h2 { flex: 1 1 100%; white-space: nowrap; }
+  .vod-filters { width: 100%; gap: 10px; }
+  .vod-filters .vod-filter-btn { flex: 1 1 0; min-width: 0; justify-content: center; }
 }

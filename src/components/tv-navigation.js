@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
+import { closeSearchKeyboard, closeSortDropdown } from './tv-search.js';
 
 /**
  * TV Navigation Coordinator for Arrow Key & Enter Button Navigation.
@@ -69,9 +70,14 @@ class TVNavigation {
   // only exits the app on a confirmed double-back at the root.
   handleBack() {
     // 1) Transient overlays — close the topmost first.
+    if (document.querySelector('.tvk-overlay')) { closeSearchKeyboard(); return; }
+    if (document.querySelector('.tvsort-overlay')) { closeSortDropdown(); return; }
+
     const updateOverlay = document.getElementById('update-modal-overlay');
     if (updateOverlay) {
-      updateOverlay.remove();
+      // Click Cancel so the modal's own cleanup (key listener removal) runs.
+      const cancel = updateOverlay.querySelector('[data-action="cancel"]');
+      if (cancel) cancel.click(); else updateOverlay.remove();
       this.restoreBackgroundFocus();
       return;
     }

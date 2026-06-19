@@ -41,11 +41,18 @@ export function openSearchKeyboard({ title = 'Search', initial = '', onChange, o
         <span class="tvk-title"><i data-lucide="search"></i> ${title}</span>
         <button class="tvk-close" title="Close"><i data-lucide="x"></i></button>
       </div>
-      <div class="tvk-query"><span class="tvk-query-text"></span><span class="tvk-caret">|</span></div>
+      <div class="tvk-query">
+        <input class="tvk-input" type="text" placeholder="Type to search…"
+               autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
+      </div>
       <div class="tvk-keys"></div>
-      <div class="tvk-hint">Arrows to move • OK to type • Back to close</div>
+      <div class="tvk-hint"></div>
     </div>`;
   document.body.appendChild(overlay);
+
+  // Portrait (phones): use the device keyboard. Landscape/TV: on-screen keyboard.
+  const isPortrait = (() => { try { return window.matchMedia('(orientation: portrait)').matches; } catch (e) { return false; } })();
+  if (isPortrait) overlay.classList.add('tvk-device-mode');
 
   // Build key grid (each cell carries its row/col for D-pad movement).
   const keysEl = overlay.querySelector('.tvk-keys');
@@ -71,8 +78,16 @@ export function openSearchKeyboard({ title = 'Search', initial = '', onChange, o
     query: initial || '',
     r: 1,
     c: 0,
-    changeTimer: null
+    changeTimer: null,
+    deviceMode: isPortrait,
+    input: overlay.querySelector('.tvk-input')
   };
+
+  // Text input accepts typing from the device (or a physical) keyboard, in
+  // addition to the on-screen keys.
+  kb.input.value = kb.query;
+  kb.input.addEventListener('input', (e) => { kb.query = e.target.value; emitChange(); });
+  kb.input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); done(); } });
 
   overlay.querySelector('.tvk-close').addEventListener('click', () => done());
   overlay.querySelectorAll('.tvk-key').forEach((btn) => {
@@ -86,7 +101,16 @@ export function openSearchKeyboard({ title = 'Search', initial = '', onChange, o
 
   document.addEventListener('keydown', kbKeyHandler, true);
   renderQuery();
-  focusCurrent();
+
+  const hint = overlay.querySelector('.tvk-hint');
+  if (kb.deviceMode) {
+    if (hint) hint.textContent = 'Type with your keyboard';
+    // Pop the device keyboard.
+    setTimeout(() => { try { kb.input.focus(); } catch (e) {} }, 60);
+  } else {
+    if (hint) hint.textContent = 'Arrows to move • OK to type • Back to close';
+    focusCurrent();
+  }
   lucide(overlay);
 }
 
@@ -100,8 +124,8 @@ export function closeSearchKeyboard() {
 
 function renderQuery() {
   if (!kb) return;
-  const t = kb.overlay.querySelector('.tvk-query-text');
-  if (t) t.textContent = kb.query;
+  // Keep the text input in sync (on-screen keys edit it too).
+  if (kb.input && kb.input.value !== kb.query) kb.input.value = kb.query;
 }
 
 function emitChange() {
@@ -159,6 +183,15 @@ function focusCurrent() {
 function kbKeyHandler(e) {
   if (!kb) return;
   const k = e.key;
+
+  // When the text input has focus (device / physical keyboard), let it handle
+  // everything — only Escape closes. Enter is handled by the input's own
+  // listener. This keeps device-keyboard typing working alongside the overlay.
+  if (document.activeElement === kb.input) {
+    if (k === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); done(); }
+    return;
+  }
+
   const isNav = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', ' ', 'Backspace', 'Escape'].includes(k);
   if (!isNav) return; // let physical-keyboard typing fall through if ever present
   e.preventDefault();

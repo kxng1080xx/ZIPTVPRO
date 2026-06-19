@@ -132,7 +132,9 @@ function showUpdateModal(remote, local, manifest) {
     </div>`;
   document.body.appendChild(overlay);
 
+  let onKey = null;
   const close = () => {
+    if (onKey) document.removeEventListener('keydown', onKey, true);
     overlay.remove();
     try {
       if (navigation && navigation.restoreBackgroundFocus) {
@@ -173,9 +175,27 @@ function showUpdateModal(remote, local, manifest) {
 
   if (window.lucide) lucide.createIcons({ scope: overlay });
 
-  // Focus the Download button so the D-pad lands on the prompt (not the UI behind).
-  try {
-    const dl = overlay.querySelector('[data-action="download"]');
-    if (dl && navigation && navigation.setFocus) navigation.setFocus('update-modal', dl);
-  } catch (e) {}
+  // Self-contained D-pad navigation (capture phase). The global TV-nav handler
+  // for this modal has proven unreliable across versions, so the prompt drives
+  // its own focus — guaranteed to work regardless of nav state/timing.
+  const btns = Array.from(overlay.querySelectorAll('.update-btn'));
+  let fIdx = btns.length - 1; // default to Download
+  const focusBtn = (i) => {
+    fIdx = Math.max(0, Math.min(btns.length - 1, i));
+    btns.forEach((b) => b.classList.remove('tvk-focused'));
+    const el = btns[fIdx];
+    if (el) { el.classList.add('tvk-focused'); try { el.focus({ preventScroll: true }); } catch (e) {} }
+  };
+  onKey = (e) => {
+    const k = e.key;
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter', ' ', 'Escape', 'Backspace'].includes(k)) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (k === 'Escape' || k === 'Backspace') { close(); return; }
+    if (k === 'Enter' || k === ' ') { if (btns[fIdx]) btns[fIdx].click(); return; }
+    if (k === 'ArrowLeft' || k === 'ArrowUp') focusBtn(fIdx - 1);
+    else if (k === 'ArrowRight' || k === 'ArrowDown') focusBtn(fIdx + 1);
+  };
+  document.addEventListener('keydown', onKey, true);
+  focusBtn(fIdx);
 }
