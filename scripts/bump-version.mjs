@@ -16,9 +16,9 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pkgPath = join(root, 'package.json');
 const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
 
-const [major, minor] = pkg.version.split('.').map(Number);
-const bumped = Math.round((Number(`${major}.${minor}`) + 0.1) * 10) / 10; // 1.0 -> 1.1, 1.9 -> 2.0
-const [newMajor, newMinor] = bumped.toFixed(1).split('.').map(Number);
+const parts = pkg.version.split('.').map(Number);
+const newMajor = parts[0];
+const newMinor = parts[1] + 1;
 const newVersion = `${newMajor}.${newMinor}.0`;
 
 pkg.version = newVersion;
