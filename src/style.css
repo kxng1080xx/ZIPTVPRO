@@ -1927,8 +1927,7 @@ body.vod-mode .now-next-bar {
 .epg-section-container.timeline-hidden .epg-timeline-hours-container,
 .epg-section-container.timeline-hidden .epg-programs-grid-viewport,
 .epg-section-container.timeline-hidden .epg-hours-select,
-.epg-section-container.timeline-hidden .epg-nav-controls,
-.epg-section-container.timeline-hidden #epg-full-btn {
+.epg-section-container.timeline-hidden .epg-nav-controls {
   display: none !important;
 }
 
@@ -1981,6 +1980,20 @@ body.vod-mode .now-next-bar {
 .epg-ctrl-btn.active {
   background: var(--bg-surface);
   color: var(--text-primary);
+}
+
+/* Icon-only control button (e.g. channel filter) — compact square like the
+   categories search button. */
+.epg-ctrl-btn-icon {
+  padding: 6px;
+  width: 32px;
+  justify-content: center;
+}
+
+/* Highlight the filter icon when a channel filter is active. */
+.epg-ctrl-btn.filter-active {
+  border-color: #00f3ff;
+  color: #00f3ff;
 }
 
 .epg-channels-search-box {

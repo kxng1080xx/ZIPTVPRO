@@ -2093,9 +2093,8 @@ function bindGlobalEvents() {
   wireVodFilters('movies', loadMoviesGrid);
   wireVodFilters('series', loadSeriesGrid);
 
-  // Live channel filter button → on-screen keyboard
+  // Live channel filter button (icon-only) → on-screen keyboard
   const liveFilterBtn = document.getElementById('epg-channels-filter-btn');
-  const liveFilterLabel = document.getElementById('epg-channels-filter-label');
   if (liveFilterBtn) {
     liveFilterBtn.addEventListener('click', () => {
       openSearchKeyboard({
@@ -2103,7 +2102,8 @@ function bindGlobalEvents() {
         initial: (epgGridInstance && epgGridInstance.channelFilterQuery) || '',
         onChange: (q) => { if (epgGridInstance) epgGridInstance.setChannelFilter(q); },
         onClose: (q) => {
-          if (liveFilterLabel) liveFilterLabel.textContent = q ? `“${q}”` : 'Filter channels';
+          // No label on the icon button — highlight it when a filter is active.
+          liveFilterBtn.classList.toggle('filter-active', !!(q && q.trim()));
           navigation.setFocus('channels', liveFilterBtn);
         }
       });

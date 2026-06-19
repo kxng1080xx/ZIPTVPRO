@@ -38,7 +38,6 @@ export class EPGGrid {
     this.channelsFilter = document.getElementById('epg-channels-filter');
     this.refreshBtn = document.getElementById('epg-refresh-btn');
     this.fullBtn = document.getElementById('epg-full-btn');
-    this.toggleTimelineBtn = document.getElementById('epg-toggle-timeline-btn');
 
     // Layout configuration
     this.pxPerHour = 300; // Width of 1 hour in pixels
@@ -138,28 +137,11 @@ export class EPGGrid {
       this.render();
     });
 
-    // Full screen EPG toggle
+    // "Show Guide" opens the full-screen timeline guide directly — the inline
+    // short guide was removed (a quick now/next guide already sits beside each
+    // channel name in the list).
     if (this.fullBtn) {
       this.fullBtn.addEventListener('click', () => this.toggleFullscreen());
-    }
-
-    // EPG Timeline Toggle
-    if (this.toggleTimelineBtn) {
-      this.toggleTimelineBtn.addEventListener('click', () => {
-        const epgContainer = document.querySelector('.epg-section-container');
-        if (epgContainer) {
-          const isHidden = epgContainer.classList.toggle('timeline-hidden');
-          this.toggleTimelineBtn.innerHTML = isHidden
-            ? '<i data-lucide="calendar"></i> Show Guide'
-            : '<i data-lucide="calendar-off"></i> Hide Guide';
-          lucide.createIcons({ scope: this.toggleTimelineBtn });
-          
-          if (!isHidden) {
-            this.render();
-            this.scrollToCurrentTime();
-          }
-        }
-      });
     }
   }
 
@@ -168,11 +150,16 @@ export class EPGGrid {
   setFullscreen(on) {
     document.body.classList.toggle('epg-fullscreen-active', on);
 
+    // The full timeline grid only shows in full-screen; collapsed back to the
+    // channel list (with its inline quick guide) otherwise.
+    const epgContainer = document.querySelector('.epg-section-container');
+    if (epgContainer) epgContainer.classList.toggle('timeline-hidden', !on);
+
     if (this.fullBtn) {
       this.fullBtn.classList.toggle('active', on);
       this.fullBtn.innerHTML = on
-        ? '<i data-lucide="minimize"></i> Exit full screen'
-        : '<i data-lucide="expand"></i> Full screen EPG';
+        ? '<i data-lucide="minimize"></i> Exit Guide'
+        : '<i data-lucide="expand"></i> Show Guide';
       lucide.createIcons({ scope: this.fullBtn });
     }
 
