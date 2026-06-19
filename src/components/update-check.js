@@ -132,7 +132,14 @@ function showUpdateModal(remote, local, manifest) {
     </div>`;
   document.body.appendChild(overlay);
 
-  const close = () => overlay.remove();
+  const close = () => {
+    overlay.remove();
+    try {
+      if (navigation && navigation.focusDefault) {
+        navigation.focusDefault(navigation.currentZone || 'categories');
+      }
+    } catch (e) {}
+  };
 
   overlay.querySelector('[data-action="cancel"]').addEventListener('click', close);
   overlay.querySelector('[data-action="skip"]').addEventListener('click', () => {

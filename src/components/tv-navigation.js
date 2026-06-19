@@ -69,7 +69,11 @@ class TVNavigation {
   handleBack() {
     // 1) Transient overlays — close the topmost first.
     const updateOverlay = document.getElementById('update-modal-overlay');
-    if (updateOverlay) { updateOverlay.remove(); return; }
+    if (updateOverlay) {
+      updateOverlay.remove();
+      this.focusDefault(this.currentZone || 'categories');
+      return;
+    }
 
     const castOverlay = document.querySelector('.cast-modal-overlay:not(.hidden)');
     if (castOverlay) { castOverlay.classList.add('hidden'); return; }
@@ -161,6 +165,25 @@ class TVNavigation {
   // Set focus to a specific element within a zone
   setFocus(zone, element) {
     if (!element) return;
+
+    // Trap focus inside active overlays/modals (block background focus stealing)
+    const updateOverlay = document.getElementById('update-modal-overlay');
+    if (updateOverlay && !updateOverlay.contains(element)) {
+      console.log(`[TV Navigation] Focus blocked: update modal is open. Blocked zone: ${zone}`);
+      return;
+    }
+
+    const activeModal = document.querySelector('.modal-overlay:not(.hidden)');
+    if (activeModal && !activeModal.contains(element)) {
+      console.log(`[TV Navigation] Focus blocked: active modal is open. Blocked zone: ${zone}`);
+      return;
+    }
+
+    const castOverlay = document.querySelector('.cast-modal-overlay:not(.hidden)');
+    if (castOverlay && !castOverlay.contains(element)) {
+      console.log(`[TV Navigation] Focus blocked: cast overlay is open. Blocked zone: ${zone}`);
+      return;
+    }
 
     // Remove focus class from previous element
     if (this.focusedElement) {
@@ -352,41 +375,55 @@ class TVNavigation {
       return;
     }
 
-    // Ignore TV navigation if user is typing in search boxes or inputs
     const activeEl = document.activeElement;
-    const isLoginInput = activeEl && activeEl.tagName === 'INPUT' && 
-      ['playlist-name', 'm3u-url', 'host-url', 'username', 'password'].includes(activeEl.id);
+    const updateOverlay = document.getElementById('update-modal-overlay');
+    const activeModal = document.querySelector('.modal-overlay:not(.hidden)');
+    const castOverlay = document.querySelector('.cast-modal-overlay:not(.hidden)');
+    
+    const activeContainer = updateOverlay || activeModal || castOverlay;
+    const insideActiveContainer = activeContainer && activeContainer.contains(activeEl);
 
+    // Ignore TV navigation if user is typing in active text inputs
     if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
-      if (isLoginInput && (e.key === this.KEYS.UP || e.key === this.KEYS.DOWN)) {
+      if (activeContainer && !insideActiveContainer) {
         activeEl.blur();
-        // Allow fall-through to standard navigation below
-      } else {
-        if (e.key === this.KEYS.ENTER && activeEl.id === 'categories-search') {
+      } else if (!activeContainer || insideActiveContainer) {
+        const isLoginInput = ['playlist-name', 'm3u-url', 'host-url', 'username', 'password'].includes(activeEl.id);
+        if (isLoginInput && (e.key === this.KEYS.UP || e.key === this.KEYS.DOWN)) {
           activeEl.blur();
-          this.focusDefault('categories');
-          e.preventDefault();
+          // Fall through to navigation below
+        } else {
+          if (e.key === this.KEYS.ENTER && activeEl.id === 'categories-search') {
+            activeEl.blur();
+            this.focusDefault('categories');
+            e.preventDefault();
+          }
+          return; // Let standard input consume key
         }
-        return; // let standard text input fields consume arrow keys/text keys
       }
     }
 
     // Recovery: if focused element is null or detached from DOM, restore default focus for current zone
     if (!this.focusedElement || !document.body.contains(this.focusedElement)) {
       console.warn(`TV Focus lost or detached from DOM (zone: ${this.currentZone}). Recovering...`);
-      this.focusDefault(this.currentZone);
+      if (updateOverlay) {
+        const btns = Array.from(updateOverlay.querySelectorAll('.update-btn'));
+        if (btns.length > 0) this.setFocus('update-modal', btns[btns.length - 1]);
+      } else if (activeModal) {
+        this.focusDefault('modal');
+      } else {
+        this.focusDefault(this.currentZone);
+      }
     }
 
     // Update-available prompt is the topmost overlay — trap the D-pad here so it
     // doesn't navigate the UI behind it.
-    const updateOverlay = document.getElementById('update-modal-overlay');
     if (updateOverlay) {
       this.handleUpdateModalNavigation(e, updateOverlay);
       return;
     }
 
     // Modal check (VOD or Settings overlay)
-    const activeModal = document.querySelector('.modal-overlay:not(.hidden)');
     if (activeModal) {
       this.handleModalNavigation(e, activeModal);
       return;
