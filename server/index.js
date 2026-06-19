@@ -391,7 +391,7 @@ app.get('/api/categories', (req, res) => {
 
 // 7. API: Get Channels/Streams (Paginated)
 app.get('/api/streams', (req, res) => {
-  const { type, category_id, page, limit, search } = req.query;
+  const { type, category_id, page, limit, search, sort } = req.query;
   if (!type) return res.status(400).json({ error: 'Missing type parameter' });
 
   const result = getStreams(
@@ -399,7 +399,8 @@ app.get('/api/streams', (req, res) => {
     category_id,
     parseInt(page) || 1,
     parseInt(limit) || 50,
-    search || ''
+    search || '',
+    sort || 'added'
   );
   res.json(result);
 });

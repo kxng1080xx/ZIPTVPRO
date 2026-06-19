@@ -632,6 +632,13 @@ class TVNavigation {
 
   // 3. EPG CHANNELS LIST NAVIGATION (LIVE TV)
   handleChannelsNavigation(e) {
+    // EPG control buttons (Search/Filter/Refresh…) live above the channel list,
+    // in the same 'channels' zone.
+    if (this.focusedElement.classList.contains('epg-ctrl-btn')) {
+      this.handleEpgControlsNavigation(e);
+      return;
+    }
+
     const channels = Array.from(document.querySelectorAll('.epg-channels-column .epg-channel-row'));
     const index = channels.indexOf(this.focusedElement);
     if (index === -1) return;
@@ -644,7 +651,7 @@ class TVNavigation {
     } else if (e.key === this.KEYS.UP) {
       if (index > 0) {
         this.setFocus('channels', channels[index - 1]);
-      } else {
+      } else if (!this.focusEpgControls()) {
         this.focusDefault('tabs');
       }
       e.preventDefault();
@@ -673,8 +680,74 @@ class TVNavigation {
     }
   }
 
+  // Focus the live EPG control buttons row; returns false if none visible.
+  focusEpgControls() {
+    const btn = document.querySelector('#live-view .epg-controls-header .epg-ctrl-btn');
+    if (btn && btn.offsetParent !== null) { this.setFocus('channels', btn); return true; }
+    return false;
+  }
+
+  handleEpgControlsNavigation(e) {
+    const btns = Array.from(document.querySelectorAll('#live-view .epg-controls-header .epg-ctrl-btn'))
+      .filter(b => b.offsetParent !== null);
+    const idx = btns.indexOf(this.focusedElement);
+    if (idx === -1) return;
+    if (e.key === this.KEYS.LEFT) {
+      if (idx > 0) this.setFocus('channels', btns[idx - 1]); else this.focusDefault('categories');
+      e.preventDefault();
+    } else if (e.key === this.KEYS.RIGHT) {
+      if (idx < btns.length - 1) this.setFocus('channels', btns[idx + 1]);
+      e.preventDefault();
+    } else if (e.key === this.KEYS.UP) {
+      this.focusDefault('tabs');
+      e.preventDefault();
+    } else if (e.key === this.KEYS.DOWN) {
+      this.focusDefault('channels');
+      e.preventDefault();
+    } else if (e.key === this.KEYS.ENTER) {
+      this.focusedElement.click();
+      e.preventDefault();
+    }
+  }
+
   // 4. VOD / SERIES CATALOG GRID NAVIGATION
+  // Focus the catalog header's Search/Sort buttons; returns false if none.
+  focusVodFilters() {
+    const btn = document.querySelector('.view-panel.active .vod-filter-btn');
+    if (btn) { this.setFocus('grid', btn); return true; }
+    return false;
+  }
+
+  handleVodFilterNavigation(e) {
+    const btns = Array.from(document.querySelectorAll('.view-panel.active .vod-filter-btn'));
+    const idx = btns.indexOf(this.focusedElement);
+    if (idx === -1) return;
+    if (e.key === this.KEYS.LEFT) {
+      if (idx > 0) this.setFocus('grid', btns[idx - 1]); else this.focusDefault('categories');
+      e.preventDefault();
+    } else if (e.key === this.KEYS.RIGHT) {
+      if (idx < btns.length - 1) this.setFocus('grid', btns[idx + 1]);
+      e.preventDefault();
+    } else if (e.key === this.KEYS.UP) {
+      this.focusDefault('tabs');
+      e.preventDefault();
+    } else if (e.key === this.KEYS.DOWN) {
+      const cw = document.querySelector('.view-panel.active .continue-row:not(.hidden) .continue-card');
+      if (cw) this.setFocus('grid', cw); else this.focusDefault('grid');
+      e.preventDefault();
+    } else if (e.key === this.KEYS.ENTER) {
+      this.focusedElement.click();
+      e.preventDefault();
+    }
+  }
+
   handleGridNavigation(e) {
+    // Search / Sort buttons in the catalog header (same 'grid' zone).
+    if (this.focusedElement.classList.contains('vod-filter-btn')) {
+      this.handleVodFilterNavigation(e);
+      return;
+    }
+
     // The Continue Watching row sits above the catalog grid. Its cards share the
     // 'grid' zone but aren't .vod-cards, so route them to a dedicated handler.
     if (this.focusedElement.classList.contains('continue-card')) {
@@ -769,7 +842,7 @@ class TVNavigation {
         if (cwCards.length > 0) {
           const target = this.findClosestElement(this.focusedElement, cwCards) || cwCards[0];
           this.setFocus('grid', target);
-        } else {
+        } else if (!this.focusVodFilters()) {
           this.focusDefault('tabs');
         }
       }
@@ -794,7 +867,7 @@ class TVNavigation {
       else this.focusDefault('categories'); // off the left edge → sidebar
       e.preventDefault();
     } else if (e.key === this.KEYS.UP) {
-      this.focusDefault('tabs');
+      if (!this.focusVodFilters()) this.focusDefault('tabs');
       e.preventDefault();
     } else if (e.key === this.KEYS.DOWN) {
       // Drop into the first row of the catalog grid, aligned by horizontal position.

@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import { readFileSync } from 'fs';
+import { resolve } from 'path';
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf8'));
 
@@ -19,8 +20,8 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        main: './index.html',
-        connect: './connect.html'
+        main: resolve(__dirname, 'index.html'),
+        connect: resolve(__dirname, 'connect.html')
       }
     }
   }

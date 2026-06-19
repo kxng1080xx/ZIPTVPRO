@@ -46,6 +46,7 @@ export class EPGGrid {
     this.windowOffsetHours = 2; // Hours to show in the past
     
     this.channels = [];
+    this.channelsSort = 'added';
     this.epgData = {}; // Cache map: stream_id -> epg_listings
     this.epgObserver = null; // Lazy-loads EPG only for on-screen channel rows
     this.selectedDate = new Date();
@@ -116,14 +117,19 @@ export class EPGGrid {
       this.render();
     });
 
-    // Channel filtering
-    let filterTimeout;
-    this.channelsFilter.addEventListener('input', (e) => {
-      clearTimeout(filterTimeout);
-      filterTimeout = setTimeout(() => {
-        this.renderChannelsAndGrid(e.target.value);
-      }, 300);
-    });
+    // Channel filtering is driven by the TV on-screen keyboard now (no input
+    // field — see setChannelFilter()). Keep the listener only if the legacy
+    // input still exists.
+    this.channelFilterQuery = '';
+    if (this.channelsFilter) {
+      let filterTimeout;
+      this.channelsFilter.addEventListener('input', (e) => {
+        clearTimeout(filterTimeout);
+        filterTimeout = setTimeout(() => {
+          this.renderChannelsAndGrid(e.target.value);
+        }, 300);
+      });
+    }
 
     // Refresh EPG data — clear the per-channel cache and re-render, which
     // re-observes the on-screen rows and re-fetches their guide.
@@ -284,12 +290,27 @@ export class EPGGrid {
     }
   }
 
-  renderChannelsAndGrid(filterKeyword = '') {
+  // Set the channel filter from the TV on-screen keyboard and re-render.
+  setChannelFilter(query) {
+    this.channelFilterQuery = query || '';
+    this.renderChannelsAndGrid(this.channelFilterQuery);
+  }
+
+  setChannelsSort(sort) {
+    this.channelsSort = sort || 'added';
+    this.renderChannelsAndGrid();
+  }
+
+  renderChannelsAndGrid(filterKeyword = this.channelFilterQuery || '') {
     const { startTime, endTime } = this.getGuideTimeWindow();
     const pxPerMs = this.pxPerHour / (60 * 60 * 1000);
 
-    const query = filterKeyword.toLowerCase();
+    const query = (filterKeyword || '').toLowerCase();
     const filtered = this.channels.filter(c => (c.name || '').toLowerCase().includes(query));
+
+    if (this.channelsSort === 'name') {
+      filtered.sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
+    }
     
     this.visibleCount.textContent = `(${filtered.length})`;
 

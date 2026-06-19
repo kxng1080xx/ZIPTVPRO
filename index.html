@@ -393,10 +393,12 @@
                 <button class="epg-ctrl-btn" id="epg-refresh-btn" title="Refresh EPG Data">
                   <i data-lucide="refresh-cw"></i>
                 </button>
-                <div class="epg-channels-search-box">
-                  <i data-lucide="search"></i>
-                  <input type="text" id="epg-channels-filter" placeholder="Filter channels...">
-                </div>
+                <button class="epg-ctrl-btn" id="epg-channels-filter-btn" tabindex="0">
+                  <i data-lucide="search"></i> <span id="epg-channels-filter-label">Filter channels</span>
+                </button>
+                <button class="epg-ctrl-btn" id="epg-channels-sort-btn" tabindex="0">
+                  <i data-lucide="arrow-up-down"></i> <span id="epg-channels-sort-label">Default Order</span>
+                </button>
               </div>
               
               <div class="epg-controls-right">
@@ -465,17 +467,12 @@
           <div class="vod-view-header">
             <h2>Movies Catalog</h2>
             <div class="vod-filters">
-              <div class="vod-search-box">
-                <i data-lucide="search"></i>
-                <input type="text" id="movies-search" placeholder="Search movies...">
-              </div>
-              <div class="vod-sort-select">
-                <select id="movies-sort">
-                  <option value="added">Recently Added</option>
-                  <option value="name">Name (A-Z)</option>
-                  <option value="rating">Rating</option>
-                </select>
-              </div>
+              <button class="vod-filter-btn" id="movies-search-btn" tabindex="0">
+                <i data-lucide="search"></i> <span id="movies-search-label">Search</span>
+              </button>
+              <button class="vod-filter-btn" id="movies-sort-btn" tabindex="0">
+                <i data-lucide="arrow-up-down"></i> <span id="movies-sort-label">Recently Added</span>
+              </button>
             </div>
           </div>
 
@@ -500,17 +497,12 @@
             <div class="vod-view-header">
               <h2>TV Series Catalog</h2>
               <div class="vod-filters">
-                <div class="vod-search-box">
-                  <i data-lucide="search"></i>
-                  <input type="text" id="series-search" placeholder="Search series...">
-                </div>
-                <div class="vod-sort-select">
-                  <select id="series-sort">
-                    <option value="added">Recently Added</option>
-                    <option value="name">Name (A-Z)</option>
-                    <option value="rating">Rating</option>
-                  </select>
-                </div>
+                <button class="vod-filter-btn" id="series-search-btn" tabindex="0">
+                  <i data-lucide="search"></i> <span id="series-search-label">Search</span>
+                </button>
+                <button class="vod-filter-btn" id="series-sort-btn" tabindex="0">
+                  <i data-lucide="arrow-up-down"></i> <span id="series-sort-label">Recently Added</span>
+                </button>
               </div>
             </div>
 

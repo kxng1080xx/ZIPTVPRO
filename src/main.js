@@ -23,6 +23,7 @@ import { EPGGrid } from './components/epg.js';
 import { navigation } from './components/tv-navigation.js';
 import { initCastUI, setCastContext } from './components/cast.js';
 import { checkForUpdate, downloadApp, startPeriodicUpdateCheck } from './components/update-check.js';
+import { openSearchKeyboard, openSortDropdown } from './components/tv-search.js';
 
 // Supabase Configuration for Remote Playlist Pairing
 // Swap these with your own Supabase project credentials
@@ -573,7 +574,8 @@ async function loadMoviesGrid() {
       categoryId: state.movies.categoryId,
       page: state.movies.page,
       limit: state.movies.limit,
-      search: state.movies.search
+      search: state.movies.search,
+      sort: state.movies.sort
     });
 
     renderMoviesCatalog(res.items);
@@ -638,7 +640,8 @@ async function loadSeriesGrid() {
       categoryId: state.series.categoryId,
       page: state.series.page,
       limit: state.series.limit,
-      search: state.series.search
+      search: state.series.search,
+      sort: state.series.sort
     });
 
     renderSeriesCatalog(res.items);
@@ -1463,6 +1466,56 @@ function parseM3uUrl(urlStr) {
   return null;
 }
 
+// Sort options shared by Movies + Series.
+const VOD_SORT_OPTIONS = [
+  { value: 'added', label: 'Recently Added' },
+  { value: 'name', label: 'Name (A-Z)' },
+  { value: 'rating', label: 'Rating' }
+];
+const VOD_SORT_LABEL = { added: 'Recently Added', name: 'Name (A-Z)', rating: 'Rating' };
+
+// Wire the TV-navigable Search + Sort buttons for a VOD catalog (movies/series).
+function wireVodFilters(kind, reload) {
+  const st = kind === 'movies' ? state.movies : state.series;
+  const searchBtn = document.getElementById(`${kind}-search-btn`);
+  const searchLabel = document.getElementById(`${kind}-search-label`);
+  const sortBtn = document.getElementById(`${kind}-sort-btn`);
+  const sortLabel = document.getElementById(`${kind}-sort-label`);
+
+  if (sortLabel) sortLabel.textContent = VOD_SORT_LABEL[st.sort] || 'Sort';
+
+  if (searchBtn) {
+    searchBtn.addEventListener('click', () => {
+      openSearchKeyboard({
+        title: kind === 'movies' ? 'Search Movies' : 'Search Series',
+        initial: st.search || '',
+        onChange: (q) => { st.search = q; st.page = 1; reload(); },
+        onClose: (q) => {
+          if (searchLabel) searchLabel.textContent = q ? `“${q}”` : 'Search';
+          navigation.setFocus('grid', searchBtn);
+        }
+      });
+    });
+  }
+
+  if (sortBtn) {
+    sortBtn.addEventListener('click', () => {
+      openSortDropdown({
+        title: 'Sort by',
+        options: VOD_SORT_OPTIONS,
+        current: st.sort,
+        onSelect: (v) => {
+          st.sort = v;
+          st.page = 1;
+          if (sortLabel) sortLabel.textContent = VOD_SORT_LABEL[v] || 'Sort';
+          reload();
+          navigation.setFocus('grid', sortBtn);
+        }
+      });
+    });
+  }
+}
+
 function bindGlobalEvents() {
   // Remote manual login button handler
   document.getElementById('remote-manual-login-btn')?.addEventListener('click', () => {
@@ -1791,28 +1844,49 @@ function bindGlobalEvents() {
     });
   }
 
-  // Catalog Searches
-  const movieSearchInput = document.getElementById('movies-search');
-  let movieSearchTimeout;
-  movieSearchInput.addEventListener('input', (e) => {
-    clearTimeout(movieSearchTimeout);
-    movieSearchTimeout = setTimeout(() => {
-      state.movies.search = e.target.value;
-      state.movies.page = 1;
-      loadMoviesGrid();
-    }, 450);
-  });
+  // TV-navigable Search + Sort (on-screen keyboard / dropdown — no input fields)
+  wireVodFilters('movies', loadMoviesGrid);
+  wireVodFilters('series', loadSeriesGrid);
 
-  const seriesSearchInput = document.getElementById('series-search');
-  let seriesSearchTimeout;
-  seriesSearchInput.addEventListener('input', (e) => {
-    clearTimeout(seriesSearchTimeout);
-    seriesSearchTimeout = setTimeout(() => {
-      state.series.search = e.target.value;
-      state.series.page = 1;
-      loadSeriesGrid();
-    }, 450);
-  });
+  // Live channel filter button → on-screen keyboard
+  const liveFilterBtn = document.getElementById('epg-channels-filter-btn');
+  const liveFilterLabel = document.getElementById('epg-channels-filter-label');
+  if (liveFilterBtn) {
+    liveFilterBtn.addEventListener('click', () => {
+      openSearchKeyboard({
+        title: 'Filter Channels',
+        initial: (epgGridInstance && epgGridInstance.channelFilterQuery) || '',
+        onChange: (q) => { if (epgGridInstance) epgGridInstance.setChannelFilter(q); },
+        onClose: (q) => {
+          if (liveFilterLabel) liveFilterLabel.textContent = q ? `“${q}”` : 'Filter channels';
+          navigation.setFocus('channels', liveFilterBtn);
+        }
+      });
+    });
+  }
+
+  // Live channel sort button → custom dropdown
+  const liveSortBtn = document.getElementById('epg-channels-sort-btn');
+  const liveSortLabel = document.getElementById('epg-channels-sort-label');
+  if (liveSortBtn) {
+    const LIVE_SORT_OPTIONS = [
+      { value: 'added', label: 'Default Order' },
+      { value: 'name', label: 'Name (A-Z)' }
+    ];
+    const LIVE_SORT_LABEL = { added: 'Default Order', name: 'Name (A-Z)' };
+    liveSortBtn.addEventListener('click', () => {
+      openSortDropdown({
+        title: 'Sort Channels',
+        options: LIVE_SORT_OPTIONS,
+        current: (epgGridInstance && epgGridInstance.channelsSort) || 'added',
+        onSelect: (v) => {
+          if (epgGridInstance) epgGridInstance.setChannelsSort(v);
+          if (liveSortLabel) liveSortLabel.textContent = LIVE_SORT_LABEL[v] || 'Default Order';
+          navigation.setFocus('channels', liveSortBtn);
+        }
+      });
+    });
+  }
 
   // TV Series Playback Back button
   document.getElementById('series-back-btn')?.addEventListener('click', () => {

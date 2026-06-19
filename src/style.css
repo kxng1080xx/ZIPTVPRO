@@ -4797,3 +4797,116 @@ body.epg-fullscreen-active .epg-section-container {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
+
+/* ==========================================================================
+   TV-NAVIGABLE SEARCH + SORT (on-screen keyboard / dropdown)
+   ========================================================================== */
+.vod-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color, #1e2a3e);
+  background: var(--bg-surface, #131c2c);
+  color: var(--text-primary, #eef);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  max-width: 260px;
+}
+.vod-filter-btn i { width: 16px; height: 16px; }
+.vod-filter-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vod-filter-btn:hover { background: var(--bg-surface-hover, #1a2436); }
+
+/* Shared focus ring for the self-contained overlays (keyboard + sort). */
+.tvk-focused {
+  outline: 4px solid #00f3ff !important;
+  outline-offset: -1px;
+  background-color: var(--bg-surface-hover, #1a2436) !important;
+  box-shadow: 0 0 10px rgba(0, 243, 255, 0.5) !important;
+  z-index: 1 !important;
+}
+
+/* --- On-screen keyboard --- */
+.tvk-overlay, .tvsort-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 6500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(3px);
+}
+.tvk-modal {
+  width: min(680px, 94vw);
+  background: var(--bg-panel, #0d1320);
+  border: 1px solid var(--border-color, #1e2a3e);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  padding: 18px;
+}
+.tvk-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.tvk-title { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1.05rem; }
+.tvk-title i { width: 18px; height: 18px; color: #00f3ff; }
+.tvk-close { background: transparent; border: none; color: var(--text-muted, #8aa); cursor: pointer; padding: 4px; }
+.tvk-query {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 8px 14px;
+  margin-bottom: 14px;
+  background: var(--bg-surface, #131c2c);
+  border: 1px solid var(--border-color, #1e2a3e);
+  border-radius: 10px;
+  font-size: 1.15rem;
+  letter-spacing: 0.02em;
+}
+.tvk-caret { color: #00f3ff; animation: tvk-blink 1s step-end infinite; margin-left: 1px; }
+@keyframes tvk-blink { 50% { opacity: 0; } }
+.tvk-keys { display: flex; flex-direction: column; gap: 8px; }
+.tvk-row { display: flex; gap: 8px; justify-content: center; }
+.tvk-key {
+  min-width: 52px;
+  height: 52px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color, #1e2a3e);
+  background: var(--bg-surface, #131c2c);
+  color: var(--text-primary, #eef);
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.tvk-key-special { font-size: 0.85rem; font-weight: 600; min-width: 80px; }
+.tvk-key-done { background: #00f3ff; color: #00131a; border-color: #00f3ff; }
+.tvk-key-space { min-width: 200px; }
+.tvk-hint { text-align: center; color: var(--text-muted, #7d8ba3); font-size: 0.78rem; margin-top: 14px; }
+
+/* --- Sort dropdown --- */
+.tvsort-modal {
+  width: min(320px, 90vw);
+  background: var(--bg-panel, #0d1320);
+  border: 1px solid var(--border-color, #1e2a3e);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+.tvsort-title { padding: 14px 18px; font-weight: 700; border-bottom: 1px solid var(--border-color, #1e2a3e); }
+.tvsort-list { display: flex; flex-direction: column; padding: 8px; gap: 4px; }
+.tvsort-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--bg-surface, #131c2c);
+  color: var(--text-primary, #eef);
+  font-size: 0.95rem;
+  cursor: pointer;
+  text-align: left;
+}
+.tvsort-item i { width: 16px; height: 16px; color: #00f3ff; }
+.tvsort-item.selected { border-color: rgba(0, 243, 255, 0.4); }

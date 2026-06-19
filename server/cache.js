@@ -317,7 +317,7 @@ export function getCategories(type) {
   })).filter(cat => cat.count > 0 || cat.category_id === 'all'); // Keep empty categories out unless 'all'
 }
 
-export function getStreams(type, categoryId, page = 1, limit = 50, search = '') {
+export function getStreams(type, categoryId, page = 1, limit = 50, search = '', sort = 'added') {
   const normType = type === 'movies' ? 'movie' : type;
   let streams = [];
   if (normType === 'live') streams = cache.live_streams || [];
@@ -348,6 +348,13 @@ export function getStreams(type, categoryId, page = 1, limit = 50, search = '') 
       const name = (s.name || s.title || '').toLowerCase();
       return name.includes(query);
     });
+  }
+
+  // Sort (before pagination)
+  if (sort === 'name') {
+    filtered.sort((a, b) => (a.name || a.title || '').localeCompare(b.name || b.title || '', undefined, { sensitivity: 'base' }));
+  } else if (sort === 'rating') {
+    filtered.sort((a, b) => (parseFloat(b.rating) || 0) - (parseFloat(a.rating) || 0));
   }
 
   // Pagination

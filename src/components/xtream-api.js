@@ -661,7 +661,7 @@ export async function getCategories(type) {
   }
 }
 
-export async function getStreams({ type, categoryId, page = 1, limit = 50, search = '' }) {
+export async function getStreams({ type, categoryId, page = 1, limit = 50, search = '', sort = 'added' }) {
   const normType = type === 'movies' ? 'movie' : type;
 
   if (isServerMode) {
@@ -670,7 +670,8 @@ export async function getStreams({ type, categoryId, page = 1, limit = 50, searc
       category_id: categoryId,
       page: String(page),
       limit: String(limit),
-      search
+      search,
+      sort
     });
     const response = await fetch(`/api/streams?${params.toString()}`);
     if (!response.ok) throw new Error('Failed to fetch streams');
@@ -724,6 +725,15 @@ export async function getStreams({ type, categoryId, page = 1, limit = 50, searc
         const name = (item.name || '').toLowerCase();
         return name.includes(query);
       });
+    }
+
+    // Sort (before pagination). 'added' keeps the provider's default order
+    // (which is recency for most panels); recently_viewed/favorites keep their
+    // own order under 'added'.
+    if (sort === 'name') {
+      items.sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
+    } else if (sort === 'rating') {
+      items.sort((a, b) => (parseFloat(b.rating) || 0) - (parseFloat(a.rating) || 0));
     }
 
     const total = items.length;
