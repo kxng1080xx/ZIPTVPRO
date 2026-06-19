@@ -17,9 +17,23 @@ const pkgPath = join(root, 'package.json');
 const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
 
 const parts = pkg.version.split('.').map(Number);
-const newMajor = parts[0];
-const newMinor = parts[1] + 1;
-const newVersion = `${newMajor}.${newMinor}.0`;
+let newMajor = parts[0];
+let newMinor = parts[1];
+let newPatch = parts[2];
+
+if (process.argv.includes('--major')) {
+  newMajor += 1;
+  newMinor = 0;
+  newPatch = 0;
+} else if (process.argv.includes('--minor')) {
+  newMinor += 1;
+  newPatch = 0;
+} else {
+  // Default to patch bump (+0.0.1) for bug fixes
+  newPatch += 1;
+}
+
+const newVersion = `${newMajor}.${newMinor}.${newPatch}`;
 
 pkg.version = newVersion;
 writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
@@ -27,8 +41,9 @@ writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
 // --- 2. android/app/build.gradle ------------------------------------------
 const gradlePath = join(root, 'android', 'app', 'build.gradle');
 let gradle = readFileSync(gradlePath, 'utf8');
-gradle = gradle.replace(/versionName\s+"[^"]*"/, `versionName "${newMajor}.${newMinor}"`);
+gradle = gradle.replace(/versionName\s+"[^"]*"/, `versionName "${newVersion}"`);
 gradle = gradle.replace(/versionCode\s+(\d+)/, (_, code) => `versionCode ${Number(code) + 1}`);
 writeFileSync(gradlePath, gradle);
 
-console.log(`Version bumped -> ${newVersion} (android versionName "${newMajor}.${newMinor}")`);
+console.log(`Version bumped -> ${newVersion} (android versionName "${newVersion}")`);
+

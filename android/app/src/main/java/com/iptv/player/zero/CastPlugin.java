@@ -755,6 +755,20 @@ public class CastPlugin extends Plugin {
             try { if (serverSocket != null) serverSocket.close(); } catch (Exception e) {}
         }
         
+        private String guessMimeType(String url, String defaultMime) {
+            if (url == null) return defaultMime;
+            String lower = url.toLowerCase();
+            int q = lower.indexOf('?');
+            String path = (q != -1) ? lower.substring(0, q) : lower;
+            if (path.endsWith(".m3u8")) return "application/x-mpegurl";
+            if (path.endsWith(".ts")) return "video/mp2t";
+            if (path.endsWith(".mp4")) return "video/mp4";
+            if (path.endsWith(".mkv")) return "video/x-matroska";
+            if (path.endsWith(".avi")) return "video/avi";
+            if (path.endsWith(".mov")) return "video/quicktime";
+            return defaultMime;
+        }
+
         private void handleClient(Socket client) {
             try {
                 BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream(), "UTF-8"));
@@ -808,42 +822,54 @@ public class CastPlugin extends Plugin {
                 }
                 
                 String FLAGS = "ED100000000000000000000000000000";
-                String mime = (contentTypeParam != null) ? contentTypeParam : (isLive ? "video/mpeg" : "video/mp4");
+                String mime = (contentTypeParam != null) ? contentTypeParam : guessMimeType(targetUrl, (isLive ? "video/mpeg" : "video/mp4"));
                 boolean isM3u8 = mime.contains("mpegurl") || mime.contains("mpegURL") || targetUrl.contains(".m3u8");
                 boolean isMpegts = (mime.contains("mpeg") || mime.contains("mp2t")) && !isM3u8;
-                String dlnaFeatures = isMpegts 
-                    ? "DLNA.ORG_PN=MPEG_TS_NA_ISO;DLNA.ORG_OP=00;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=" + FLAGS 
-                    : "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=" + FLAGS;
+                
+                String dlnaFeatures;
+                if (isMpegts) {
+                    dlnaFeatures = "DLNA.ORG_PN=MPEG_TS_NA_ISO;DLNA.ORG_OP=" + (isLive ? "00" : "01") + ";DLNA.ORG_CI=0;DLNA.ORG_FLAGS=" + FLAGS;
+                } else {
+                    dlnaFeatures = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=" + FLAGS;
+                }
+                
+                boolean isMainRequest = (contentTypeParam != null) || isLive || isM3u8;
                 
                 if (method.equalsIgnoreCase("HEAD")) {
-                    OutputStream out = client.getOutputStream();
-                    PrintWriter writer = new PrintWriter(new OutputStreamWriter(out, "UTF-8"));
-                    writer.print("HTTP/1.1 200 OK\r\n");
-                    writer.print("Content-Type: " + mime + "\r\n");
-                    writer.print("transferMode.dlna.org: Streaming\r\n");
-                    writer.print("contentFeatures.dlna.org: " + dlnaFeatures + "\r\n");
-                    
-                    if (isLive) {
-                        writer.print("Accept-Ranges: none\r\n");
-                    } else {
-                        writer.print("Accept-Ranges: bytes\r\n");
-                        long len = fetchUpstreamLength(targetUrl);
-                        if (len != -1) {
-                            writer.print("Content-Length: " + len + "\r\n");
+                    if (isMainRequest) {
+                        OutputStream out = client.getOutputStream();
+                        PrintWriter writer = new PrintWriter(new OutputStreamWriter(out, "UTF-8"));
+                        writer.print("HTTP/1.1 200 OK\r\n");
+                        writer.print("Content-Type: " + mime + "\r\n");
+                        writer.print("transferMode.dlna.org: Streaming\r\n");
+                        writer.print("contentFeatures.dlna.org: " + dlnaFeatures + "\r\n");
+                        
+                        if (isLive) {
+                            writer.print("Accept-Ranges: none\r\n");
+                        } else {
+                            writer.print("Accept-Ranges: bytes\r\n");
+                            long len = fetchUpstreamLength(targetUrl);
+                            if (len != -1) {
+                                writer.print("Content-Length: " + len + "\r\n");
+                            }
                         }
+                        
+                        writer.print("Connection: close\r\n\r\n");
+                        writer.flush();
+                        client.close();
+                        return;
+                    } else {
+                        // Segment/chunk HEAD request: route to proxyGet with isHead = true
+                        proxyGet(client, targetUrl, mime, dlnaFeatures, requestHeaders, true);
+                        return;
                     }
-                    
-                    writer.print("Connection: close\r\n\r\n");
-                    writer.flush();
-                    client.close();
-                    return;
                 }
                 
                 if (method.equalsIgnoreCase("GET")) {
                     if (isLive && !isM3u8) {
                         proxyLiveGet(client, targetUrl, mime, dlnaFeatures);
                     } else {
-                        proxyGet(client, targetUrl, mime, dlnaFeatures, requestHeaders);
+                        proxyGet(client, targetUrl, mime, dlnaFeatures, requestHeaders, false);
                     }
                     return;
                 }
@@ -983,7 +1009,7 @@ public class CastPlugin extends Plugin {
             }
         }
         
-        private void proxyGet(Socket client, String targetUrl, String mime, String dlnaFeatures, Map<String, String> requestHeaders) {
+        private void proxyGet(Socket client, String targetUrl, String mime, String dlnaFeatures, Map<String, String> requestHeaders, boolean isHead) {
             HttpURLConnection conn = null;
             try {
                 boolean isM3u8 = mime.contains("mpegurl") || mime.contains("mpegURL") || targetUrl.contains(".m3u8");
@@ -995,13 +1021,34 @@ public class CastPlugin extends Plugin {
                 OutputStream out = client.getOutputStream();
                 PrintWriter writer = new PrintWriter(new OutputStreamWriter(out, "UTF-8"));
                 
+                if (responseCode < 200 || responseCode >= 300) {
+                    writer.print("HTTP/1.1 " + responseCode + " Error\r\n");
+                    writer.print("Content-Type: text/plain\r\n");
+                    writer.print("Connection: close\r\n\r\n");
+                    writer.print("Upstream error " + responseCode);
+                    writer.flush();
+                    client.close();
+                    return;
+                }
+                
                 if (isM3u8) {
+                    if (isHead) {
+                        writer.print("HTTP/1.1 200 OK\r\n");
+                        writer.print("Content-Type: " + mime + "\r\n");
+                        writer.print("Access-Control-Allow-Origin: *\r\n");
+                        writer.print("Connection: close\r\n\r\n");
+                        writer.flush();
+                        client.close();
+                        return;
+                    }
+                    
                     InputStream in = conn.getInputStream();
                     BufferedReader reader = new BufferedReader(new InputStreamReader(in, "UTF-8"));
                     StringBuilder playlist = new StringBuilder();
                     String line;
                     String phoneIp = getLocalIpAddress();
                     int localPort = getPort();
+                    String finalPlaylistUrl = conn.getURL().toString();
                     
                     while ((line = reader.readLine()) != null) {
                         String trimmed = line.trim();
@@ -1010,7 +1057,7 @@ public class CastPlugin extends Plugin {
                         } else {
                             String absoluteUrl;
                             try {
-                                absoluteUrl = new java.net.URL(new java.net.URL(targetUrl), trimmed).toString();
+                                absoluteUrl = new java.net.URL(new java.net.URL(finalPlaylistUrl), trimmed).toString();
                             } catch (Exception e) {
                                 absoluteUrl = trimmed;
                             }
@@ -1054,8 +1101,19 @@ public class CastPlugin extends Plugin {
                 
                 writer.print("transferMode.dlna.org: Streaming\r\n");
                 writer.print("contentFeatures.dlna.org: " + dlnaFeatures + "\r\n");
+                String acceptRanges = conn.getHeaderField("Accept-Ranges");
+                if (acceptRanges != null) {
+                    writer.print("Accept-Ranges: " + acceptRanges + "\r\n");
+                } else {
+                    writer.print("Accept-Ranges: bytes\r\n");
+                }
                 writer.print("Connection: close\r\n\r\n");
                 writer.flush();
+                
+                if (isHead) {
+                    client.close();
+                    return;
+                }
                 
                 InputStream in = conn.getInputStream();
                 byte[] buf = new byte[16384];
@@ -1065,7 +1123,7 @@ public class CastPlugin extends Plugin {
                 }
                 out.flush();
             } catch (Exception e) {
-                // client disconnected
+                e.printStackTrace();
             } finally {
                 if (conn != null) conn.disconnect();
                 try { client.close(); } catch (Exception e) {}
