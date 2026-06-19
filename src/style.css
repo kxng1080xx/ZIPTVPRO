@@ -3441,14 +3441,18 @@ body.vod-mode .now-next-bar {
   }
 
   /* Details dialog scale */
-  .vod-modal-card {
+  .vod-modal-content {
     width: 92%;
     max-height: 85vh;
+    display: flex;
+    flex-direction: column;
   }
   
   .vod-modal-body {
     grid-template-columns: 1fr;
-    max-height: 60vh;
+    max-height: 68vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
   
   .vod-modal-left {
@@ -3458,6 +3462,7 @@ body.vod-mode .now-next-bar {
     flex-direction: row;
     justify-content: flex-start;
     gap: 16px;
+    flex-shrink: 0;
   }
   
   .vod-details-poster {
@@ -3473,6 +3478,29 @@ body.vod-mode .now-next-bar {
   
   .vod-modal-right {
     padding: 16px;
+    overflow: visible;
+    max-height: none;
+  }
+
+  /* Series playback container (scrolling and detail card overrides on mobile) */
+  .series-playback-container {
+    height: 100%;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .series-details-panel {
+    display: none !important;
+  }
+
+  .series-bottom-section {
+    overflow: visible !important;
+    flex-shrink: 0;
+  }
+
+  .series-episodes-list {
+    max-height: none !important;
+    overflow-y: visible !important;
   }
 
   /* Settings Modal overrides */
@@ -4924,3 +4952,10 @@ body.epg-fullscreen-active .epg-section-container {
 }
 .tvsort-item i { width: 16px; height: 16px; color: #00f3ff; }
 .tvsort-item.selected { border-color: rgba(0, 243, 255, 0.4); }
+
+/* Hide VOD series details panel in portrait orientation on all devices */
+@media (orientation: portrait) {
+  .series-details-panel {
+    display: none !important;
+  }
+}
