@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage } = require('electron');
 const net = require('net');
 const path = require('path');
 const { initCast } = require('./electron/cast-manager.cjs');
@@ -11,6 +11,8 @@ ipcMain.handle('open-external', (_e, url) => {
 });
 
 let mainWindow;
+let tray = null;
+let isQuitting = false;
 let serverPort = 0;
 let castInitialized = false;
 
@@ -33,10 +35,7 @@ if (!gotLock) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
+    showMainWindow();
   });
 
   app.on('ready', async () => {
@@ -48,6 +47,13 @@ if (!gotLock) {
     if (process.platform !== 'darwin') {
       app.quit();
     }
+  });
+
+  // Distinguish a real quit (tray "Quit", app.quit()) from the window being
+  // closed/minimized to the tray, so the close/minimize handlers know whether
+  // to hide the window or let it be destroyed.
+  app.on('before-quit', () => {
+    isQuitting = true;
   });
 
   app.on('activate', () => {
@@ -123,11 +129,72 @@ function createWindow() {
     }
   }
 
+  createTray();
+
+  // Minimize to tray: hide the window instead of leaving a taskbar button.
+  mainWindow.on('minimize', (e) => {
+    e.preventDefault();
+    mainWindow.hide();
+  });
+
+  // Closing the window hides it to the tray rather than quitting. The app only
+  // truly exits via the tray's "Quit" item (or app.quit), which sets isQuitting.
+  mainWindow.on('close', (e) => {
+    if (!isQuitting) {
+      e.preventDefault();
+      mainWindow.hide();
+    }
+  });
+
   loadWhenServerReady();
 
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+}
+
+// Show (and focus) the main window, restoring it if it was minimized/hidden.
+function showMainWindow() {
+  if (!mainWindow) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+// Create the system-tray icon and its context menu. Double-clicking the tray
+// icon restores the window; the menu offers explicit Show/Quit actions.
+function createTray() {
+  if (tray) return;
+  const iconPath = path.join(__dirname, 'assets', 'icon.png');
+  let trayImage = nativeImage.createFromPath(iconPath);
+  if (!trayImage.isEmpty()) {
+    trayImage = trayImage.resize({ width: 16, height: 16 });
+  }
+  try {
+    tray = new Tray(trayImage.isEmpty() ? iconPath : trayImage);
+  } catch (err) {
+    console.error('[Electron] Tray init failed:', err);
+    return;
+  }
+
+  const contextMenu = Menu.buildFromTemplate([
+    { label: 'Show ZIPTV Pro', click: showMainWindow },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      }
+    }
+  ]);
+
+  tray.setToolTip('ZIPTV Pro');
+  tray.setContextMenu(contextMenu);
+  tray.on('double-click', showMainWindow);
 }
 
 // Poll the local server until it accepts connections, then load it. More reliable

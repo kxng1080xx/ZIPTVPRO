@@ -1,7 +1,7 @@
 {
   "name": "iptv-player-zero",
   "productName": "ZIPTV Pro",
-  "version": "3.22.18",
+  "version": "3.23.0",
   "description": "Premium IPTV Player - ZIPTV Pro",
   "main": "main.electron.cjs",
   "type": "module",
@@ -45,6 +45,7 @@
       "dist/**/*",
       "server/**/*",
       "electron/**/*",
+      "assets/**/*",
       "main.electron.cjs",
       "package.json"
     ],
