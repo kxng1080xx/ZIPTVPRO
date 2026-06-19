@@ -391,6 +391,8 @@ export class VideoPlayer {
     this._retryCount = 0;
     this._streamUrl = url;
     this._streamIsVod = isVod;
+    this._triedMpegts = false;
+    this._triedHls = false;
     // Bumped on every new stream so a pending live reconnect for an old
     // channel cancels itself once the user has switched away.
     this._streamGen = (this._streamGen || 0) + 1;
@@ -490,6 +492,146 @@ export class VideoPlayer {
     }, 200);
   }
 
+  _playAsHls(url, isVod) {
+    if (Hls.isSupported()) {
+      // Live wants a short, low-latency buffer; VOD wants normal buffering so
+      // it can seek and won't stall.
+      this.hls = new Hls({
+        // --- Memory limits for low-RAM devices ---
+        // Keep the forward buffer short and cap total RAM used by media data.
+        maxBufferLength:    isVod ? 15 : 8,    // seconds to buffer ahead
+        maxMaxBufferLength: isVod ? 30 : 8,    // hard ceiling
+        maxBufferSize:      20 * 1000 * 1000,  // 20 MB cap
+        backBufferLength:   5,                 // free segments >5 s behind playhead
+        enableWorker: true,
+        lowLatencyMode: !isVod
+      });
+      this.hls.loadSource(url);
+      this.hls.attachMedia(this.video);
+
+      this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        this.video.play().catch(err => console.log('Playback auto-play blocked:', err));
+        this.hideSpinner();
+      });
+
+      this.hls.on(Hls.Events.ERROR, (event, data) => {
+        if (!data.fatal) return;
+
+        const httpCode = data.response && data.response.code;
+        const isManifestFailure =
+          data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR ||
+          data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT ||
+          data.details === Hls.ErrorDetails.MANIFEST_PARSING_ERROR;
+
+        if (isManifestFailure || httpCode === 403 || httpCode === 401 || httpCode === 404) {
+          console.error('HLS manifest could not be loaded:', data);
+          this.destroyHls();
+          
+          if (isVod && !this._triedMpegts) {
+            this._triedMpegts = true;
+            console.warn('HLS load failed — falling back to mpegts.js for VOD...');
+            this._playAsMpegTs(url, isVod);
+          } else {
+            this.showError(this.describeStreamError(httpCode));
+          }
+          return;
+        }
+
+        switch (data.type) {
+          case Hls.ErrorTypes.NETWORK_ERROR:
+            console.warn('Fatal HLS network error, scheduling retry…', data);
+            this.destroyHls();
+            this._retryStream();
+            break;
+          case Hls.ErrorTypes.MEDIA_ERROR:
+            console.warn('Fatal media error in HLS, attempting recovery...');
+            this.hls.recoverMediaError();
+            break;
+          default:
+            console.error('Fatal HLS error, stopping stream:', data);
+            this.destroyHls();
+            this.showError('This stream could not be played.');
+            break;
+        }
+      });
+    } else if (this.video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Native HLS (Safari / Capacitor WebView)
+      this.video.src = url;
+      this.video.addEventListener('loadedmetadata', () => {
+        this.video.play().catch(err => console.log('Playback blocked:', err));
+        this.hideSpinner();
+      });
+      // Retry on native video error
+      this.video.addEventListener('error', () => {
+        console.warn('Native HLS video error, scheduling retry…');
+        this._retryStream();
+      }, { once: true });
+    } else {
+      this.hideSpinner();
+      alert('Your browser does not support HLS streaming.');
+    }
+  }
+
+  _playAsMpegTs(url, isVod) {
+    if (mpegts.getFeatureList().mseLivePlayback) {
+      this.mpegtsPlayer = mpegts.createPlayer({
+        type: 'mpegts',
+        isLive: !isVod,
+        url: url
+      }, {
+        enableStashBuffer:              isVod,
+        stashInitialSize:               128,
+        autoCleanupSourceBuffer:        true,
+        autoCleanupMinBackwardDuration: 10,
+        autoCleanupMaxBackwardDuration: 20,
+      });
+      this.mpegtsPlayer.attachMediaElement(this.video);
+      this.mpegtsPlayer.load();
+      this.mpegtsPlayer.play().catch(err => console.log('MPEG-TS autoplay blocked:', err));
+
+      this.mpegtsPlayer.on(mpegts.Events.ERROR, (type, detail, info) => {
+        console.error('MPEG-TS player error:', type, detail, info);
+        this.hideSpinner();
+        
+        if (isVod && !this._triedHls) {
+          this._triedHls = true;
+          console.warn('mpegts.js failed — falling back to hls.js for VOD...');
+          this.destroyMpegts();
+          this._playAsHls(url, isVod);
+        } else if (this._retryCount < 4) {
+          console.warn('MPEG-TS error — scheduling retry…');
+          this.destroyMpegts();
+          this._retryStream();
+        } else {
+          if (!isVod && this.onFatalError) this.onFatalError();
+          else this.showError('This stream could not be played.');
+        }
+      });
+
+      if (!isVod) {
+        this.mpegtsPlayer.on(mpegts.Events.LOADING_COMPLETE, () => {
+          console.warn('Live stream ended (provider closed connection) — reconnecting…');
+          this._reconnectLive();
+        });
+      }
+
+      this.video.onloadedmetadata = () => {
+        this.hideSpinner();
+      };
+    } else {
+      // Fallback direct source assignment
+      this.video.src = url;
+      this.video.load();
+      this.video.play()
+        .then(() => this.hideSpinner())
+        .catch(err => {
+          console.error('Native MPEG-TS direct play failed:', err);
+          this.hideSpinner();
+          alert('Your browser does not support MPEG-TS stream playback.');
+        });
+    }
+  }
+
   // Internal: set up the HLS / MPEG-TS / native player for a given URL.
   // Called by loadStream(), _retryStream() and _reconnectLive().
   _startPlayback(url, isVod) {
@@ -506,158 +648,58 @@ export class VideoPlayer {
     }
 
     if (isHls) {
-      if (Hls.isSupported()) {
-        // Live wants a short, low-latency buffer; VOD wants normal buffering so
-        // it can seek and won't stall.
-        this.hls = new Hls({
-          // --- Memory limits for low-RAM devices ---
-          // Keep the forward buffer short and cap total RAM used by media data.
-          // (Original known-good config — reverted from the perf experiment.)
-          maxBufferLength:    isVod ? 15 : 8,    // seconds to buffer ahead
-          maxMaxBufferLength: isVod ? 30 : 8,    // hard ceiling
-          maxBufferSize:      20 * 1000 * 1000,  // 20 MB cap
-          backBufferLength:   5,                 // free segments >5 s behind playhead
-          enableWorker: true,
-          lowLatencyMode: !isVod
-        });
-        this.hls.loadSource(url);
-        this.hls.attachMedia(this.video);
-
-        this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          this.video.play().catch(err => console.log('Playback auto-play blocked:', err));
-          this.hideSpinner();
-        });
-
-        this.hls.on(Hls.Events.ERROR, (event, data) => {
-          if (!data.fatal) return;
-
-          const httpCode = data.response && data.response.code;
-          // If we can't even load/parse the manifest, retrying won't help —
-          // this is almost always the provider rejecting the request (403),
-          // a bad URL (404), or auth (401). Surface it instead of spinning.
-          const isManifestFailure =
-            data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR ||
-            data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT ||
-            data.details === Hls.ErrorDetails.MANIFEST_PARSING_ERROR;
-
-          if (isManifestFailure || httpCode === 403 || httpCode === 401 || httpCode === 404) {
-            console.error('HLS manifest could not be loaded:', data);
-            this.destroyHls();
-            this.showError(this.describeStreamError(httpCode));
-            return;
-          }
-
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              // Fully tear down and reload the source — this handles network
-              // switches and brief connectivity drops better than hls.startLoad().
-              console.warn('Fatal HLS network error, scheduling retry…', data);
-              this.destroyHls();
-              this._retryStream();
-              break;
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              console.warn('Fatal media error in HLS, attempting recovery...');
-              this.hls.recoverMediaError();
-              break;
-            default:
-              console.error('Fatal HLS error, stopping stream:', data);
-              this.destroyHls();
-              this.showError('This stream could not be played.');
-              break;
-          }
-        });
-      } else if (this.video.canPlayType('application/vnd.apple.mpegurl')) {
-        // Native HLS (Safari / Capacitor WebView)
-        this.video.src = url;
-        this.video.addEventListener('loadedmetadata', () => {
-          this.video.play().catch(err => console.log('Playback blocked:', err));
-          this.hideSpinner();
-        });
-        // Retry on native video error
-        this.video.addEventListener('error', () => {
-          console.warn('Native HLS video error, scheduling retry…');
-          this._retryStream();
-        }, { once: true });
-      } else {
-        this.hideSpinner();
-        alert('Your browser does not support HLS streaming.');
-      }
+      this._triedHls = true;
+      this._playAsHls(url, isVod);
     } else if (isMpegTs) {
-      // MPEG-TS Playback via mpegts.js (low latency stream)
-      if (mpegts.getFeatureList().mseLivePlayback) {
-        this.mpegtsPlayer = mpegts.createPlayer({
-          type: 'mpegts',
-          isLive: !isVod,
-          url: url
-        }, {
-          // enableWorker stays OFF (default): mpegts.js's worker fails under the
-          // Vite bundle and makes every .ts stream error → "Retrying…" before it
-          // plays. Main-thread transmux is the proven-stable path. This block is
-          // the original, known-good config — the perf experiment around it
-          // (worker/stash/latency-chasing) caused intermittent playback failures.
-          enableStashBuffer:              isVod,   // off for live (low latency), on for VOD
-          stashInitialSize:               128,
-          // Auto-evict old SourceBuffer data so it never grows unbounded (OOM).
-          autoCleanupSourceBuffer:        true,
-          autoCleanupMinBackwardDuration: 10,
-          autoCleanupMaxBackwardDuration: 20,
-        });
-        this.mpegtsPlayer.attachMediaElement(this.video);
-        this.mpegtsPlayer.load();
-        this.mpegtsPlayer.play().catch(err => console.log('MPEG-TS autoplay blocked:', err));
-
-        this.mpegtsPlayer.on(mpegts.Events.ERROR, (type, detail, info) => {
-          console.error('MPEG-TS player error:', type, detail, info);
-          this.hideSpinner();
-          if (this._retryCount < 4) {
-            // Still have retries — tear down and reconnect.
-            console.warn('MPEG-TS error — scheduling retry…');
-            this.destroyMpegts();
-            this._retryStream();
-          } else {
-            // Retries exhausted — if this is a live .ts, let the app try the m3u8 fallback.
-            if (!isVod && this.onFatalError) this.onFatalError();
-          }
-        });
-
-        // Live streams: many Xtream providers close the upstream .ts connection
-        // after a short window (~60s). mpegts.js reports that as a clean end of
-        // stream (LOADING_COMPLETE), NOT an error, so the ERROR handler above
-        // never fires and playback just stops once the buffer drains ("looks
-        // paused"). Reconnect seamlessly — there's still buffered video playing,
-        // so a fresh connection started now continues without a visible gap.
-        if (!isVod) {
-          this.mpegtsPlayer.on(mpegts.Events.LOADING_COMPLETE, () => {
-            console.warn('Live stream ended (provider closed connection) — reconnecting…');
-            this._reconnectLive();
-          });
-        }
-
-        // Set video tag loaded metadata callback
-        this.video.onloadedmetadata = () => {
-          this.hideSpinner();
-        };
-      } else {
-        // Fallback direct source assignment
-        this.video.src = url;
-        this.video.load();
-        this.video.play()
-          .then(() => this.hideSpinner())
-          .catch(err => {
-            console.error('Native MPEG-TS direct play failed:', err);
-            this.hideSpinner();
-            alert('Your browser does not support MPEG-TS stream playback.');
-          });
-      }
+      this._triedMpegts = true;
+      this._playAsMpegTs(url, isVod);
     } else {
       // Direct VOD media files (mp4, mkv, etc.)
       this.video.src = url;
+      
+      const onError = (e) => {
+        const err = this.video.error;
+        console.warn('Direct VOD playback failed natively:', err);
+        
+        this.video.removeEventListener('error', onError);
+        
+        if (!this._triedMpegts) {
+          this._triedMpegts = true;
+          console.warn('Falling back to mpegts.js for direct VOD stream...');
+          this.destroyHls();
+          this.destroyMpegts();
+          this._playAsMpegTs(url, isVod);
+        } else if (!this._triedHls) {
+          this._triedHls = true;
+          console.warn('Falling back to hls.js for direct VOD stream...');
+          this.destroyHls();
+          this.destroyMpegts();
+          this._playAsHls(url, isVod);
+        } else {
+          let errMsg = 'This VOD stream could not be played.';
+          if (err) {
+            if (err.code === 3) errMsg = 'Video decoding failed (unsupported format).';
+            else if (err.code === 4) errMsg = 'VOD stream format not supported or 404 not found.';
+            if (err.message) errMsg += ` (${err.message})`;
+          }
+          this.showError(errMsg);
+        }
+      };
+      this.video.addEventListener('error', onError);
+
       this.video.load();
       this.video.play()
-        .then(() => this.hideSpinner())
+        .then(() => {
+          this.hideSpinner();
+          this.video.removeEventListener('error', onError);
+        })
         .catch(err => {
           console.error('Error playing direct VOD stream:', err);
-          this.hideSpinner();
+          if (err.name === 'NotAllowedError') {
+            this.hideSpinner();
+            this.video.pause();
+            this.video.removeEventListener('error', onError);
+          }
         });
     }
   }
