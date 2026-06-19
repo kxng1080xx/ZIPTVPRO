@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run build && cp app.apk dist/",
+  "buildCommand": "npm run build && cp app.apk dist/ && cp cast.apk dist/",
   "outputDirectory": "dist",
   "framework": "vite",
   "functions": {
@@ -15,6 +15,13 @@
         { "key": "Content-Type", "value": "application/vnd.android.package-archive" },
         { "key": "Content-Disposition", "value": "attachment; filename=\"app.apk\"" }
       ]
+    },
+    {
+      "source": "/cast.apk",
+      "headers": [
+        { "key": "Content-Type", "value": "application/vnd.android.package-archive" },
+        { "key": "Content-Disposition", "value": "attachment; filename=\"cast.apk\"" }
+      ]
     }
   ],
   "redirects": [
@@ -25,6 +32,6 @@
     }
   ],
   "rewrites": [
-    { "source": "/((?!api/|app.apk|latest.exe|version.json).*)", "destination": "/index.html" }
+    { "source": "/((?!api/|app.apk|cast.apk|latest.exe|version.json).*)", "destination": "/index.html" }
   ]
 }
