@@ -555,10 +555,11 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 8px 10px 8px 6px;
   border-radius: var(--border-radius-sm);
+  border-left: 4px solid transparent;
   cursor: pointer;
-  transition: background var(--transition-fast);
+  transition: all var(--transition-fast);
 }
 
 .playlist-row:hover {
@@ -3109,8 +3110,10 @@ body.vod-mode .now-next-bar {
 }
 
 .playlist-row.tv-focused {
-  outline-offset: -2px;
-  background: var(--bg-surface-hover) !important;
+  border-left: 4px solid #00f3ff !important;
+  background: linear-gradient(90deg, rgba(0, 243, 255, 0.15) 0%, rgba(255, 255, 255, 0.05) 100%) !important;
+  box-shadow: 0 0 15px rgba(0, 243, 255, 0.35) !important;
+  outline: none !important;
 }
 
 .playlist-row-del.tv-focused {

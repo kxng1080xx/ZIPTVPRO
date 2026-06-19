@@ -1893,12 +1893,17 @@ function showRemoteActivation() {
     }
   }).catch(() => {});
 
-  setTimeout(() => {
+  let remoteAttempts = 0;
+  const tryFocusRemote = () => {
     const manualBtn = document.getElementById('remote-manual-login-btn');
-    if (manualBtn) {
+    if (manualBtn && manualBtn.offsetParent !== null) {
       navigation.setFocus('login', manualBtn);
+    } else if (remoteAttempts < 10) {
+      remoteAttempts++;
+      setTimeout(tryFocusRemote, 50);
     }
-  }, 150);
+  };
+  setTimeout(tryFocusRemote, 50);
 }
 
 function showManualLoginForm() {
@@ -1912,12 +1917,17 @@ function showManualLoginForm() {
   // Hide global back-to-playlists (manual form has its own back button)
   document.getElementById('login-back-btn')?.classList.add('hidden');
 
-  setTimeout(() => {
+  let manualAttempts = 0;
+  const tryFocusManual = () => {
     const defaultFocus = document.getElementById('m3u-url') || document.getElementById('playlist-name');
-    if (defaultFocus) {
+    if (defaultFocus && defaultFocus.offsetParent !== null) {
       navigation.setFocus('login', defaultFocus);
+    } else if (manualAttempts < 10) {
+      manualAttempts++;
+      setTimeout(tryFocusManual, 50);
     }
-  }, 150);
+  };
+  setTimeout(tryFocusManual, 50);
 }
 
 function showPlaylistSelect(playlists) {
@@ -2008,12 +2018,21 @@ function showPlaylistSelect(playlists) {
 
   if (window.lucide) lucide.createIcons({ scope: listEl });
 
-  console.log('Playlist rows rendered, setting focus in 150ms');
+  console.log('Playlist rows rendered, setting focus with retry checks');
 
-  setTimeout(() => {
-    console.log('Setting focus to playlist-select zone');
-    navigation.focusDefault('playlist-select');
-  }, 150);
+  // Attempt to focus the first playlist row, with multiple retries to handle rendering delays.
+  let focusAttempts = 0;
+  const tryFocusPlaylist = () => {
+    const firstRow = document.querySelector('#login-playlists-list .playlist-row');
+    if (firstRow) {
+      console.log(`Setting focus to playlist-select zone (attempt ${focusAttempts + 1})`);
+      navigation.focusDefault('playlist-select');
+    } else if (focusAttempts < 10) {
+      focusAttempts++;
+      setTimeout(tryFocusPlaylist, 50);
+    }
+  };
+  setTimeout(tryFocusPlaylist, 50);
 }
 
 async function deletePlaylistFromLoginScreen(id) {
