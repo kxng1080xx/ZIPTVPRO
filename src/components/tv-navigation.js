@@ -11,6 +11,7 @@ class TVNavigation {
     this.currentZone = 'categories'; // 'tabs', 'categories', 'channels', 'grid', 'player', 'modal'
     this.focusedElement = null;
     this.pendingZone = null;
+    this.pendingFocus = null;
     
     // Key codes map
     this.KEYS = {
@@ -71,7 +72,7 @@ class TVNavigation {
     const updateOverlay = document.getElementById('update-modal-overlay');
     if (updateOverlay) {
       updateOverlay.remove();
-      this.focusDefault(this.currentZone || 'categories');
+      this.restoreBackgroundFocus();
       return;
     }
 
@@ -170,18 +171,21 @@ class TVNavigation {
     const updateOverlay = document.getElementById('update-modal-overlay');
     if (updateOverlay && !updateOverlay.contains(element)) {
       console.log(`[TV Navigation] Focus blocked: update modal is open. Blocked zone: ${zone}`);
+      this.pendingFocus = { zone, element };
       return;
     }
 
     const activeModal = document.querySelector('.modal-overlay:not(.hidden)');
     if (activeModal && !activeModal.contains(element)) {
       console.log(`[TV Navigation] Focus blocked: active modal is open. Blocked zone: ${zone}`);
+      this.pendingFocus = { zone, element };
       return;
     }
 
     const castOverlay = document.querySelector('.cast-modal-overlay:not(.hidden)');
     if (castOverlay && !castOverlay.contains(element)) {
       console.log(`[TV Navigation] Focus blocked: cast overlay is open. Blocked zone: ${zone}`);
+      this.pendingFocus = { zone, element };
       return;
     }
 
@@ -194,7 +198,8 @@ class TVNavigation {
     this.focusedElement = element;
     this.focusedElement.classList.add('tv-focused');
     
-    // Clear pending zone on successful focus
+    // Clear pending focus/zone on successful focus
+    this.pendingFocus = null;
     this.pendingZone = null;
 
     // Scroll into view if scrollable (use 'auto' / instant to prevent queueing animations and layout freezes on Smart TVs)
@@ -365,6 +370,33 @@ class TVNavigation {
     }
     
     this.clearFocus();
+  }
+
+  restoreBackgroundFocus() {
+    if (this.pendingFocus && this.pendingFocus.element && document.body.contains(this.pendingFocus.element)) {
+      console.log('[TV Navigation] Restoring pending focus to:', this.pendingFocus.zone);
+      this.setFocus(this.pendingFocus.zone, this.pendingFocus.element);
+      return;
+    }
+    if (this.pendingZone) {
+      console.log('[TV Navigation] Restoring pending zone to:', this.pendingZone);
+      this.focusDefault(this.pendingZone);
+      return;
+    }
+    // Fallback check based on what is visible
+    const loginScreen = document.getElementById('login-screen');
+    const loginVisible = loginScreen && !loginScreen.classList.contains('hidden');
+    if (loginVisible) {
+      const playlistSelect = document.getElementById('login-playlist-select');
+      const playlistSelectVisible = playlistSelect && !playlistSelect.classList.contains('hidden');
+      if (playlistSelectVisible) {
+        this.focusDefault('playlist-select');
+      } else {
+        this.focusDefault('login');
+      }
+    } else {
+      this.focusDefault('categories');
+    }
   }
 
   handleKeyDown(e) {

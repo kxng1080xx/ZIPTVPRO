@@ -135,8 +135,8 @@ function showUpdateModal(remote, local, manifest) {
   const close = () => {
     overlay.remove();
     try {
-      if (navigation && navigation.focusDefault) {
-        navigation.focusDefault(navigation.currentZone || 'categories');
+      if (navigation && navigation.restoreBackgroundFocus) {
+        navigation.restoreBackgroundFocus();
       }
     } catch (e) {}
   };
