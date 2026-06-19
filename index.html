@@ -164,7 +164,8 @@
       <!-- Top Right: Active Profile & Controls -->
       <div class="header-right">
         <div class="profile-wrap">
-          <div class="profile-card" id="profile-card-btn">
+          <div class="profile-card" id="profile-card-btn" title="Switch playlist">
+            <i data-lucide="circle-user" class="profile-icon"></i>
             <div class="profile-info">
               <span class="profile-name" id="nav-playlist-name">Xtream Codes</span>
               <span class="profile-status">Xtream Codes</span>
@@ -221,9 +222,14 @@
             <span class="categories-title">Categories</span>
             <span class="categories-count-total" id="categories-count-total">40</span>
           </div>
-          <button class="category-search-btn" id="categories-search-btn" tabindex="0">
-            <i data-lucide="search"></i> <span id="categories-search-label">Search categories</span>
-          </button>
+          <div class="categories-actions">
+            <button class="category-search-btn" id="categories-search-btn" tabindex="0" title="Search categories" aria-label="Search categories">
+              <i data-lucide="search"></i>
+            </button>
+            <button class="category-sort-btn" id="categories-sort-btn" tabindex="0" title="Sort categories">
+              <i data-lucide="arrow-up-down"></i> <span id="categories-sort-label">Default</span>
+            </button>
+          </div>
         </div>
 
         <!-- Scrollable Category List -->

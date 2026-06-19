@@ -575,6 +575,7 @@ class TVNavigation {
   handleCategoriesNavigation(e) {
     const pinToggle = document.getElementById('pin-section-toggle');
     const searchBtn = document.getElementById('categories-search-btn');
+    const sortBtn = document.getElementById('categories-sort-btn');
     const items = Array.from(document.querySelectorAll('#categories-list .category-item:not(.hidden)'));
     const pinItems = Array.from(document.querySelectorAll('.pin-item'));
 
@@ -589,6 +590,7 @@ class TVNavigation {
     if (pinToggle) allItems.push(pinToggle);
     if (!pinCollapsed) pinItems.forEach(p => { if (p.offsetParent !== null) allItems.push(p); });
     if (searchBtn && searchBtn.offsetParent !== null) allItems.push(searchBtn);
+    if (sortBtn && sortBtn.offsetParent !== null) allItems.push(sortBtn);
     allItems.push(...items);
 
     const index = allItems.indexOf(this.focusedElement);
@@ -631,7 +633,22 @@ class TVNavigation {
         if (e.key === this.KEYS.ENTER) {
           this.focusedElement.click(); // Open the D-pad keyboard overlay
         } else {
-          // Right arrow moves focus directly
+          // Right arrow hops to the Sort button beside Search.
+          if (sortBtn && sortBtn.offsetParent !== null) {
+            this.setFocus('categories', sortBtn);
+          } else if (activeTab === 'live') {
+            this.focusDefault('channels');
+          } else if (activeTab === 'series' && playbackOpen) {
+            this.focusDefault('series-episodes');
+          } else {
+            this.focusDefault('grid');
+          }
+        }
+      } else if (this.focusedElement.id === 'categories-sort-btn') {
+        if (e.key === this.KEYS.ENTER) {
+          this.focusedElement.click(); // Open the sort dropdown
+        } else {
+          // Right arrow moves into the content area.
           if (activeTab === 'live') {
             this.focusDefault('channels');
           } else if (activeTab === 'series' && playbackOpen) {

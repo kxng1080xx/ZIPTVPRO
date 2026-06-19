@@ -505,6 +505,13 @@ button {
   color: var(--text-secondary);
 }
 
+.profile-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
 .profile-chevron {
   width: 16px;
   height: 16px;
@@ -888,12 +895,20 @@ button {
   border-bottom: 1px solid var(--border-color);
 }
 
-.category-search-btn {
+/* Search (icon-only) + Sort buttons share one row. */
+.categories-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.category-search-btn,
+.category-sort-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  width: 100%;
   padding: 10px 14px;
   border-radius: 8px;
   border: 1px solid var(--border-color, #1e2a3e);
@@ -903,8 +918,26 @@ button {
   font-weight: 600;
   cursor: pointer;
 }
-.category-search-btn i { width: 14px; height: 14px; }
-.category-search-btn:hover { background: var(--bg-surface-hover, #1a2436); }
+
+/* Search collapses to a square icon button; Sort fills the rest of the row. */
+.category-search-btn { flex: 0 0 auto; width: 42px; padding: 10px 0; }
+.category-sort-btn { flex: 1 1 auto; min-width: 0; }
+.category-sort-btn #categories-sort-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.category-search-btn i,
+.category-sort-btn i { width: 14px; height: 14px; flex-shrink: 0; }
+.category-search-btn:hover,
+.category-sort-btn:hover { background: var(--bg-surface-hover, #1a2436); }
+
+/* Highlight the search icon when a category filter is active. */
+.category-search-btn.filter-active {
+  border-color: #00f3ff;
+  color: #00f3ff;
+}
 
 .categories-header-row {
   display: flex;

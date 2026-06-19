@@ -331,8 +331,11 @@ function renderCategoriesList(categories) {
   `;
   container.appendChild(allNode);
 
+  // Apply the chosen sort (the "All" node always stays pinned at the top).
+  const sorted = sortCategories(categories, state.categorySort);
+
   // Add dynamic categories
-  categories.forEach(cat => {
+  sorted.forEach(cat => {
     const item = document.createElement('div');
     item.className = `category-item ${state.activeCategory === String(cat.category_id) ? 'active' : ''}`;
     item.dataset.category = String(cat.category_id);
@@ -352,6 +355,38 @@ function renderCategoriesList(categories) {
   // pinned-category shortcuts) and refresh the pinned list in the top section.
   state.lastCategories = categories;
   renderPinnedCategories();
+
+  // Re-apply any active category search filter after a re-render.
+  applyCategorySearch();
+}
+
+// ==========================================================================
+// CATEGORY SEARCH + SORT
+// ==========================================================================
+const CATEGORY_SORTS = [
+  { value: 'default', label: 'Default' },
+  { value: 'name', label: 'Name (A-Z)' },
+  { value: 'count', label: 'Count (High–Low)' }
+];
+
+function sortCategories(categories, sort) {
+  const list = [...categories];
+  if (sort === 'name') {
+    list.sort((a, b) => (a.category_name || '').localeCompare(b.category_name || ''));
+  } else if (sort === 'count') {
+    list.sort((a, b) => (b.count || 0) - (a.count || 0));
+  }
+  return list; // 'default' keeps the provider's original order
+}
+
+// Hide categories that don't match the current search query.
+function applyCategorySearch() {
+  const query = (state.categorySearch || '').toLowerCase();
+  document.querySelectorAll('#categories-list .category-item').forEach(item => {
+    if (item.dataset.category === 'all') return; // always keep "All"
+    const label = item.querySelector('.cat-label')?.textContent.toLowerCase() || '';
+    item.classList.toggle('hidden', !label.includes(query));
+  });
 }
 
 // ==========================================================================
@@ -1950,27 +1985,47 @@ function bindGlobalEvents() {
 
   // Categories list Search (TV-navigable D-pad keyboard overlay)
   const catSearchBtn = document.getElementById('categories-search-btn');
-  const catSearchLabel = document.getElementById('categories-search-label');
-  let currentCategorySearch = '';
 
   if (catSearchBtn) {
     catSearchBtn.addEventListener('click', () => {
       openSearchKeyboard({
         title: 'Search Categories',
-        initial: currentCategorySearch,
+        initial: state.categorySearch || '',
         onChange: (q) => {
-          currentCategorySearch = q;
-          const query = q.toLowerCase();
-          document.querySelectorAll('#categories-list .category-item').forEach(item => {
-            const label = item.querySelector('.cat-label').textContent.toLowerCase();
-            // Keep "all channels" visible or apply query
-            if (item.dataset.category === 'all') return;
-            item.classList.toggle('hidden', !label.includes(query));
-          });
+          state.categorySearch = q;
+          applyCategorySearch();
         },
-        onClose: (q) => {
-          if (catSearchLabel) catSearchLabel.textContent = q ? `“${q}”` : 'Search categories';
+        onClose: () => {
+          // Mark the icon when a filter is active so it's clear search is on.
+          catSearchBtn.classList.toggle('filter-active', !!(state.categorySearch && state.categorySearch.trim()));
           navigation.setFocus('categories', catSearchBtn);
+        }
+      });
+    });
+  }
+
+  // Categories list Sort (Default / Name / Count)
+  const catSortBtn = document.getElementById('categories-sort-btn');
+  const catSortLabel = document.getElementById('categories-sort-label');
+  // Restore the saved sort preference.
+  state.categorySort = localStorage.getItem('category_sort') || 'default';
+  if (catSortLabel) {
+    catSortLabel.textContent = (CATEGORY_SORTS.find(s => s.value === state.categorySort) || CATEGORY_SORTS[0]).label;
+  }
+  if (catSortBtn) {
+    catSortBtn.addEventListener('click', () => {
+      openSortDropdown({
+        title: 'Sort categories',
+        options: CATEGORY_SORTS,
+        current: state.categorySort,
+        onSelect: (value) => {
+          state.categorySort = value;
+          localStorage.setItem('category_sort', value);
+          if (catSortLabel) {
+            catSortLabel.textContent = (CATEGORY_SORTS.find(s => s.value === value) || CATEGORY_SORTS[0]).label;
+          }
+          renderCategoriesList(state.lastCategories || []);
+          navigation.setFocus('categories', catSortBtn);
         }
       });
     });
