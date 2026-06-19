@@ -202,10 +202,12 @@ async function buildCastMedia(ctx, isDlna) {
   // Native phone (Google Cast): cast the PUBLIC provider URL directly — the
   // Chromecast fetches it. Live → HLS; VOD → its container.
   if (getBackend() === 'native') {
-    const format = ctx.isLive ? 'm3u8' : '';
+    const format = ctx.isLive ? (isDlna ? 'ts' : 'm3u8') : '';
     const mediaUrl = await getStreamUrl(ctx.streamId, ctx.type, ctx.ext || '', format);
     const ext = (ctx.ext || 'mp4').toLowerCase();
-    const contentType = ctx.isLive ? 'application/x-mpegurl' : (VOD_MIME[ext] || 'video/mp4');
+    const contentType = ctx.isLive 
+      ? (isDlna ? 'video/mpeg' : 'application/x-mpegurl')
+      : (VOD_MIME[ext] || 'video/mp4');
     return { mediaUrl, contentType };
   }
 
