@@ -413,6 +413,21 @@ class TVNavigation {
       return;
     }
 
+    // Remote MENU button (Android TV) or the ContextMenu key on a PC keyboard:
+    // offer to pin/unpin the focused category to the top section. (Right-click is
+    // wired separately in main.js for mouse users.)
+    const isMenuKey = e.key === 'ContextMenu' ||
+      (e.keyCode === 82 && (!e.key || e.key === 'Unidentified' || e.key === 'ContextMenu'));
+    if (isMenuKey && !document.querySelector('.tvsort-overlay')) {
+      const el = this.focusedElement;
+      if (el && (el.classList.contains('category-item') || el.classList.contains('pinned-category')) &&
+          typeof window.openCategoryPinMenu === 'function') {
+        window.openCategoryPinMenu(el);
+        e.preventDefault();
+        return;
+      }
+    }
+
     const activeEl = document.activeElement;
     const updateOverlay = document.getElementById('update-modal-overlay');
     const activeModal = document.querySelector('.modal-overlay:not(.hidden)');
@@ -563,11 +578,16 @@ class TVNavigation {
     const items = Array.from(document.querySelectorAll('#categories-list .category-item:not(.hidden)'));
     const pinItems = Array.from(document.querySelectorAll('.pin-item'));
 
+    // When collapsed the pin list is hidden with max-height:0 (not display:none),
+    // so the items still report an offsetParent — exclude them explicitly so the
+    // D-pad doesn't scroll through hidden pins.
+    const pinCollapsed = !!document.getElementById('pin-top-section')?.classList.contains('collapsed');
+
     // Top-to-bottom focus order: the "Pin top section" header, the pinned items
     // (only when the section is expanded/visible), the search button, then categories.
     const allItems = [];
     if (pinToggle) allItems.push(pinToggle);
-    pinItems.forEach(p => { if (p.offsetParent !== null) allItems.push(p); });
+    if (!pinCollapsed) pinItems.forEach(p => { if (p.offsetParent !== null) allItems.push(p); });
     if (searchBtn && searchBtn.offsetParent !== null) allItems.push(searchBtn);
     allItems.push(...items);
 

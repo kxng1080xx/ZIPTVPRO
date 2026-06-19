@@ -197,7 +197,7 @@ async function initApp() {
       // loading from cache when we have it (a re-sync would be the slow part).
       await autoEnterSinglePlaylist(playlists[0].id, activeId);
     } else {
-      showPlaylistSelect(playlists);
+      showPlaylistSelect(playlists, localStorage.getItem('last_playlist_id') || activeId);
     }
   } catch (err) {
     console.error('Failed to initialize app session:', err);
@@ -347,7 +347,108 @@ function renderCategoriesList(categories) {
 
   // Update categories total count text
   document.getElementById('categories-count-total').textContent = categories.length;
+
+  // Remember the current tab's categories (used to look up names/counts for the
+  // pinned-category shortcuts) and refresh the pinned list in the top section.
+  state.lastCategories = categories;
+  renderPinnedCategories();
 }
+
+// ==========================================================================
+// PINNED CATEGORIES (top-section shortcuts to favourite categories)
+// Pinned per tab in localStorage; rendered under "Recently Viewed" so the
+// user's favourite categories are reachable without scrolling the long list.
+// ==========================================================================
+const RESERVED_PINS = ['all', 'favorites', 'recordings', 'recently_viewed'];
+
+function getPinnedStore() {
+  try { return JSON.parse(localStorage.getItem('pinned_categories') || '{}'); }
+  catch (e) { return {}; }
+}
+
+// Categories differ from playlist to playlist, so pins are keyed by both the
+// active playlist id and the tab.
+function getCurrentPlaylistId() {
+  return state.activePlaylistId || localStorage.getItem('last_playlist_id') || 'default';
+}
+
+function pinKey(tab = state.activeTab) {
+  return `${getCurrentPlaylistId()}::${tab}`;
+}
+
+function getPinnedForTab(tab = state.activeTab) {
+  const store = getPinnedStore();
+  const list = store[pinKey(tab)];
+  return Array.isArray(list) ? list : [];
+}
+
+function savePinnedForTab(list, tab = state.activeTab) {
+  const store = getPinnedStore();
+  store[pinKey(tab)] = list;
+  localStorage.setItem('pinned_categories', JSON.stringify(store));
+}
+
+function isCategoryPinned(id, tab = state.activeTab) {
+  return getPinnedForTab(tab).some(p => String(p.id) === String(id));
+}
+
+function togglePinCategory(id, name, tab = state.activeTab) {
+  id = String(id);
+  let list = getPinnedForTab(tab);
+  if (list.some(p => String(p.id) === id)) {
+    list = list.filter(p => String(p.id) !== id);
+    showToast(`Unpinned “${name}” from top`, 'info');
+  } else {
+    list.push({ id, name });
+    showToast(`Pinned “${name}” to top`, 'success');
+  }
+  savePinnedForTab(list, tab);
+  renderPinnedCategories();
+}
+
+function renderPinnedCategories() {
+  const list = document.getElementById('sidebar-pin-list');
+  if (!list) return;
+  // Clear previously rendered pinned-category rows (keep the static pins).
+  list.querySelectorAll('.pin-item.pinned-category').forEach(el => el.remove());
+
+  const cats = state.lastCategories || [];
+  getPinnedForTab().forEach(p => {
+    const cat = cats.find(c => String(c.category_id) === String(p.id));
+    const name = cat ? cat.category_name : p.name;
+    const count = cat ? (cat.count || 0) : '';
+    const li = document.createElement('li');
+    li.className = 'pin-item pinned-category' + (state.activeCategory === String(p.id) ? ' active' : '');
+    li.dataset.category = String(p.id);
+    li.setAttribute('role', 'button');
+    li.tabIndex = 0;
+    li.innerHTML = `
+      <span class="pin-label"><i data-lucide="pin" class="pin-icon-filled"></i> ${name}</span>
+      <span class="pin-count">${count}</span>`;
+    list.appendChild(li);
+  });
+  if (window.lucide) lucide.createIcons({ scope: list });
+}
+
+// Open the pin/unpin action menu for a focused category (remote MENU key or
+// right-click). Reuses the D-pad-navigable dropdown overlay.
+window.openCategoryPinMenu = function (el) {
+  if (!el) return;
+  const id = el.dataset.category;
+  if (!id || RESERVED_PINS.includes(id)) return; // can't pin the built-in shortcuts
+  const name = (el.querySelector('.cat-label') || el.querySelector('.pin-label'))?.textContent?.trim() || 'Category';
+  const pinned = isCategoryPinned(id);
+  openSortDropdown({
+    title: name,
+    options: [{ value: 'toggle', label: pinned ? 'Unpin from top' : 'Pin to top' }],
+    onSelect: () => {
+      togglePinCategory(id, name);
+      // Restore D-pad focus to the row (or the sidebar if the row was removed).
+      if (document.body.contains(el)) navigation.setFocus('categories', el);
+      else navigation.focusDefault('categories');
+    }
+  });
+};
 
 document.getElementById('categories-list')?.addEventListener('click', (event) => {
   const item = event.target.closest('.category-item');
@@ -1832,6 +1933,21 @@ function bindGlobalEvents() {
     });
   });
 
+  // Dynamic pinned-category shortcuts are added later, so use delegation.
+  document.getElementById('sidebar-pin-list')?.addEventListener('click', (e) => {
+    const item = e.target.closest('.pin-item.pinned-category');
+    if (item) selectCategory(item.dataset.category);
+  });
+
+  // Right-click (PC) on a category or pinned shortcut → pin/unpin menu. The
+  // remote MENU key is handled in tv-navigation.js.
+  document.querySelector('.sidebar')?.addEventListener('contextmenu', (e) => {
+    const el = e.target.closest('.category-item, .pin-item.pinned-category');
+    if (!el) return;
+    e.preventDefault();
+    window.openCategoryPinMenu(el);
+  });
+
   // Categories list Search (TV-navigable D-pad keyboard overlay)
   const catSearchBtn = document.getElementById('categories-search-btn');
   const catSearchLabel = document.getElementById('categories-search-label');
@@ -2078,8 +2194,15 @@ function showManualLoginForm() {
   setTimeout(tryFocusManual, 50);
 }
 
-function showPlaylistSelect(playlists) {
+function showPlaylistSelect(playlists, lastUsedId = localStorage.getItem('last_playlist_id')) {
   console.log('showPlaylistSelect called with', playlists.length, 'playlists');
+
+  // Surface the last-used playlist at the top so it's the default focus.
+  if (lastUsedId) {
+    playlists = [...playlists];
+    const i = playlists.findIndex(p => String(p.id) === String(lastUsedId));
+    if (i > 0) playlists.unshift(playlists.splice(i, 1)[0]);
+  }
 
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('app-container').classList.add('hidden');
@@ -2105,9 +2228,11 @@ function showPlaylistSelect(playlists) {
     row.className = 'playlist-row';
     row.dataset.id = p.id;
     row.dataset.playlistName = p.playlistName || 'Playlist';
+    const isLastUsed = lastUsedId && String(p.id) === String(lastUsedId);
+    if (isLastUsed) row.classList.add('last-used');
     row.innerHTML = `
       <div class="playlist-row-main">
-        <span class="playlist-row-name">${p.playlistName || 'Playlist'}</span>
+        <span class="playlist-row-name">${p.playlistName || 'Playlist'}${isLastUsed ? '<span class="playlist-row-badge">Last used</span>' : ''}</span>
         <span class="playlist-row-server">${domain} · ${p.username}</span>
       </div>
       <button class="playlist-row-del" data-del="${p.id}" title="Remove playlist"><i data-lucide="trash-2"></i></button>
@@ -2265,6 +2390,8 @@ async function togglePlaylistDropdown() {
 // the cache, which is the slow part we're trying to avoid).
 async function autoEnterSinglePlaylist(id, activeId) {
   try {
+    state.activePlaylistId = id;
+    try { localStorage.setItem('last_playlist_id', String(id)); } catch (e) {}
     if (activeId !== id) {
       await switchPlaylist(id);
     }
@@ -2297,6 +2424,8 @@ async function autoEnterSinglePlaylist(id, activeId) {
 
 async function switchToPlaylist(id) {
   closePlaylistDropdown();
+  state.activePlaylistId = id;
+  try { localStorage.setItem('last_playlist_id', String(id)); } catch (e) {}
   try {
     playerInstance.stop();
     exitSeriesPlaybackDashboard();
