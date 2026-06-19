@@ -3936,6 +3936,18 @@ body.epg-fullscreen-active .epg-section-container {
     gap: 12px;
     padding: 0 16px;
   }
+
+  /* Make Continue Watching cards even smaller on low-height landscape viewports */
+  .continue-card {
+    flex: 0 0 95px !important;
+    width: 95px !important;
+  }
+
+  .continue-resume-overlay i {
+    width: 28px !important;
+    height: 28px !important;
+    padding: 5px !important;
+  }
 }
 
 /* ==========================================================================
