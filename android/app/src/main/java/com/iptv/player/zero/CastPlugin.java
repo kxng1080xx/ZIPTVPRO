@@ -766,6 +766,7 @@ public class CastPlugin extends Plugin {
                 
                 String method = parts[0];
                 String path = parts[1];
+                System.out.println("[Proxy] Request: " + method + " " + path);
                 
                 String headerLine;
                 Map<String, String> requestHeaders = new HashMap<>();
@@ -1039,7 +1040,9 @@ public class CastPlugin extends Plugin {
                     writer.print("HTTP/1.1 200 OK\r\n");
                 }
                 
-                writer.print("Content-Type: " + mime + "\r\n");
+                String providerMime = conn.getHeaderField("Content-Type");
+                String responseMime = (providerMime != null) ? providerMime : mime;
+                writer.print("Content-Type: " + responseMime + "\r\n");
                 String range = conn.getHeaderField("Content-Range");
                 if (range != null) {
                     writer.print("Content-Range: " + range + "\r\n");
