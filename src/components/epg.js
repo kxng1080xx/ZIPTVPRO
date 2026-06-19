@@ -243,7 +243,7 @@ export class EPGGrid {
     this.renderTimelineHeader(startTime, hoursToShow);
 
     // 2. Render channels list and corresponding guide rows
-    this.renderChannelsAndGrid(this.channelsFilter.value);
+    this.renderChannelsAndGrid(this.channelsFilter?.value || this.channelFilterQuery || '');
 
     // 3. Update current time red line indicator
     this.updateCurrentTimeIndicator(startTime, endTime);

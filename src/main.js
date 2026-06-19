@@ -278,6 +278,36 @@ function showSelectCategoryHint() {
   }
 }
 
+function showCategoryLoading() {
+  const message = '<div class="select-category-hint">Loading content...</div>';
+  if (state.activeTab === 'live') {
+    const chList = document.getElementById('epg-channels-list');
+    const progRows = document.getElementById('epg-programs-rows');
+    if (chList) chList.innerHTML = message;
+    if (progRows) progRows.innerHTML = '';
+    const visibleCount = document.getElementById('epg-visible-count');
+    if (visibleCount) visibleCount.textContent = '(0)';
+  } else {
+    const grid = document.getElementById(state.activeTab === 'movies' ? 'movies-grid' : 'series-grid');
+    if (grid) grid.innerHTML = message;
+  }
+}
+
+function showCategoryLoadError() {
+  const message = '<div class="select-category-hint">Unable to load this category. Try again.</div>';
+  if (state.activeTab === 'live') {
+    const chList = document.getElementById('epg-channels-list');
+    const progRows = document.getElementById('epg-programs-rows');
+    if (chList) chList.innerHTML = message;
+    if (progRows) progRows.innerHTML = '';
+    const visibleCount = document.getElementById('epg-visible-count');
+    if (visibleCount) visibleCount.textContent = '(0)';
+  } else {
+    const grid = document.getElementById(state.activeTab === 'movies' ? 'movies-grid' : 'series-grid');
+    if (grid) grid.innerHTML = message;
+  }
+}
+
 // Render the categories side panel list
 function renderCategoriesList(categories) {
   const container = document.getElementById('categories-list');
@@ -287,6 +317,8 @@ function renderCategoriesList(categories) {
   const allNode = document.createElement('div');
   allNode.className = `category-item ${state.activeCategory === 'all' ? 'active' : ''}`;
   allNode.dataset.category = 'all';
+  allNode.setAttribute('role', 'button');
+  allNode.tabIndex = 0;
   
   let totalStreams = 0;
   categories.forEach(c => totalStreams += (c.count || 0));
@@ -295,7 +327,6 @@ function renderCategoriesList(categories) {
     <span class="cat-label">All ${state.activeTab === 'live' ? 'channels' : state.activeTab === 'movies' ? 'movies' : 'series'}</span>
     <span class="cat-count">${totalStreams}</span>
   `;
-  allNode.addEventListener('click', () => selectCategory('all'));
   container.appendChild(allNode);
 
   // Add dynamic categories
@@ -303,11 +334,12 @@ function renderCategoriesList(categories) {
     const item = document.createElement('div');
     item.className = `category-item ${state.activeCategory === String(cat.category_id) ? 'active' : ''}`;
     item.dataset.category = String(cat.category_id);
+    item.setAttribute('role', 'button');
+    item.tabIndex = 0;
     item.innerHTML = `
       <span class="cat-label">${cat.category_name}</span>
       <span class="cat-count">${cat.count || 0}</span>
     `;
-    item.addEventListener('click', () => selectCategory(String(cat.category_id)));
     container.appendChild(item);
   });
 
@@ -315,7 +347,14 @@ function renderCategoriesList(categories) {
   document.getElementById('categories-count-total').textContent = categories.length;
 }
 
+document.getElementById('categories-list')?.addEventListener('click', (event) => {
+  const item = event.target.closest('.category-item');
+  if (!item) return;
+  selectCategory(item.dataset.category);
+});
+
 async function selectCategory(categoryId) {
+  if (!categoryId) return;
   state.activeCategory = categoryId;
   
   // Highlight in list
@@ -343,7 +382,13 @@ async function selectCategory(categoryId) {
     if (backdrop) backdrop.classList.add('hidden');
   }
 
-  await loadCategoryContent();
+  try {
+    showCategoryLoading();
+    await loadCategoryContent();
+  } catch (err) {
+    console.error('Failed to load category content:', err);
+    showCategoryLoadError();
+  }
 }
 
 async function loadCategoryContent() {
