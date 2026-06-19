@@ -2,8 +2,10 @@
   "appId": "com.iptv.player.zero",
   "appName": "ZIPTV Pro",
   "webDir": "dist",
+  "overrideUserAgent": "VLC/3.0.20",
   "android": {
-    "allowMixedContent": true
+    "allowMixedContent": true,
+    "overrideUserAgent": "VLC/3.0.20"
   },
   "server": {
     "androidScheme": "https",

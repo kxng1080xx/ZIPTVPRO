@@ -15,7 +15,9 @@ import {
   removePlaylist,
   getContinueWatching,
   saveWatchProgress,
-  removeWatchProgress
+  removeWatchProgress,
+  getIsServerMode,
+  getStreamUrlSync
 } from './components/xtream-api.js';
 import { Capacitor } from '@capacitor/core';
 import { VideoPlayer } from './components/player.js';
@@ -925,7 +927,12 @@ async function playSeriesEpisode(epStreamId, epName, logo, plot, epExt, epIndex,
   lastProgressSave = 0;
 
   try {
-    const playUrl = await getStreamUrl(epStreamId, 'series', epExt);
+    let playUrl;
+    if (getIsServerMode()) {
+      playUrl = await getStreamUrl(epStreamId, 'series', epExt);
+    } else {
+      playUrl = getStreamUrlSync(epStreamId, 'series', epExt);
+    }
     playerInstance.setSeriesMode(true);
     playerInstance.loadStream(playUrl, epName, logo, '', true, resumeTime);
 
@@ -1337,7 +1344,12 @@ async function playVODStream(streamId, type, name, logo, description, containerE
 
   playerInstance.showSpinner();
   try {
-    const playUrl = await getStreamUrl(streamId, type, containerExtension);
+    let playUrl;
+    if (getIsServerMode()) {
+      playUrl = await getStreamUrl(streamId, type, containerExtension);
+    } else {
+      playUrl = getStreamUrlSync(streamId, type, containerExtension);
+    }
 
     // VOD = on-demand file, played differently from live channels (seekable).
     playerInstance.setSeriesMode(false);
@@ -2511,6 +2523,7 @@ function showToast(message, type = 'success', duration = 3500) {
     setTimeout(() => toast.remove(), 300);
   }, duration);
 }
+window.showToast = showToast;
 
 // Report the remote-pairing outcome back to Supabase so the connect page knows.
 function reportPairingStatus(status) {

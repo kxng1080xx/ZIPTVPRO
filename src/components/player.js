@@ -18,6 +18,40 @@ function getQualityBadgeHtml(name) {
   return `<span class="quality-badge badge-${tag.toLowerCase()}">${tag}</span>`;
 }
 
+function replaceUrlExtension(url, newExt) {
+  try {
+    const urlObj = new URL(url);
+    let pathname = urlObj.pathname;
+    const lastDot = pathname.lastIndexOf('.');
+    const lastSlash = pathname.lastIndexOf('/');
+    if (lastDot > lastSlash) {
+      pathname = pathname.substring(0, lastDot) + '.' + newExt;
+    } else {
+      pathname = pathname + '.' + newExt;
+    }
+    urlObj.pathname = pathname;
+    return urlObj.toString();
+  } catch (e) {
+    return url;
+  }
+}
+
+function removeUrlExtension(url) {
+  try {
+    const urlObj = new URL(url);
+    let pathname = urlObj.pathname;
+    const lastDot = pathname.lastIndexOf('.');
+    const lastSlash = pathname.lastIndexOf('/');
+    if (lastDot > lastSlash) {
+      pathname = pathname.substring(0, lastDot);
+    }
+    urlObj.pathname = pathname;
+    return urlObj.toString();
+  } catch (e) {
+    return url;
+  }
+}
+
 export class VideoPlayer {
   constructor() {
     this.video = document.getElementById('main-video-player');
@@ -290,6 +324,38 @@ export class VideoPlayer {
     });
     this.video.addEventListener('emptied', () => this.stopFpsTracker());
 
+    // Global video error handler for native/direct playback
+    this.video.addEventListener('error', (e) => {
+      if (this._castMode) return;
+      
+      const err = this.video.error;
+      console.warn('Native video error event captured:', err);
+      
+      // If we are currently playing via HLS or MPEG-TS libraries, they handle their own errors.
+      const isDirectPlay = !this.hls && !this.mpegtsPlayer;
+      if (isDirectPlay && this.hasStream) {
+        if (this.isVod) {
+          // If we haven't played much yet (less than 2 seconds), attempt format fallback.
+          // Otherwise, treat it as a playback interruption.
+          if (this.video.currentTime < 2) {
+            this._handleVodPlaybackFallback(err);
+          } else {
+            let errMsg = 'VOD playback interrupted.';
+            if (err) {
+              if (err.code === 3) errMsg = 'Video decoding failed.';
+              else if (err.code === 4) errMsg = 'VOD stream connection lost.';
+              if (err.message) errMsg += ` (${err.message})`;
+            }
+            this.showError(errMsg);
+          }
+        } else {
+          // Live TV direct play fallback
+          console.warn('Live direct play failed, scheduling retry...');
+          this._retryStream();
+        }
+      }
+    });
+
     // Orientation-aware fullscreen (phones): while a stream is active, rotating
     // to landscape enters fullscreen; rotating back to portrait exits it. Auto-
     // fullscreen on play only happens in landscape (see autoFullscreen()).
@@ -393,6 +459,7 @@ export class VideoPlayer {
     this._streamIsVod = isVod;
     this._triedMpegts = false;
     this._triedHls = false;
+    this._triedExtensionless = false;
     // Bumped on every new stream so a pending live reconnect for an old
     // channel cancels itself once the user has switched away.
     this._streamGen = (this._streamGen || 0) + 1;
@@ -527,10 +594,8 @@ export class VideoPlayer {
           console.error('HLS manifest could not be loaded:', data);
           this.destroyHls();
           
-          if (isVod && !this._triedMpegts) {
-            this._triedMpegts = true;
-            console.warn('HLS load failed — falling back to mpegts.js for VOD...');
-            this._playAsMpegTs(url, isVod);
+          if (isVod) {
+            this._handleVodPlaybackFallback({ code: 4, message: `HLS manifest failed (HTTP ${httpCode || 'unknown'})` });
           } else {
             this.showError(this.describeStreamError(httpCode));
           }
@@ -550,7 +615,11 @@ export class VideoPlayer {
           default:
             console.error('Fatal HLS error, stopping stream:', data);
             this.destroyHls();
-            this.showError('This stream could not be played.');
+            if (isVod) {
+              this._handleVodPlaybackFallback({ code: 4, message: 'HLS playback error' });
+            } else {
+              this.showError('This stream could not be played.');
+            }
             break;
         }
       });
@@ -561,11 +630,6 @@ export class VideoPlayer {
         this.video.play().catch(err => console.log('Playback blocked:', err));
         this.hideSpinner();
       });
-      // Retry on native video error
-      this.video.addEventListener('error', () => {
-        console.warn('Native HLS video error, scheduling retry…');
-        this._retryStream();
-      }, { once: true });
     } else {
       this.hideSpinner();
       alert('Your browser does not support HLS streaming.');
@@ -593,11 +657,9 @@ export class VideoPlayer {
         console.error('MPEG-TS player error:', type, detail, info);
         this.hideSpinner();
         
-        if (isVod && !this._triedHls) {
-          this._triedHls = true;
-          console.warn('mpegts.js failed — falling back to hls.js for VOD...');
+        if (isVod) {
           this.destroyMpegts();
-          this._playAsHls(url, isVod);
+          this._handleVodPlaybackFallback({ code: 4, message: 'mpegts.js failed' });
         } else if (this._retryCount < 4) {
           console.warn('MPEG-TS error — scheduling retry…');
           this.destroyMpegts();
@@ -656,51 +718,62 @@ export class VideoPlayer {
     } else {
       // Direct VOD media files (mp4, mkv, etc.)
       this.video.src = url;
-      
-      const onError = (e) => {
-        const err = this.video.error;
-        console.warn('Direct VOD playback failed natively:', err);
-        
-        this.video.removeEventListener('error', onError);
-        
-        if (!this._triedMpegts) {
-          this._triedMpegts = true;
-          console.warn('Falling back to mpegts.js for direct VOD stream...');
-          this.destroyHls();
-          this.destroyMpegts();
-          this._playAsMpegTs(url, isVod);
-        } else if (!this._triedHls) {
-          this._triedHls = true;
-          console.warn('Falling back to hls.js for direct VOD stream...');
-          this.destroyHls();
-          this.destroyMpegts();
-          this._playAsHls(url, isVod);
-        } else {
-          let errMsg = 'This VOD stream could not be played.';
-          if (err) {
-            if (err.code === 3) errMsg = 'Video decoding failed (unsupported format).';
-            else if (err.code === 4) errMsg = 'VOD stream format not supported or 404 not found.';
-            if (err.message) errMsg += ` (${err.message})`;
-          }
-          this.showError(errMsg);
-        }
-      };
-      this.video.addEventListener('error', onError);
-
       this.video.load();
       this.video.play()
         .then(() => {
           this.hideSpinner();
-          this.video.removeEventListener('error', onError);
         })
         .catch(err => {
           console.error('Error playing direct VOD stream:', err);
           if (err.name === 'NotAllowedError') {
             this.hideSpinner();
             this.video.pause();
-            this.video.removeEventListener('error', onError);
           }
         });
+    }
+  }
+
+  // Common VOD fallback format router
+  _handleVodPlaybackFallback(err) {
+    const url = this._streamUrl;
+    const isVod = this._streamIsVod;
+
+    if (!this._triedMpegts) {
+      this._triedMpegts = true;
+      const fallbackUrl = replaceUrlExtension(url, 'ts');
+      console.warn(`Falling back to mpegts.js for direct VOD stream (rewriting extension to .ts): ${fallbackUrl}`);
+      this.destroyHls();
+      this.destroyMpegts();
+      this._playAsMpegTs(fallbackUrl, isVod);
+    } else if (!this._triedHls) {
+      this._triedHls = true;
+      const fallbackUrl = replaceUrlExtension(url, 'm3u8');
+      console.warn(`Falling back to hls.js for direct VOD stream (rewriting extension to .m3u8): ${fallbackUrl}`);
+      this.destroyHls();
+      this.destroyMpegts();
+      this._playAsHls(fallbackUrl, isVod);
+    } else if (!this._triedExtensionless) {
+      this._triedExtensionless = true;
+      const fallbackUrl = removeUrlExtension(url);
+      console.warn(`Falling back to direct play of extensionless URL: ${fallbackUrl}`);
+      this.destroyHls();
+      this.destroyMpegts();
+      this.video.src = fallbackUrl;
+      this.video.load();
+      this.video.play()
+        .then(() => this.hideSpinner())
+        .catch(playErr => {
+          console.error('Extensionless fallback play failed:', playErr);
+          // Let the global error handler catch the native error and call showError
+        });
+    } else {
+      let errMsg = 'This VOD stream could not be played.';
+      if (err) {
+        if (err.code === 3) errMsg = 'Video decoding failed (unsupported format).';
+        else if (err.code === 4) errMsg = 'VOD stream format not supported or 404 not found.';
+        if (err.message) errMsg += ` (${err.message})`;
+      }
+      this.showError(errMsg);
     }
   }
 

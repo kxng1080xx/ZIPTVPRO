@@ -936,6 +936,35 @@ export async function trackPlayback(id) {
   }
 }
 
+export function getIsServerMode() {
+  return isServerMode;
+}
+
+export function getStreamUrlSync(streamId, type = 'live', containerExtension = '', formatOverride = '') {
+  // Client Mode getStreamUrl
+  const creds = getCredentialsLocal();
+  if (!creds) throw new Error('Not logged in');
+
+  // Live default is .ts (most reliable); m3u8 is the fallback. On hosted web we
+  // must force m3u8 since a continuous .ts would hold the serverless proxy open.
+  // formatOverride lets the player request the backup format on failure.
+  const format = formatOverride || (USE_WEB_PROXY ? 'm3u8' : (creds.stream_format || 'ts'));
+  // VOD (movies/series episodes) are individual files addressed by their own
+  // container extension (mp4, mkv, …). Live channels use the stream_format.
+  const ext = containerExtension ? `.${containerExtension}` : '';
+
+  let targetUrl;
+  if (type === 'movie') {
+    targetUrl = `${creds.server_url}/movie/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${streamId}${ext}`;
+  } else if (type === 'series') {
+    targetUrl = `${creds.server_url}/series/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${streamId}${ext}`;
+  } else {
+    targetUrl = `${creds.server_url}/live/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${streamId}.${format}`;
+  }
+
+  return proxify(targetUrl);
+}
+
 export async function getStreamUrl(streamId, type = 'live', containerExtension = '', formatOverride = '') {
   if (isServerMode) {
     const params = new URLSearchParams({ type });
@@ -946,30 +975,10 @@ export async function getStreamUrl(streamId, type = 'live', containerExtension =
     const data = await response.json();
     return data.url;
   } else {
-    // Client Mode getStreamUrl
-    const creds = getCredentialsLocal();
-    if (!creds) throw new Error('Not logged in');
-
-    // Live default is .ts (most reliable); m3u8 is the fallback. On hosted web we
-    // must force m3u8 since a continuous .ts would hold the serverless proxy open.
-    // formatOverride lets the player request the backup format on failure.
-    const format = formatOverride || (USE_WEB_PROXY ? 'm3u8' : (creds.stream_format || 'ts'));
-    // VOD (movies/series episodes) are individual files addressed by their own
-    // container extension (mp4, mkv, …). Live channels use the stream_format.
-    const ext = containerExtension ? `.${containerExtension}` : '';
-
-    let targetUrl;
-    if (type === 'movie') {
-      targetUrl = `${creds.server_url}/movie/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${streamId}${ext}`;
-    } else if (type === 'series') {
-      targetUrl = `${creds.server_url}/series/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${streamId}${ext}`;
-    } else {
-      targetUrl = `${creds.server_url}/live/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${streamId}.${format}`;
-    }
-
-    return proxify(targetUrl);
+    return getStreamUrlSync(streamId, type, containerExtension, formatOverride);
   }
 }
+
 
 export async function getStreamInfo(id, type) {
   if (isServerMode) {
