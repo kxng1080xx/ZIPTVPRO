@@ -230,8 +230,15 @@ public class CastPlugin extends Plugin {
                 } catch (Exception e) {
                     encodedUrl = url;
                 }
+
+                String encodedContentType = "";
+                try {
+                    encodedContentType = java.net.URLEncoder.encode(contentType, "UTF-8");
+                } catch (Exception e) {
+                    encodedContentType = contentType;
+                }
                 
-                String proxyUrl = "http://" + phoneIp + ":" + port + "/proxy?url=" + encodedUrl + "&live=" + (isLive ? "1" : "0");
+                String proxyUrl = "http://" + phoneIp + ":" + port + "/proxy?url=" + encodedUrl + "&live=" + (isLive ? "1" : "0") + "&type=" + encodedContentType;
                 activeDlnaDeviceId = deviceId;
                 
                 new Thread(() -> playDlna(deviceId, proxyUrl, contentType, title, call)).start();
@@ -569,7 +576,7 @@ public class CastPlugin extends Plugin {
         }
     }
 
-    private String getLocalIpAddress() {
+    private static String getLocalIpAddress() {
         try {
             for (Enumeration<NetworkInterface> en = NetworkInterface.getNetworkInterfaces(); en.hasMoreElements();) {
                 NetworkInterface intf = en.nextElement();
@@ -778,6 +785,7 @@ public class CastPlugin extends Plugin {
                 String query = (queryIdx != -1) ? path.substring(queryIdx + 1) : null;
                 String targetUrl = null;
                 boolean isLive = false;
+                String contentTypeParam = null;
                 if (query != null) {
                     for (String param : query.split("&")) {
                         String[] kv = param.split("=");
@@ -786,6 +794,8 @@ public class CastPlugin extends Plugin {
                                 targetUrl = URLDecoder.decode(kv[1], "UTF-8");
                             } else if (kv[0].equals("live")) {
                                 isLive = kv[1].equals("1");
+                            } else if (kv[0].equals("type")) {
+                                contentTypeParam = URLDecoder.decode(kv[1], "UTF-8");
                             }
                         }
                     }
@@ -797,8 +807,10 @@ public class CastPlugin extends Plugin {
                 }
                 
                 String FLAGS = "ED100000000000000000000000000000";
-                String mime = isLive ? "video/mpeg" : "video/mp4";
-                String dlnaFeatures = isLive 
+                String mime = (contentTypeParam != null) ? contentTypeParam : (isLive ? "video/mpeg" : "video/mp4");
+                boolean isM3u8 = mime.contains("mpegurl") || mime.contains("mpegURL") || targetUrl.contains(".m3u8");
+                boolean isMpegts = (mime.contains("mpeg") || mime.contains("mp2t")) && !isM3u8;
+                String dlnaFeatures = isMpegts 
                     ? "DLNA.ORG_PN=MPEG_TS_NA_ISO;DLNA.ORG_OP=00;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=" + FLAGS 
                     : "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=" + FLAGS;
                 
@@ -827,7 +839,7 @@ public class CastPlugin extends Plugin {
                 }
                 
                 if (method.equalsIgnoreCase("GET")) {
-                    if (isLive) {
+                    if (isLive && !isM3u8) {
                         proxyLiveGet(client, targetUrl, mime, dlnaFeatures);
                     } else {
                         proxyGet(client, targetUrl, mime, dlnaFeatures, requestHeaders);
@@ -973,13 +985,53 @@ public class CastPlugin extends Plugin {
         private void proxyGet(Socket client, String targetUrl, String mime, String dlnaFeatures, Map<String, String> requestHeaders) {
             HttpURLConnection conn = null;
             try {
-                String rangeHeader = requestHeaders.get("range");
+                boolean isM3u8 = mime.contains("mpegurl") || mime.contains("mpegURL") || targetUrl.contains(".m3u8");
+                String rangeHeader = isM3u8 ? null : requestHeaders.get("range");
                 conn = connectWithRedirects(targetUrl, rangeHeader, 0);
                 
                 int responseCode = conn.getResponseCode();
                 
                 OutputStream out = client.getOutputStream();
                 PrintWriter writer = new PrintWriter(new OutputStreamWriter(out, "UTF-8"));
+                
+                if (isM3u8) {
+                    InputStream in = conn.getInputStream();
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(in, "UTF-8"));
+                    StringBuilder playlist = new StringBuilder();
+                    String line;
+                    String phoneIp = getLocalIpAddress();
+                    int localPort = getPort();
+                    
+                    while ((line = reader.readLine()) != null) {
+                        String trimmed = line.trim();
+                        if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+                            playlist.append(line).append("\n");
+                        } else {
+                            String absoluteUrl;
+                            try {
+                                absoluteUrl = new java.net.URL(new java.net.URL(targetUrl), trimmed).toString();
+                            } catch (Exception e) {
+                                absoluteUrl = trimmed;
+                            }
+                            String proxyChunkUrl = "http://" + phoneIp + ":" + localPort + "/proxy?url=" + java.net.URLEncoder.encode(absoluteUrl, "UTF-8");
+                            playlist.append(proxyChunkUrl).append("\n");
+                        }
+                    }
+                    reader.close();
+                    
+                    byte[] dataBytes = playlist.toString().getBytes("UTF-8");
+                    writer.print("HTTP/1.1 200 OK\r\n");
+                    writer.print("Content-Type: " + mime + "\r\n");
+                    writer.print("Content-Length: " + dataBytes.length + "\r\n");
+                    writer.print("Access-Control-Allow-Origin: *\r\n");
+                    writer.print("Connection: close\r\n\r\n");
+                    writer.flush();
+                    
+                    out.write(dataBytes);
+                    out.flush();
+                    client.close();
+                    return;
+                }
                 
                 if (responseCode == 206) {
                     writer.print("HTTP/1.1 206 Partial Content\r\n");

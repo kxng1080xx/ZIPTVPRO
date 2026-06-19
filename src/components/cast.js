@@ -219,16 +219,17 @@ const VOD_MIME = {
 // Uses the short /cast/<kind>/<id>.<ext> endpoint (clean, extension-bearing URL)
 // instead of the long /api/proxy?url=… form, which Samsung DLNA truncates / can't
 // type-sniff (→ UPnP 716). Chromecast plays HLS for live; DLNA gets MPEG-TS.
-async function buildCastMedia(ctx, isDlna) {
+async function buildCastMedia(ctx, isDlna, isEShare) {
   // Native phone (Google Cast): cast the PUBLIC provider URL directly — the
   // Chromecast fetches it. Live → HLS; VOD → its container.
   if (getBackend() === 'native') {
-    const format = ctx.isLive ? (isDlna ? 'ts' : 'm3u8') : '';
+    const useHls = ctx.isLive && (!isDlna || isEShare);
+    const format = useHls ? 'm3u8' : (ctx.isLive ? 'ts' : '');
     const mediaUrl = await getStreamUrl(ctx.streamId, ctx.type, ctx.ext || '', format);
     const ext = (ctx.ext || 'mp4').toLowerCase();
-    const contentType = ctx.isLive 
-      ? (isDlna ? 'video/mpeg' : 'application/x-mpegurl')
-      : (VOD_MIME[ext] || 'video/mp4');
+    const contentType = useHls 
+      ? 'application/x-mpegurl'
+      : (ctx.isLive ? 'video/mpeg' : (VOD_MIME[ext] || 'video/mp4'));
     return { mediaUrl, contentType };
   }
 
@@ -263,12 +264,13 @@ async function castToDevice(deviceId) {
   const dev = devices.find((d) => d.id === deviceId);
   const name = (dev && dev.name) || 'device';
   const isDlna = !!(dev && dev.type === 'dlna');
+  const isEShare = isDlna && /eshare/i.test(name);
 
   setStatus(`Connecting to ${name}…`);
   markRowBusy(deviceId, true);
 
   try {
-    const { path, mediaUrl, contentType } = await buildCastMedia(castCtx, isDlna);
+    const { path, mediaUrl, contentType } = await buildCastMedia(castCtx, isDlna, isEShare);
     console.log('[cast] sending to', name, '|', contentType, '|', mediaUrl || path);
 
     // Don't let an unresponsive receiver hang the UI indefinitely.
