@@ -3484,10 +3484,11 @@ body.vod-mode .now-next-bar {
 
   /* Series playback container (scrolling and detail card overrides on mobile) */
   .series-playback-container {
-    display: flex !important;
-    flex-direction: column !important;
-    height: 100% !important;
-    overflow: hidden !important;
+    display: block !important;
+    height: calc(100dvh - 60px) !important;
+    max-height: calc(100dvh - 60px) !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
     padding: 10px 12px 12px !important;
   }
 
@@ -3495,11 +3496,13 @@ body.vod-mode .now-next-bar {
     grid-template-columns: 1fr !important;
     gap: 0 !important;
     margin-bottom: 12px !important;
-    flex-shrink: 0 !important;
+    height: auto !important;
   }
 
   .series-player-wrapper {
-    flex-shrink: 0 !important;
+    width: 100% !important;
+    aspect-ratio: 16/9 !important;
+    height: auto !important;
   }
 
   .series-details-panel {
@@ -3507,24 +3510,14 @@ body.vod-mode .now-next-bar {
   }
 
   .series-bottom-section {
-    flex-grow: 1 !important;
-    flex-shrink: 1 !important;
-    min-height: 0 !important;
-    display: flex !important;
-    flex-direction: column !important;
-    overflow: hidden !important;
-  }
-
-  .series-bottom-header {
-    flex-shrink: 0 !important;
+    display: block !important;
+    overflow: visible !important;
+    height: auto !important;
   }
 
   .series-episodes-list {
-    flex-grow: 1 !important;
     max-height: none !important;
-    overflow-y: auto !important;
-    -webkit-overflow-scrolling: touch;
-    min-height: 0 !important;
+    overflow-y: visible !important;
   }
 
   /* Settings Modal overrides */
