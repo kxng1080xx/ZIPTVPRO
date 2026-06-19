@@ -14,7 +14,7 @@
     "preview": "vite preview",
     "start": "node server/index.js",
     "electron:start": "electron .",
-    "electron:dist": "npm run bump && npm run build && electron-builder && copy /Y \"dist-electron\\ZIPTV Pro Setup *.exe\" ZIPTV-Pro-Setup.exe",
+    "electron:dist": "npm run bump && npm run build && electron-builder && copy /Y \"dist-electron\\ZIPTV Pro Setup *.exe\" latest.exe",
     "apk": "npm run bump && npm run build && npx cap sync android && cd android && gradlew.bat assembleDebug && cd .. && copy /Y android\\app\\build\\outputs\\apk\\debug\\app-debug.apk app.apk && copy /Y app.apk ZIPTV-Pro.apk && echo APK ready: app.apk + ZIPTV-Pro.apk"
   },
   "dependencies": {
