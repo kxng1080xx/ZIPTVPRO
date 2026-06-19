@@ -949,9 +949,9 @@ export function getStreamUrlSync(streamId, type = 'live', containerExtension = '
   // must force m3u8 since a continuous .ts would hold the serverless proxy open.
   // formatOverride lets the player request the backup format on failure.
   const format = formatOverride || (USE_WEB_PROXY ? 'm3u8' : (creds.stream_format || 'ts'));
-  // VOD (movies/series episodes) are requested extensionless by default for maximum compatibility
-  // with Xtream Codes panels (as was done in the working version 2.7.0).
-  const ext = '';
+  // VOD (movies/series episodes) are individual files addressed by their own
+  // container extension (mp4, mkv, …). Live channels use the stream_format.
+  const ext = containerExtension ? `.${containerExtension}` : '';
 
   let targetUrl;
   if (type === 'movie') {

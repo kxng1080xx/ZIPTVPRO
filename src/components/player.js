@@ -462,8 +462,10 @@ export class VideoPlayer {
     this._retryCount = 0;
     this._streamUrl = url;
     this._streamIsVod = isVod;
-    this._triedMpegts = false;
-    this._triedHls = false;
+    this._triedMpegtsOriginal = false;
+    this._triedHlsOriginal = false;
+    this._triedMpegtsRewritten = false;
+    this._triedHlsRewritten = false;
     this._triedExtensionless = false;
     // Bumped on every new stream so a pending live reconnect for an old
     // channel cancels itself once the user has switched away.
@@ -715,24 +717,26 @@ export class VideoPlayer {
     }
 
     if (isHls) {
-      this._triedHls = true;
+      this._triedHlsOriginal = true;
+      this._triedHlsRewritten = true;
       this._playAsHls(url, isVod);
     } else if (isMpegTs) {
-      this._triedMpegts = true;
+      this._triedMpegtsOriginal = true;
+      this._triedMpegtsRewritten = true;
       this._playAsMpegTs(url, isVod);
     } else {
       // Direct VOD media files (mp4, mkv, etc.)
       this.video.src = url;
       this.video.load();
 
-      // Set a 3.5-second timeout to detect silent stalls/blocks (e.g. mixed content blocks)
+      // Set a 7.5-second timeout to detect silent stalls/blocks (e.g. mixed content blocks)
       clearTimeout(this._vodLoadTimeout);
       this._vodLoadTimeout = setTimeout(() => {
         if (this.video.readyState < 1 && this.hasStream && !this.hls && !this.mpegtsPlayer) {
           console.warn('Direct VOD playback timed out (readyState < 1) — triggering fallback.');
           this._handleVodPlaybackFallback({ code: 4, message: 'Playback load timeout' });
         }
-      }, 3500);
+      }, 7500);
 
       this.video.play()
         .then(() => {
@@ -755,34 +759,50 @@ export class VideoPlayer {
     const url = this._streamUrl;
     const isVod = this._streamIsVod;
 
-    if (!this._triedMpegts) {
-      this._triedMpegts = true;
+    if (!this._triedMpegtsOriginal) {
+      this._triedMpegtsOriginal = true;
+      console.warn(`Falling back to mpegts.js with original URL: ${url}`);
+      this.destroyHls();
+      this.destroyMpegts();
+      this._playAsMpegTs(url, isVod);
+    } else if (!this._triedHlsOriginal) {
+      this._triedHlsOriginal = true;
+      console.warn(`Falling back to hls.js with original URL: ${url}`);
+      this.destroyHls();
+      this.destroyMpegts();
+      this._playAsHls(url, isVod);
+    } else if (!this._triedMpegtsRewritten) {
+      this._triedMpegtsRewritten = true;
       const fallbackUrl = replaceUrlExtension(url, 'ts');
-      console.warn(`Falling back to mpegts.js for direct VOD stream (rewriting extension to .ts): ${fallbackUrl}`);
+      console.warn(`Falling back to mpegts.js with .ts rewritten URL: ${fallbackUrl}`);
       this.destroyHls();
       this.destroyMpegts();
       this._playAsMpegTs(fallbackUrl, isVod);
-    } else if (!this._triedHls) {
-      this._triedHls = true;
+    } else if (!this._triedHlsRewritten) {
+      this._triedHlsRewritten = true;
       const fallbackUrl = replaceUrlExtension(url, 'm3u8');
-      console.warn(`Falling back to hls.js for direct VOD stream (rewriting extension to .m3u8): ${fallbackUrl}`);
+      console.warn(`Falling back to hls.js with .m3u8 rewritten URL: ${fallbackUrl}`);
       this.destroyHls();
       this.destroyMpegts();
       this._playAsHls(fallbackUrl, isVod);
     } else if (!this._triedExtensionless) {
       this._triedExtensionless = true;
       const fallbackUrl = removeUrlExtension(url);
-      console.warn(`Falling back to direct play of extensionless URL: ${fallbackUrl}`);
-      this.destroyHls();
-      this.destroyMpegts();
-      this.video.src = fallbackUrl;
-      this.video.load();
-      this.video.play()
-        .then(() => this.hideSpinner())
-        .catch(playErr => {
-          console.error('Extensionless fallback play failed:', playErr);
-          // Let the global error handler catch the native error and call showError
-        });
+      if (fallbackUrl !== url) {
+        console.warn(`Falling back to direct play of extensionless URL: ${fallbackUrl}`);
+        this.destroyHls();
+        this.destroyMpegts();
+        this.video.src = fallbackUrl;
+        this.video.load();
+        this.video.play()
+          .then(() => this.hideSpinner())
+          .catch(playErr => {
+            console.error('Extensionless fallback play failed:', playErr);
+          });
+      } else {
+        // Skip extensionless direct fallback if URL was already extensionless
+        this._handleVodPlaybackFallback(err);
+      }
     } else {
       let errMsg = 'This VOD stream could not be played.';
       if (err) {
@@ -790,6 +810,7 @@ export class VideoPlayer {
         else if (err.code === 4) errMsg = 'VOD stream format not supported or 404 not found.';
         if (err.message) errMsg += ` (${err.message})`;
       }
+
       this.showError(errMsg);
     }
   }
