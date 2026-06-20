@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, dialog } = require('electron');
 const net = require('net');
 const path = require('path');
 const { initCast } = require('./electron/cast-manager.cjs');
@@ -137,13 +137,29 @@ function createWindow() {
     mainWindow.hide();
   });
 
-  // Closing the window hides it to the tray rather than quitting. The app only
-  // truly exits via the tray's "Quit" item (or app.quit), which sets isQuitting.
+  // Closing the window asks whether to quit or keep running in the tray. The app
+  // only truly exits via this dialog's "Quit" (or the tray's "Quit"), which sets
+  // isQuitting.
   mainWindow.on('close', (e) => {
-    if (!isQuitting) {
-      e.preventDefault();
+    if (isQuitting) return;
+    e.preventDefault();
+    const choice = dialog.showMessageBoxSync(mainWindow, {
+      type: 'question',
+      buttons: ['Minimize to tray', 'Quit', 'Cancel'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,
+      title: 'Close ZIPTV Pro',
+      message: 'Close ZIPTV Pro?',
+      detail: 'Keep it running in the system tray, or quit completely.'
+    });
+    if (choice === 0) {
       mainWindow.hide();
+    } else if (choice === 1) {
+      isQuitting = true;
+      app.quit();
     }
+    // choice === 2 (Cancel): leave the window open.
   });
 
   loadWhenServerReady();

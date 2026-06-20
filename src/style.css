@@ -4370,6 +4370,19 @@ body.epg-fullscreen-active .epg-section-container {
   flex: 1 !important;
 }
 
+/* Pin marker on pinned channels (kept at the top of the list). */
+.epg-pin-marker {
+  width: 13px !important;
+  height: 13px !important;
+  color: #00f3ff !important;
+  fill: #00f3ff !important;
+  flex-shrink: 0 !important;
+  transform: rotate(45deg);
+}
+.epg-channel-row.pinned {
+  background: rgba(0, 243, 255, 0.05);
+}
+
 .quality-badge {
   display: inline-block !important;
   font-size: 10px !important;

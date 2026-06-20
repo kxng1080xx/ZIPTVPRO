@@ -465,6 +465,79 @@ function renderPinnedCategories() {
   if (window.lucide) lucide.createIcons({ scope: list });
 }
 
+// ==========================================================================
+// CHANNEL VIEW COUNTS (for "Most Viewed" sort) + PINNED CHANNELS
+// Both are kept per-playlist in localStorage, like pinned categories.
+// ==========================================================================
+function getChannelViewCounts() {
+  try {
+    const all = JSON.parse(localStorage.getItem('channel_view_counts') || '{}');
+    return all[getCurrentPlaylistId()] || {};
+  } catch (e) { return {}; }
+}
+window.getChannelViewCounts = getChannelViewCounts;
+
+function incrementChannelView(streamId) {
+  if (streamId == null) return;
+  try {
+    const all = JSON.parse(localStorage.getItem('channel_view_counts') || '{}');
+    const pid = getCurrentPlaylistId();
+    all[pid] = all[pid] || {};
+    all[pid][String(streamId)] = (all[pid][String(streamId)] || 0) + 1;
+    localStorage.setItem('channel_view_counts', JSON.stringify(all));
+  } catch (e) {}
+}
+
+function getPinnedChannelsStore() {
+  try { return JSON.parse(localStorage.getItem('pinned_channels') || '{}'); }
+  catch (e) { return {}; }
+}
+function getPinnedChannels() {
+  const store = getPinnedChannelsStore();
+  const list = store[getCurrentPlaylistId()];
+  return Array.isArray(list) ? list : [];
+}
+window.getPinnedChannels = getPinnedChannels;
+
+function isChannelPinned(id) {
+  return getPinnedChannels().some(x => String(x) === String(id));
+}
+function togglePinChannel(id, name) {
+  id = String(id);
+  const store = getPinnedChannelsStore();
+  const pid = getCurrentPlaylistId();
+  let list = Array.isArray(store[pid]) ? store[pid] : [];
+  if (list.some(x => String(x) === id)) {
+    list = list.filter(x => String(x) !== id);
+    showToast(`Unpinned “${name}”`, 'info');
+  } else {
+    list.push(id);
+    showToast(`Pinned “${name}” to top`, 'success');
+  }
+  store[pid] = list;
+  localStorage.setItem('pinned_channels', JSON.stringify(store));
+  if (epgGridInstance) epgGridInstance.render();
+}
+
+// Pin/unpin menu for a focused/right-clicked channel row in the live guide.
+window.openChannelPinMenu = function (rowEl) {
+  if (!rowEl) return;
+  const id = rowEl.dataset.streamId;
+  if (!id) return;
+  const name = rowEl.querySelector('.epg-channel-name-text')?.textContent?.trim() || 'Channel';
+  const pinned = isChannelPinned(id);
+  openSortDropdown({
+    title: name,
+    options: [{ value: 'toggle', label: pinned ? 'Unpin from top' : 'Pin to top' }],
+    onSelect: () => {
+      togglePinChannel(id, name);
+      const again = document.querySelector(`.epg-channel-row[data-stream-id="${id}"]`);
+      if (again) navigation.setFocus('channels', again);
+      else navigation.focusDefault('channels');
+    }
+  });
+};
+
 // Open the pin/unpin action menu for a focused category (remote MENU key or
 // right-click). Reuses the D-pad-navigable dropdown overlay.
 window.openCategoryPinMenu = function (el) {
@@ -562,6 +635,7 @@ async function selectAndPlayChannel(channel, programBlock) {
 
   // Track history
   try {
+    incrementChannelView(channel.stream_id); // local tally for the "Most Viewed" sort
     await trackPlayback(channel.stream_id);
     state.counts.recently_viewed = Math.min(50, state.counts.recently_viewed + 1);
     document.getElementById('count-recently-viewed').textContent = state.counts.recently_viewed;
@@ -2110,15 +2184,31 @@ function bindGlobalEvents() {
     });
   }
 
+  // Right-click a channel row (PC) → pin/unpin menu. Remote MENU key is handled
+  // in tv-navigation.js.
+  document.getElementById('epg-channels-list')?.addEventListener('contextmenu', (e) => {
+    const row = e.target.closest('.epg-channel-row');
+    if (!row) return;
+    e.preventDefault();
+    window.openChannelPinMenu(row);
+  });
+
   // Live channel sort button → custom dropdown
   const liveSortBtn = document.getElementById('epg-channels-sort-btn');
   const liveSortLabel = document.getElementById('epg-channels-sort-label');
   if (liveSortBtn) {
     const LIVE_SORT_OPTIONS = [
       { value: 'added', label: 'Default Order' },
-      { value: 'name', label: 'Name (A-Z)' }
+      { value: 'name', label: 'Name (A-Z)' },
+      { value: 'name_desc', label: 'Name (Z-A)' },
+      { value: 'most_viewed', label: 'Most Viewed' }
     ];
-    const LIVE_SORT_LABEL = { added: 'Default Order', name: 'Name (A-Z)' };
+    const LIVE_SORT_LABEL = {
+      added: 'Default Order',
+      name: 'Name (A-Z)',
+      name_desc: 'Name (Z-A)',
+      most_viewed: 'Most Viewed'
+    };
     liveSortBtn.addEventListener('click', () => {
       openSortDropdown({
         title: 'Sort Channels',

@@ -293,12 +293,26 @@ export class EPGGrid {
     const pxPerMs = this.pxPerHour / (60 * 60 * 1000);
 
     const query = (filterKeyword || '').toLowerCase();
-    const filtered = this.channels.filter(c => (c.name || '').toLowerCase().includes(query));
+    let filtered = this.channels.filter(c => (c.name || '').toLowerCase().includes(query));
 
     if (this.channelsSort === 'name') {
       filtered.sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
+    } else if (this.channelsSort === 'name_desc') {
+      filtered.sort((a, b) => (b.name || '').localeCompare(a.name || '', undefined, { sensitivity: 'base' }));
+    } else if (this.channelsSort === 'most_viewed') {
+      const counts = (window.getChannelViewCounts && window.getChannelViewCounts()) || {};
+      filtered.sort((a, b) => (counts[String(b.stream_id)] || 0) - (counts[String(a.stream_id)] || 0));
     }
-    
+
+    // Pinned channels always float to the top (keeping the chosen sort order
+    // among themselves and among the rest).
+    const pinned = new Set(((window.getPinnedChannels && window.getPinnedChannels()) || []).map(String));
+    if (pinned.size) {
+      const pins = filtered.filter(c => pinned.has(String(c.stream_id)));
+      const rest = filtered.filter(c => !pinned.has(String(c.stream_id)));
+      filtered = [...pins, ...rest];
+    }
+
     this.visibleCount.textContent = `(${filtered.length})`;
 
     this.channelsList.innerHTML = '';
@@ -309,9 +323,10 @@ export class EPGGrid {
 
       // --- 1. Channel Left Item ---
       const chanRow = document.createElement('div');
-      chanRow.className = 'epg-channel-row';
+      const isPinned = pinned.has(streamId);
+      chanRow.className = 'epg-channel-row' + (isPinned ? ' pinned' : '');
       chanRow.dataset.streamId = streamId;
-      
+
       const logo = channel.stream_icon || '';
       const guideHtml = this.buildInlineGuide(this.getNowNext(streamId));
       const qualityBadge = getQualityBadgeHtml(channel.name);
@@ -321,6 +336,7 @@ export class EPGGrid {
         </div>
         <div class="epg-channel-row-meta">
           <div class="epg-channel-row-name">
+            ${isPinned ? '<i data-lucide="pin" class="epg-pin-marker"></i>' : ''}
             <span class="epg-channel-name-text">${channel.name}</span>
             ${qualityBadge}
           </div>

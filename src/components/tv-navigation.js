@@ -426,6 +426,11 @@ class TVNavigation {
         e.preventDefault();
         return;
       }
+      if (el && el.classList.contains('epg-channel-row') && typeof window.openChannelPinMenu === 'function') {
+        window.openChannelPinMenu(el);
+        e.preventDefault();
+        return;
+      }
     }
 
     const activeEl = document.activeElement;
