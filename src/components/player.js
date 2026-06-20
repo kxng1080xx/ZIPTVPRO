@@ -181,8 +181,11 @@ export class VideoPlayer {
     };
     document.addEventListener('fullscreenchange', this._onFullscreenChange);
 
-    // CC Toggle
-    this.ccBtn.addEventListener('click', () => this.toggleCaptions());
+    // Audio & Subtitles menu (falls back to a simple caption toggle).
+    this.ccBtn.addEventListener('click', () => {
+      if (typeof window.openPlayerTrackMenu === 'function') window.openPlayerTrackMenu();
+      else this.toggleCaptions();
+    });
 
     // Info button toggle channel details panel
     if (this.infoBtn) {
@@ -1136,6 +1139,68 @@ export class VideoPlayer {
         const track = tracks[0];
         track.mode = track.mode === 'showing' ? 'disabled' : 'showing';
         this.ccBtn.style.color = track.mode === 'showing' ? '#06b6d4' : '#fff';
+      }
+    }
+  }
+
+  // Collect the audio + subtitle tracks available from whichever engine is
+  // active (hls.js, or the native <video> for mpegts/direct play).
+  getTrackMenu() {
+    const audio = [];
+    const subs = [{ id: 'sub:off', label: 'Off', active: false }];
+
+    if (this.hls) {
+      (this.hls.audioTracks || []).forEach((t, i) => {
+        audio.push({ id: 'audio:' + i, label: t.name || t.lang || `Audio ${i + 1}`, active: i === this.hls.audioTrack });
+      });
+      (this.hls.subtitleTracks || []).forEach((t, i) => {
+        subs.push({ id: 'sub:' + i, label: t.name || t.lang || `Subtitle ${i + 1}`, active: i === this.hls.subtitleTrack });
+      });
+      subs[0].active = this.hls.subtitleTrack === -1;
+    } else {
+      const at = this.video.audioTracks;
+      if (at && at.length) {
+        for (let i = 0; i < at.length; i++) {
+          audio.push({ id: 'audio:' + i, label: at[i].label || at[i].language || `Audio ${i + 1}`, active: !!at[i].enabled });
+        }
+      }
+      const tt = this.video.textTracks;
+      let anySub = false;
+      if (tt && tt.length) {
+        for (let i = 0; i < tt.length; i++) {
+          const showing = tt[i].mode === 'showing';
+          if (showing) anySub = true;
+          subs.push({ id: 'sub:' + i, label: tt[i].label || tt[i].language || `Subtitle ${i + 1}`, active: showing });
+        }
+      }
+      subs[0].active = !anySub;
+    }
+
+    return { audio, subs };
+  }
+
+  // Apply a track chosen from the menu: "audio:<i>", "sub:<i>" or "sub:off".
+  applyTrack(id) {
+    const [kind, idxStr] = String(id).split(':');
+    if (kind === 'audio') {
+      const i = parseInt(idxStr, 10);
+      if (this.hls) {
+        this.hls.audioTrack = i;
+      } else if (this.video.audioTracks) {
+        for (let j = 0; j < this.video.audioTracks.length; j++) this.video.audioTracks[j].enabled = (j === i);
+      }
+    } else if (kind === 'sub') {
+      if (idxStr === 'off') {
+        if (this.hls) this.hls.subtitleTrack = -1;
+        const tt = this.video.textTracks;
+        if (tt) for (let j = 0; j < tt.length; j++) tt[j].mode = 'disabled';
+        this.ccBtn.style.color = '#fff';
+      } else {
+        const i = parseInt(idxStr, 10);
+        if (this.hls) { this.hls.subtitleTrack = i; this.hls.subtitleDisplay = true; }
+        const tt = this.video.textTracks;
+        if (tt) for (let j = 0; j < tt.length; j++) tt[j].mode = (j === i) ? 'showing' : 'disabled';
+        this.ccBtn.style.color = '#06b6d4';
       }
     }
   }

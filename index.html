@@ -291,7 +291,7 @@
 
                     <div class="control-row-right">
                       <button class="player-control-icon" id="player-info-btn" title="Channel Info"><i data-lucide="info"></i></button>
-                      <button class="player-control-icon" id="player-cc-btn" title="Subtitles"><i data-lucide="subtitles"></i></button>
+                      <button class="player-control-icon" id="player-cc-btn" title="Audio &amp; Subtitles"><i data-lucide="subtitles"></i></button>
                       <button class="player-control-icon" id="player-volume-btn" title="Mute"><i data-lucide="volume-2"></i></button>
                       <input type="range" class="player-volume-slider" id="player-volume-slider" min="0" max="1" step="0.05" value="0.8">
                       <button class="player-control-icon" id="player-pip-btn" title="Picture in Picture"><i data-lucide="picture-in-picture"></i></button>
@@ -662,6 +662,23 @@
               <span class="settings-help">Recommended. Pipes stream chunks through your local server to bypass browser blockages.</span>
             </label>
           </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Sleep Timer</h3>
+          <div class="settings-group">
+            <label for="settings-sleep-timer">Stop playback after</label>
+            <select id="settings-sleep-timer">
+              <option value="0">Off</option>
+              <option value="15">15 minutes</option>
+              <option value="30">30 minutes</option>
+              <option value="45">45 minutes</option>
+              <option value="60">1 hour</option>
+              <option value="90">1.5 hours</option>
+              <option value="120">2 hours</option>
+            </select>
+          </div>
+          <span class="settings-help" id="settings-sleep-status">Off</span>
         </div>
 
         <div class="settings-section">

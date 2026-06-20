@@ -1,7 +1,7 @@
 {
   "name": "iptv-player-zero",
   "productName": "ZIPTV Pro",
-  "version": "3.25.0",
+  "version": "3.26.0",
   "description": "Premium IPTV Player - ZIPTV Pro",
   "main": "main.electron.cjs",
   "type": "module",
@@ -24,6 +24,7 @@
     "cors": "^2.8.5",
     "dexie": "^4.4.3",
     "dlnacasts": "^0.1.0",
+    "electron-updater": "^6.8.9",
     "express": "^4.21.2",
     "hls.js": "^1.5.15",
     "mpegts.js": "^1.8.0"
@@ -52,6 +53,16 @@
     "win": {
       "target": "nsis"
     },
+    "nsis": {
+      "artifactName": "ZIPTV-Pro-Setup-${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "kxng1080xx",
+        "repo": "ZIPTVPRO"
+      }
+    ],
     "directories": {
       "output": "dist-electron"
     },

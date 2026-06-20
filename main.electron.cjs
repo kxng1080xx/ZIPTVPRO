@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, dialog } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const net = require('net');
 const path = require('path');
 const { initCast } = require('./electron/cast-manager.cjs');
@@ -41,6 +42,7 @@ if (!gotLock) {
   app.on('ready', async () => {
     await startExpressServer();
     createWindow();
+    initAutoUpdate();
   });
 
   app.on('window-all-closed', () => {
@@ -178,6 +180,41 @@ function showMainWindow() {
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
+}
+
+// Background auto-update (Windows installer). electron-updater reads the GitHub
+// release's latest.yml, downloads the new installer in the background, and we
+// prompt to restart once it's ready. No-op in dev (unpackaged).
+function initAutoUpdate() {
+  if (!app.isPackaged) return;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('update-downloaded', (info) => {
+    const choice = dialog.showMessageBoxSync(mainWindow, {
+      type: 'info',
+      buttons: ['Restart now', 'Later'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+      title: 'Update ready',
+      message: `ZIPTV Pro ${info && info.version ? 'v' + info.version : 'update'} is ready`,
+      detail: 'Restart now to install the update, or it will install the next time you quit.'
+    });
+    if (choice === 0) {
+      isQuitting = true;
+      autoUpdater.quitAndInstall();
+    }
+  });
+
+  // Releases may not always carry updater metadata — never crash on that.
+  autoUpdater.on('error', (err) => {
+    console.error('[updater]', err && err.message ? err.message : err);
+  });
+
+  autoUpdater.checkForUpdates().catch(() => {});
+  // Re-check every 3 hours for long-running sessions.
+  setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 3 * 60 * 60 * 1000);
 }
 
 // Create the system-tray icon and its context menu. Double-clicking the tray

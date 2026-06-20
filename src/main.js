@@ -465,6 +465,65 @@ function renderPinnedCategories() {
   if (window.lucide) lucide.createIcons({ scope: list });
 }
 
+// Audio & Subtitle track picker for the player (remote/D-pad friendly).
+window.openPlayerTrackMenu = function () {
+  const p = window.playerInstance;
+  if (!p || typeof p.getTrackMenu !== 'function') return;
+  const { audio, subs } = p.getTrackMenu();
+
+  const options = [];
+  if (audio.length > 1) {
+    audio.forEach(a => options.push({ value: a.id, label: `Audio: ${a.label}${a.active ? '  ✓' : ''}` }));
+  }
+  // Subtitles always offered (Off + any available tracks) when there's a choice.
+  if (subs.length > 1) {
+    subs.forEach(s => options.push({
+      value: s.id,
+      label: `${s.id === 'sub:off' ? 'Subtitles: Off' : 'Subtitle: ' + s.label}${s.active ? '  ✓' : ''}`
+    }));
+  }
+
+  if (options.length === 0) {
+    showToast('No alternate audio or subtitle tracks', 'info');
+    return;
+  }
+
+  openSortDropdown({
+    title: 'Audio & Subtitles',
+    options,
+    onSelect: (v) => {
+      p.applyTrack(v);
+      navigation.focusDefault('player');
+    }
+  });
+};
+
+// ==========================================================================
+// SLEEP TIMER — stop playback after a chosen number of minutes.
+// ==========================================================================
+let sleepTimerId = null;
+function setSleepTimer(minutes) {
+  clearTimeout(sleepTimerId);
+  sleepTimerId = null;
+  const statusEl = document.getElementById('settings-sleep-status');
+  if (!minutes) {
+    if (statusEl) statusEl.textContent = 'Off';
+    return;
+  }
+  sleepTimerId = setTimeout(() => {
+    try { if (playerInstance) playerInstance.stop(); } catch (e) {}
+    showToast('Sleep timer: playback stopped', 'info', 6000);
+    const sel = document.getElementById('settings-sleep-timer');
+    if (sel) sel.value = '0';
+    if (statusEl) statusEl.textContent = 'Off';
+    sleepTimerId = null;
+  }, minutes * 60000);
+  const endsAt = new Date(Date.now() + minutes * 60000)
+    .toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  if (statusEl) statusEl.textContent = `Playback will stop at ${endsAt}`;
+  showToast(`Sleep timer set for ${minutes} min`, 'success');
+}
+
 // ==========================================================================
 // CHANNEL VIEW COUNTS (for "Most Viewed" sort) + PINNED CHANNELS
 // Both are kept per-playlist in localStorage, like pinned categories.
@@ -1988,6 +2047,11 @@ function bindGlobalEvents() {
 
   document.getElementById('settings-proxy').addEventListener('change', async (e) => {
     await updatePreferences({ proxy_streams: e.target.checked });
+  });
+
+  // Sleep timer — stop playback after the chosen duration.
+  document.getElementById('settings-sleep-timer')?.addEventListener('change', (e) => {
+    setSleepTimer(parseInt(e.target.value, 10) || 0);
   });
 
   // Sync now click

@@ -1214,11 +1214,12 @@ class TVNavigation {
       // Settings modal navigation
       const format = document.getElementById('settings-format');
       const proxy = document.getElementById('settings-proxy');
+      const sleep = document.getElementById('settings-sleep-timer');
       const syncBtn = document.getElementById('settings-sync-now');
       const checkUpdateBtn = document.getElementById('settings-check-update');
       const logoutBtn = document.getElementById('settings-logout');
 
-      const focusables = [format, proxy, syncBtn, checkUpdateBtn, logoutBtn].filter(Boolean);
+      const focusables = [format, proxy, sleep, syncBtn, checkUpdateBtn, logoutBtn].filter(Boolean);
       let index = focusables.indexOf(this.focusedElement);
 
       if (index === -1) {
