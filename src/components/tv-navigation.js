@@ -35,11 +35,11 @@ class TVNavigation {
     document.addEventListener('fullscreenchange', () => {
       if (!document.fullscreenElement) {
         if (document.body.classList.contains('vod-mode')) {
-          const backBtn = document.getElementById('player-back-btn');
-          if (backBtn) {
-            backBtn.click();
-            return;
-          }
+          // Exiting fullscreen on a movie/episode keeps the windowed VOD overlay
+          // (which is itself a full-window player). Don't tear down playback —
+          // the user leaves via the back button.
+          this.focusDefault('player');
+          return;
         }
 
         const activeTab = document.querySelector('.nav-tab.active')?.dataset.tab;
@@ -1211,38 +1211,48 @@ class TVNavigation {
         e.preventDefault();
       }
     } else if (modal.id === 'settings-modal') {
-      // Settings modal navigation
-      const format = document.getElementById('settings-format');
-      const proxy = document.getElementById('settings-proxy');
-      const sleep = document.getElementById('settings-sleep-timer');
-      const syncBtn = document.getElementById('settings-sync-now');
-      const checkUpdateBtn = document.getElementById('settings-check-update');
-      const logoutBtn = document.getElementById('settings-logout');
+      // Settings modal: a grid of tiles + the header close (X) button.
+      const closeBtn = document.getElementById('settings-close-btn');
+      const tiles = Array.from(document.querySelectorAll('#settings-grid .settings-tile'))
+        .filter(t => t.offsetParent !== null);
+      if (tiles.length === 0) return;
 
-      const focusables = [format, proxy, sleep, syncBtn, checkUpdateBtn, logoutBtn].filter(Boolean);
-      let index = focusables.indexOf(this.focusedElement);
+      // Close (X) button: Enter closes; Down drops back into the grid.
+      if (this.focusedElement === closeBtn) {
+        if (e.key === this.KEYS.ENTER) { closeBtn.click(); e.preventDefault(); }
+        else if (e.key === this.KEYS.DOWN) { this.setFocus('modal', tiles[0]); e.preventDefault(); }
+        return;
+      }
 
+      let index = tiles.indexOf(this.focusedElement);
       if (index === -1) {
-        this.setFocus('modal', focusables[0]);
+        this.setFocus('modal', tiles[0]);
         e.preventDefault();
         return;
       }
 
-      if (e.key === this.KEYS.DOWN) {
-        if (index < focusables.length - 1) {
-          this.setFocus('modal', focusables[index + 1]);
-        }
+      // Columns = number of tiles sharing the first row's offsetTop.
+      let cols = 1;
+      const firstTop = tiles[0].offsetTop;
+      for (let i = 1; i < tiles.length; i++) {
+        if (tiles[i].offsetTop > firstTop) { cols = i; break; }
+        cols = i + 1;
+      }
+
+      if (e.key === this.KEYS.RIGHT) {
+        if (index < tiles.length - 1) this.setFocus('modal', tiles[index + 1]);
+        e.preventDefault();
+      } else if (e.key === this.KEYS.LEFT) {
+        if (index > 0) this.setFocus('modal', tiles[index - 1]);
+        e.preventDefault();
+      } else if (e.key === this.KEYS.DOWN) {
+        if (index + cols < tiles.length) this.setFocus('modal', tiles[index + cols]);
         e.preventDefault();
       } else if (e.key === this.KEYS.UP) {
-        if (index > 0) {
-          this.setFocus('modal', focusables[index - 1]);
-        }
+        if (index - cols >= 0) this.setFocus('modal', tiles[index - cols]);
+        else if (closeBtn) this.setFocus('modal', closeBtn); // top row → header X
         e.preventDefault();
       } else if (e.key === this.KEYS.ENTER) {
-        if (this.focusedElement.tagName === 'SELECT') {
-          // let browser handle dropdown select expansion
-          return;
-        }
         this.focusedElement.click();
         e.preventDefault();
       }
@@ -1274,7 +1284,7 @@ class TVNavigation {
     
     // Row 3: Bottom icons
     const row3 = [];
-    ['player-info-btn', 'player-cc-btn', 'player-volume-btn', 'player-pip-btn', 'player-fullscreen-btn'].forEach(id => {
+    ['player-stop-btn', 'player-info-btn', 'player-cc-btn', 'player-volume-btn', 'player-pip-btn', 'player-fullscreen-btn'].forEach(id => {
       const el = document.getElementById(id);
       if (el && el.offsetParent !== null) row3.push(el);
     });

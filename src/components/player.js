@@ -69,6 +69,7 @@ export class VideoPlayer {
     this.watermark = document.getElementById('player-watermark');
     this.watermarkImg = document.getElementById('watermark-img');
     this.pipBtn = document.getElementById('player-pip-btn');
+    this.stopBtn = document.getElementById('player-stop-btn');
     this.infoBtn = document.getElementById('player-info-btn');
     this.fpsIndicatorEl = document.getElementById('player-fps-indicator');
     this.currentFps = 30;
@@ -180,6 +181,11 @@ export class VideoPlayer {
       lucide.createIcons({ scope: this.fullscreenBtn });
     };
     document.addEventListener('fullscreenchange', this._onFullscreenChange);
+
+    // Stop playback (tear down the stream entirely).
+    if (this.stopBtn) {
+      this.stopBtn.addEventListener('click', () => this.stop());
+    }
 
     // Audio & Subtitles menu (falls back to a simple caption toggle).
     this.ccBtn.addEventListener('click', () => {

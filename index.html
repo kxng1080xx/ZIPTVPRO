@@ -290,6 +290,7 @@
                     </div>
 
                     <div class="control-row-right">
+                      <button class="player-control-icon" id="player-stop-btn" title="Stop"><i data-lucide="square"></i></button>
                       <button class="player-control-icon" id="player-info-btn" title="Channel Info"><i data-lucide="info"></i></button>
                       <button class="player-control-icon" id="player-cc-btn" title="Audio &amp; Subtitles"><i data-lucide="subtitles"></i></button>
                       <button class="player-control-icon" id="player-volume-btn" title="Mute"><i data-lucide="volume-2"></i></button>
@@ -646,69 +647,50 @@
       </div>
       
       <div class="settings-body">
-        <div class="settings-section">
-          <h3>Streaming Preferences</h3>
-          <div class="settings-group">
-            <label for="settings-format">Stream Format</label>
-            <select id="settings-format">
-              <option value="ts">MPEG-TS (.ts) - Recommended</option>
-              <option value="m3u8">HLS (.m3u8) - Fallback</option>
-            </select>
-          </div>
-          <div class="settings-group checkbox-group">
-            <input type="checkbox" id="settings-proxy" checked>
-            <label for="settings-proxy">
-              Enable CORS Proxy (Local Backend)
-              <span class="settings-help">Recommended. Pipes stream chunks through your local server to bypass browser blockages.</span>
-            </label>
-          </div>
-        </div>
+        <div class="settings-grid" id="settings-grid">
 
-        <div class="settings-section">
-          <h3>Sleep Timer</h3>
-          <div class="settings-group">
-            <label for="settings-sleep-timer">Stop playback after</label>
-            <select id="settings-sleep-timer">
-              <option value="0">Off</option>
-              <option value="15">15 minutes</option>
-              <option value="30">30 minutes</option>
-              <option value="45">45 minutes</option>
-              <option value="60">1 hour</option>
-              <option value="90">1.5 hours</option>
-              <option value="120">2 hours</option>
-            </select>
-          </div>
-          <span class="settings-help" id="settings-sleep-status">Off</span>
-        </div>
-
-        <div class="settings-section">
-          <h3>Sync & Cache</h3>
-          <button class="settings-action-btn" id="settings-sync-now">
-            <i data-lucide="refresh-cw"></i> Sync Playlists & Cache Now
+          <button class="settings-tile" id="tile-stream-format" tabindex="0">
+            <div class="settings-tile-icon"><i data-lucide="clapperboard"></i></div>
+            <div class="settings-tile-title">Stream Format</div>
+            <div class="settings-tile-sub">Current: <strong id="tile-stream-format-val">—</strong></div>
           </button>
-          <span class="settings-help">Force download all channels, movies, and series lists from your Xtream server.</span>
-        </div>
 
-        <div class="settings-section" id="settings-network-section" style="display: none;">
-          <h3>Local Network Access (Smart TV)</h3>
-          <p class="settings-help">To use ZIPTV Pro on your Smart TV web browser, make sure your TV is connected to the same Wi-Fi, then go to:</p>
-          <div id="settings-network-ips" class="gold-text" style="font-family: monospace; font-size: 1.1rem; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 4px; margin-top: 5px; word-break: break-all;"></div>
-        </div>
-
-        <div class="settings-section">
-          <h3>Updates</h3>
-          <button class="settings-action-btn" id="settings-check-update">
-            <i data-lucide="refresh-cw"></i> Check for Update
+          <button class="settings-tile" id="tile-proxy" tabindex="0">
+            <div class="settings-tile-icon"><i data-lucide="shield-check"></i></div>
+            <div class="settings-tile-title">CORS Proxy</div>
+            <div class="settings-tile-sub">Currently: <span class="tile-badge" id="tile-proxy-val">On</span></div>
           </button>
-          <span class="settings-help" id="settings-update-status">Current version: <span id="settings-current-version">—</span></span>
-        </div>
 
-        <div class="settings-section logout-section">
-          <h3>Account Action</h3>
-          <p>Connected server: <span id="settings-connected-server" class="gold-text">N/A</span></p>
-          <button class="settings-action-btn danger-btn" id="settings-logout">
-            <i data-lucide="log-out"></i> Disconnect & Log Out
+          <button class="settings-tile" id="tile-sleep" tabindex="0">
+            <div class="settings-tile-icon"><i data-lucide="moon"></i></div>
+            <div class="settings-tile-title">Sleep Timer</div>
+            <div class="settings-tile-sub" id="tile-sleep-val">Off</div>
           </button>
+
+          <button class="settings-tile" id="tile-sync" tabindex="0">
+            <div class="settings-tile-icon"><i data-lucide="refresh-cw"></i></div>
+            <div class="settings-tile-title">Sync &amp; Cache</div>
+            <div class="settings-tile-sub">Refresh all lists</div>
+          </button>
+
+          <button class="settings-tile" id="tile-update" tabindex="0">
+            <div class="settings-tile-icon"><i data-lucide="arrow-up-circle"></i></div>
+            <div class="settings-tile-title">Updates</div>
+            <div class="settings-tile-sub" id="tile-update-val">v—</div>
+          </button>
+
+          <button class="settings-tile" id="tile-network" tabindex="0" style="display:none;">
+            <div class="settings-tile-icon"><i data-lucide="cast"></i></div>
+            <div class="settings-tile-title">Smart TV Access</div>
+            <div class="settings-tile-sub" id="tile-network-val">Show local URL</div>
+          </button>
+
+          <button class="settings-tile settings-tile-danger" id="tile-logout" tabindex="0">
+            <div class="settings-tile-icon"><i data-lucide="log-out"></i></div>
+            <div class="settings-tile-title">Log Out</div>
+            <div class="settings-tile-sub" id="tile-logout-val">Disconnect</div>
+          </button>
+
         </div>
       </div>
     </div>

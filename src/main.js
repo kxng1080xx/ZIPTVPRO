@@ -181,16 +181,7 @@ async function initApp() {
     }
   }
 
-  // Settings → Check for Update button (manual; always reports a result).
-  const checkUpdateBtn = document.getElementById('settings-check-update');
-  const updateStatusEl = document.getElementById('settings-update-status');
-  const currentVerEl = document.getElementById('settings-current-version');
-  if (currentVerEl && typeof __APP_VERSION__ !== 'undefined') currentVerEl.textContent = `v${__APP_VERSION__}`;
-  if (checkUpdateBtn) {
-    checkUpdateBtn.addEventListener('click', () => {
-      checkForUpdate({ manual: true, onStatus: (m) => { if (updateStatusEl) updateStatusEl.textContent = m; } });
-    });
-  }
+  // (Settings update check is wired on the Updates tile — see bindGlobalEvents.)
 
   // 4. Check Saved Playlists on Boot
   try {
@@ -507,26 +498,51 @@ window.openPlayerTrackMenu = function () {
 // SLEEP TIMER — stop playback after a chosen number of minutes.
 // ==========================================================================
 let sleepTimerId = null;
+let currentSleepMinutes = 0;
 function setSleepTimer(minutes) {
   clearTimeout(sleepTimerId);
   sleepTimerId = null;
-  const statusEl = document.getElementById('settings-sleep-status');
+  currentSleepMinutes = minutes || 0;
+  const valEl = document.getElementById('tile-sleep-val');
   if (!minutes) {
-    if (statusEl) statusEl.textContent = 'Off';
+    if (valEl) valEl.textContent = 'Off';
     return;
   }
   sleepTimerId = setTimeout(() => {
     try { if (playerInstance) playerInstance.stop(); } catch (e) {}
     showToast('Sleep timer: playback stopped', 'info', 6000);
-    const sel = document.getElementById('settings-sleep-timer');
-    if (sel) sel.value = '0';
-    if (statusEl) statusEl.textContent = 'Off';
+    currentSleepMinutes = 0;
+    if (valEl) valEl.textContent = 'Off';
     sleepTimerId = null;
   }, minutes * 60000);
   const endsAt = new Date(Date.now() + minutes * 60000)
     .toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  if (statusEl) statusEl.textContent = `Playback will stop at ${endsAt}`;
+  if (valEl) valEl.textContent = `On · stops ${endsAt}`;
   showToast(`Sleep timer set for ${minutes} min`, 'success');
+}
+
+// Refresh the Settings tile values from current credentials / app state.
+function refreshSettingsTiles() {
+  const creds = (state.user && state.user.credentials) || {};
+
+  const fmtEl = document.getElementById('tile-stream-format-val');
+  if (fmtEl) fmtEl.textContent = (creds.stream_format === 'm3u8') ? 'HLS (.m3u8)' : 'MPEG-TS (.ts)';
+
+  const proxyOn = creds.proxy_streams ?? true;
+  const proxyEl = document.getElementById('tile-proxy-val');
+  if (proxyEl) {
+    proxyEl.textContent = proxyOn ? 'On' : 'Off';
+    proxyEl.classList.toggle('tile-badge-off', !proxyOn);
+  }
+
+  const verEl = document.getElementById('tile-update-val');
+  if (verEl && typeof __APP_VERSION__ !== 'undefined') verEl.textContent = `v${__APP_VERSION__}`;
+
+  const logoutEl = document.getElementById('tile-logout-val');
+  if (logoutEl) {
+    try { logoutEl.textContent = creds.server_url ? new URL(creds.server_url).hostname : 'Disconnect'; }
+    catch (e) { logoutEl.textContent = 'Disconnect'; }
+  }
 }
 
 // ==========================================================================
@@ -2013,31 +2029,16 @@ function bindGlobalEvents() {
   const settingsClose = document.getElementById('settings-close-btn');
 
   settingsBtn.addEventListener('click', () => {
-    // Populate settings
-    if (state.user && state.user.credentials) {
-      const creds = state.user.credentials;
-      document.getElementById('settings-format').value = creds.stream_format || 'ts';
-      document.getElementById('settings-proxy').checked = creds.proxy_streams ?? true;
-      document.getElementById('settings-connected-server').textContent = creds.server_url;
+    refreshSettingsTiles();
+    // Smart TV access tile only when we know a LAN address.
+    const netTile = document.getElementById('tile-network');
+    if (netTile) {
+      const hasLan = !!(state.user && state.user.local_ips && state.user.local_ips.length > 0);
+      netTile.style.display = hasLan ? '' : 'none';
     }
-    
-    // Populate network info if running on local server
-    const networkSection = document.getElementById('settings-network-section');
-    const networkIps = document.getElementById('settings-network-ips');
-    if (networkSection && networkIps) {
-      if (state.user && state.user.local_ips && state.user.local_ips.length > 0) {
-        const port = state.user.server_port || 3000;
-        networkIps.innerHTML = state.user.local_ips
-          .map(ip => `http://${ip}:${port}`)
-          .join('<br>');
-        networkSection.style.display = 'block';
-      } else {
-        networkSection.style.display = 'none';
-      }
-    }
-    
     settingsModal.classList.remove('hidden');
-    navigation.focusDefault('modal');
+    const firstTile = settingsModal.querySelector('.settings-tile');
+    if (firstTile) navigation.setFocus('modal', firstTile);
   });
 
   settingsClose.addEventListener('click', () => {
@@ -2045,29 +2046,82 @@ function bindGlobalEvents() {
     navigation.focusDefault('tabs');
   });
 
-  // Save Settings
-  document.getElementById('settings-format').addEventListener('change', async (e) => {
-    await updatePreferences({ stream_format: e.target.value });
+  // --- Tile: Stream Format ---
+  document.getElementById('tile-stream-format')?.addEventListener('click', () => {
+    const creds = (state.user && state.user.credentials) || {};
+    openSortDropdown({
+      title: 'Stream Format',
+      options: [
+        { value: 'ts', label: 'MPEG-TS (.ts) — Recommended' },
+        { value: 'm3u8', label: 'HLS (.m3u8) — Fallback' }
+      ],
+      current: creds.stream_format || 'ts',
+      onSelect: async (v) => {
+        await updatePreferences({ stream_format: v });
+        if (state.user && state.user.credentials) state.user.credentials.stream_format = v;
+        refreshSettingsTiles();
+        navigation.setFocus('modal', document.getElementById('tile-stream-format'));
+      }
+    });
   });
 
-  document.getElementById('settings-proxy').addEventListener('change', async (e) => {
-    await updatePreferences({ proxy_streams: e.target.checked });
+  // --- Tile: CORS Proxy (toggle) ---
+  document.getElementById('tile-proxy')?.addEventListener('click', async () => {
+    const creds = (state.user && state.user.credentials) || {};
+    const next = !(creds.proxy_streams ?? true);
+    await updatePreferences({ proxy_streams: next });
+    if (state.user && state.user.credentials) state.user.credentials.proxy_streams = next;
+    refreshSettingsTiles();
+    showToast(`CORS Proxy ${next ? 'enabled' : 'disabled'}`, 'success');
   });
 
-  // Sleep timer — stop playback after the chosen duration.
-  document.getElementById('settings-sleep-timer')?.addEventListener('change', (e) => {
-    setSleepTimer(parseInt(e.target.value, 10) || 0);
+  // --- Tile: Sleep Timer ---
+  document.getElementById('tile-sleep')?.addEventListener('click', () => {
+    openSortDropdown({
+      title: 'Sleep Timer — stop playback after',
+      options: [
+        { value: '0', label: 'Off' },
+        { value: '15', label: '15 minutes' },
+        { value: '30', label: '30 minutes' },
+        { value: '45', label: '45 minutes' },
+        { value: '60', label: '1 hour' },
+        { value: '90', label: '1.5 hours' },
+        { value: '120', label: '2 hours' }
+      ],
+      current: String(currentSleepMinutes),
+      onSelect: (v) => {
+        setSleepTimer(parseInt(v, 10) || 0);
+        navigation.setFocus('modal', document.getElementById('tile-sleep'));
+      }
+    });
   });
 
-  // Sync now click
-  document.getElementById('settings-sync-now').addEventListener('click', async () => {
+  // --- Tile: Sync & Cache ---
+  document.getElementById('tile-sync')?.addEventListener('click', async () => {
     settingsModal.classList.add('hidden');
     await triggerFullSync();
     await loadTabCategoriesAndContent();
   });
 
-  // Logout Click
-  document.getElementById('settings-logout').addEventListener('click', async () => {
+  // --- Tile: Updates ---
+  document.getElementById('tile-update')?.addEventListener('click', () => {
+    checkForUpdate({ manual: true, onStatus: (m) => showToast(m, 'info', 4000) });
+  });
+
+  // --- Tile: Smart TV Access ---
+  document.getElementById('tile-network')?.addEventListener('click', () => {
+    const ips = (state.user && state.user.local_ips) || [];
+    const port = (state.user && state.user.server_port) || 3000;
+    if (!ips.length) { showToast('No local network address available', 'info'); return; }
+    openSortDropdown({
+      title: 'Smart TV Access — open in your TV browser',
+      options: ips.map(ip => ({ value: ip, label: `http://${ip}:${port}` })),
+      onSelect: () => navigation.setFocus('modal', document.getElementById('tile-network'))
+    });
+  });
+
+  // --- Tile: Log Out ---
+  document.getElementById('tile-logout')?.addEventListener('click', async () => {
     if (confirm('Are you sure you want to disconnect this playlist? This will erase local cache.')) {
       settingsModal.classList.add('hidden');
       playerInstance.stop();
@@ -2638,19 +2692,36 @@ async function autoEnterSinglePlaylist(id, activeId) {
 
 async function switchToPlaylist(id) {
   closePlaylistDropdown();
+  // Stop the current stream up front — tearing down the old playback before the
+  // heavy switch keeps the UI responsive (no decoding in the background).
+  try { playerInstance.stop(); } catch (e) {}
   state.activePlaylistId = id;
   try { localStorage.setItem('last_playlist_id', String(id)); } catch (e) {}
   try {
-    playerInstance.stop();
     exitSeriesPlaybackDashboard();
     await switchPlaylist(id);
     const status = await getStatus();
     state.user = status;
     if (status.favorites) state.favorites = status.favorites;
     showDashboard();
-    await triggerFullSync();
+
+    // Load instantly from cache when this playlist already has one (e.g. the
+    // last-used playlist), and refresh in the background. Only do a blocking
+    // full sync on first use when nothing is cached yet.
+    let hasCache = false;
+    try {
+      const cats = await getCategories('live');
+      hasCache = !!(cats && Array.isArray(cats.categories) && cats.categories.length > 0);
+    } catch (e) {}
+
     state.activeCategory = null;
-    await loadTabCategoriesAndContent();
+    if (hasCache) {
+      await loadTabCategoriesAndContent();
+      syncPlaylist().catch(() => {});
+    } else {
+      await triggerFullSync();
+      await loadTabCategoriesAndContent();
+    }
   } catch (err) {
     console.error('Failed to switch playlist:', err);
     throw err; // Re-throw so the caller can handle it
