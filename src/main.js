@@ -171,9 +171,14 @@ async function initApp() {
   initCastUI();
 
   // Update checks: on every launch, plus every 3 hours on Windows desktop.
-  checkForUpdate();
-  if (/Windows NT/i.test(navigator.userAgent)) {
-    startPeriodicUpdateCheck(3 * 60 * 60 * 1000);
+  // In the Electron app, electron-updater handles updates silently in the
+  // background, so skip the custom prompt there to avoid double notifications.
+  const isElectronApp = !!(window.electronCast || window.appHost);
+  if (!isElectronApp) {
+    checkForUpdate();
+    if (/Windows NT/i.test(navigator.userAgent)) {
+      startPeriodicUpdateCheck(3 * 60 * 60 * 1000);
+    }
   }
 
   // Settings → Check for Update button (manual; always reports a result).
