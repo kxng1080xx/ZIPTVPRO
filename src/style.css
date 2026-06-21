@@ -6099,8 +6099,10 @@ body.tv-layout .program-details-panel {
 }
 body.tv-layout .player-wrapper {
   aspect-ratio: auto;
-  height: 58vh;
-  min-height: 440px;
+  /* Leave room below for ~2-3 channel-card rows (the grid scrolls for the rest);
+     58vh left only a sliver and pushed channels off-screen. */
+  height: 44vh;
+  min-height: 300px;
   background: #05070b;
 }
 /* On TV there is no mouse hover, so keep the control overlay (LIVE badge,
@@ -6155,11 +6157,11 @@ body.tv-layout .epg-section-container.timeline-hidden .epg-channels-column {
   padding: 18px 28px 28px;
 }
 body.tv-layout .epg-section-container.timeline-hidden .epg-channel-row {
-  padding: 18px;
+  padding: 14px;
 }
 body.tv-layout .epg-section-container.timeline-hidden .epg-channel-row-logo {
-  width: 58px;
-  height: 58px;
+  width: 50px;
+  height: 50px;
 }
 body.tv-layout .epg-channel-row-name {
   font-size: 1.1rem;
