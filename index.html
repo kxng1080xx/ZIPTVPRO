@@ -172,14 +172,9 @@
             </div>
             <i data-lucide="chevron-down" class="profile-chevron"></i>
           </div>
-          <!-- Playlist switcher dropdown -->
-          <div class="playlist-dropdown hidden" id="playlist-dropdown">
-            <div class="playlist-dropdown-title">Playlists</div>
-            <div class="playlist-dropdown-list" id="playlist-dropdown-list"></div>
-            <button class="playlist-add-btn" id="playlist-add-btn">
-              <i data-lucide="plus"></i> Add playlist
-            </button>
-          </div>
+          <!-- Playlist drawer markup lives at body level (see #playlist-dropdown
+               near the modals) so position:fixed isn't trapped by the header's
+               backdrop-filter containing block. -->
         </div>
         <button class="header-icon-btn" id="sync-btn" title="Refresh Playlist Data">
           <i data-lucide="refresh-cw"></i>
@@ -588,6 +583,26 @@
         </div>
 
       </main>
+    </div>
+  </div>
+
+  <!-- ==================== PLAYLISTS SLIDE-OVER DRAWER ==================== -->
+  <div class="playlist-dropdown hidden" id="playlist-dropdown">
+    <div class="playlist-drawer-scrim" id="playlist-drawer-scrim"></div>
+    <div class="playlist-drawer-panel">
+      <div class="playlist-drawer-header">
+        <div class="playlist-drawer-heading">
+          <h3>Playlists</h3>
+          <span class="playlist-drawer-sub" id="playlist-drawer-sub">Saved sources</span>
+        </div>
+        <button class="playlist-drawer-close" id="playlist-drawer-close" title="Close">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <div class="playlist-dropdown-list" id="playlist-dropdown-list"></div>
+      <button class="playlist-add-btn" id="playlist-add-btn">
+        <i data-lucide="plus"></i> Add playlist
+      </button>
     </div>
   </div>
 

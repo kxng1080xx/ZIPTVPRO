@@ -1977,6 +1977,16 @@ function bindGlobalEvents() {
     });
   }
   document.getElementById('playlist-add-btn')?.addEventListener('click', showAddPlaylist);
+  // Drawer close affordances (the scrim is a DOM child of .profile-wrap, so the
+  // generic outside-click handler below won't catch it — close it explicitly).
+  document.getElementById('playlist-drawer-close')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closePlaylistDropdown();
+  });
+  document.getElementById('playlist-drawer-scrim')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closePlaylistDropdown();
+  });
   document.getElementById('playlist-dropdown-list')?.addEventListener('click', (e) => {
     const del = e.target.closest('[data-del]');
     if (del) {
@@ -2018,7 +2028,9 @@ function bindGlobalEvents() {
   // Close the dropdown when clicking outside of it
   document.addEventListener('click', (e) => {
     const dd = document.getElementById('playlist-dropdown');
-    if (dd && !dd.classList.contains('hidden') && !e.target.closest('.profile-wrap')) {
+    if (dd && !dd.classList.contains('hidden')
+        && !e.target.closest('.profile-wrap')
+        && !e.target.closest('.playlist-drawer-panel')) {
       dd.classList.add('hidden');
     }
   });
@@ -2606,6 +2618,11 @@ async function renderPlaylistDropdown() {
   listEl.innerHTML = '<div class="playlist-row-empty">Loading…</div>';
   try {
     const { playlists, activeId } = await getPlaylists();
+    const subEl = document.getElementById('playlist-drawer-sub');
+    if (subEl) {
+      const n = (playlists || []).length;
+      subEl.textContent = `${n} connected ${n === 1 ? 'source' : 'sources'}`;
+    }
     if (!playlists || playlists.length === 0) {
       listEl.innerHTML = '<div class="playlist-row-empty">No saved playlists</div>';
       return;
