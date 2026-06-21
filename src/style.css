@@ -3578,14 +3578,15 @@ body.vod-mode .now-next-bar {
 }
 
 .tv-focused {
-  outline: 4px solid #00f3ff !important;
+  outline: 4px solid var(--rd-focus) !important;
   outline-offset: -1px;
   z-index: 50 !important;
   background-color: var(--bg-surface-hover) !important;
   /* Static focus ring — no infinite animation / scale. The old pulse animated
      box-shadow blur + transform every frame, which pegs weak TV-browser CPUs
-     and makes D-pad navigation crawl. A painted-once glow is effectively free. */
-  box-shadow: 0 0 10px rgba(0, 243, 255, 0.5) !important;
+     and makes D-pad navigation crawl. A painted-once glow is effectively free.
+     (Card zones add a one-shot static scale in their own rules below.) */
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.55) !important;
 }
 
 .nav-tab.tv-focused {
@@ -3594,18 +3595,36 @@ body.vod-mode .now-next-bar {
 
 .category-item.tv-focused {
   outline-offset: -2px;
-  border-left: 3px solid #00f3ff !important;
-  background: linear-gradient(90deg, rgba(0, 243, 255, 0.15) 0%, rgba(17, 24, 39, 1) 100%) !important;
+  border-color: var(--rd-active-border) !important;
+  border-left: 3px solid var(--rd-focus) !important;
+  background: var(--rd-active-tint) !important;
 }
 
 .epg-channel-row.tv-focused {
   outline-offset: -2px;
-  border-left: 4px solid #00f3ff !important;
-  background: linear-gradient(90deg, rgba(0, 243, 255, 0.15) 0%, rgba(17, 24, 39, 1) 100%) !important;
+  border-left: 4px solid var(--rd-focus) !important;
+  background: var(--rd-active-tint) !important;
+}
+
+/* In the channel-card grid (non-guide Live), focused cards lift with a static
+   scale + focus glow (one-shot, not animated — safe for weak TV CPUs). */
+.epg-section-container.timeline-hidden .epg-channel-row.tv-focused {
+  border: 1px solid rgba(56, 189, 248, 0.6) !important;
+  border-radius: var(--rd-r-14);
+  transform: scale(1.04);
+  box-shadow: var(--rd-focus-glow) !important;
 }
 
 .vod-card.tv-focused {
-  outline-offset: 3px;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.vod-card.tv-focused .vod-poster-wrapper {
+  outline: 4px solid var(--rd-focus);
+  outline-offset: 2px;
+  transform: scale(1.06);
+  box-shadow: var(--rd-focus-glow);
 }
 
 .episode-row.tv-focused,
@@ -3633,9 +3652,10 @@ body.vod-mode .now-next-bar {
 }
 
 .playlist-row.tv-focused {
-  border-left: 4px solid #00f3ff !important;
-  background: linear-gradient(90deg, rgba(0, 243, 255, 0.15) 0%, rgba(255, 255, 255, 0.05) 100%) !important;
-  box-shadow: 0 0 15px rgba(0, 243, 255, 0.35) !important;
+  border-color: var(--rd-active-border) !important;
+  border-left: 4px solid var(--rd-focus) !important;
+  background: var(--rd-active-tint) !important;
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.4) !important;
   outline: none !important;
 }
 
