@@ -233,6 +233,14 @@ async function switchTab(tabId) {
     panel.classList.toggle('active', panel.id === `${tabId}-view`);
   });
 
+  // Header search placeholder follows the active view
+  const headerSearch = document.getElementById('header-search-input');
+  if (headerSearch) {
+    headerSearch.placeholder = tabId === 'movies' ? 'Search movies'
+      : tabId === 'series' ? 'Search series'
+      : 'Search live channels';
+  }
+
   // Load left categories and main content area
   await loadTabCategoriesAndContent();
 }
@@ -1988,6 +1996,34 @@ function bindGlobalEvents() {
       togglePlaylistDropdown();
     });
   }
+  // Header "Playlists" button → same slide-over drawer
+  document.getElementById('header-playlists-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    togglePlaylistDropdown();
+  });
+
+  // Header search field → route to the active view's search (no dead UI).
+  const headerSearch = document.getElementById('header-search-input');
+  if (headerSearch) {
+    let searchDebounce = null;
+    headerSearch.addEventListener('input', () => {
+      const q = headerSearch.value || '';
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(() => {
+        if (state.activeTab === 'live') {
+          if (epgGridInstance) epgGridInstance.setChannelFilter(q);
+        } else if (state.activeTab === 'movies') {
+          state.movies.search = q;
+          state.movies.page = 1;
+          loadMoviesGrid();
+        } else if (state.activeTab === 'series') {
+          state.series.search = q;
+          state.series.page = 1;
+          loadSeriesGrid();
+        }
+      }, state.activeTab === 'live' ? 120 : 350);
+    });
+  }
   document.getElementById('playlist-add-btn')?.addEventListener('click', showAddPlaylist);
   // Drawer close affordances (the scrim is a DOM child of .profile-wrap, so the
   // generic outside-click handler below won't catch it — close it explicitly).
@@ -2316,7 +2352,10 @@ function bindGlobalEvents() {
     pinToggle.addEventListener('click', togglePinSection);
     window.addEventListener('toggle-pin-section', togglePinSection);
     pinToggle.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      // Enter is handled by tv-navigation (it calls .click() on this element),
+      // so handling Enter here too would toggle twice = no net change. Only
+      // take Space here (the D-pad OK button sends Enter, not Space).
+      if (e.key === ' ') {
         e.preventDefault();
         togglePinSection();
       }
@@ -2535,9 +2574,14 @@ function showPlaylistSelect(playlists, lastUsedId = localStorage.getItem('last_p
     row.dataset.playlistName = p.playlistName || 'Playlist';
     const isLastUsed = lastUsedId && String(p.id) === String(lastUsedId);
     if (isLastUsed) row.classList.add('last-used');
+    const pname = p.playlistName || 'Playlist';
+    const words = pname.trim().split(/[\s._-]+/).filter(Boolean);
+    const mono = (words.length >= 2 ? words[0][0] + words[1][0] : pname.slice(0, 2)).toUpperCase();
     row.innerHTML = `
+      <div class="playlist-tile-mono">${mono}</div>
+      ${isLastUsed ? '<span class="playlist-row-badge">Last used</span>' : ''}
       <div class="playlist-row-main">
-        <span class="playlist-row-name">${p.playlistName || 'Playlist'}${isLastUsed ? '<span class="playlist-row-badge">Last used</span>' : ''}</span>
+        <span class="playlist-row-name">${pname}</span>
         <span class="playlist-row-server">${domain} · ${p.username}</span>
       </div>
       <button class="playlist-row-del" data-del="${p.id}" title="Remove playlist"><i data-lucide="trash-2"></i></button>
@@ -2821,6 +2865,17 @@ function showDashboard() {
     } catch(e){}
 
     document.getElementById('nav-playlist-name').textContent = `${creds.playlistName} (${domain})`;
+
+    // Account avatar initials (from the playlist name; fall back to host)
+    const avatarEl = document.getElementById('profile-avatar');
+    if (avatarEl) {
+      const src = (creds.playlistName || domain || 'ZP').trim();
+      const words = src.split(/[\s._-]+/).filter(Boolean);
+      const initials = (words.length >= 2
+        ? words[0][0] + words[1][0]
+        : src.slice(0, 2)).toUpperCase();
+      avatarEl.textContent = initials;
+    }
   }
 
   // Set expiry text

@@ -158,7 +158,9 @@ button {
   overflow-y: auto;
   padding: 32px 20px;
   box-sizing: border-box;
-  background: radial-gradient(circle at center, #111a2e 0%, var(--bg-darkest) 100%);
+  /* Match the app's ambient glass backdrop */
+  background-color: var(--rd-bg-base);
+  background-image: var(--rd-glow-a), var(--rd-glow-b);
   position: fixed;
   top: 0;
   left: 0;
@@ -166,18 +168,19 @@ button {
 }
 
 .login-card {
-  width: 450px;
+  width: 620px;
   max-width: 100%;
   /* margin:auto centers the card on both axes but, unlike align-items:center,
      stays reachable/scrollable when it's taller than the viewport. */
   margin: auto;
-  padding: 40px;
+  padding: 36px;
   box-sizing: border-box;
-  background: rgba(17, 24, 39, 0.7);
-  border: 1px solid var(--border-color);
-  border-radius: var(--border-radius-xl);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 40px var(--glow-blue);
-  backdrop-filter: blur(20px);
+  background: var(--rd-glass-drawer);
+  border: 1px solid var(--rd-hairline);
+  border-radius: var(--rd-r-22);
+  box-shadow: 0 40px 90px rgba(0, 0, 0, 0.55);
+  -webkit-backdrop-filter: var(--rd-blur-drawer);
+  backdrop-filter: var(--rd-blur-drawer);
   animation: slideInUp var(--transition-slow);
 }
 
@@ -463,12 +466,70 @@ button {
 .header-center {
   display: flex;
   align-items: center;
-  gap: 32px;
+  justify-content: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 24px;
 }
 
-.header-center .logo-z {
-  font-size: 2rem;
-  margin-bottom: 0;
+.logo-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Decluttered top bar: the TV-link cluster is folded into Settings → Smart TV
+   Access, not shown inline (overrides the JS inline display). */
+.header-tv-ip-badge {
+  display: none !important;
+}
+
+.logo-wordmark {
+  font-family: var(--font-title);
+  font-size: 1.0625rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: #fff;
+}
+
+/* Center search field */
+.header-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 420px;
+  padding: 9px 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--rd-hairline-soft);
+  border-radius: 999px;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.header-search:focus-within {
+  border-color: var(--rd-active-border);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.header-search i {
+  width: 17px;
+  height: 17px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.header-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.header-search input::placeholder {
+  color: var(--text-muted);
 }
 
 .navigation-tabs {
@@ -514,11 +575,37 @@ button {
   gap: 12px;
 }
 
+/* Playlists button (opens the slide-over drawer) */
+.header-playlists-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--rd-hairline-soft);
+  border-radius: var(--rd-r-12);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.header-playlists-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--rd-hairline-strong);
+}
+
+.header-playlists-btn i {
+  width: 16px;
+  height: 16px;
+}
+
 .profile-card {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 6px 14px;
+  padding: 5px 6px 5px 14px;
   background: var(--rd-glass-panel);
   border: 1px solid var(--rd-hairline-soft);
   border-radius: var(--rd-r-12);
@@ -535,30 +622,73 @@ button {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+  gap: 2px;
 }
 
 .profile-name {
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--text-primary);
+  max-width: 160px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .profile-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 0.7rem;
-  color: var(--text-secondary);
+  color: #4ade80;
+  font-weight: 600;
 }
 
-.profile-icon {
-  width: 20px;
-  height: 20px;
-  color: var(--text-secondary);
+.profile-status .status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 7px rgba(74, 222, 128, 0.8);
+}
+
+/* Account avatar — gradient tile with initials */
+.profile-avatar {
+  width: 34px;
+  height: 34px;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--rd-r-10);
+  background: var(--rd-accent-gradient);
+  color: #fff;
+  font-family: var(--font-title);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
 }
 
-.profile-chevron {
-  width: 16px;
-  height: 16px;
-  color: var(--text-secondary);
+/* Two-line clock (time over date) */
+.header-clock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.header-clock #current-time {
+  font-family: var(--font-title);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.header-clock #current-date {
+  font-size: 0.7rem;
+  color: var(--text-muted);
 }
 
 /* Playlist switcher dropdown */
@@ -3674,20 +3804,22 @@ body.vod-mode .now-next-bar {
    DYNAMIC MOBILE PORTRAIT RESPONSIVENESS OVERRIDES
    ========================================================================== */
 @media (max-width: 900px) and (orientation: portrait) {
-  /* Hide TV-only header columns */
-  .time-widget, 
-  .status-badge.gold-badge, 
-  .profile-card {
+  /* Declutter the bar: account chip, clock, Playlists button + inline search
+     are off the phone header (nav lives in the bottom tab bar). */
+  .profile-card,
+  .header-clock,
+  .header-playlists-btn,
+  .header-center {
     display: none !important;
   }
-  
+
   /* Reveal mobile-only elements */
   .mobile-only {
     display: flex !important;
     align-items: center;
     justify-content: center;
   }
-  
+
   /* Adjust top bar header container */
   .top-header {
     height: 60px;
@@ -3698,24 +3830,18 @@ body.vod-mode .now-next-bar {
     justify-content: space-between;
     overflow: visible;
   }
-  
+
+  /* header-left now holds the logo (kept) + nav (moved to bottom bar, hidden) */
   .header-left {
-    display: none !important;
-  }
-  
-  .header-center {
-    flex-grow: 1;
+    display: flex !important;
     flex-shrink: 1;
     min-width: 0;
-    justify-content: flex-start;
     gap: 8px;
-    overflow: hidden;
   }
-  
-  .header-center .logo-container {
+  .header-left .navigation-tabs {
     display: none !important;
   }
-  
+
   .header-right {
     gap: 4px;
     flex-shrink: 0;
@@ -3848,32 +3974,31 @@ body.vod-mode .now-next-bar {
     overflow: hidden;
   }
 
-  /* Mobile EPG Controls Optimization */
+  /* Mobile EPG Controls — single row that wraps cleanly (no cramped column /
+     unlabelled Show Guide icon). */
   .epg-controls-header {
     height: auto !important;
-    padding: 8px !important;
-    flex-direction: column !important;
+    min-height: 52px;
+    padding: 10px 12px !important;
+    flex-flow: row wrap !important;
     gap: 8px !important;
-    align-items: stretch !important;
+    align-items: center !important;
   }
-  
-  .epg-controls-left, .epg-controls-right {
-    width: 100% !important;
-    justify-content: space-between !important;
-    gap: 4px !important;
+
+  .epg-controls-left {
+    gap: 6px !important;
   }
-  
-  /* Make buttons icon-only to save space */
-  #epg-edit-btn, #epg-full-btn {
-    font-size: 0 !important;
-    padding: 8px !important;
-    width: 36px !important;
-    height: 36px !important;
-    justify-content: center !important;
+  .epg-controls-right {
+    margin-left: auto !important;
+    gap: 6px !important;
+  }
+
+  /* Keep the Show Guide label — it's the primary action */
+  #epg-full-btn {
+    padding: 8px 12px !important;
   }
 
   #epg-edit-btn i, #epg-full-btn i {
-    margin: 0 !important;
     width: 16px !important;
     height: 16px !important;
   }
@@ -4995,9 +5120,10 @@ body.epg-fullscreen-active .epg-section-container {
   max-width: 250px !important;
 }
 
-/* Header TV connection badge styling */
+/* Header TV connection badge styling. NOTE: not display:none here — the
+   decluttered redesign hides it via the .header-tv-ip-badge rule near the top
+   (folded into Settings → Smart TV Access). Kept only as legacy styling. */
 .header-tv-ip-badge {
-  display: inline-flex !important;
   align-items: center !important;
   gap: 6px !important;
   background: rgba(0, 243, 255, 0.08) !important;
@@ -5021,23 +5147,108 @@ body.epg-fullscreen-active .epg-section-container {
 
 /* Playlist Select Screen on Boot */
 .login-playlists-title {
-  font-size: 1.15rem;
-  font-weight: 700;
-  margin-bottom: 15px;
-  color: var(--text-primary);
-  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 800;
+  margin-bottom: 14px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
   font-family: 'Outfit', sans-serif;
-  letter-spacing: 0.3px;
 }
 
+/* Saved-playlist picker — grid of tiles (mirrors the Settings tile grid) */
 .login-playlists-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
   margin-bottom: 20px;
-  max-height: 240px;
+  max-height: 340px;
   overflow-y: auto;
+  overflow-x: hidden;
   padding-right: 4px;
+}
+
+.login-playlists-list .playlist-row {
+  position: relative;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 18px 14px 16px;
+  border: 1px solid var(--rd-hairline-soft);
+  border-left: 1px solid var(--rd-hairline-soft);
+  border-radius: var(--rd-r-14);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.login-playlists-list .playlist-row:hover {
+  transform: translateY(-2px);
+  border-color: var(--rd-hairline-strong);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.login-playlists-list .playlist-row.last-used,
+.login-playlists-list .playlist-row.active {
+  border-color: var(--rd-active-border);
+  border-left-color: var(--rd-active-border);
+  background: var(--rd-active-tint);
+}
+
+/* Monogram tile (gradient square with initials) */
+.playlist-tile-mono {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--rd-r-12);
+  background: var(--rd-accent-gradient);
+  color: #fff;
+  font-family: var(--font-title);
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.3);
+}
+
+.login-playlists-list .playlist-row-main {
+  align-items: center;
+  width: 100%;
+}
+
+.login-playlists-list .playlist-row-name {
+  width: 100%;
+  font-size: 0.92rem;
+  text-align: center;
+}
+
+.login-playlists-list .playlist-row-server {
+  width: 100%;
+  text-align: center;
+  font-size: 0.72rem;
+}
+
+/* "Last used" pill floats to the tile's top-right corner */
+.login-playlists-list .playlist-row-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  margin-left: 0;
+}
+
+/* Delete moves to the top-left corner, shown on hover/focus */
+.login-playlists-list .playlist-row-del {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.login-playlists-list .playlist-row:hover .playlist-row-del,
+.login-playlists-list .playlist-row:focus-within .playlist-row-del,
+.login-playlists-list .playlist-row.tv-focused .playlist-row-del {
+  opacity: 1;
 }
 
 .login-playlists-list::-webkit-scrollbar {
@@ -5695,32 +5906,226 @@ body.epg-fullscreen-active .epg-section-container {
    Placed last so it overrides the earlier ≤900px portrait header rules.
    ========================================================================== */
 @media (max-width: 900px) and (orientation: portrait) {
-  /* Bring the logo back, pinned to the left of the header */
-  .header-center .logo-container {
+  /* Logo pinned left in header-left; nav is in the bottom tab bar (handled in
+     the portrait block above). Just size the phone logo here. */
+  .header-left .logo-container {
     display: flex !important;
   }
-  .header-center {
-    justify-content: flex-start;
-  }
-  /* The three view tabs now live in the bottom tab bar */
-  .header-center .navigation-tabs {
-    display: none !important;
+  .logo-wordmark {
+    font-size: 1rem;
   }
   .header-logo {
-    height: 30px;
+    height: 28px;
     width: auto;
   }
 }
 
 /* ==========================================================================
-   TV PREVIEW MODE (?tv=true on desktop, or Android-TV). A light 10-foot
-   touch on top of the glass UI — the dedicated category-column/preview-banner
-   layout is not built; TV reuses the desktop layout with sky D-pad focus.
+   ANDROID-TV / 10-FOOT LAYOUT  (body.tv-layout — toggled by ?tv=true on PC,
+   or on Android TV). Reflows the desktop glass UI into the category-first TV
+   design: logo-left top bar, left category column, large preview banner, and
+   a 4-up channel-card grid. Reuses the existing DOM/ids.
    ========================================================================== */
 body.tv-layout {
   cursor: none;
 }
 
 body.tv-layout .tv-focused {
-  scroll-margin: 80px;
+  scroll-margin: 90px;
+}
+
+/* ---- Top bar: logo + nav left · clock + avatar right ---- */
+body.tv-layout .top-header {
+  height: 78px;
+  padding: 0 32px;
+  gap: 20px;
+}
+body.tv-layout .header-left {
+  gap: 22px;
+}
+/* search / Playlists / settings / account-chip text are off the 10-foot path —
+   the TV bar keeps just logo + nav (left) and clock + avatar (right). */
+body.tv-layout .header-center,
+body.tv-layout .header-playlists-btn,
+body.tv-layout #settings-btn,
+body.tv-layout .profile-info,
+body.tv-layout .header-tv-ip-badge {
+  display: none !important;
+}
+body.tv-layout .profile-card {
+  padding: 5px;
+  background: transparent;
+  border: none;
+}
+body.tv-layout .profile-avatar {
+  width: 42px;
+  height: 42px;
+  font-size: 0.95rem;
+}
+body.tv-layout .header-clock #current-time {
+  font-size: 1.15rem;
+}
+body.tv-layout .header-clock #current-date {
+  font-size: 0.8rem;
+}
+body.tv-layout .logo-wordmark {
+  font-size: 1.3rem;
+}
+body.tv-layout .header-logo {
+  width: 44px;
+  height: 44px;
+}
+body.tv-layout .nav-tab {
+  font-size: 1.1rem;
+  padding: 11px 24px;
+}
+body.tv-layout .header-icon-btn {
+  width: 46px;
+  height: 46px;
+}
+
+/* ---- Left category column ---- */
+body.tv-layout .sidebar {
+  width: 320px;
+  padding: 18px 16px;
+  gap: 16px;
+}
+/* Pinned section stays on TV (Favorites / Recordings / Recently Viewed +
+   pinned-category shortcuts) — sized up for the 10-foot view. */
+body.tv-layout .sidebar-top-pins {
+  padding: 12px 10px;
+}
+body.tv-layout .pin-title-row {
+  font-size: 0.8rem;
+}
+body.tv-layout .pin-item {
+  padding: 11px 12px;
+  font-size: 1.05rem;
+}
+body.tv-layout .pin-label i {
+  width: 18px;
+  height: 18px;
+}
+body.tv-layout .pin-count {
+  font-size: 0.85rem;
+}
+body.tv-layout .categories-card {
+  background: transparent;
+  border: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+body.tv-layout .categories-search-section {
+  border-bottom: none;
+  padding: 4px 6px 10px;
+}
+body.tv-layout .categories-title {
+  font-size: 1rem;
+  letter-spacing: 1.4px;
+}
+body.tv-layout .categories-actions {
+  display: none; /* search/sort chips off the TV path */
+}
+body.tv-layout .categories-count-total {
+  font-size: 0.95rem;
+}
+body.tv-layout .category-item {
+  padding: 15px 14px;
+  font-size: 1.1rem;
+  border-radius: var(--rd-r-12);
+}
+body.tv-layout .cat-cc {
+  min-width: 38px;
+  height: 28px;
+  font-size: 0.72rem;
+}
+body.tv-layout .cat-count {
+  font-size: 0.9rem;
+}
+
+/* ---- Main: preview banner (the player stage) ---- */
+body.tv-layout .live-top-row {
+  grid-template-columns: 1fr !important;
+  padding: 22px 28px 8px;
+  max-height: none;
+}
+body.tv-layout .program-details-panel {
+  display: none !important;
+}
+body.tv-layout .player-wrapper {
+  aspect-ratio: auto;
+  height: 58vh;
+  min-height: 440px;
+  background: #05070b;
+}
+/* On TV there is no mouse hover, so keep the control overlay (LIVE badge,
+   channel name, play/volume/tool buttons) always visible and D-pad navigable. */
+body.tv-layout .player-controls-overlay {
+  opacity: 1 !important;
+  background: linear-gradient(to top, rgba(5,7,11,0.88) 0%, rgba(0,0,0,0) 42%);
+}
+body.tv-layout .fps-indicator {
+  display: none !important;
+}
+body.tv-layout .player-playing-title {
+  font-family: var(--font-title);
+  font-size: 2.1rem;
+  font-weight: 800;
+}
+body.tv-layout .player-playing-epg {
+  font-size: 1.1rem;
+}
+body.tv-layout .live-tag {
+  font-size: 0.9rem;
+  padding: 6px 14px 6px 11px;
+}
+body.tv-layout .controls-bottom {
+  gap: 12px;
+}
+/* Larger, remote-friendly player controls */
+body.tv-layout .player-control-icon {
+  width: 48px;
+  height: 48px;
+}
+body.tv-layout .player-control-icon i {
+  width: 22px;
+  height: 22px;
+}
+body.tv-layout .player-play-btn {
+  width: 64px;
+  height: 64px;
+}
+body.tv-layout .player-controls-overlay {
+  padding: 22px 28px;
+}
+
+/* ---- Channel grid: 4-up cards under the banner ---- */
+body.tv-layout .epg-controls-header {
+  height: 60px;
+  padding: 0 28px;
+}
+body.tv-layout .epg-section-container.timeline-hidden .epg-channels-column {
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+  padding: 18px 28px 28px;
+}
+body.tv-layout .epg-section-container.timeline-hidden .epg-channel-row {
+  padding: 18px;
+}
+body.tv-layout .epg-section-container.timeline-hidden .epg-channel-row-logo {
+  width: 58px;
+  height: 58px;
+}
+body.tv-layout .epg-channel-row-name {
+  font-size: 1.1rem;
+}
+body.tv-layout .now-seg-time,
+body.tv-layout .now-seg-title {
+  font-size: 0.95rem;
+}
+body.tv-layout .epg-timeline-header-row {
+  padding: 0 28px;
+}
+body.tv-layout .epg-channel-header-cell {
+  font-size: 1.05rem;
 }

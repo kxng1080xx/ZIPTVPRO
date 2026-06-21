@@ -124,25 +124,12 @@
       <button id="mobile-menu-btn" class="header-icon-btn mobile-only" title="Toggle Categories">
         <i data-lucide="menu"></i>
       </button>
-      
-      <!-- Top Left: Time & Expiry -->
-      <div class="header-left">
-        <div class="time-widget">
-          <i data-lucide="clock"></i>
-          <span id="current-time">12:19 PM</span>
-          <span class="date-sep">|</span>
-          <span id="current-date">June 15, 2026</span>
-        </div>
-        <div class="status-badge gold-badge">
-          <i data-lucide="award"></i>
-          <span id="expiry-text">PRO TRIAL 3 days left</span>
-        </div>
-      </div>
 
-      <!-- Top Center: Logo & Tabs -->
-      <div class="header-center">
-        <div class="logo-container" style="display: flex; align-items: center;">
+      <!-- Left: Logo + segmented nav pill -->
+      <div class="header-left">
+        <div class="logo-container">
           <img src="/src/assets/logo.png" alt="ZIPTV Pro Logo" class="logo-img header-logo animate-glow">
+          <span class="logo-wordmark">ZIPTV</span>
           <span id="header-tv-ip" class="header-tv-ip-badge" style="display: none;">
             <i data-lucide="tv"></i>
             <span id="header-tv-ip-text">TV Link: Loading...</span>
@@ -161,22 +148,39 @@
         </nav>
       </div>
 
-      <!-- Top Right: Active Profile & Controls -->
+      <!-- Center: Search -->
+      <div class="header-center">
+        <div class="header-search">
+          <i data-lucide="search"></i>
+          <input type="text" id="header-search-input" placeholder="Search live channels" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+
+      <!-- Right: Playlists · account chip · clock · settings -->
       <div class="header-right">
+        <button class="header-playlists-btn" id="header-playlists-btn" title="Playlists">
+          <i data-lucide="list"></i> <span>Playlists</span>
+        </button>
         <div class="profile-wrap">
           <div class="profile-card" id="profile-card-btn" title="Switch playlist">
-            <i data-lucide="circle-user" class="profile-icon"></i>
             <div class="profile-info">
               <span class="profile-name" id="nav-playlist-name">Xtream Codes</span>
-              <span class="profile-status">Xtream Codes</span>
+              <span class="profile-status">
+                <span class="status-dot"></span>
+                <span id="expiry-text">Active</span>
+              </span>
             </div>
-            <i data-lucide="chevron-down" class="profile-chevron"></i>
+            <span class="profile-avatar" id="profile-avatar">ZP</span>
           </div>
           <!-- Playlist drawer markup lives at body level (see #playlist-dropdown
                near the modals) so position:fixed isn't trapped by the header's
                backdrop-filter containing block. -->
         </div>
-        <button class="header-icon-btn" id="sync-btn" title="Refresh Playlist Data">
+        <div class="header-clock">
+          <span id="current-time">12:19 PM</span>
+          <span id="current-date">June 15, 2026</span>
+        </div>
+        <button class="header-icon-btn" id="sync-btn" title="Refresh Playlist Data" style="display: none;">
           <i data-lucide="refresh-cw"></i>
         </button>
         <button class="header-icon-btn" id="settings-btn" title="Settings">
