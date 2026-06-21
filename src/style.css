@@ -2679,8 +2679,9 @@ body.vod-mode .now-next-bar {
 
 .vod-view-header h2 {
   font-family: var(--font-title);
-  font-size: 1.5rem;
-  font-weight: 700;
+  font-size: 1.625rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
 }
 
 .vod-filters {
@@ -2747,7 +2748,7 @@ body.vod-mode .now-next-bar {
 
 .vod-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(172px, 1fr));
   gap: 20px;
   padding: 0 24px;
   align-content: start;
@@ -2887,11 +2888,17 @@ body.vod-mode .now-next-bar {
 .vod-poster-wrapper {
   position: relative;
   aspect-ratio: 2/3;
-  border-radius: var(--border-radius-md);
+  border-radius: var(--rd-r-14);
   overflow: hidden;
-  border: 1px solid var(--border-color);
-  margin-bottom: 8px;
-  background-color: var(--bg-panel);
+  border: 1px solid var(--rd-hairline);
+  margin-bottom: 10px;
+  background: linear-gradient(150deg, rgba(37,99,235,0.18), rgba(6,182,212,0.10));
+  box-shadow: var(--rd-card-shadow);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.vod-card:hover .vod-poster-wrapper {
+  border-color: rgba(56,189,248,0.4);
 }
 
 .vod-poster-wrapper img {
@@ -2915,35 +2922,37 @@ body.vod-mode .now-next-bar {
   left: 0;
   width: 100%;
   height: 100%;
-  background: linear-gradient(to top, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 50%);
+  background: linear-gradient(to top, rgba(5,7,11,0.85) 0%, rgba(5,7,11,0) 45%);
   display: flex;
   align-items: flex-end;
-  justify-content: space-between;
+  justify-content: flex-start;
   padding: 12px;
-  opacity: 0;
-  transition: opacity var(--transition-normal);
-}
-
-.vod-card:hover .vod-card-overlay {
   opacity: 1;
 }
 
+/* Rating chip is pinned top-left and always visible (spec) */
 .vod-rating-badge {
-  background: var(--accent-gold);
-  color: black;
-  font-size: 0.7rem;
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(5,7,11,0.6);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: #ffd76a;
+  font-size: 0.72rem;
   font-weight: 800;
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,215,106,0.3);
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
 }
 
 .vod-rating-badge i {
   width: 10px;
   height: 10px;
-  fill: black;
+  fill: #ffd76a;
 }
 
 .vod-card-title {
@@ -3002,7 +3011,8 @@ body.vod-mode .now-next-bar {
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(5, 7, 11, 0.7);
+  -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   z-index: 1000;
   display: flex;
@@ -3012,17 +3022,21 @@ body.vod-mode .now-next-bar {
 
 .modal-close-btn {
   position: absolute;
-  top: 20px;
-  right: 20px;
-  width: 36px;
-  height: 36px;
+  top: 18px;
+  right: 18px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
+  background: rgba(255,255,255,0.08);
+  border: 1px solid var(--rd-hairline-soft);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--text-secondary);
+  z-index: 2;
+  transition: transform var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
 }
 
 .modal-close-btn:hover {
@@ -3030,16 +3044,17 @@ body.vod-mode .now-next-bar {
   transform: rotate(90deg);
 }
 
-/* VOD details modal */
+/* VOD details modal — glass card */
 .vod-modal-content {
-  width: 850px;
-  max-width: 90%;
-  background-color: var(--bg-panel);
-  border: 1px solid var(--border-color);
-  border-radius: var(--border-radius-xl);
+  width: min(900px, 92vw);
+  background: var(--rd-glass-modal);
+  -webkit-backdrop-filter: var(--rd-blur-drawer);
+  backdrop-filter: var(--rd-blur-drawer);
+  border: 1px solid var(--rd-hairline);
+  border-radius: var(--rd-r-22);
   overflow: hidden;
   position: relative;
-  box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+  box-shadow: 0 40px 90px rgba(0,0,0,0.6);
   animation: zoomIn var(--transition-normal);
 }
 
@@ -3058,36 +3073,38 @@ body.vod-mode .now-next-bar {
 }
 
 .vod-modal-left {
-  padding: 30px;
-  background-color: var(--bg-darkest);
+  padding: 28px;
+  background: rgba(255,255,255,0.02);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px;
-  border-right: 1px solid var(--border-color);
+  gap: 18px;
+  border-right: 1px solid var(--rd-hairline-soft);
 }
 
 .vod-details-poster {
   width: 100%;
   aspect-ratio: 2/3;
   object-fit: cover;
-  border-radius: var(--border-radius-md);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-  border: 1px solid var(--border-color);
+  border-radius: var(--rd-r-14);
+  box-shadow: var(--rd-card-shadow);
+  border: 1px solid var(--rd-hairline);
 }
 
 .vod-play-btn-large {
   width: 100%;
   padding: 14px;
-  background: linear-gradient(135deg, var(--accent-cyan) 0%, var(--accent-blue) 100%);
+  background: var(--rd-accent-gradient);
   color: white;
   font-weight: 700;
-  border-radius: var(--border-radius-md);
+  border-radius: var(--rd-r-12);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
   font-size: 1rem;
+  box-shadow: 0 10px 28px rgba(37,99,235,0.4);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .vod-play-btn-large:hover {
@@ -3115,8 +3132,9 @@ body.vod-mode .now-next-bar {
 
 .vod-modal-title-row h1 {
   font-family: var(--font-title);
-  font-size: 1.8rem;
+  font-size: 1.75rem;
   font-weight: 800;
+  letter-spacing: -0.01em;
 }
 
 .vod-badge-rating {
@@ -3147,9 +3165,10 @@ body.vod-mode .now-next-bar {
 .vod-meta-item {
   font-size: 0.85rem;
   color: var(--text-secondary);
-  background: var(--bg-surface);
-  padding: 4px 10px;
-  border-radius: 4px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--rd-hairline-soft);
+  padding: 5px 12px;
+  border-radius: 999px;
   font-weight: 500;
 }
 
@@ -5361,14 +5380,17 @@ body.epg-fullscreen-active .epg-section-container {
   align-items: center;
   gap: 8px;
   padding: 10px 16px;
-  border-radius: 10px;
-  border: 1px solid var(--border-color, #1e2a3e);
-  background: var(--bg-surface, #131c2c);
+  border-radius: var(--rd-r-10);
+  border: 1px solid var(--rd-hairline-soft);
+  background: rgba(255,255,255,0.04);
   color: var(--text-primary, #eef);
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
   max-width: 260px;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 .vod-filter-btn i { width: 16px; height: 16px; }
 .vod-filter-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
