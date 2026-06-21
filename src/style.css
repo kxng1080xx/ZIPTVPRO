@@ -2332,6 +2332,49 @@ body.vod-mode .now-next-bar {
   color: var(--text-secondary);
 }
 
+/* Channel-specific "Up Next" schedule in the details panel */
+.details-upcoming {
+  margin-top: 18px;
+}
+
+.details-upcoming.hidden {
+  display: none;
+}
+
+.upcoming-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.upcoming-item {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 9px 12px;
+  border: 1px solid var(--rd-hairline-soft);
+  border-radius: var(--rd-r-10);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.upcoming-time {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  font-variant-numeric: tabular-nums;
+  min-width: 58px;
+}
+
+.upcoming-title {
+  font-size: 0.84rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ==========================================================================
    EPG SECTION & GRID
    ========================================================================== */

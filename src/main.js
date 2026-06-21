@@ -861,6 +861,35 @@ function updateDetailsPanel(channel, program) {
     progProgress.style.width = '0%';
     clearInterval(progressInterval);
   }
+
+  // Channel-specific "Up Next" schedule (fills the details panel's lower area)
+  renderUpcomingPrograms(channel);
+}
+
+// Render the next few upcoming programs for a channel into the details panel.
+function renderUpcomingPrograms(channel) {
+  const wrap = document.getElementById('detail-upcoming');
+  const list = document.getElementById('detail-upcoming-list');
+  if (!wrap || !list) return;
+
+  const upcoming = (epgGridInstance?.getNowNext(channel.stream_id)?.upcoming) || [];
+  if (!upcoming.length) {
+    wrap.classList.add('hidden');
+    list.innerHTML = '';
+    return;
+  }
+
+  list.innerHTML = upcoming.map(prog => {
+    const startMs = parseInt(prog.start_timestamp) * 1000;
+    const time = new Date(startMs).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    const title = prog.title || 'No information';
+    return `
+      <div class="upcoming-item">
+        <span class="upcoming-time">${time}</span>
+        <span class="upcoming-title">${title}</span>
+      </div>`;
+  }).join('');
+  wrap.classList.remove('hidden');
 }
 
 async function toggleChannelFavorite(type, id) {
