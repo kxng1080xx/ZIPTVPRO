@@ -325,29 +325,26 @@ app.post('/api/sync', async (req, res) => {
   const baseApiUrl = `${creds.server_url}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}`;
 
   try {
-    sendEvent({ progress: 'Syncing Live Categories...' });
-    const liveCatRes = await fetchXtream(`${baseApiUrl}&action=get_live_categories`);
-    const liveCategories = await liveCatRes.json();
+    // These six provider calls are independent, so fetch them in two parallel
+    // batches (categories, then streams) instead of six sequential round-trips.
+    // On a slow/flaky provider this is the difference between ~6×latency and
+    // ~2×latency, and no single slow endpoint blocks the others.
+    const fetchJson = (action) =>
+      fetchXtream(`${baseApiUrl}&action=${action}`).then((r) => r.json());
 
-    sendEvent({ progress: 'Syncing Movies Categories...' });
-    const vodCatRes = await fetchXtream(`${baseApiUrl}&action=get_vod_categories`);
-    const vodCategories = await vodCatRes.json();
+    sendEvent({ progress: 'Syncing categories (live, movies, series)...' });
+    const [liveCategories, vodCategories, seriesCategories] = await Promise.all([
+      fetchJson('get_live_categories'),
+      fetchJson('get_vod_categories'),
+      fetchJson('get_series_categories')
+    ]);
 
-    sendEvent({ progress: 'Syncing Series Categories...' });
-    const seriesCatRes = await fetchXtream(`${baseApiUrl}&action=get_series_categories`);
-    const seriesCategories = await seriesCatRes.json();
-
-    sendEvent({ progress: 'Downloading Live Streams...' });
-    const liveStreamsRes = await fetchXtream(`${baseApiUrl}&action=get_live_streams`);
-    const liveStreams = await liveStreamsRes.json();
-
-    sendEvent({ progress: 'Downloading Movie Streams...' });
-    const vodStreamsRes = await fetchXtream(`${baseApiUrl}&action=get_vod_streams`);
-    const vodStreams = await vodStreamsRes.json();
-
-    sendEvent({ progress: 'Downloading Series List...' });
-    const seriesRes = await fetchXtream(`${baseApiUrl}&action=get_series`);
-    const seriesStreams = await seriesRes.json();
+    sendEvent({ progress: 'Downloading streams (live, movies, series)...' });
+    const [liveStreams, vodStreams, seriesStreams] = await Promise.all([
+      fetchJson('get_live_streams'),
+      fetchJson('get_vod_streams'),
+      fetchJson('get_series')
+    ]);
 
     sendEvent({ progress: 'Saving all cached contents...' });
     updatePlaylistCache({
