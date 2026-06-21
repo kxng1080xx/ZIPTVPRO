@@ -33,6 +33,40 @@
   --border-radius-md: 10px;
   --border-radius-lg: 16px;
   --border-radius-xl: 24px;
+
+  /* ---- Redesign: glass / accent / focus tokens (v3.28 glass UI) ---- */
+  /* Base backgrounds for the glassy dark aesthetic */
+  --rd-bg-darkest: #07090d;
+  --rd-bg-base: #090b11;
+  /* Ambient decorative glows layered on <body> */
+  --rd-glow-a: radial-gradient(1200px 700px at 85% -10%, rgba(37,99,235,0.16), transparent 60%);
+  --rd-glow-b: radial-gradient(1000px 700px at -10% 110%, rgba(6,182,212,0.12), transparent 60%);
+  /* Glass surfaces */
+  --rd-glass-panel: rgba(255,255,255,0.035);
+  --rd-glass-header: rgba(16,19,27,0.55);
+  --rd-glass-drawer: rgba(16,19,27,0.85);
+  --rd-glass-modal: rgba(16,19,27,0.92);
+  --rd-blur-header: blur(24px);
+  --rd-blur-drawer: blur(30px);
+  /* Hairline borders */
+  --rd-hairline: rgba(255,255,255,0.07);
+  --rd-hairline-soft: rgba(255,255,255,0.06);
+  --rd-hairline-strong: rgba(255,255,255,0.10);
+  /* Accents */
+  --rd-accent-gradient: linear-gradient(140deg, #3b82f6, #06b6d4);
+  --rd-accent-solid: #3b82f6;
+  --rd-active-tint: linear-gradient(90deg, rgba(56,189,248,0.20), rgba(56,189,248,0.05));
+  --rd-active-border: rgba(56,189,248,0.28);
+  --rd-count-active: #9fc0ff;
+  /* TV / D-pad focus */
+  --rd-focus: #38bdf8;
+  --rd-focus-glow: 0 0 0 4px rgba(56,189,248,0.25), 0 16px 36px rgba(56,189,248,0.35);
+  /* Shadows */
+  --rd-card-shadow: 0 16px 38px rgba(0,0,0,0.45);
+  --rd-player-shadow: 0 30px 70px rgba(0,0,0,0.45);
+  /* Extended radii scale */
+  --rd-r-10: 10px; --rd-r-12: 12px; --rd-r-14: 14px;
+  --rd-r-16: 16px; --rd-r-18: 18px; --rd-r-22: 22px;
 }
 
 /* ==========================================================================
@@ -57,6 +91,9 @@ html {
 body {
   font-family: var(--font-body);
   background-color: var(--bg-base);
+  /* Redesign: ambient blue/cyan glows floating over the base (decorative) */
+  background-image: var(--rd-glow-a), var(--rd-glow-b);
+  background-attachment: fixed;
   color: var(--text-primary);
   overflow: hidden;
   /* position:fixed + inset pins the body to the *visual* viewport so the
