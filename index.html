@@ -217,28 +217,32 @@
           </ul>
         </div>
 
-        <div class="categories-search-section">
-          <div class="categories-header-row">
-            <span class="categories-title">Categories</span>
-            <span class="categories-count-total" id="categories-count-total">40</span>
+        <!-- Categories glass card (header/toolbar + scrolling list) -->
+        <div class="categories-card">
+          <div class="categories-search-section">
+            <div class="categories-header-row">
+              <span class="categories-title">Categories</span>
+              <span class="categories-count-total" id="categories-count-total">40</span>
+            </div>
+            <div class="categories-actions">
+              <button class="category-search-btn" id="categories-search-btn" tabindex="0" title="Search categories" aria-label="Search categories">
+                <i data-lucide="search"></i>
+              </button>
+              <button class="category-sort-btn" id="categories-sort-btn" tabindex="0" title="Sort categories">
+                <i data-lucide="arrow-up-down"></i> <span id="categories-sort-label">Default</span>
+              </button>
+            </div>
           </div>
-          <div class="categories-actions">
-            <button class="category-search-btn" id="categories-search-btn" tabindex="0" title="Search categories" aria-label="Search categories">
-              <i data-lucide="search"></i>
-            </button>
-            <button class="category-sort-btn" id="categories-sort-btn" tabindex="0" title="Sort categories">
-              <i data-lucide="arrow-up-down"></i> <span id="categories-sort-label">Default</span>
-            </button>
-          </div>
-        </div>
 
-        <!-- Scrollable Category List -->
-        <div class="categories-list-container" id="categories-list">
-          <div class="category-item active" data-category="all">
-            <span class="cat-label">All channels</span>
-            <span class="cat-count" id="count-all-channels">0</span>
+          <!-- Scrollable Category List -->
+          <div class="categories-list-container" id="categories-list">
+            <div class="category-item active" data-category="all">
+              <span class="cat-cc">ALL</span>
+              <span class="cat-label">All channels</span>
+              <span class="cat-count" id="count-all-channels">0</span>
+            </div>
+            <!-- Categories dynamic list will insert here -->
           </div>
-          <!-- Categories dynamic list will insert here -->
         </div>
 
       </aside>
