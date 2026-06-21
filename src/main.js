@@ -211,8 +211,8 @@ async function switchTab(tabId) {
   state.activeTab = tabId;
   state.activeCategory = null;
 
-  // Toggle tab buttons class
-  document.querySelectorAll('.nav-tab').forEach(btn => {
+  // Toggle tab buttons class (header pill + mobile bottom bar stay in sync)
+  document.querySelectorAll('.nav-tab, .mobile-tab-btn[data-tab]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tabId);
   });
 
@@ -2167,6 +2167,19 @@ function bindGlobalEvents() {
   // Navigation tab binds
   document.querySelectorAll('.nav-tab').forEach(tab => {
     tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+  });
+
+  // Mobile bottom-tab bar binds (view tabs + Sources/Settings actions)
+  document.querySelectorAll('.mobile-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.tab) {
+        switchTab(btn.dataset.tab);
+      } else if (btn.dataset.action === 'playlists') {
+        togglePlaylistDropdown();
+      } else if (btn.dataset.action === 'settings') {
+        document.getElementById('settings-btn')?.click();
+      }
+    });
   });
 
   // Sidebar Pins Binds
