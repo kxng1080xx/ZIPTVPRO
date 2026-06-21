@@ -5711,3 +5711,16 @@ body.epg-fullscreen-active .epg-section-container {
     width: auto;
   }
 }
+
+/* ==========================================================================
+   TV PREVIEW MODE (?tv=true on desktop, or Android-TV). A light 10-foot
+   touch on top of the glass UI — the dedicated category-column/preview-banner
+   layout is not built; TV reuses the desktop layout with sky D-pad focus.
+   ========================================================================== */
+body.tv-layout {
+  cursor: none;
+}
+
+body.tv-layout .tv-focused {
+  scroll-margin: 80px;
+}

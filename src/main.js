@@ -88,6 +88,18 @@ async function initApp() {
   // 1. Initialize time clock
   startClock();
 
+  // TV preview mode on desktop: append ?tv=true (or ?tv=1) to the URL to force
+  // the Android-TV "10-foot" layout/focus on PC for previewing. (D-pad nav via
+  // arrow keys works regardless; this flag also adds the body.tv-layout hook and
+  // drops initial focus into the categories column so it's keyboard-ready.)
+  try {
+    const tvParam = new URLSearchParams(window.location.search).get('tv');
+    if (tvParam === 'true' || tvParam === '1') {
+      document.body.classList.add('tv-layout');
+      window.__TV_PREVIEW__ = true;
+    }
+  } catch (e) {}
+
   // Initialize device code for remote login
   deviceCode = getOrCreateDeviceCode();
   const codeEl = document.getElementById('remote-device-code');
@@ -2839,6 +2851,12 @@ function showDashboard() {
 
   // Update TV Connection IP badge in the top header
   updateHeaderTvIpBadge(state.user);
+
+  // TV preview (?tv=true): drop initial D-pad focus into the categories column
+  // so arrow-key navigation is immediately live without a first "priming" press.
+  if (window.__TV_PREVIEW__) {
+    setTimeout(() => navigation.focusDefault('categories'), 400);
+  }
 }
 
 function updateHeaderTvIpBadge(status) {
