@@ -2413,7 +2413,8 @@ body.vod-mode .now-next-bar {
    ========================================================================== */
 .epg-section-container.timeline-hidden .epg-channels-column {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  /* Wider cards so channel names aren't cramped (~6-7 cols on a wide desktop) */
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   align-content: start;
   gap: 14px;
   padding: 16px;
@@ -5290,7 +5291,8 @@ body.epg-fullscreen-active .epg-section-container {
 
 .login-playlists-list .playlist-row:hover .playlist-row-del,
 .login-playlists-list .playlist-row:focus-within .playlist-row-del,
-.login-playlists-list .playlist-row.tv-focused .playlist-row-del {
+.login-playlists-list .playlist-row.tv-focused .playlist-row-del,
+.login-playlists-list .playlist-row-del.tv-focused {
   opacity: 1;
 }
 

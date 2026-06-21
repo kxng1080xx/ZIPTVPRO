@@ -1426,82 +1426,79 @@ class TVNavigation {
   }
 
   handlePlaylistSelectNavigation(e) {
+    // The saved-playlist picker is a TILE GRID, so navigate it in 2-D: LEFT/RIGHT
+    // move between tiles in a row, UP/DOWN move between rows and to the
+    // back / add / download buttons above and below the grid.
     const backBtn = document.getElementById('login-back-btn');
     const rows = Array.from(document.querySelectorAll('#login-playlists-list .playlist-row'));
     const addBtn = document.getElementById('login-show-form-btn');
-
-    // Create a flat list of focusable ROWS (not delete buttons)
-    const items = [];
-    if (backBtn && !backBtn.classList.contains('hidden') && backBtn.offsetParent !== null) {
-      items.push(backBtn);
-    }
-    items.push(...rows);
-    if (addBtn && addBtn.offsetParent !== null) {
-      items.push(addBtn);
-    }
     const dlBtn = document.getElementById('download-app-btn');
-    if (dlBtn && dlBtn.offsetParent !== null) {
-      items.push(dlBtn);
-    }
 
-    // Get current row (if on delete button, get parent row)
-    const isDelBtn = this.focusedElement && this.focusedElement.classList.contains('playlist-row-del');
-    let currentRow = isDelBtn ? this.focusedElement.closest('.playlist-row') : this.focusedElement;
-    const index = items.indexOf(currentRow);
+    const top = (backBtn && !backBtn.classList.contains('hidden') && backBtn.offsetParent !== null) ? backBtn : null;
+    const bottom = [addBtn, dlBtn].filter(el => el && el.offsetParent !== null);
 
-    console.log('handlePlaylistSelectNavigation:', { isDelBtn, currentIndex: index, key: e.key, focused: this.focusedElement?.className });
+    const focus = (el) => { if (el) this.setFocus('playlist-select', el); };
+    const cur = this.focusedElement;
 
-    if (index === -1 && items[0]) {
-      console.log('Focus lost, resetting to first item');
-      this.setFocus('playlist-select', items[0]);
+    if (e.key === this.KEYS.ENTER) {
+      cur?.click();
+      e.preventDefault();
       return;
     }
 
-    // Vertical navigation (UP/DOWN) - move between rows
-    if (e.key === this.KEYS.DOWN) {
-      if (index < items.length - 1) {
-        const nextItem = items[index + 1];
-        // If on delete button, stay on the button of next row. Otherwise move to next row
-        if (isDelBtn) {
-          const delBtn = nextItem.classList.contains('playlist-row') ? nextItem.querySelector('.playlist-row-del') : null;
-          this.setFocus('playlist-select', delBtn || nextItem);
-        } else {
-          this.setFocus('playlist-select', nextItem);
-        }
+    // Columns = number of tiles sharing the first tile's offsetTop
+    const cols = rows.length
+      ? Math.max(1, rows.filter(r => Math.abs(r.offsetTop - rows[0].offsetTop) < 4).length)
+      : 1;
+
+    // A tile's delete button sits in the tile's top-left corner, so it's reached
+    // by pressing UP from the tile (and DOWN drops back onto the tile).
+    const isDel = cur && cur.classList.contains('playlist-row-del');
+    const delRow = isDel ? cur.closest('.playlist-row') : null;
+    const gi = rows.indexOf(isDel ? delRow : cur);
+
+    if (isDel && gi !== -1) {
+      const col = gi % cols;
+      if (e.key === this.KEYS.DOWN) {
+        focus(delRow);                                   // back onto the tile
+      } else if (e.key === this.KEYS.UP) {
+        focus(rows[gi - cols] || top);                   // leave the grid upward
+      } else if (e.key === this.KEYS.RIGHT) {
+        if (col < cols - 1 && rows[gi + 1]) focus(rows[gi + 1].querySelector('.playlist-row-del') || rows[gi + 1]);
+      } else if (e.key === this.KEYS.LEFT) {
+        if (col > 0) focus(rows[gi - 1].querySelector('.playlist-row-del') || rows[gi - 1]);
       }
       e.preventDefault();
-    } else if (e.key === this.KEYS.UP) {
-      if (index > 0) {
-        const prevItem = items[index - 1];
-        // If on delete button, stay on the button of prev row. Otherwise move to prev row
-        if (isDelBtn) {
-          const delBtn = prevItem.classList.contains('playlist-row') ? prevItem.querySelector('.playlist-row-del') : null;
-          this.setFocus('playlist-select', delBtn || prevItem);
-        } else {
-          this.setFocus('playlist-select', prevItem);
-        }
-      }
-      e.preventDefault();
-    } else if (e.key === this.KEYS.RIGHT) {
-      // Right arrow: move from row to its delete button
-      if (!isDelBtn && currentRow && currentRow.classList.contains('playlist-row')) {
-        const delBtn = currentRow.querySelector('.playlist-row-del');
-        if (delBtn) {
-          this.setFocus('playlist-select', delBtn);
-        }
-      }
-      e.preventDefault();
-    } else if (e.key === this.KEYS.LEFT) {
-      // Left arrow: move from delete button back to row
-      if (isDelBtn && currentRow) {
-        this.setFocus('playlist-select', currentRow);
-      }
-      e.preventDefault();
-    } else if (e.key === this.KEYS.ENTER) {
-      console.log('Playlist-select ENTER pressed on:', this.focusedElement?.className, this.focusedElement?.dataset?.playlistName);
-      this.focusedElement.click();
-      e.preventDefault();
+      return;
     }
+
+    if (gi !== -1) {
+      // Currently on a tile
+      const col = gi % cols;
+      if (e.key === this.KEYS.RIGHT) {
+        if (col < cols - 1 && rows[gi + 1]) focus(rows[gi + 1]);
+      } else if (e.key === this.KEYS.LEFT) {
+        if (col > 0) focus(rows[gi - 1]);
+      } else if (e.key === this.KEYS.DOWN) {
+        if (rows[gi + cols]) focus(rows[gi + cols]);
+        else focus(bottom[0]);
+      } else if (e.key === this.KEYS.UP) {
+        // UP → this tile's delete button; if none, leave the grid upward
+        focus(cur.querySelector('.playlist-row-del') || rows[gi - cols] || top);
+      }
+      e.preventDefault();
+      return;
+    }
+
+    // Currently on a full-width button (back / add / download)
+    if (e.key === this.KEYS.DOWN) {
+      if (cur === top) focus(rows[0] || bottom[0]);
+      else if (cur === addBtn) focus(dlBtn || cur);
+    } else if (e.key === this.KEYS.UP) {
+      if (cur === dlBtn) focus(addBtn || rows[rows.length - 1] || top);
+      else if (cur === addBtn) focus(rows[rows.length - 1] || top);
+    }
+    e.preventDefault();
   }
 
   handlePlaylistDropdownNavigation(e) {
