@@ -2072,6 +2072,11 @@ body.vod-mode .now-next-bar {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background-color: transparent;
+}
+
+/* In the full-guide (timeline) state the dense grid still wants a solid base */
+.epg-section-container:not(.timeline-hidden) {
   background-color: var(--bg-darkest);
 }
 
@@ -2089,12 +2094,104 @@ body.vod-mode .now-next-bar {
   border-right: none !important;
 }
 
+/* ==========================================================================
+   PHASE 3 — Channel-card grid (the default, non-guide Live view).
+   The same .epg-channel-row markup is re-laid-out from a list row into a
+   responsive glass card grid; "Show Guide" (#epg-full-btn) removes
+   .timeline-hidden and reverts to the full EPG timeline grid.
+   ========================================================================== */
+.epg-section-container.timeline-hidden .epg-channels-column {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  align-content: start;
+  gap: 14px;
+  padding: 16px;
+  background: transparent;
+}
+
+.epg-section-container.timeline-hidden .epg-channel-row {
+  height: auto;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--rd-hairline-soft);
+  border-radius: var(--rd-r-14);
+  background: var(--rd-glass-panel);
+  position: relative;
+  transition: transform var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.epg-section-container.timeline-hidden .epg-channel-row:hover {
+  background: rgba(255,255,255,0.05);
+  border-color: var(--rd-hairline-strong);
+  transform: translateY(-2px);
+}
+
+.epg-section-container.timeline-hidden .epg-channel-row.active {
+  background: var(--rd-active-tint);
+  border-color: rgba(56,189,248,0.45);
+}
+
+.epg-section-container.timeline-hidden .epg-channel-row-logo {
+  width: 46px;
+  height: 46px;
+  border-radius: var(--rd-r-10);
+}
+
+/* Stack name over the now-playing line inside the card */
+.epg-section-container.timeline-hidden .epg-channel-row-meta {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  align-self: center;
+  padding-right: 22px; /* room for the favourite star */
+}
+
+.epg-section-container.timeline-hidden .epg-channel-row-name {
+  flex: 0 1 auto;
+  width: 100%;
+  max-width: 100%;
+}
+
+.epg-section-container.timeline-hidden .epg-channel-row-now {
+  flex: 0 1 auto;
+  width: 100%;
+  border-left: none;
+  padding-left: 0;
+  gap: 0;
+}
+
+/* Keep the card's now-line to a single, clean NOW segment */
+.epg-section-container.timeline-hidden .epg-channel-row-now .now-seg.is-next {
+  display: none;
+}
+.epg-section-container.timeline-hidden .epg-channel-row-now .now-seg {
+  max-width: 100%;
+}
+
+.epg-section-container.timeline-hidden .epg-channel-row-fav {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+
+.epg-section-container.timeline-hidden .epg-channel-row.active .epg-channel-row-name {
+  color: #fff;
+}
+
+/* The "CHANNELS (N)" cell reads as the grid's section label in card mode */
+.epg-section-container.timeline-hidden .epg-timeline-header-row {
+  background: transparent;
+  border-bottom: 1px solid var(--rd-hairline-soft);
+}
+
 .epg-controls-header {
   display: flex;
-  height: 54px;
-  padding: 0 16px;
-  background-color: var(--bg-panel);
-  border-bottom: 1px solid var(--border-color);
+  height: 56px;
+  padding: 0 18px;
+  background-color: transparent;
+  border-bottom: 1px solid var(--rd-hairline-soft);
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
@@ -2110,13 +2207,14 @@ body.vod-mode .now-next-bar {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-base);
-  border-radius: var(--border-radius-sm);
+  padding: 8px 12px;
+  border: 1px solid var(--rd-hairline-soft);
+  background: rgba(255,255,255,0.04);
+  border-radius: var(--rd-r-10);
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--text-secondary);
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
 
 .epg-ctrl-btn i {
@@ -2132,6 +2230,17 @@ body.vod-mode .now-next-bar {
 .epg-ctrl-btn.active {
   background: var(--bg-surface);
   color: var(--text-primary);
+}
+
+/* "Show Guide" — primary action on the channels panel */
+#epg-full-btn {
+  background: var(--rd-active-tint);
+  border-color: var(--rd-active-border);
+  color: #dbe9ff;
+}
+#epg-full-btn:hover {
+  border-color: rgba(56,189,248,0.5);
+  color: #fff;
 }
 
 /* Icon-only control button (e.g. channel filter) — compact square like the
