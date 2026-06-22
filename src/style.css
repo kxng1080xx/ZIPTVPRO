@@ -4047,7 +4047,51 @@ body.vod-mode .now-next-bar {
     width: 100%;
     aspect-ratio: 16/9;
   }
-  
+
+  /* The portrait player is short (16:9), so tighten the overlay so the three
+     rows (LIVE, play/skip, title+icons) fit without overlapping or clipping. */
+  .player-controls-overlay {
+    padding: 8px 10px;
+  }
+  .controls-center {
+    gap: 16px;
+  }
+  .player-play-btn {
+    width: 46px;
+    height: 46px;
+  }
+  .player-play-btn i {
+    width: 20px;
+    height: 20px;
+  }
+  .player-skip-btn {
+    width: 30px;
+    height: 30px;
+  }
+  .controls-bottom {
+    gap: 4px;
+  }
+  .control-row-right {
+    gap: 10px;
+  }
+  .player-control-icon {
+    width: 34px;
+    height: 34px;
+  }
+  .player-control-icon i {
+    width: 16px;
+    height: 16px;
+  }
+  /* The "now playing" title can wrap and push the icon row off the bottom —
+     keep it to one truncated line. */
+  .player-playing-title,
+  .player-playing-epg {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
   .program-details-panel {
     width: 100%;
     border-left: none;

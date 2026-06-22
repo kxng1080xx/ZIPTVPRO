@@ -182,6 +182,9 @@ async function initApp() {
   // 3. Bind Global UI Events (Tabs, Logins, Settings, Modal Closers)
   bindGlobalEvents();
 
+  // Grab LAN IP(s) from the local server (if any) for the Smart TV Access link.
+  loadLanInfo();
+
   // Casting (Electron/PC only — no-op elsewhere). Shows the Cast button when
   // the preload bridge is present.
   initCastUI();
@@ -2986,13 +2989,34 @@ function showDashboard() {
 //  - the local server URL straight from window.location (reliable in the
 //    desktop app, e.g. http://localhost:56789/tv, even if IP detection failed)
 //  - the hosted domain (the Vercel web build)
+// LAN IPs + port for the "open on your TV" link. Fetched once from the local
+// server (always running in the desktop app) so the link resolves even when the
+// Xtream layer is in client mode and getStatus() carries no local_ips.
+let lanInfo = { ips: [], port: null };
+async function loadLanInfo() {
+  try {
+    const res = await fetch('/api/status', { signal: AbortSignal.timeout(2500) });
+    if (!res.ok) return;
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) return;
+    const data = await res.json();
+    if (Array.isArray(data.local_ips)) lanInfo.ips = data.local_ips;
+    if (data.server_port) lanInfo.port = data.server_port;
+    refreshSettingsTiles();
+  } catch (e) { /* no local server (e.g. hosted web build) */ }
+}
+
 function getTvLinks() {
   const links = [];
   const seen = new Set();
   const add = (label, url) => { if (url && !seen.has(url)) { seen.add(url); links.push({ label, url }); } };
 
-  const port = (state.user && state.user.server_port) || null;
-  const ips = (state.user && state.user.local_ips) || [];
+  const port = lanInfo.port || (state.user && state.user.server_port) || null;
+  const ips = (lanInfo.ips && lanInfo.ips.length)
+    ? lanInfo.ips
+    : ((state.user && state.user.local_ips) || []);
+
+  // Preferred: real LAN IP(s) — reachable from a separate TV on the network.
   for (const ip of ips) {
     add(`${ip}:${port || 80}/tv`, `http://${ip}:${port || 80}/tv`);
   }
@@ -3001,12 +3025,11 @@ function getTvLinks() {
     const host = window.location.host;          // includes port, e.g. localhost:56789
     const hostname = window.location.hostname;
     const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
-    if (window.location.protocol !== 'file:' && host) {
-      const origin = window.location.origin.replace(/\/+$/, '');
-      add(`${host}/tv`, `${origin}/tv`);
-    }
-    // Desktop app served from localhost but on a known LAN port — still expose it.
-    if (isLocal && port && String(port) !== window.location.port) {
+    if (!isLocal && window.location.protocol !== 'file:' && host) {
+      // Hosted web build (e.g. ziptvpro.vercel.app).
+      add(`${host}/tv`, `${window.location.origin.replace(/\/+$/, '')}/tv`);
+    } else if (!ips.length && port) {
+      // Desktop app but LAN IP detection failed — at least offer the same-machine link.
       add(`localhost:${port}/tv`, `http://localhost:${port}/tv`);
     }
   } catch (e) {}
