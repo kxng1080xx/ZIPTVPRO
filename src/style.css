@@ -1613,6 +1613,37 @@ button {
   border-radius: var(--border-radius-sm);
 }
 
+/* Persistent quality + FPS pill, top-right of the video — always visible,
+   independent of the auto-hiding controls overlay. */
+.player-quality-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 11;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #e8eefc;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid var(--rd-hairline-soft);
+  padding: 4px 10px;
+  border-radius: 999px;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+  display: none;
+}
+
+.player-quality-badge.visible {
+  display: inline-flex;
+}
+
+/* Hide it in VOD/series mode (matches the live-only fps-indicator behaviour). */
+body.vod-mode .player-quality-badge,
+.series-player-wrapper .player-quality-badge {
+  display: none !important;
+}
+
 .controls-center {
   display: flex;
   align-items: center;
@@ -6005,13 +6036,20 @@ body.tv-layout .top-header {
 body.tv-layout .header-left {
   gap: 22px;
 }
-/* Account-chip text / TV-IP badge are off the 10-foot path. The gear (Settings)
-   stays — it's the only way to reach Switch Playlist on TV. */
+/* TV-IP badge / playlist name are off the 10-foot path, but the subscription
+   status (e.g. "Expires Jul 3, 2026") stays so expiry is visible on TV. The gear
+   (Settings) also stays — it's the only way to reach Switch Playlist on TV. */
 body.tv-layout .header-center,
 body.tv-layout .header-playlists-btn,
-body.tv-layout .profile-info,
+body.tv-layout .profile-name,
 body.tv-layout .header-tv-ip-badge {
   display: none !important;
+}
+body.tv-layout .profile-info {
+  display: flex !important;
+}
+body.tv-layout .profile-status {
+  font-size: 0.95rem;
 }
 body.tv-layout .profile-card {
   padding: 5px;

@@ -33,6 +33,17 @@ function proxify(url) {
   return USE_WEB_PROXY ? `/api/proxy?url=${encodeURIComponent(url)}` : url;
 }
 
+// Wrap an <img> source. On the HTTPS web build, provider icons/posters served
+// over plain HTTP are blocked as mixed content, so route them through the proxy.
+// (https:// images render directly — <img> needs no CORS — so leave them alone.)
+export function proxifyImage(url) {
+  if (!url || typeof url !== 'string') return url || '';
+  if (USE_WEB_PROXY && /^http:\/\//i.test(url)) {
+    return `/api/proxy?url=${encodeURIComponent(url)}`;
+  }
+  return url;
+}
+
 // Helper: Check if backend server is active. Memoized so the detection runs
 // (and is awaited) exactly once, including before the first playlist read on boot.
 let serverModePromise = null;

@@ -1,4 +1,4 @@
-import { getEPG } from './xtream-api.js';
+import { getEPG, proxifyImage } from './xtream-api.js';
 import { navigation } from './tv-navigation.js';
 
 function getQualityTag(name) {
@@ -327,7 +327,7 @@ export class EPGGrid {
       chanRow.className = 'epg-channel-row' + (isPinned ? ' pinned' : '');
       chanRow.dataset.streamId = streamId;
 
-      const logo = channel.stream_icon || '';
+      const logo = proxifyImage(channel.stream_icon || '');
       const guideHtml = this.buildInlineGuide(this.getNowNext(streamId));
       const qualityBadge = getQualityBadgeHtml(channel.name);
       chanRow.innerHTML = `

@@ -17,7 +17,8 @@ import {
   saveWatchProgress,
   removeWatchProgress,
   getIsServerMode,
-  getStreamUrlSync
+  getStreamUrlSync,
+  proxifyImage
 } from './components/xtream-api.js';
 import { Capacitor } from '@capacitor/core';
 import { VideoPlayer } from './components/player.js';
@@ -829,7 +830,7 @@ function updateDetailsPanel(channel, program) {
 
   // Setup Logo
   if (channel.stream_icon) {
-    channelIcon.src = channel.stream_icon;
+    channelIcon.src = proxifyImage(channel.stream_icon);
     channelIcon.classList.remove('fallback-logo');
   } else {
     channelIcon.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%234b5563" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="4"/></svg>';
@@ -1005,7 +1006,7 @@ function renderMoviesCatalog(movies) {
     
     const rating = parseFloat(movie.rating) || 0;
     const year = movie.year || movie.releaseDate || 'N/A';
-    const logo = movie.stream_icon || '';
+    const logo = proxifyImage(movie.stream_icon || '');
 
     card.innerHTML = `
       <div class="vod-poster-wrapper">
@@ -1072,7 +1073,7 @@ function renderSeriesCatalog(seriesList) {
     const rating = parseFloat(series.rating) || 0;
     const year = series.releaseDate || 'N/A';
     // Series posters live in `cover`/`cover_big`; `stream_icon` is movies-only.
-    const logo = series.stream_icon || series.cover || series.cover_big || '';
+    const logo = proxifyImage(series.stream_icon || series.cover || series.cover_big || '');
 
     card.innerHTML = `
       <div class="vod-poster-wrapper">
@@ -1126,7 +1127,7 @@ async function openSeriesPlaybackDashboard(series, resumeOpts = null) {
   if (title) title.textContent = series.name;
   if (rating) rating.innerHTML = `<i data-lucide="star"></i> ${parseFloat(series.rating)?.toFixed(1) || 'N/A'}`;
   if (yearBadge) yearBadge.textContent = series.releaseDate || series.year || 'N/A';
-  if (coverImg) coverImg.src = series.stream_icon || series.cover || series.cover_big || '';
+  if (coverImg) coverImg.src = proxifyImage(series.stream_icon || series.cover || series.cover_big || '');
   if (plot) plot.textContent = 'Loading description details...';
   if (select) select.innerHTML = '';
   if (episodesList) episodesList.innerHTML = '<div class="spinner-center"><div class="spinner"></div></div>';
@@ -1562,7 +1563,7 @@ async function openVODDetailsModal(vodData, type, resumeTime = 0) {
   // Clear modal values first
   title.textContent = vodData.name;
   rating.innerHTML = `<i data-lucide="star"></i> ${parseFloat(vodData.rating)?.toFixed(1) || 'N/A'}`;
-  poster.src = vodData.stream_icon || vodData.cover || vodData.cover_big || '';
+  poster.src = proxifyImage(vodData.stream_icon || vodData.cover || vodData.cover_big || '');
   genre.textContent = 'General';
   release.textContent = vodData.releaseDate || vodData.year || 'N/A';
   duration.textContent = 'N/A';
@@ -1807,7 +1808,7 @@ function renderContinueWatching(type) {
     html += `
       <div class="continue-card" data-id="${it.id}" tabindex="-1">
         <div class="continue-poster">
-          ${it.logo ? `<img src="${it.logo}" alt="" loading="lazy">` : `<div class="poster-placeholder"><i data-lucide="${icon}"></i></div>`}
+          ${it.logo ? `<img src="${proxifyImage(it.logo)}" alt="" loading="lazy">` : `<div class="poster-placeholder"><i data-lucide="${icon}"></i></div>`}
           <div class="continue-resume-overlay"><i data-lucide="play"></i></div>
           <div class="continue-progress"><div class="continue-progress-fill" style="width:${pct}%"></div></div>
         </div>

@@ -2,6 +2,7 @@ import Hls from 'hls.js';
 import mpegts from 'mpegts.js';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { ScreenOrientation } from '@capacitor/screen-orientation';
+import { proxifyImage } from './xtream-api.js';
 
 function getQualityTag(name) {
   const n = String(name).toLowerCase();
@@ -72,6 +73,7 @@ export class VideoPlayer {
     this.stopBtn = document.getElementById('player-stop-btn');
     this.infoBtn = document.getElementById('player-info-btn');
     this.fpsIndicatorEl = document.getElementById('player-fps-indicator');
+    this.qualityBadgeEl = document.getElementById('player-quality-badge');
     this.currentFps = 30;
     this.fpsInterval = null;
     this.currentChannelName = '';
@@ -462,9 +464,12 @@ export class VideoPlayer {
     if (this.fpsIndicatorEl) {
       this.fpsIndicatorEl.textContent = 'Loading...';
     }
+    if (this.qualityBadgeEl) {
+      this.qualityBadgeEl.classList.remove('visible');
+    }
 
     if (logo) {
-      this.watermarkImg.src = logo;
+      this.watermarkImg.src = proxifyImage(logo);
       this.watermark.classList.remove('hidden');
     } else {
       this.watermark.classList.add('hidden');
@@ -841,7 +846,7 @@ export class VideoPlayer {
 
     // Header: prominent current channel + clock
     if (logo) {
-      this.cibLogoImg.src = logo;
+      this.cibLogoImg.src = proxifyImage(logo);
       this.cibLogo.style.display = '';
     } else {
       this.cibLogo.style.display = 'none';
@@ -867,7 +872,7 @@ export class VideoPlayer {
           if (!ch) return;
           const row = document.createElement('div');
           row.className = 'cib-row' + (offset === 0 ? ' current' : '');
-          const chLogo = ch.stream_icon || '';
+          const chLogo = proxifyImage(ch.stream_icon || '');
           const qBadgeLineup = getQualityBadgeHtml(ch.name);
           row.innerHTML = `
             <span class="cib-row-logo">${chLogo ? `<img src="${chLogo}" alt="">` : '<i data-lucide="tv"></i>'}</span>
@@ -966,6 +971,10 @@ export class VideoPlayer {
     if (this.fpsIndicatorEl) {
       this.fpsIndicatorEl.textContent = '';
     }
+    if (this.qualityBadgeEl) {
+      this.qualityBadgeEl.textContent = '';
+      this.qualityBadgeEl.classList.remove('visible');
+    }
     this.watermark.classList.add('hidden');
     this.hideSpinner();
     this.setSeriesMode(false);
@@ -1043,8 +1052,13 @@ export class VideoPlayer {
     }
     
     const fps = this.currentFps || 30;
+    const label = `${quality} | ${fps} FPS`;
     if (this.fpsIndicatorEl) {
-      this.fpsIndicatorEl.textContent = `${quality} | ${fps} FPS`;
+      this.fpsIndicatorEl.textContent = label;
+    }
+    if (this.qualityBadgeEl) {
+      this.qualityBadgeEl.textContent = label;
+      this.qualityBadgeEl.classList.add('visible');
     }
     
     if (this.channelNameEl && this.currentChannelName) {

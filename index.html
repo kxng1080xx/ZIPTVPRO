@@ -247,7 +247,11 @@
             <div class="player-wrapper">
               <div class="video-container" id="video-container">
                 <video id="main-video-player" playsinline></video>
-                
+
+                <!-- Always-on quality + FPS badge (top-right, independent of the
+                     auto-hiding controls overlay) -->
+                <div class="player-quality-badge" id="player-quality-badge"></div>
+
                 <!-- Custom Control Overlay -->
                 <div class="player-controls-overlay" id="player-controls">
                   <!-- Top controls (indicators) -->
