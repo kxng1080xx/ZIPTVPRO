@@ -148,8 +148,18 @@
         </nav>
       </div>
 
-      <!-- Right: account chip · clock · settings -->
+      <!-- Right: global search · account chip · clock · settings -->
       <div class="header-right">
+        <!-- Global search: a real field on PC, a D-pad button on the APK/TV.
+             main.js shows exactly one of these based on the platform. -->
+        <label class="header-search" id="global-search-field" style="display: none;">
+          <i data-lucide="search"></i>
+          <input id="global-search-input" type="text" placeholder="Search live, movies & series…"
+                 autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        </label>
+        <button class="header-icon-btn" id="global-search-btn" title="Search" style="display: none;">
+          <i data-lucide="search"></i>
+        </button>
         <div class="profile-wrap">
           <div class="profile-card" id="profile-card-btn" title="Switch playlist">
             <div class="profile-info">
@@ -408,7 +418,7 @@
               
               <div class="epg-controls-right">
                 <button class="epg-ctrl-btn" id="epg-full-btn">
-                  <i data-lucide="expand"></i> Show Guide
+                  <i data-lucide="expand"></i> <span class="epg-full-btn-label">Guide</span>
                 </button>
                 <div class="epg-hours-select">
                   <span>Hours</span>
@@ -703,6 +713,12 @@
             <div class="settings-tile-icon"><i data-lucide="shield-check"></i></div>
             <div class="settings-tile-title">CORS Proxy</div>
             <div class="settings-tile-sub">Currently: <span class="tile-badge" id="tile-proxy-val">On</span></div>
+          </button>
+
+          <button class="settings-tile" id="tile-perf" tabindex="0">
+            <div class="settings-tile-icon"><i data-lucide="gauge"></i></div>
+            <div class="settings-tile-title">Performance Mode</div>
+            <div class="settings-tile-sub">For TVs / projectors: <span class="tile-badge" id="tile-perf-val">Auto</span></div>
           </button>
 
           <button class="settings-tile" id="tile-sleep" tabindex="0">

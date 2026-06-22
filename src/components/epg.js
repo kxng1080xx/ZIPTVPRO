@@ -158,8 +158,8 @@ export class EPGGrid {
     if (this.fullBtn) {
       this.fullBtn.classList.toggle('active', on);
       this.fullBtn.innerHTML = on
-        ? '<i data-lucide="minimize"></i> Exit Guide'
-        : '<i data-lucide="expand"></i> Show Guide';
+        ? '<i data-lucide="minimize"></i> <span class="epg-full-btn-label">Exit</span>'
+        : '<i data-lucide="expand"></i> <span class="epg-full-btn-label">Guide</span>';
       lucide.createIcons({ scope: this.fullBtn });
     }
 

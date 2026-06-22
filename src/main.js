@@ -27,6 +27,7 @@ import { navigation } from './components/tv-navigation.js';
 import { initCastUI, setCastContext } from './components/cast.js';
 import { checkForUpdate, downloadApp, startPeriodicUpdateCheck } from './components/update-check.js';
 import { openSearchKeyboard, openSortDropdown } from './components/tv-search.js';
+import { openGlobalSearch, setGlobalSearchQuery } from './components/global-search.js';
 
 // Supabase Configuration for Remote Playlist Pairing
 // Swap these with your own Supabase project credentials
@@ -103,6 +104,12 @@ async function initApp() {
       window.__TV_PREVIEW__ = true;
     }
   } catch (e) {}
+
+  // Performance (lite) mode — strips GPU-heavy glass effects (backdrop blurs,
+  // ambient glows, heavy shadows, transition:all) so the UI stays smooth on
+  // low-power devices (Fire TV / Tizen / WebOS / Android projectors). Auto-on
+  // for those targets; a Settings toggle (stored in localStorage) overrides.
+  applyPerfMode();
 
   // Initialize device code for remote login
   deviceCode = getOrCreateDeviceCode();
@@ -181,6 +188,7 @@ async function initApp() {
 
   // 3. Bind Global UI Events (Tabs, Logins, Settings, Modal Closers)
   bindGlobalEvents();
+  initGlobalSearch();
 
   // Grab LAN IP(s) from the local server (if any) for the Smart TV Access link.
   loadLanInfo();
@@ -285,6 +293,44 @@ async function loadTabCategoriesAndContent() {
     console.error('Failed to load categories/content:', err);
   }
 }
+
+// ---- Performance (lite) mode -------------------------------------------
+// Returns true if this device should default to lite mode (weak GPU).
+function shouldAutoLite() {
+  try {
+    const ua = (navigator.userAgent || '').toLowerCase();
+    // Fire TV (AFT*), Tizen (Samsung TV), WebOS (LG TV), generic SMART-TV,
+    // Android TV / projectors running the native APK.
+    if (/aft|tizen|web0s|webos|smart-?tv|googletv|android tv|bravia|netcast/.test(ua)) return true;
+    if (document.body.classList.contains('tv-layout')) return true;
+    if (typeof Capacitor !== 'undefined' &&
+        Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') return true;
+  } catch (e) {}
+  return false;
+}
+
+// Resolve the effective setting: explicit user choice wins, else auto-detect.
+function isPerfLiteEnabled() {
+  const saved = (() => { try { return localStorage.getItem('perfLite'); } catch (e) { return null; } })();
+  if (saved === 'on') return true;
+  if (saved === 'off') return false;
+  return shouldAutoLite();
+}
+
+// Apply (or remove) the body.perf-lite class based on the resolved setting.
+function applyPerfMode() {
+  document.body.classList.toggle('perf-lite', isPerfLiteEnabled());
+}
+
+// Persist an explicit choice and re-apply. Pass null to clear back to auto.
+function setPerfLite(value) {
+  try {
+    if (value === null) localStorage.removeItem('perfLite');
+    else localStorage.setItem('perfLite', value ? 'on' : 'off');
+  } catch (e) {}
+  applyPerfMode();
+}
+window.setPerfLite = setPerfLite;
 
 // Placeholder shown in the content area until the user picks a category
 // (we no longer auto-load the big "All" category on startup).
@@ -565,6 +611,15 @@ function refreshSettingsTiles() {
     proxyEl.classList.toggle('tile-badge-off', !proxyOn);
   }
 
+  let perfSaved = null;
+  try { perfSaved = localStorage.getItem('perfLite'); } catch (e) {}
+  const perfEl = document.getElementById('tile-perf-val');
+  if (perfEl) {
+    const on = document.body.classList.contains('perf-lite');
+    perfEl.textContent = perfSaved === null ? `Auto (${on ? 'On' : 'Off'})` : (perfSaved === 'on' ? 'On' : 'Off');
+    perfEl.classList.toggle('tile-badge-off', !on);
+  }
+
   const verEl = document.getElementById('tile-update-val');
   if (verEl && typeof __APP_VERSION__ !== 'undefined') verEl.textContent = `v${__APP_VERSION__}`;
 
@@ -739,7 +794,12 @@ async function loadCategoryContent() {
       type: 'live',
       categoryId: state.activeCategory,
       page: 1,
-      limit: 1000, // Load top 1000 channels of category to prevent browser layout crash
+      // Load the full category. Rendering thousands of rows used to crash
+      // layout, so the list is capped here — but each .epg-channel-row now uses
+      // CSS `content-visibility: auto` (see style.css), which lets the browser
+      // skip layout/paint for off-screen cards. That makes large lists cheap, so
+      // the cap is only a generous safety ceiling rather than a hard 1000 limit.
+      limit: 100000,
       search: ''
     });
     
@@ -1941,6 +2001,56 @@ function wireVodFilters(kind, reload) {
   }
 }
 
+// Route a global-search result to the right view + action. Live plays straight
+// away; movies/series open their existing details surfaces.
+async function routeGlobalSearchPick(type, item) {
+  const headerInput = document.getElementById('global-search-input');
+  if (headerInput) headerInput.value = '';
+  try {
+    if (type === 'live') {
+      await switchTab('live');
+      await selectAndPlayChannel(item, null);
+    } else if (type === 'movies') {
+      await switchTab('movies');
+      openVODDetailsModal(item, 'movie');
+    } else if (type === 'series') {
+      await switchTab('series');
+      openSeriesPlaybackDashboard(item);
+    }
+  } catch (err) {
+    console.error('Global search routing failed:', err);
+  }
+}
+
+// Show the right global-search control for the platform: a live text field on
+// PC/web (physical keyboard), a D-pad button that opens the on-screen keyboard
+// on the APK/TV — matching the per-view search buttons.
+function initGlobalSearch() {
+  // Button + on-screen keyboard whenever D-pad is the input model: the native
+  // APK/TV build, or the /tv (?tv=true) "10-foot" layout on PC/web.
+  const onTv = Capacitor.isNativePlatform() || window.__TV_PREVIEW__;
+  const field = document.getElementById('global-search-field');
+  const btn = document.getElementById('global-search-btn');
+
+  if (onTv) {
+    if (btn) {
+      btn.style.display = 'inline-flex';
+      btn.addEventListener('click', () => openGlobalSearch({ tvInput: true, onPick: routeGlobalSearchPick }));
+    }
+  } else {
+    if (field) field.style.display = 'flex';
+    const input = document.getElementById('global-search-input');
+    if (input) {
+      let debounce = null;
+      input.addEventListener('input', () => {
+        clearTimeout(debounce);
+        const q = input.value || '';
+        debounce = setTimeout(() => setGlobalSearchQuery(q, routeGlobalSearchPick), 250);
+      });
+    }
+  }
+}
+
 function bindGlobalEvents() {
   // Remote manual login button handler
   document.getElementById('remote-manual-login-btn')?.addEventListener('click', () => {
@@ -2197,6 +2307,18 @@ function bindGlobalEvents() {
     if (state.user && state.user.credentials) state.user.credentials.proxy_streams = next;
     refreshSettingsTiles();
     showToast(`CORS Proxy ${next ? 'enabled' : 'disabled'}`, 'success');
+  });
+
+  // --- Tile: Performance Mode (cycles Auto → On → Off) ---
+  document.getElementById('tile-perf')?.addEventListener('click', () => {
+    let saved = null;
+    try { saved = localStorage.getItem('perfLite'); } catch (e) {}
+    // Auto(null) → On → Off → Auto
+    const next = saved === null ? true : (saved === 'on' ? false : null);
+    setPerfLite(next);
+    refreshSettingsTiles();
+    const label = next === null ? 'Auto' : (next ? 'On' : 'Off');
+    showToast(`Performance mode: ${label}`, 'success');
   });
 
   // --- Tile: Sleep Timer ---
@@ -3003,6 +3125,9 @@ async function loadLanInfo() {
     if (Array.isArray(data.local_ips)) lanInfo.ips = data.local_ips;
     if (data.server_port) lanInfo.port = data.server_port;
     refreshSettingsTiles();
+    // Now that real LAN IPs are known, (re)render the header pill — it no
+    // longer depends on the app being in server mode.
+    updateHeaderTvIpBadge(state.user);
   } catch (e) { /* no local server (e.g. hosted web build) */ }
 }
 
@@ -3046,14 +3171,22 @@ function updateHeaderTvIpBadge(status) {
     return;
   }
   
-  // Prefer a LAN IP (self-hosted server mode); otherwise fall back to this
-  // site's public /tv URL so the hosted web app (e.g. ziptvpro.vercel.app)
-  // still shows a usable "open on your TV" link.
+  // Prefer a LAN IP; otherwise fall back to this site's public /tv URL so the
+  // hosted web app (e.g. ziptvpro.vercel.app) still shows a usable link.
+  //
+  // LAN IPs come from whichever source has them: the status object (populated
+  // only in server mode) or `lanInfo`, which loadLanInfo() fetches straight
+  // from the local server in any mode. Relying on `status` alone meant the
+  // pill vanished in client mode (getStatus carries no local_ips) and only
+  // reappeared when something flipped the app into server mode.
   let url = null;
   let label = null;
-  if (status && status.local_ips && status.local_ips.length > 0) {
-    const ip = status.local_ips[0];
-    const port = status.server_port || 3000;
+  const lanIps = (status && status.local_ips && status.local_ips.length > 0)
+    ? status.local_ips
+    : (lanInfo.ips && lanInfo.ips.length > 0 ? lanInfo.ips : []);
+  if (lanIps.length > 0) {
+    const ip = lanIps[0];
+    const port = (status && status.server_port) || lanInfo.port || 3000;
     url = `http://${ip}:${port}/tv`;
     label = `TV: ${ip}:${port}/tv`;
   } else {

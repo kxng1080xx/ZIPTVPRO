@@ -541,11 +541,13 @@ class TVNavigation {
   // 1. TABS HEADER NAVIGATION
   handleTabsNavigation(e) {
     const tabs = Array.from(document.querySelectorAll('.nav-tab'));
+    const searchBtn = document.getElementById('global-search-btn');
     const profileBtn = document.getElementById('profile-card-btn');
     const syncBtn = document.getElementById('sync-btn');
     const settingsBtn = document.getElementById('settings-btn');
-    
+
     const headerItems = [...tabs];
+    if (searchBtn && searchBtn.offsetParent !== null) headerItems.push(searchBtn);
     if (profileBtn && profileBtn.offsetParent !== null) headerItems.push(profileBtn);
     if (syncBtn && syncBtn.offsetParent !== null) headerItems.push(syncBtn);
     if (settingsBtn && settingsBtn.offsetParent !== null) headerItems.push(settingsBtn);

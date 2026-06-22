@@ -558,6 +558,146 @@ button {
   color: var(--text-muted);
 }
 
+/* ==========================================================================
+   Global search overlay (Live + Movies + Series at once)
+   ========================================================================== */
+.gsearch-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 72px 16px 24px;
+  background: rgba(6, 10, 18, 0.62);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  overflow-y: auto;
+}
+
+.gsearch-modal {
+  width: 100%;
+  max-width: 960px;
+  background: var(--rd-surface, rgba(20, 26, 38, 0.96));
+  border: 1px solid var(--rd-hairline-soft, rgba(255, 255, 255, 0.08));
+  border-radius: 18px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.gsearch-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--rd-hairline-soft, rgba(255, 255, 255, 0.08));
+}
+.gsearch-bar > i { width: 20px; height: 20px; color: var(--text-muted); flex-shrink: 0; }
+
+.gsearch-display {
+  flex: 1 1 auto;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 1.05rem;
+  cursor: pointer;
+  padding: 4px 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gsearch-close {
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  color: var(--text-primary);
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.gsearch-close:hover { background: rgba(255, 255, 255, 0.12); }
+
+.gsearch-body { padding: 14px 18px 22px; }
+.gsearch-hint { color: var(--text-muted); text-align: center; padding: 28px 0; }
+.gsearch-loading { display: flex; justify-content: center; padding: 36px 0; }
+
+.gsearch-group { margin-bottom: 22px; }
+.gsearch-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+.gsearch-group-title i { width: 15px; height: 15px; }
+.gsearch-group-title span {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 0.72rem;
+}
+
+.gsearch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 12px;
+}
+
+.gsearch-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 6px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-primary);
+}
+.gsearch-item:hover { background: rgba(255, 255, 255, 0.05); }
+.gsearch-item.gsearch-focused,
+.gsearch-item:focus-visible {
+  outline: none;
+  border-color: var(--rd-active-border, #38bdf8);
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.gsearch-thumb {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.gsearch-thumb.live { aspect-ratio: 16 / 9; }
+.gsearch-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.gsearch-thumb i { width: 28px; height: 28px; color: var(--text-muted); }
+
+.gsearch-item-title {
+  font-size: 0.85rem;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.gsearch-item-meta { font-size: 0.72rem; color: var(--text-muted); }
+
 .navigation-tabs {
   display: flex;
   /* Redesign: segmented sky pill */
@@ -1638,12 +1778,6 @@ button {
   display: inline-flex;
 }
 
-/* Hide it in VOD/series mode (matches the live-only fps-indicator behaviour). */
-body.vod-mode .player-quality-badge,
-.series-player-wrapper .player-quality-badge {
-  display: none !important;
-}
-
 .controls-center {
   display: flex;
   align-items: center;
@@ -2489,6 +2623,11 @@ body.vod-mode .now-next-bar {
   background: var(--rd-glass-panel);
   position: relative;
   transition: transform var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
+  /* Off-screen cards skip layout/paint — lets the list render thousands of
+     channels cheaply (replaces the old hard 1000-row cap). The intrinsic size
+     reserves each card's height so the scrollbar stays stable. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 76px;
 }
 
 .epg-section-container.timeline-hidden .epg-channel-row:hover {
@@ -4143,17 +4282,30 @@ body.vod-mode .now-next-bar {
     height: auto !important;
     min-height: 52px;
     padding: 10px 12px !important;
-    flex-flow: row wrap !important;
+    flex-flow: row nowrap !important;
     gap: 8px !important;
     align-items: center !important;
   }
 
   .epg-controls-left {
     gap: 6px !important;
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
   }
   .epg-controls-right {
     margin-left: auto !important;
     gap: 6px !important;
+    flex: 0 0 auto !important;
+  }
+  /* Sort button can truncate so "Guide" stays on the same row */
+  #epg-channels-sort-btn {
+    min-width: 0 !important;
+    overflow: hidden !important;
+  }
+  #epg-channels-sort-label {
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
   }
 
   /* Keep the Show Guide label — it's the primary action */
@@ -4243,6 +4395,35 @@ body.vod-mode .now-next-bar {
   .epg-timeline-hours-container,
   .epg-programs-grid-viewport {
     display: none !important;
+  }
+
+  /* Portrait card grid (Phase 3): the generic mobile .epg-channel-row rules
+     above use !important and would otherwise flatten the cards back into thin
+     list rows. Re-assert the card layout for the default (non-guide) view so
+     channels render as proper full-width cards with logo + name + now line. */
+  .epg-section-container.timeline-hidden .epg-channels-column {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    align-content: start !important;
+    gap: 10px !important;
+    padding: 12px !important;
+  }
+  .epg-section-container.timeline-hidden .epg-channel-row {
+    height: auto !important;
+    align-items: center !important;
+    padding: 12px !important;
+    gap: 12px !important;
+  }
+  .epg-section-container.timeline-hidden .epg-channel-row-meta {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    align-self: center !important;
+    gap: 4px !important;
+    padding-right: 22px !important;
+  }
+  .epg-section-container.timeline-hidden .epg-channel-row-logo {
+    width: 44px !important;
+    height: 44px !important;
   }
 
   /* Catalog Grid Overrides */
@@ -5931,12 +6112,20 @@ body.epg-fullscreen-active .epg-section-container {
 .tvk-overlay, .tvsort-overlay {
   position: fixed;
   inset: 0;
-  z-index: 6500;
+  /* Above the global-search results overlay (z-index 9000) so the on-screen
+     keyboard sits in front and the results stay visible behind it. */
+  z-index: 9500;
   display: flex;
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(3px);
+}
+/* When driven by global search, drop the keyboard's own scrim so the results
+   panel behind it stays readable (the gsearch overlay already dims the page). */
+body:has(.gsearch-overlay) .tvk-overlay {
+  background: transparent;
+  backdrop-filter: none;
 }
 .tvk-modal {
   width: min(680px, 94vw);
@@ -6334,16 +6523,18 @@ body.tv-layout .epg-channel-header-cell {
     gap: 10px;
   }
 
-  /* EPG header: make "Show Guide" a full-width primary action instead of a
-     stray right-aligned button on its own row. */
+  /* EPG header: keep "Guide" inline on the same row as the sort button
+     (it sits in .epg-controls-right, right-aligned, not full-width). */
   .epg-controls-right {
-    width: 100%;
-    margin-left: 0 !important;
+    width: auto;
+    margin-left: auto !important;
     gap: 8px !important;
+    flex: 0 0 auto;
   }
   #epg-full-btn {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     justify-content: center;
+    white-space: nowrap;
   }
 
   /* Settings: two compact tiles per row instead of one huge column. */
@@ -6372,4 +6563,65 @@ body.tv-layout .epg-channel-header-cell {
   .settings-tile-sub {
     font-size: 0.7rem;
   }
+}
+
+/* ==========================================================================
+   PERFORMANCE (LITE) MODE  — body.perf-lite
+   --------------------------------------------------------------------------
+   Auto-enabled on low-power targets (Fire TV / Tizen / WebOS / Android
+   projectors / TV mode) and via the Settings "Performance mode" toggle.
+   Strips the GPU-expensive parts of the glass redesign so the UI stays
+   smooth on weak Mali/older GPUs:
+     - ALL backdrop-filter blurs killed (the dominant per-frame cost)
+     - translucent glass surfaces swapped for opaque solids
+     - ambient body glows + fixed background removed
+     - heavy multi-layer shadows flattened
+     - `transition: all` and decorative animations neutralized
+   Desktop keeps the full glass look. No DOM/id changes.
+   ========================================================================== */
+
+/* 1. Opaque tokens (so former-blur surfaces aren't see-through) + no blur. */
+body.perf-lite {
+  --rd-glass-panel: #141821;
+  --rd-glass-header: #0c0f17;
+  --rd-glass-drawer: #0c0f17;
+  --rd-glass-modal:  #0e1119;
+  --rd-blur-header: none;
+  --rd-blur-drawer: none;
+  --rd-card-shadow: 0 6px 16px rgba(0,0,0,0.5);
+  --rd-player-shadow: 0 8px 22px rgba(0,0,0,0.5);
+  --rd-focus-glow: 0 0 0 3px rgba(56,189,248,0.35);
+  /* Drop the ambient radial glows + fixed-attachment repaint. */
+  background-image: none !important;
+  background-attachment: scroll !important;
+}
+
+/* 2. Kill every backdrop-filter in one shot (covers all 44 call sites). */
+body.perf-lite *,
+body.perf-lite *::before,
+body.perf-lite *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* 3. Neutralize `transition: all` (animates layout props) and heavy shadows.
+   Keep only cheap compositor-friendly transitions on common interactive bits. */
+body.perf-lite * {
+  transition-property: opacity, transform, color, background-color, border-color !important;
+  transition-duration: 0.12s !important;
+  animation-duration: 0.001s !important;
+}
+body.perf-lite .player-wrapper,
+body.perf-lite .player-stage {
+  box-shadow: var(--rd-player-shadow) !important;
+}
+
+/* 4. Elements that used their own inline translucent bg behind a blur — give
+   them a solid backing so text stays legible without the blur. */
+body.perf-lite .app-header,
+body.perf-lite .playlist-drawer-panel,
+body.perf-lite .vod-modal,
+body.perf-lite .gsearch-overlay,
+body.perf-lite .settings-modal {
+  background-color: var(--rd-glass-modal) !important;
 }
