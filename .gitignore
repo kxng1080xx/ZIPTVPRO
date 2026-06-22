@@ -13,6 +13,10 @@ dist-electron/
 !cast.apk
 latest.exe
 
+# Secrets — GitHub token for `npm run release`, etc. Never commit.
+.env
+.env.local
+
 # Local server database and Xtream credentials cache
 server/data/
 credentials.json

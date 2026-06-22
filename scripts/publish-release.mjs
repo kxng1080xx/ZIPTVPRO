@@ -12,7 +12,7 @@
  *
  * The token needs `contents:write` (classic PAT: `repo` scope) on the target repo.
  */
-import { readFileSync, statSync, openSync, readSync, closeSync } from 'fs';
+import { readFileSync, statSync, openSync, readSync, closeSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -20,13 +20,23 @@ const OWNER = 'kxng1080xx';
 const REPO = 'ZIPTVPRO';
 const ASSET_NAME = 'latest.exe';
 
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+// Load a gitignored .env (KEY=value lines) so the token never has to be typed.
+const envPath = join(root, '.env');
+if (existsSync(envPath)) {
+  for (const line of readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/i);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+  }
+}
+
 const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
 if (!token) {
   console.error('ERROR: set GH_TOKEN (or GITHUB_TOKEN) to a GitHub PAT with repo/contents:write scope.');
   process.exit(1);
 }
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const version = pkg.version;
 const tag = `v${version}`;
