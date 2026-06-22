@@ -4460,13 +4460,10 @@ body.epg-fullscreen-active .epg-section-container {
     overflow: visible;
   }
 
-  /* Hide the heavy left-side widgets — they eat too much space in landscape */
+  /* Keep the nav tabs (Live / Movies / Series) visible in landscape; only the
+     logo wordmark is dropped to save horizontal space. */
   .header-left {
-    display: none !important;
-  }
-
-  /* Nav tabs group: allow shrink, hide text labels, show only icons */
-  .header-center {
+    display: flex !important;
     flex-grow: 1;
     flex-shrink: 1;
     min-width: 0;
@@ -4474,8 +4471,12 @@ body.epg-fullscreen-active .epg-section-container {
     gap: 6px;
   }
 
-  .header-center .logo-container {
+  .header-left .logo-container {
     display: none !important;
+  }
+
+  .header-left .navigation-tabs {
+    display: flex !important;
   }
 
   /* Make nav tabs icon-only in landscape to save space */
