@@ -203,12 +203,15 @@ async function initApp() {
     const { playlists, activeId } = await getPlaylists();
     if (!playlists || playlists.length === 0) {
       showLogin();
-    } else if (playlists.length === 1) {
-      // Only one playlist — no point showing a one-row picker. Go straight in,
-      // loading from cache when we have it (a re-sync would be the slow part).
-      await autoEnterSinglePlaylist(playlists[0].id, activeId);
     } else {
-      showPlaylistSelect(playlists, localStorage.getItem('last_playlist_id') || activeId);
+      // Always boot straight into the last-used playlist (falling back to the
+      // active one, then the first) and skip the picker. The picker is now
+      // reachable on demand via Settings → Switch Playlist.
+      const lastId = localStorage.getItem('last_playlist_id');
+      const target = playlists.find(p => String(p.id) === String(lastId))
+                  || playlists.find(p => String(p.id) === String(activeId))
+                  || playlists[0];
+      await autoEnterSinglePlaylist(target.id, activeId);
     }
   } catch (err) {
     console.error('Failed to initialize app session:', err);
@@ -705,7 +708,20 @@ async function selectCategory(categoryId) {
   }
 }
 
+// Guards against the same tab+category being loaded twice back-to-back (e.g. a
+// tab switch that auto-selects "All" while another trigger also fires), which
+// showed up as the grid loading its content twice. Direct reloads from
+// pagination / search / sort bypass this since they call the grid loaders.
+let _lastContentKey = '';
+let _lastContentAt = 0;
+
 async function loadCategoryContent() {
+  const key = `${state.activeTab}:${state.activeCategory}`;
+  const now = Date.now();
+  if (key === _lastContentKey && now - _lastContentAt < 800) return;
+  _lastContentKey = key;
+  _lastContentAt = now;
+
   if (state.activeTab === 'live') {
     // Live view: Fetch all streams for selected category and feed to EPG Grid
     // (EPG doesn't paginate internally because guide requires full list of active channels in timeline)
@@ -2138,6 +2154,12 @@ function bindGlobalEvents() {
     navigation.focusDefault('tabs');
   });
 
+  // --- Tile: Switch Playlist (opens the playlist picker drawer) ---
+  document.getElementById('tile-switch-playlist')?.addEventListener('click', () => {
+    settingsModal.classList.add('hidden');
+    togglePlaylistDropdown();
+  });
+
   // --- Tile: Stream Format ---
   document.getElementById('tile-stream-format')?.addEventListener('click', () => {
     const creds = (state.user && state.user.credentials) || {};
@@ -2958,9 +2980,25 @@ function updateHeaderTvIpBadge(status) {
   if (badge && text && status && status.local_ips && status.local_ips.length > 0) {
     const ip = status.local_ips[0];
     const port = status.server_port || 3000;
-    text.textContent = `TV Link: http://${ip}:${port}`;
+    const url = `http://${ip}:${port}/tv`;
+    text.textContent = `TV: ${ip}:${port}/tv`;
+    badge.title = `Open on your TV's browser · ${url} (click to copy)`;
+    badge.dataset.tvUrl = url;
     badge.style.display = 'inline-flex';
-    
+
+    // Click to copy the link (bind once).
+    if (!badge.dataset.bound) {
+      badge.dataset.bound = '1';
+      badge.addEventListener('click', () => {
+        const u = badge.dataset.tvUrl || '';
+        if (u && navigator.clipboard) {
+          navigator.clipboard.writeText(u)
+            .then(() => showToast('TV link copied', 'success'))
+            .catch(() => {});
+        }
+      });
+    }
+
     if (typeof lucide !== 'undefined') {
       lucide.createIcons({ scope: badge });
     }

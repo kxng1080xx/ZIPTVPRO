@@ -140,6 +140,35 @@ function saveCredentialsLocal(creds) {
   setActiveIdLocal(creds.id);
 }
 
+// Best-effort fetch of the Xtream user_info for a saved playlist (client mode),
+// used to backfill the subscription expiry for playlists saved before exp_date
+// was tracked. Returns the user_info object or null on any failure.
+async function fetchUserInfoClient(creds) {
+  try {
+    let host = (creds.server_url || '').trim().replace(/\/+$/, '');
+    if (!/^https?:\/\//i.test(host)) host = 'http://' + host;
+    const url = `${host}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}`;
+    const res = await fetch(proxify(url), { signal: AbortSignal.timeout(12000) });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data && data.user_info ? data.user_info : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Persist the resolved expiry/status back onto a saved playlist so the lookup
+// above only happens once per playlist.
+function persistAccountInfo(id, exp_date, account_status) {
+  const list = readPlaylists();
+  const idx = list.findIndex(p => p.id === id);
+  if (idx >= 0) {
+    list[idx].exp_date = exp_date;
+    list[idx].account_status = account_status;
+    writePlaylists(list);
+  }
+}
+
 export async function login(hostUrl, username, password, playlistName) {
   await checkServerMode();
   
@@ -208,7 +237,11 @@ export async function login(hostUrl, username, password, playlistName) {
       server_url: normalizedHost,
       username,
       password,
-      stream_format: 'ts' // Default to ts on mobile for compatibility
+      stream_format: 'ts', // Default to ts on mobile for compatibility
+      // Persist the real subscription expiry/status so getStatus (client mode)
+      // can show it instead of always falling back to "Active - Unlimited".
+      exp_date: info.exp_date ?? null,
+      account_status: info.status ?? null
     };
     saveCredentialsLocal(credentials);
     return {
@@ -252,6 +285,22 @@ export async function getStatus() {
       });
     } catch (e) {}
 
+    // Resolve the real subscription expiry. Newer playlists store it at login;
+    // older ones are backfilled once via a live lookup so the header no longer
+    // always reads "Active - Unlimited".
+    let expDate = creds.exp_date;
+    let acctStatus = creds.account_status || 'Active';
+    if (expDate === undefined) {
+      const info = await fetchUserInfoClient(creds);
+      if (info) {
+        expDate = info.exp_date ?? null;
+        acctStatus = info.status ?? acctStatus;
+        persistAccountInfo(creds.id, expDate, acctStatus);
+      } else {
+        expDate = null;
+      }
+    }
+
     return {
       loggedIn: true,
       credentials: {
@@ -262,7 +311,8 @@ export async function getStatus() {
       },
       user_info: {
         username: creds.username,
-        status: 'Active'
+        status: acctStatus,
+        exp_date: expDate
       },
       server_info: {
         url: creds.server_url
@@ -776,37 +826,35 @@ export async function getEPG(streamId) {
     const data = await response.json();
     const rawListings = data.epg_listings || [];
 
+    // Xtream EPG titles/descriptions are base64 of the *whole* string. Decode it
+    // as one blob \u2014 never per word: real base64 has no spaces, so a value that
+    // contains spaces is already plain text and must be returned untouched.
+    // (The old per-word split mis-decoded ordinary words like "Vampire" into
+    // garbage, which is what corrupted the guide.)
     const decodeBase64Safe = (str) => {
       if (!str) return '';
-      const words = str.split(' ');
-      const decodedWords = words.map(word => {
-        if (!word) return '';
-        let padded = word;
-        while (padded.length % 4 !== 0) {
-          padded += '=';
-        }
-        const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
-        if (!base64Regex.test(padded)) return word;
-        try {
-          const binaryString = atob(padded);
-          const len = binaryString.length;
-          const bytes = new Uint8Array(len);
-          for (let i = 0; i < len; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-          }
-          
-          const decodedUtf8 = new TextDecoder('utf-8').decode(bytes);
-          const hasReplacement = decodedUtf8.includes('\ufffd');
-          const isPrintableUtf8 = /^[\x20-\x7E\r\n\t\u00A0-\uFFFF]*$/.test(decodedUtf8);
-          if (!hasReplacement && isPrintableUtf8) return decodedUtf8;
-          
-          const decodedLatin1 = new TextDecoder('windows-1252').decode(bytes);
-          const isPrintableLatin1 = /^[\x20-\x7E\r\n\t\x80-\xFF]*$/.test(decodedLatin1);
-          if (isPrintableLatin1) return decodedLatin1;
-        } catch (err) {}
-        return word;
-      });
-      return decodedWords.join(' ').replace(/\s+/g, ' ').trim();
+      const trimmed = String(str).trim();
+      // Anything with whitespace or non-base64 chars is plain text already.
+      const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+      let padded = trimmed;
+      while (padded.length % 4 !== 0) padded += '=';
+      if (!base64Regex.test(padded)) return trimmed;
+      try {
+        const binaryString = atob(padded);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
+
+        const decodedUtf8 = new TextDecoder('utf-8').decode(bytes);
+        const hasReplacement = decodedUtf8.includes('\ufffd');
+        const isPrintableUtf8 = /^[\x20-\x7E\r\n\t\u00A0-\uFFFF]*$/.test(decodedUtf8);
+        if (!hasReplacement && isPrintableUtf8) return decodedUtf8;
+
+        const decodedLatin1 = new TextDecoder('windows-1252').decode(bytes);
+        const isPrintableLatin1 = /^[\x20-\x7E\r\n\t\x80-\xFF]*$/.test(decodedLatin1);
+        if (isPrintableLatin1) return decodedLatin1;
+      } catch (err) {}
+      return trimmed;
     };
 
     const listings = rawListings.map(prog => {

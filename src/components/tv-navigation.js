@@ -72,6 +72,7 @@ class TVNavigation {
     // 1) Transient overlays — close the topmost first.
     if (document.querySelector('.tvk-overlay')) { closeSearchKeyboard(); return; }
     if (document.querySelector('.tvsort-overlay')) { closeSortDropdown(); return; }
+    if (document.body.classList.contains('tv-info-open')) { document.body.classList.remove('tv-info-open'); return; }
 
     const updateOverlay = document.getElementById('update-modal-overlay');
     if (updateOverlay) {
@@ -690,42 +691,41 @@ class TVNavigation {
     const channels = Array.from(document.querySelectorAll('.epg-channels-column .epg-channel-row'));
     const index = channels.indexOf(this.focusedElement);
     if (index === -1) return;
+    const fullscreen = document.body.classList.contains('epg-fullscreen-active');
 
-    if (e.key === this.KEYS.DOWN) {
-      if (index < channels.length - 1) {
-        this.setFocus('channels', channels[index + 1]);
-      }
-      e.preventDefault();
-    } else if (e.key === this.KEYS.UP) {
-      if (index > 0) {
-        this.setFocus('channels', channels[index - 1]);
-      } else if (!this.focusEpgControls()) {
-        this.focusDefault('tabs');
-      }
-      e.preventDefault();
-    } else if (e.key === this.KEYS.LEFT) {
-      // In full-screen EPG the sidebar is hidden, so stay in the guide.
-      if (!document.body.classList.contains('epg-fullscreen-active')) {
-        this.focusDefault('categories');
-      }
-      e.preventDefault();
-    } else if (e.key === this.KEYS.ENTER) {
+    if (e.key === this.KEYS.ENTER) {
       // Play channel stream!
       this.focusedElement.click();
       // In full-screen EPG, selecting a channel means "watch it" — drop out of the
       // guide so the now-playing player is visible.
-      if (document.body.classList.contains('epg-fullscreen-active')) {
+      if (fullscreen) {
         const fullBtn = document.getElementById('epg-full-btn');
         if (fullBtn) fullBtn.click();
       }
       e.preventDefault();
+      return;
+    }
+
+    // Move to the visually-adjacent channel. The full-screen guide is a grid, so
+    // index ± 1 isn't "down" — use geometry instead.
+    const target = this.spatialPick(channels, this.focusedElement, e.key);
+    if (target) {
+      this.setFocus('channels', target);
+      e.preventDefault();
+      return;
+    }
+
+    // No neighbour in that direction → we're at an edge: hand off to another zone.
+    if (e.key === this.KEYS.UP) {
+      if (!this.focusEpgControls()) this.focusDefault('tabs');
+    } else if (e.key === this.KEYS.LEFT) {
+      // In full-screen EPG the sidebar is hidden, so stay in the guide.
+      if (!fullscreen) this.focusDefault('categories');
     } else if (e.key === this.KEYS.RIGHT) {
       // Jump focus directly to video player (hidden in full-screen EPG, so skip).
-      if (!document.body.classList.contains('epg-fullscreen-active')) {
-        this.focusDefault('player');
-      }
-      e.preventDefault();
+      if (!fullscreen) this.focusDefault('player');
     }
+    e.preventDefault();
   }
 
   // Focus the live EPG control buttons row; returns false if none visible.
@@ -1291,6 +1291,36 @@ class TVNavigation {
     if (row3.length > 0) rows.push(row3);
     
     return rows;
+  }
+
+  // Geometry-based ("spatial") neighbour pick: from `current`, find the element
+  // in `elements` that lies in the pressed direction and is visually closest.
+  // Used for grid layouts (e.g. the full-screen guide) where a flat index ± 1
+  // doesn't map to up/down/left/right — that made "Down" jump sideways.
+  spatialPick(elements, current, key) {
+    const cur = current.getBoundingClientRect();
+    const cx = cur.left + cur.width / 2;
+    const cy = cur.top + cur.height / 2;
+    let best = null;
+    let bestScore = Infinity;
+    for (const el of elements) {
+      if (el === current) continue;
+      const r = el.getBoundingClientRect();
+      const ex = r.left + r.width / 2;
+      const ey = r.top + r.height / 2;
+      const dx = ex - cx;
+      const dy = ey - cy;
+      let primary, cross;
+      if (key === this.KEYS.DOWN)       { if (dy <= 1) continue;  primary = dy;  cross = Math.abs(dx); }
+      else if (key === this.KEYS.UP)    { if (dy >= -1) continue; primary = -dy; cross = Math.abs(dx); }
+      else if (key === this.KEYS.RIGHT) { if (dx <= 1) continue;  primary = dx;  cross = Math.abs(dy); }
+      else if (key === this.KEYS.LEFT)  { if (dx >= -1) continue; primary = -dx; cross = Math.abs(dy); }
+      else continue;
+      // Weight cross-axis drift heavily so movement stays aligned with the row/column.
+      const score = primary + cross * 2;
+      if (score < bestScore) { bestScore = score; best = el; }
+    }
+    return best;
   }
 
   findClosestElement(element, targetRow) {

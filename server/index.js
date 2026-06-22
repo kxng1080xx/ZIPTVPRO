@@ -402,32 +402,29 @@ app.get('/api/streams', (req, res) => {
   res.json(result);
 });
 
-// Base64 helper to safely decode strings
+// Base64 helper to safely decode strings. Xtream encodes the *whole* field, so
+// decode it as one blob \u2014 never per word. base64 has no spaces, so any value
+// containing whitespace is already plain text and is returned untouched. (The
+// old per-word split mis-decoded ordinary words like "Vampire" into garbage.)
 function decodeBase64Safe(str) {
   if (!str) return '';
-  const words = str.split(' ');
-  const decodedWords = words.map(word => {
-    if (!word) return '';
-    let padded = word;
-    while (padded.length % 4 !== 0) {
-      padded += '=';
-    }
-    const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
-    if (!base64Regex.test(padded)) return word;
-    try {
-      const buf = Buffer.from(padded, 'base64');
-      const decodedUtf8 = buf.toString('utf8');
-      const hasReplacement = decodedUtf8.includes('\ufffd');
-      const isPrintableUtf8 = /^[\x20-\x7E\r\n\t\u00A0-\uFFFF]*$/.test(decodedUtf8);
-      if (!hasReplacement && isPrintableUtf8) return decodedUtf8;
-      
-      const decodedLatin1 = buf.toString('latin1');
-      const isPrintableLatin1 = /^[\x20-\x7E\r\n\t\x80-\xFF]*$/.test(decodedLatin1);
-      if (isPrintableLatin1) return decodedLatin1;
-    } catch (err) {}
-    return word;
-  });
-  return decodedWords.join(' ').replace(/\s+/g, ' ').trim();
+  const trimmed = String(str).trim();
+  const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+  let padded = trimmed;
+  while (padded.length % 4 !== 0) padded += '=';
+  if (!base64Regex.test(padded)) return trimmed;
+  try {
+    const buf = Buffer.from(padded, 'base64');
+    const decodedUtf8 = buf.toString('utf8');
+    const hasReplacement = decodedUtf8.includes('\ufffd');
+    const isPrintableUtf8 = /^[\x20-\x7E\r\n\t\u00A0-\uFFFF]*$/.test(decodedUtf8);
+    if (!hasReplacement && isPrintableUtf8) return decodedUtf8;
+
+    const decodedLatin1 = buf.toString('latin1');
+    const isPrintableLatin1 = /^[\x20-\x7E\r\n\t\x80-\xFF]*$/.test(decodedLatin1);
+    if (isPrintableLatin1) return decodedLatin1;
+  } catch (err) {}
+  return trimmed;
 }
 
 // Normalize listing helper to decode base64 fields and standardize end_timestamp keys

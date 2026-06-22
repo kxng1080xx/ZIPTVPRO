@@ -596,9 +596,6 @@
     <button class="mobile-tab-btn" data-tab="series">
       <i data-lucide="clapperboard"></i><span>Series</span>
     </button>
-    <button class="mobile-tab-btn" data-action="playlists">
-      <i data-lucide="library"></i><span>Sources</span>
-    </button>
     <button class="mobile-tab-btn" data-action="settings">
       <i data-lucide="settings"></i><span>Settings</span>
     </button>
@@ -685,6 +682,12 @@
       
       <div class="settings-body">
         <div class="settings-grid" id="settings-grid">
+
+          <button class="settings-tile" id="tile-switch-playlist" tabindex="0">
+            <div class="settings-tile-icon"><i data-lucide="list"></i></div>
+            <div class="settings-tile-title">Switch Playlist</div>
+            <div class="settings-tile-sub" id="tile-switch-playlist-val">Change source</div>
+          </button>
 
           <button class="settings-tile" id="tile-stream-format" tabindex="0">
             <div class="settings-tile-icon"><i data-lucide="clapperboard"></i></div>

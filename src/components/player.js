@@ -196,6 +196,12 @@ export class VideoPlayer {
     // Info button toggle channel details panel
     if (this.infoBtn) {
       this.infoBtn.addEventListener('click', () => {
+        // On TV the side details panel is hidden by the single-column layout, so
+        // reveal it as an overlay instead (toggle on repeat press / Back).
+        if (document.body.classList.contains('tv-layout')) {
+          document.body.classList.toggle('tv-info-open');
+          return;
+        }
         const topRow = document.querySelector('.live-top-row');
         if (topRow) {
           topRow.classList.toggle('details-collapsed');

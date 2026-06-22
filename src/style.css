@@ -480,8 +480,34 @@ button {
 
 /* Decluttered top bar: the TV-link cluster is folded into Settings → Smart TV
    Access, not shown inline (overrides the JS inline display). */
+/* TV Link pill — shown on desktop via JS (updateHeaderTvIpBadge) when a LAN URL
+   exists; click to copy. Hidden on mobile/landscape/TV by rules further down. */
 .header-tv-ip-badge {
-  display: none !important;
+  display: none; /* JS flips to inline-flex when a LAN address is known */
+  align-items: center;
+  gap: 7px;
+  margin-left: 14px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: #dbe9ff;
+  background: var(--rd-active-tint);
+  border: 1px solid var(--rd-active-border);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+}
+.header-tv-ip-badge:hover {
+  background: rgba(56, 189, 248, 0.18);
+  border-color: rgba(56, 189, 248, 0.5);
+  transform: translateY(-1px);
+}
+.header-tv-ip-badge i {
+  width: 14px;
+  height: 14px;
+  color: #38bdf8;
 }
 
 .logo-wordmark {
@@ -3103,8 +3129,9 @@ body.vod-mode .now-next-bar {
 }
 
 .continue-card {
-  flex: 0 0 110px;
-  width: 110px;
+  /* Match the catalog grid card width so the row reads as the same size. */
+  flex: 0 0 172px;
+  width: 172px;
   cursor: pointer;
   display: flex;
   flex-direction: column;
@@ -3161,7 +3188,8 @@ body.vod-mode .now-next-bar {
 }
 
 .continue-card.tv-focused .continue-poster {
-  outline: 3px solid var(--accent-cyan);
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 2px var(--accent-cyan), 0 0 14px rgba(6, 182, 212, 0.55);
 }
 
 .continue-progress {
@@ -4132,10 +4160,17 @@ body.vod-mode .now-next-bar {
     gap: 8px;
     padding: 8px;
   }
-  
+
   .vod-card-title {
     font-size: 0.7rem;
     margin-top: 4px;
+  }
+
+  /* Keep Continue Watching cards the same size as the catalog cards on phones
+     (the catalog shrinks here, so scale these with the viewport too). */
+  .continue-card {
+    flex: 0 0 31vw;
+    width: 31vw;
   }
 
   /* Details dialog scale */
@@ -5168,27 +5203,8 @@ body.epg-fullscreen-active .epg-section-container {
 /* Header TV connection badge styling. NOTE: not display:none here — the
    decluttered redesign hides it via the .header-tv-ip-badge rule near the top
    (folded into Settings → Smart TV Access). Kept only as legacy styling. */
-.header-tv-ip-badge {
-  align-items: center !important;
-  gap: 6px !important;
-  background: rgba(0, 243, 255, 0.08) !important;
-  border: 1px solid rgba(0, 243, 255, 0.25) !important;
-  color: #00f3ff !important;
-  padding: 3px 10px !important;
-  border-radius: 12px !important;
-  font-size: 0.72rem !important;
-  font-weight: 700 !important;
-  margin-left: 12px !important;
-  font-family: monospace !important;
-  box-shadow: 0 0 10px rgba(0, 243, 255, 0.1) !important;
-  vertical-align: middle !important;
-}
-
-.header-tv-ip-badge i {
-  width: 13px !important;
-  height: 13px !important;
-  color: #00f3ff !important;
-}
+/* (Legacy cyan TV-link styling removed — the pill now uses the glass style
+   defined near the top of this file with .header-tv-ip-badge.) */
 
 /* Playlist Select Screen on Boot */
 .login-playlists-title {
@@ -5989,11 +6005,10 @@ body.tv-layout .top-header {
 body.tv-layout .header-left {
   gap: 22px;
 }
-/* search / Playlists / settings / account-chip text are off the 10-foot path —
-   the TV bar keeps just logo + nav (left) and clock + avatar (right). */
+/* Account-chip text / TV-IP badge are off the 10-foot path. The gear (Settings)
+   stays — it's the only way to reach Switch Playlist on TV. */
 body.tv-layout .header-center,
 body.tv-layout .header-playlists-btn,
-body.tv-layout #settings-btn,
 body.tv-layout .profile-info,
 body.tv-layout .header-tv-ip-badge {
   display: none !important;
@@ -6098,6 +6113,25 @@ body.tv-layout .live-top-row {
 body.tv-layout .program-details-panel {
   display: none !important;
 }
+/* Info button on TV reveals the program details as a right-side overlay (the
+   single-column TV layout hides it inline). Toggled by the Info button / Back. */
+body.tv-layout.tv-info-open .program-details-panel {
+  display: block !important;
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: min(620px, 82vw);
+  height: 100%;
+  z-index: 2500;
+  overflow-y: auto;
+  padding: 40px 44px;
+  background: var(--rd-glass-drawer);
+  -webkit-backdrop-filter: var(--rd-blur-drawer);
+  backdrop-filter: var(--rd-blur-drawer);
+  border-left: 1px solid var(--rd-hairline);
+  box-shadow: -30px 0 70px rgba(0, 0, 0, 0.5);
+  animation: rd-drawer-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
 body.tv-layout .player-wrapper {
   aspect-ratio: auto;
   /* Leave room below for ~2-3 channel-card rows (the grid scrolls for the rest);
@@ -6176,4 +6210,68 @@ body.tv-layout .epg-timeline-header-row {
 }
 body.tv-layout .epg-channel-header-cell {
   font-size: 1.05rem;
+}
+
+/* ==========================================================================
+   PORTRAIT PHONE UI FIXES
+   - Live playback controls were clipping the right-most button (Cast/Fullscreen)
+   - "Show Guide" floated alone on a wrapped row, right-aligned
+   - Settings tiles collapsed to one oversized column
+   ========================================================================== */
+@media (max-width: 600px) {
+  /* Playback controls: stack the title over a centered, wrapping icon row so
+     every control (incl. Cast + Fullscreen) stays on screen. */
+  .controls-bottom-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .control-row-left {
+    width: 100%;
+  }
+  .control-row-right {
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  /* EPG header: make "Show Guide" a full-width primary action instead of a
+     stray right-aligned button on its own row. */
+  .epg-controls-right {
+    width: 100%;
+    margin-left: 0 !important;
+    gap: 8px !important;
+  }
+  #epg-full-btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  /* Settings: two compact tiles per row instead of one huge column. */
+  .settings-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+  .settings-tile {
+    padding: 16px 10px 14px;
+    gap: 6px;
+    border-radius: 14px;
+  }
+  .settings-tile-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 14px;
+    margin-bottom: 2px;
+  }
+  .settings-tile-icon i {
+    width: 24px;
+    height: 24px;
+  }
+  .settings-tile-title {
+    font-size: 0.92rem;
+  }
+  .settings-tile-sub {
+    font-size: 0.7rem;
+  }
 }
