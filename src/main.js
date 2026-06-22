@@ -570,6 +570,12 @@ function refreshSettingsTiles() {
     try { logoutEl.textContent = creds.server_url ? new URL(creds.server_url).hostname : 'Disconnect'; }
     catch (e) { logoutEl.textContent = 'Disconnect'; }
   }
+
+  const netEl = document.getElementById('tile-network-val');
+  if (netEl) {
+    const links = getTvLinks();
+    netEl.textContent = links.length ? links[0].label : 'No link available';
+  }
 }
 
 // ==========================================================================
@@ -2139,11 +2145,11 @@ function bindGlobalEvents() {
 
   settingsBtn.addEventListener('click', () => {
     refreshSettingsTiles();
-    // Smart TV access tile only when we know a LAN address.
+    // Smart TV access tile: always show — we can derive a /tv link (LAN IP,
+    // local server, or the hosted domain) in every environment.
     const netTile = document.getElementById('tile-network');
     if (netTile) {
-      const hasLan = !!(state.user && state.user.local_ips && state.user.local_ips.length > 0);
-      netTile.style.display = hasLan ? '' : 'none';
+      netTile.style.display = '';
     }
     settingsModal.classList.remove('hidden');
     const firstTile = settingsModal.querySelector('.settings-tile');
@@ -2225,13 +2231,19 @@ function bindGlobalEvents() {
 
   // --- Tile: Smart TV Access ---
   document.getElementById('tile-network')?.addEventListener('click', () => {
-    const ips = (state.user && state.user.local_ips) || [];
-    const port = (state.user && state.user.server_port) || 3000;
-    if (!ips.length) { showToast('No local network address available', 'info'); return; }
+    const links = getTvLinks();
+    if (!links.length) { showToast('No TV link available', 'info'); return; }
     openSortDropdown({
-      title: 'Smart TV Access — open in your TV browser',
-      options: ips.map(ip => ({ value: ip, label: `http://${ip}:${port}` })),
-      onSelect: () => navigation.setFocus('modal', document.getElementById('tile-network'))
+      title: 'Open this on your TV browser (select to copy)',
+      options: links.map(l => ({ value: l.url, label: l.label })),
+      onSelect: (url) => {
+        if (url && navigator.clipboard) {
+          navigator.clipboard.writeText(url)
+            .then(() => showToast('TV link copied', 'success'))
+            .catch(() => {});
+        }
+        navigation.setFocus('modal', document.getElementById('tile-network'));
+      }
     });
   });
 
@@ -2967,6 +2979,39 @@ function showDashboard() {
   if (window.__TV_PREVIEW__) {
     setTimeout(() => navigation.focusDefault('categories'), 400);
   }
+}
+
+// Build the list of "open on your TV" URLs for the current environment:
+//  - LAN IP(s) from the local server (best for a separate TV on the network)
+//  - the local server URL straight from window.location (reliable in the
+//    desktop app, e.g. http://localhost:56789/tv, even if IP detection failed)
+//  - the hosted domain (the Vercel web build)
+function getTvLinks() {
+  const links = [];
+  const seen = new Set();
+  const add = (label, url) => { if (url && !seen.has(url)) { seen.add(url); links.push({ label, url }); } };
+
+  const port = (state.user && state.user.server_port) || null;
+  const ips = (state.user && state.user.local_ips) || [];
+  for (const ip of ips) {
+    add(`${ip}:${port || 80}/tv`, `http://${ip}:${port || 80}/tv`);
+  }
+
+  try {
+    const host = window.location.host;          // includes port, e.g. localhost:56789
+    const hostname = window.location.hostname;
+    const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
+    if (window.location.protocol !== 'file:' && host) {
+      const origin = window.location.origin.replace(/\/+$/, '');
+      add(`${host}/tv`, `${origin}/tv`);
+    }
+    // Desktop app served from localhost but on a known LAN port — still expose it.
+    if (isLocal && port && String(port) !== window.location.port) {
+      add(`localhost:${port}/tv`, `http://localhost:${port}/tv`);
+    }
+  } catch (e) {}
+
+  return links;
 }
 
 function updateHeaderTvIpBadge(status) {
