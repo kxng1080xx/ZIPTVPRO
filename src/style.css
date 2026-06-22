@@ -2615,10 +2615,11 @@ body.vod-mode .now-next-bar {
 
 .epg-section-container.timeline-hidden .epg-channel-row {
   height: auto;
+  min-height: 88px;
   flex-direction: row;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 14px;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
   border: 1px solid var(--rd-hairline-soft);
   border-radius: var(--rd-r-14);
   background: var(--rd-glass-panel);
@@ -2628,7 +2629,7 @@ body.vod-mode .now-next-bar {
      channels cheaply (replaces the old hard 1000-row cap). The intrinsic size
      reserves each card's height so the scrollbar stays stable. */
   content-visibility: auto;
-  contain-intrinsic-size: auto 76px;
+  contain-intrinsic-size: auto 88px;
 }
 
 .epg-section-container.timeline-hidden .epg-channel-row:hover {
@@ -2643,8 +2644,9 @@ body.vod-mode .now-next-bar {
 }
 
 .epg-section-container.timeline-hidden .epg-channel-row-logo {
-  width: 46px;
-  height: 46px;
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
   border-radius: var(--rd-r-10);
 }
 
@@ -6264,9 +6266,14 @@ body:has(.gsearch-overlay) .tvk-overlay {
     gap: 16px !important;
     padding: 18px !important;
   }
+  .epg-section-container.timeline-hidden .epg-channel-row {
+    min-height: 104px !important;
+    padding: 18px !important;
+    contain-intrinsic-size: auto 104px;
+  }
   .epg-section-container.timeline-hidden .epg-channel-row-logo {
-    width: 56px !important;
-    height: 56px !important;
+    width: 60px !important;
+    height: 60px !important;
   }
 }
 
