@@ -2508,13 +2508,29 @@ body.vod-mode .now-next-bar {
   border-radius: var(--rd-r-10);
 }
 
+/* Grid items default to min-width:auto (min-content), so a long program title
+   would expand its track and push the grid past the viewport. Let cards shrink
+   so the 1fr tracks hold and the inner text truncates instead of overflowing. */
+.epg-section-container.timeline-hidden .epg-channel-row {
+  min-width: 0;
+  overflow: hidden;
+}
+
 /* Stack name over the now-playing line inside the card */
 .epg-section-container.timeline-hidden .epg-channel-row-meta {
   flex-direction: column;
   align-items: flex-start;
   gap: 5px;
   align-self: center;
+  min-width: 0;
   padding-right: 22px; /* room for the favourite star */
+}
+
+.epg-section-container.timeline-hidden .epg-channel-row-now,
+.epg-section-container.timeline-hidden .epg-channel-row-now .now-seg {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .epg-section-container.timeline-hidden .epg-channel-row-name {
