@@ -2977,11 +2977,31 @@ function updateHeaderTvIpBadge(status) {
     return;
   }
   
-  if (badge && text && status && status.local_ips && status.local_ips.length > 0) {
+  // Prefer a LAN IP (self-hosted server mode); otherwise fall back to this
+  // site's public /tv URL so the hosted web app (e.g. ziptvpro.vercel.app)
+  // still shows a usable "open on your TV" link.
+  let url = null;
+  let label = null;
+  if (status && status.local_ips && status.local_ips.length > 0) {
     const ip = status.local_ips[0];
     const port = status.server_port || 3000;
-    const url = `http://${ip}:${port}/tv`;
-    text.textContent = `TV: ${ip}:${port}/tv`;
+    url = `http://${ip}:${port}/tv`;
+    label = `TV: ${ip}:${port}/tv`;
+  } else {
+    try {
+      const host = window.location.hostname || '';
+      // Only a real hosted domain is useful here — a localhost/file origin (the
+      // desktop app's own window) can't be opened from a separate TV.
+      const isLocal = !host || host === 'localhost' || host === '127.0.0.1' || window.location.protocol === 'file:';
+      if (!isLocal) {
+        url = `${window.location.origin.replace(/\/+$/, '')}/tv`;
+        label = `TV: ${window.location.host}/tv`;
+      }
+    } catch (e) {}
+  }
+
+  if (badge && text && url) {
+    text.textContent = label;
     badge.title = `Open on your TV's browser · ${url} (click to copy)`;
     badge.dataset.tvUrl = url;
     badge.style.display = 'inline-flex';
