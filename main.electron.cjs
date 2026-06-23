@@ -1,6 +1,8 @@
 const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, dialog } = require('electron');
 const net = require('net');
 const path = require('path');
+const fs = require('fs');
+const { spawn } = require('child_process');
 const { initCast } = require('./electron/cast-manager.cjs');
 
 // Open download/update links in the user's default browser, not a child window.
@@ -15,6 +17,16 @@ let tray = null;
 let isQuitting = false;
 let serverPort = 0;
 let castInitialized = false;
+
+// Native Video Overlay State
+let videoWindow = null;
+let mpvProcess = null;
+let mpvClient = null;
+let connectionAttempts = 0;
+
+const ipcServerPath = process.platform === 'win32'
+  ? '\\\\.\\pipe\\mpv-ipc-socket'
+  : path.join(require('os').tmpdir(), 'mpv-ipc-socket');
 
 // The cast libraries open their own sockets to TVs — Chromecast over TLS (port
 // 8009), DLNA over HTTP — and a device dropping a connection (e.g. "socket
@@ -121,7 +133,7 @@ function createWindow() {
     height: 800,
     title: 'ZIPTV Pro',
     autoHideMenuBar: true,
-    backgroundColor: '#070a13',
+    transparent: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -283,3 +295,241 @@ function loadWhenServerReady(attempt = 0) {
     }
   });
 }
+
+// ==========================================================================
+// ELECTRON MPV NATIVE PLAYER BRIDGE IMPLEMENTATION
+// ==========================================================================
+
+function findMpv() {
+  const isWin = process.platform === 'win32';
+  const binaryName = isWin ? 'mpv.exe' : 'mpv';
+
+  // 1. Packaged production path
+  if (app.isPackaged) {
+    const prodPath = path.join(process.resourcesPath, 'bin', binaryName);
+    if (fs.existsSync(prodPath)) return prodPath;
+  }
+
+  // 2. Development paths
+  const devPaths = [
+    path.join(__dirname, 'extraResources', binaryName),
+    path.join(__dirname, 'extraResources', process.platform, binaryName),
+    path.join(app.getAppPath(), 'extraResources', binaryName),
+    path.join(app.getAppPath(), 'extraResources', process.platform, binaryName),
+    path.join(__dirname, 'bin', binaryName),
+    path.join(app.getAppPath(), 'bin', binaryName),
+  ];
+
+  if (isWin) {
+    devPaths.push(
+      'C:\\Program Files\\mpv\\mpv.exe',
+      'C:\\Program Files (x86)\\mpv\\mpv.exe',
+      path.join(process.env.LOCALAPPDATA || '', 'mpv', 'mpv.exe')
+    );
+  } else {
+    devPaths.push(
+      '/opt/homebrew/bin/mpv',
+      '/usr/local/bin/mpv',
+      '/usr/bin/mpv'
+    );
+  }
+
+  for (const p of devPaths) {
+    if (fs.existsSync(p)) return p;
+  }
+  return 'mpv'; // rely on PATH as last resort
+}
+
+function sendToRenderer(event, data) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(`native-video:event:${event}`, data);
+  }
+}
+
+function sendIPCCommand(cmd) {
+  if (mpvClient) {
+    try {
+      mpvClient.write(JSON.stringify(cmd) + '\n');
+    } catch (e) {
+      console.error('[Electron MPV] Failed to write IPC command:', e);
+    }
+  }
+}
+
+function handleMpvMessage(msg) {
+  if (msg.event === 'property-change') {
+    if (msg.name === 'time-pos' && msg.data !== null) {
+      sendToRenderer('timeupdate', { currentTime: msg.data });
+    } else if (msg.name === 'pause') {
+      sendToRenderer('state', { state: msg.data ? 'Paused' : 'Playing' });
+    } else if (msg.name === 'eof-reached' && msg.data === true) {
+      sendToRenderer('ended');
+    } else if (msg.name === 'core-idle') {
+      sendToRenderer('buffering', { value: msg.data ? 100 : 0 });
+    }
+  } else if (msg.event === 'file-loaded') {
+    sendToRenderer('vout', { active: true });
+    sendToRenderer('ready');
+  } else if (msg.event === 'end-file') {
+    if (msg.reason === 'error') {
+      sendToRenderer('error', { message: 'Playback error: ' + (msg.error || 'unknown') });
+    }
+  }
+}
+
+function connectIPC() {
+  mpvClient = net.connect(ipcServerPath);
+  mpvClient.on('connect', () => {
+    console.log('[Electron MPV] Connected to MPV IPC socket');
+    sendIPCCommand({ command: ['observe_property', 1, 'time-pos'] });
+    sendIPCCommand({ command: ['observe_property', 2, 'pause'] });
+    sendIPCCommand({ command: ['observe_property', 3, 'eof-reached'] });
+    sendIPCCommand({ command: ['observe_property', 4, 'core-idle'] });
+  });
+  mpvClient.on('error', (err) => {
+    console.log('[Electron MPV] IPC Socket error:', err.message);
+    mpvClient.destroy();
+    mpvClient = null;
+    if (connectionAttempts < 30 && mpvProcess) {
+      connectionAttempts++;
+      setTimeout(connectIPC, 200);
+    } else if (mpvProcess) {
+      sendToRenderer('error', { message: 'Failed to connect to player IPC' });
+    }
+  });
+
+  let buffer = '';
+  mpvClient.on('data', (data) => {
+    buffer += data.toString();
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const msg = JSON.parse(line);
+        handleMpvMessage(msg);
+      } catch (e) {
+        console.error('[Electron MPV] JSON parse error:', e);
+      }
+    }
+  });
+}
+
+async function stopMpv() {
+  if (mpvClient) {
+    mpvClient.destroy();
+    mpvClient = null;
+  }
+  if (mpvProcess) {
+    try {
+      mpvProcess.kill();
+    } catch (e) {}
+    mpvProcess = null;
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try {
+      mainWindow.setParentWindow(null);
+    } catch (e) {}
+  }
+  if (videoWindow && !videoWindow.isDestroyed()) {
+    try {
+      videoWindow.destroy();
+    } catch (e) {}
+    videoWindow = null;
+  }
+}
+
+// Register IPC handlers for the renderer native Video API
+ipcMain.handle('native-video:load', async (_e, opts) => {
+  await stopMpv();
+
+  const rect = opts.rect || { x: 100, y: 100, width: 800, height: 450 };
+  videoWindow = new BrowserWindow({
+    x: Math.round(rect.x),
+    y: Math.round(rect.y),
+    width: Math.round(rect.width),
+    height: Math.round(rect.height),
+    frame: false,
+    show: false,
+    focusable: false,
+    backgroundColor: '#000000',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  });
+
+  const wid = videoWindow.getNativeWindowHandle().readInt32LE(0);
+  const mpvPath = findMpv();
+
+  if (process.platform !== 'win32' && fs.existsSync(ipcServerPath)) {
+    try { fs.unlinkSync(ipcServerPath); } catch (e) {}
+  }
+
+  const args = [
+    `--wid=${wid}`,
+    '--no-border',
+    '--keep-open=yes',
+    '--idle=yes',
+    `--input-ipc-server=${ipcServerPath}`,
+    opts.url
+  ];
+
+  try {
+    mpvProcess = spawn(mpvPath, args);
+  } catch (err) {
+    console.error('[Electron MPV] Spawn failed:', err);
+    videoWindow.destroy();
+    videoWindow = null;
+    throw err;
+  }
+
+  mainWindow.setParentWindow(videoWindow);
+  videoWindow.showInactive();
+
+  connectionAttempts = 0;
+  connectIPC();
+
+  return { success: true };
+});
+
+ipcMain.handle('native-video:play', () => {
+  sendIPCCommand({ command: ['set_property', 'pause', false] });
+  return { success: true };
+});
+
+ipcMain.handle('native-video:pause', () => {
+  sendIPCCommand({ command: ['set_property', 'pause', true] });
+  return { success: true };
+});
+
+ipcMain.handle('native-video:seek', (_e, pos) => {
+  sendIPCCommand({ command: ['seek', pos, 'absolute'] });
+  return { success: true };
+});
+
+ipcMain.handle('native-video:set-volume', (_e, vol) => {
+  sendIPCCommand({ command: ['set_property', 'volume', vol] });
+  return { success: true };
+});
+
+ipcMain.handle('native-video:set-rect', (_e, rect) => {
+  if (videoWindow && !videoWindow.isDestroyed()) {
+    videoWindow.setBounds({
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height)
+    });
+  }
+  return { success: true };
+});
+
+ipcMain.handle('native-video:stop', async () => {
+  await stopMpv();
+  return { success: true };
+});
+
+ipcMain.handle('native-video:get-audio-tracks', () => {
+  return { tracks: [] };
+});

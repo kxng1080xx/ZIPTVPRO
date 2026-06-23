@@ -63,7 +63,16 @@ function impl() {
       pause: () => ElectronNative.pause(),
       seek: (position) => ElectronNative.seek(position),
       setVolume: (volume) => ElectronNative.setVolume(volume),
-      setRect: (r) => (ElectronNative.setRect ? ElectronNative.setRect(r) : null),
+      setRect: (r) => {
+        if (!ElectronNative.setRect) return null;
+        const dpr = window.devicePixelRatio || 1;
+        return ElectronNative.setRect({
+          x: r.x / dpr,
+          y: r.y / dpr,
+          w: r.w / dpr,
+          h: r.h / dpr
+        });
+      },
       stop: () => ElectronNative.stop(),
       getAudioTracks: () => ElectronNative.getAudioTracks(),
       on: (event, cb) => ElectronNative.on(event, cb),
@@ -138,7 +147,15 @@ export async function nativePlay(opts, cbs = {}) {
     const origVout = cbs.onVout;
     cbs.onVout = (d) => { kick(); if (origVout) origVout(d); };
 
-    Promise.resolve(api.load(opts)).then(() => {
+    const el = document.getElementById('video-container');
+    let rect = null;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      rect = { x: r.left, y: r.top, w: r.width, h: r.height };
+    }
+    const loadOpts = { ...opts, rect };
+
+    Promise.resolve(api.load(loadOpts)).then(() => {
       // load resolved — but wait for ready for true success; keep timers.
     }).catch((e) => done(false, e));
   });

@@ -500,3 +500,15 @@ Final refinements before release:
 ## Related gotchas
 - Electron must keep `asar:false` (ESM in-process server can't import from asar → black screen).
 - Hosted domain is `ziptvpro-nu.vercel.app` (old `ziptvpro.vercel.app` hit its traffic limit).
+
+## REBUILD v8 (2026-06-23): landscape optimizations + Electron native MPV player overlay
+- **Sidebar & Categories Landscape Layout**: Reduced paddings, gaps, and font sizes even further to fit more categories on the screen in landscape orientation.
+- **Player Idle Overlay Fix**: Rescaled and repositioned the emblem, title, and subtitle, and hid the brand name, equalizer, and hints in landscape to prevent vertical cut-off of the "Ready to stream" overlay.
+- **Electron Native MPV Integration**:
+  - Exposed `window.appHost.nativeVideo` IPC methods in `preload.cjs` with standard events (`ready`, `timeupdate`, `ended`, `error`, `buffering`, `vout`, `state`).
+  - Added support in `main.electron.cjs` for starting an external `mpv` process using `--wid=<window_id>` to embed it directly inside a secondary borderless window (`videoWindow`).
+  - Configured `mainWindow` to be transparent (`transparent: true`) and reparented it on top of `videoWindow` (`mainWindow.setParentWindow(videoWindow)`) when a stream starts.
+  - Implemented Node JSON-IPC named-pipe connection (`\\\\.\\pipe\\mpv-ipc-socket` on Windows, `/tmp/mpv-ipc-socket` on Unix) to translate play, pause, seek, volume, and progress events.
+  - Handled automated window positioning (`set-rect`) and device pixel ratio (DPR) scaling between logical and physical screen dimensions.
+  - **Automated MPV Bundling**: Configured `package.json` to bundle `extraResources` containing `mpv.exe` into the installer automatically. The build fetches the official portable MSVC zip release of `mpv` from GitHub and unpacks it into the project's `extraResources` folder, where it is dynamically resolved at runtime in both dev mode and packaged production mode.
+

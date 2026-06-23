@@ -51,6 +51,15 @@
       "main.electron.cjs",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "extraResources",
+        "to": "bin",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
     "win": {
       "target": "nsis"
     },

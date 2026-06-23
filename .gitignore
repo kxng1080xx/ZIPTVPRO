@@ -40,3 +40,7 @@ Thumbs.db
 
 # Generated at build time
 public/version.json
+
+# Local binaries for packaging
+extraResources/
+

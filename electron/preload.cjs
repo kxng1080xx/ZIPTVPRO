@@ -24,5 +24,25 @@ contextBridge.exposeInMainWorld('electronCast', {
 // Host helpers for the renderer (e.g. open a download link in the system browser
 // rather than a child Electron window).
 contextBridge.exposeInMainWorld('appHost', {
-  openExternal: (url) => ipcRenderer.invoke('open-external', url)
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  nativeVideo: {
+    load: (opts) => ipcRenderer.invoke('native-video:load', opts),
+    play: () => ipcRenderer.invoke('native-video:play'),
+    pause: () => ipcRenderer.invoke('native-video:pause'),
+    seek: (position) => ipcRenderer.invoke('native-video:seek', position),
+    setVolume: (volume) => ipcRenderer.invoke('native-video:set-volume', volume),
+    setRect: (rect) => ipcRenderer.invoke('native-video:set-rect', rect),
+    stop: () => ipcRenderer.invoke('native-video:stop'),
+    getAudioTracks: () => ipcRenderer.invoke('native-video:get-audio-tracks'),
+    on: (event, cb) => {
+      const channel = `native-video:event:${event}`;
+      const handler = (_e, data) => cb(data);
+      ipcRenderer.on(channel, handler);
+      return {
+        remove: () => {
+          ipcRenderer.removeListener(channel, handler);
+        }
+      };
+    }
+  }
 });
