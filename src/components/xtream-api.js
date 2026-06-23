@@ -399,7 +399,11 @@ export async function getPlaylists() {
   if (isServerMode) {
     const response = await fetch('/api/playlists');
     if (!response.ok) throw new Error('Failed to load playlists');
-    return response.json();
+    const data = await response.json();
+    // Mirror the server's active playlist id locally so Continue Watching is
+    // scoped per playlist in server mode (see switchPlaylist).
+    if (data && data.activeId) setActiveIdLocal(data.activeId);
+    return data;
   }
   const list = readPlaylists();
   let activeId = getActiveIdLocal();
@@ -424,6 +428,10 @@ export async function switchPlaylist(id) {
       body: JSON.stringify({ id })
     });
     if (!response.ok) throw new Error('Failed to switch playlist');
+    // Mirror the active id locally so Continue Watching (keyed by cwKey() →
+    // getActiveIdLocal()) is scoped per playlist in server mode too. Without
+    // this, getActiveIdLocal() is null and every playlist shares 'cw_default'.
+    setActiveIdLocal(id);
     return response.json();
   }
   const list = readPlaylists();

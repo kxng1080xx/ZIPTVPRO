@@ -23,6 +23,7 @@ let castCtx = null;        // { streamId, type, title, isLive, ext }
 let devices = [];
 let activeDeviceId = null;
 let overlayEl = null;
+let rescanTimer = null;
 
 function getBackend() {
   if (window.electronCast && window.electronCast.available) return 'electron';
@@ -127,6 +128,14 @@ async function openCastPicker() {
   } catch (e) {
     console.error('[cast] device list failed:', e);
   }
+  // mDNS/SSDP discovery is lossy — a single query often misses a device that
+  // answers late or was asleep. Keep re-querying every few seconds while the
+  // picker is open so devices reliably show up; backendOnDevices() pushes any
+  // new ones into the list as they're found. Cleared in closeOverlay().
+  clearInterval(rescanTimer);
+  rescanTimer = setInterval(async () => {
+    try { devices = await backendList(); render(); } catch (e) {}
+  }, 2500);
 }
 
 function buildOverlay() {
@@ -165,6 +174,8 @@ function buildOverlay() {
 }
 
 function closeOverlay() {
+  clearInterval(rescanTimer);
+  rescanTimer = null;
   if (overlayEl) overlayEl.classList.add('hidden');
 }
 
