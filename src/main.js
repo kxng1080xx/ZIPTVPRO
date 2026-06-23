@@ -170,11 +170,11 @@ async function initApp() {
     const isAndroid = /Android/i.test(ua);
     const isWindowsDesktop = /Windows NT/i.test(ua) && !isAndroid;
     if (isWindowsDesktop) {
-      dlBtn.href = 'https://ziptvpro.vercel.app/latest.exe';
+      dlBtn.href = 'https://ziptvpro-nu.vercel.app/latest.exe';
       dlBtn.removeAttribute('download'); // cross-origin redirect handles the download
       if (dlLabel) dlLabel.textContent = 'Download Latest Version (PC)';
     } else {
-      dlBtn.href = 'https://ziptvpro.vercel.app/app.apk';
+      dlBtn.href = 'https://ziptvpro-nu.vercel.app/app.apk';
       if (dlLabel) dlLabel.textContent = 'Download Latest Version';
     }
 
@@ -185,7 +185,7 @@ async function initApp() {
         e.preventDefault();
         const label = dlLabel ? dlLabel.textContent : '';
         if (dlLabel) dlLabel.textContent = 'Downloading…';
-        const res = await downloadApp('https://ziptvpro.vercel.app/app.apk', (m) => { if (dlLabel) dlLabel.textContent = m; });
+        const res = await downloadApp('https://ziptvpro-nu.vercel.app/app.apk', (m) => { if (dlLabel) dlLabel.textContent = m; });
         if (dlLabel) dlLabel.textContent = res.needsPermission
           ? 'Allow "Install unknown apps", then retry'
           : (res.ok ? label : 'Download failed — retry');
@@ -3183,7 +3183,7 @@ function getTvLinks() {
     const hostname = window.location.hostname;
     const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
     if (!isLocal && window.location.protocol !== 'file:' && host) {
-      // Hosted web build (e.g. ziptvpro.vercel.app).
+      // Hosted web build (e.g. ziptvpro-nu.vercel.app).
       add(`${host}/tv`, `${window.location.origin.replace(/\/+$/, '')}/tv`);
     } else if (!ips.length && port) {
       // Desktop app but LAN IP detection failed — at least offer the same-machine link.
@@ -3204,7 +3204,7 @@ function updateHeaderTvIpBadge(status) {
   }
   
   // Prefer a LAN IP; otherwise fall back to this site's public /tv URL so the
-  // hosted web app (e.g. ziptvpro.vercel.app) still shows a usable link.
+  // hosted web app (e.g. ziptvpro-nu.vercel.app) still shows a usable link.
   //
   // LAN IPs come from whichever source has them: the status object (populated
   // only in server mode) or `lanInfo`, which loadLanInfo() fetches straight

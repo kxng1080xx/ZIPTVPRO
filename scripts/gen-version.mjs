@@ -12,8 +12,8 @@ const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 
 const manifest = {
   version: pkg.version,
-  apk: 'https://ziptvpro.vercel.app/app.apk',
-  exe: 'https://ziptvpro.vercel.app/latest.exe'
+  apk: 'https://ziptvpro-nu.vercel.app/app.apk',
+  exe: 'https://ziptvpro-nu.vercel.app/latest.exe'
 };
 
 mkdirSync(join(root, 'public'), { recursive: true });

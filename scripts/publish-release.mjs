@@ -1,7 +1,7 @@
 /**
  * Publishes the Windows installer to a GitHub Release so that
  *   https://github.com/kxng1080xx/ZIPTVPRO/releases/latest/download/latest.exe
- * (the redirect target in vercel.json -> ziptvpro.vercel.app/latest.exe) resolves.
+ * (the redirect target in vercel.json -> ziptvpro-nu.vercel.app/latest.exe) resolves.
  *
  * The release asset MUST be named exactly `latest.exe` for the redirect to work.
  *
