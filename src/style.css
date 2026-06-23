@@ -6472,8 +6472,29 @@ body.tv-layout .fps-indicator {
 }
 body.tv-layout .player-playing-title {
   font-family: var(--font-title);
-  font-size: 2.1rem;
+  /* Was 2.1rem — long VOD/episode titles overflowed and covered the control
+     buttons in /tv mode. Smaller + single-line truncation keeps it clear. */
+  font-size: 1.4rem;
   font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 100%;
+}
+body.tv-layout .player-playing-title .player-channel-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+/* Let the title column shrink instead of shoving/overlapping the right-side
+   control buttons. */
+body.tv-layout .control-row-left {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+body.tv-layout .control-row-right {
+  flex: 0 0 auto;
 }
 body.tv-layout .player-playing-epg {
   font-size: 1.1rem;

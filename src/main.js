@@ -82,8 +82,40 @@ let clockInterval = null;
 let progressInterval = null;
 
 // Document Ready
+// Global crash reporter: if anything in the renderer throws uncaught (which on
+// some packaged-Electron setups manifests as a silent black screen), surface the
+// error on-screen instead of leaving a blank window. Diagnostic + last resort.
+function showFatalOverlay(label, detail) {
+  try {
+    let el = document.getElementById('fatal-error-overlay');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'fatal-error-overlay';
+      el.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#0b0f19;color:#f3f4f6;' +
+        'font:13px/1.5 monospace;padding:24px;overflow:auto;white-space:pre-wrap;';
+      document.body.appendChild(el);
+    }
+    el.textContent = `ZIPTV Pro — startup error\n\n${label}\n${detail || ''}`.slice(0, 4000);
+  } catch (e) { /* nothing more we can do */ }
+}
+window.addEventListener('error', (e) => {
+  showFatalOverlay(e.message || 'Uncaught error',
+    (e.filename ? `${e.filename}:${e.lineno}:${e.colno}\n` : '') + (e.error && e.error.stack ? e.error.stack : ''));
+});
+window.addEventListener('unhandledrejection', (e) => {
+  const r = e.reason;
+  showFatalOverlay('Unhandled promise rejection', (r && r.stack) ? r.stack : String(r));
+});
+
 document.addEventListener('DOMContentLoaded', () => {
-  initApp();
+  try {
+    const p = initApp();
+    if (p && typeof p.catch === 'function') {
+      p.catch((err) => showFatalOverlay('initApp() failed', err && err.stack ? err.stack : String(err)));
+    }
+  } catch (err) {
+    showFatalOverlay('initApp() threw', err && err.stack ? err.stack : String(err));
+  }
 });
 
 async function initApp() {

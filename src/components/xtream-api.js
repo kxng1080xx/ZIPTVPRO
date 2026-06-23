@@ -38,6 +38,14 @@ function proxify(url) {
 // (https:// images render directly — <img> needs no CORS — so leave them alone.)
 export function proxifyImage(url) {
   if (!url || typeof url !== 'string') return url || '';
+  // Server mode (Electron desktop / local server): route every provider image
+  // through the local proxy. Some providers 403 a plain browser User-Agent, so a
+  // direct <img> silently fails — the proxy refetches with the VLC UA (and
+  // follows redirects) so the logos render.
+  if (isServerMode && /^https?:\/\//i.test(url)) {
+    return `/api/proxy?url=${encodeURIComponent(url)}`;
+  }
+  // Hosted HTTPS web build: http images are blocked as mixed content.
   if (USE_WEB_PROXY && /^http:\/\//i.test(url)) {
     return `/api/proxy?url=${encodeURIComponent(url)}`;
   }

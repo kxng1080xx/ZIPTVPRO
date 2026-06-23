@@ -1,5 +1,4 @@
 const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, dialog } = require('electron');
-const { autoUpdater } = require('electron-updater');
 const net = require('net');
 const path = require('path');
 const { initCast } = require('./electron/cast-manager.cjs');
@@ -97,11 +96,22 @@ async function startExpressServer() {
   process.env.PORT = String(serverPort);
 
   // server/index.js is an ES Module, imported dynamically from CommonJS.
+  // NOTE: the app is packaged with asar:false specifically because Node's ESM
+  // loader cannot import a module from inside an asar archive — see package.json.
   try {
     await import('./server/index.js');
     console.log(`[Electron] In-process Express server starting on port ${serverPort}.`);
   } catch (err) {
     console.error('[Electron] Error initializing in-process Express server:', err);
+    // The whole UI is served by this server, so a failure here = a black window.
+    // Surface it instead of failing silently, and log it for the user to send.
+    try {
+      const logFile = path.join(require('os').homedir(), 'ziptv-server-error.log');
+      require('fs').writeFileSync(logFile, String(err && err.stack ? err.stack : err));
+      dialog.showErrorBox('ZIPTV Pro — server failed to start',
+        `The in-app server could not start, so the window will be blank.\n\n` +
+        `${err && err.message ? err.message : err}\n\nDetails saved to:\n${logFile}`);
+    } catch (e) {}
   }
 }
 
@@ -187,6 +197,10 @@ function showMainWindow() {
 // prompt to restart once it's ready. No-op in dev (unpackaged).
 function initAutoUpdate() {
   if (!app.isPackaged) return;
+  // Lazy-require: electron-updater instantiates NsisUpdater at require-time and
+  // reads app.getVersion(), which throws when run unpackaged (dev). Only load it
+  // in the packaged app so `npx electron .` works for debugging.
+  const { autoUpdater } = require('electron-updater');
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
