@@ -98,8 +98,13 @@ class TVNavigation {
     }
 
     // 2) Fullscreen video → drop back to the list, don't exit.
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {});
+    if (document.fullscreenElement || document.body.classList.contains('player-fs')) {
+      const player = window.playerInstance;
+      if (player && typeof player.exitFullscreen === 'function') {
+        player.exitFullscreen();
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
       return;
     }
 
@@ -313,7 +318,7 @@ class TVNavigation {
         return;
       }
     } else if (zone === 'player') {
-      const isFullscreen = !!document.fullscreenElement;
+      const isFullscreen = !!document.fullscreenElement || document.body.classList.contains('player-fs');
       if (isFullscreen) {
         const playBtn = document.getElementById('player-play-pause-btn');
         if (playBtn) {
@@ -408,8 +413,13 @@ class TVNavigation {
 
   handleKeyDown(e) {
     // If the video player is in fullscreen, pressing Backspace or Escape exits fullscreen
-    if (document.fullscreenElement && (e.key === this.KEYS.ESCAPE || e.key === this.KEYS.BACKSPACE)) {
-      document.exitFullscreen().catch(err => console.warn(err));
+    if ((document.fullscreenElement || document.body.classList.contains('player-fs')) && (e.key === this.KEYS.ESCAPE || e.key === this.KEYS.BACKSPACE)) {
+      const player = window.playerInstance;
+      if (player && typeof player.exitFullscreen === 'function') {
+        player.exitFullscreen();
+      } else {
+        document.exitFullscreen().catch(err => console.warn(err));
+      }
       e.preventDefault();
       return;
     }
@@ -937,7 +947,7 @@ class TVNavigation {
 
   // 5. PLAYER FOCUS DOCK (PLAYBACK HUD VIEWPORT)
   handlePlayerNavigation(e) {
-    const isFullscreen = !!document.fullscreenElement;
+    const isFullscreen = !!document.fullscreenElement || document.body.classList.contains('player-fs');
     const player = window.playerInstance;
     
     if (!isFullscreen || !player) {
@@ -970,7 +980,11 @@ class TVNavigation {
     
     // BACKSPACE / ESCAPE exits fullscreen immediately
     if (e.key === this.KEYS.BACKSPACE || e.key === this.KEYS.ESCAPE) {
-      document.exitFullscreen().catch(() => {});
+      if (player && typeof player.exitFullscreen === 'function') {
+        player.exitFullscreen();
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
       e.preventDefault();
       return;
     }

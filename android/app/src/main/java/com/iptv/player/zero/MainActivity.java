@@ -18,6 +18,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(PipPlugin.class);
         registerPlugin(ApkInstallerPlugin.class);
         registerPlugin(CastPlugin.class);
+        registerPlugin(NativeVideoPlugin.class);
         super.onCreate(savedInstanceState);
     }
 

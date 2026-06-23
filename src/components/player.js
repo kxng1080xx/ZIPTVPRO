@@ -3,6 +3,10 @@ import mpegts from 'mpegts.js';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { proxifyImage } from './xtream-api.js';
+import {
+  isNativeAvailable, nativeBackend, nativePlay, nativeStop, nativePlayCtl, nativePauseCtl,
+  nativeSeek, nativeSetVolume, nativeSetRect
+} from './native-player.js';
 
 function getQualityTag(name) {
   const n = String(name).toLowerCase();
@@ -55,6 +59,10 @@ function removeUrlExtension(url) {
 
 export class VideoPlayer {
   constructor() {
+    // Mark the native (Android app) build so CSS can switch the player to the
+    // boxed/fullscreen-toggle model (and hide the VOD player box while browsing).
+    try { if (Capacitor.isNativePlatform()) document.body.classList.add('app-native'); } catch (e) {}
+    this._wasLandscape = this.isLandscape();
     this.video = document.getElementById('main-video-player');
     this.controls = document.getElementById('player-controls');
     this.playPauseBtn = document.getElementById('player-play-pause-btn');
@@ -67,6 +75,7 @@ export class VideoPlayer {
     this.channelNameEl = document.getElementById('player-channel-name');
     this.epgTitleEl = document.getElementById('player-epg-title');
     this.spinner = document.getElementById('video-spinner');
+    this.idleScreen = document.getElementById('player-idle');
     this.watermark = document.getElementById('player-watermark');
     this.watermarkImg = document.getElementById('watermark-img');
     this.pipBtn = document.getElementById('player-pip-btn');
@@ -146,6 +155,7 @@ export class VideoPlayer {
       const vol = parseFloat(e.target.value);
       this.video.volume = vol;
       this.video.muted = vol === 0;
+      if (this._nativeActive) nativeSetVolume(vol);
       this.updateVolumeIcon();
     });
 
@@ -180,6 +190,14 @@ export class VideoPlayer {
         this.fullscreenBtn.innerHTML = '<i data-lucide="maximize"></i>';
         document.body.style.cursor = 'default';
       }
+      // Force the native surface rect to re-sync to the new (fullscreen/inline)
+      // box bounds on the next poll tick instead of waiting for a change to be
+      // detected — keeps the video from lagging a frame behind the transition.
+      if (this._nativeActive) this._lastRectKey = null;
+      // In native fullscreen the ::backdrop is transparent (so the video shows),
+      // which would also reveal the app chrome behind it — flag the body so CSS can
+      // hide that chrome, leaving only the fullscreen player subtree over the video.
+      document.body.classList.toggle('native-fullscreen', !!document.fullscreenElement && this._nativeActive);
       lucide.createIcons({ scope: this.fullscreenBtn });
     };
     document.addEventListener('fullscreenchange', this._onFullscreenChange);
@@ -242,6 +260,12 @@ export class VideoPlayer {
       this.video.addEventListener('durationchange', refreshDuration);
       this.seek.addEventListener('input', () => { this.isSeeking = true; });
       this.seek.addEventListener('change', () => {
+        if (this._nativeActive) {
+          const d = this._nativeDuration || 0;
+          if (d > 0) nativeSeek((this.seek.value / 100) * d);
+          this.isSeeking = false;
+          return;
+        }
         const d = this.video.duration;
         if (d && isFinite(d)) this.video.currentTime = (this.seek.value / 100) * d;
         this.isSeeking = false;
@@ -251,7 +275,10 @@ export class VideoPlayer {
     // VOD back button → exit the VOD player and return to the catalog
     if (this.backBtn) {
       this.backBtn.addEventListener('click', () => {
+        // VOD/series have an explicit exit handler; for live (no handler) just stop,
+        // which removes the native overlay and restores the chrome/channel list.
         if (this.onExitVod) this.onExitVod();
+        else this.stop();
       });
     }
 
@@ -259,6 +286,13 @@ export class VideoPlayer {
     const container = this.video.parentElement;
     container.addEventListener('mousemove', () => this.showControlsTemporarily());
     container.addEventListener('mouseleave', () => this.hideControls());
+    // Touch: tapping toggles the controls (and restarts the auto-hide timer) so
+    // they can be dismissed to see the video on a touchscreen.
+    container.addEventListener('touchstart', () => {
+      const visible = this.controls.style.opacity === '1';
+      if (visible) this.hideControls();
+      else this.showControlsTemporarily();
+    }, { passive: true });
 
     // Video play/pause states to sync controls UI
     this.video.addEventListener('play', () => {
@@ -384,12 +418,25 @@ export class VideoPlayer {
       this._landscapeMql = window.matchMedia('(orientation: landscape)');
       const onOrient = (e) => {
         if (!this.hasStream) return;
+        if (Capacitor.isNativePlatform()) {
+          // Native phone: fullscreen strictly follows orientation — landscape =
+          // immersive, portrait = docked (never a portrait fullscreen). TV exempt.
+          if (this._isTv()) return;
+          this._applyFsForOrientation();
+          return;
+        }
         if (e.matches) this.enterFullscreen();
         else this.exitFullscreen();
       };
       if (this._landscapeMql.addEventListener) this._landscapeMql.addEventListener('change', onOrient);
       else if (this._landscapeMql.addListener) this._landscapeMql.addListener(onOrient); // legacy WebView
     } catch (e) {}
+    // matchMedia 'change' can be unreliable in Android WebViews; window 'resize'
+    // and the screen orientationchange fire dependably when the viewport flips, so
+    // re-derive the native fullscreen state from them too.
+    const reapplyFs = () => { if (Capacitor.isNativePlatform() && !this._isTv()) this._applyFsForOrientation(); };
+    window.addEventListener('resize', reapplyFs);
+    window.addEventListener('orientationchange', reapplyFs);
   }
 
   isLandscape() {
@@ -398,11 +445,29 @@ export class VideoPlayer {
 
   // Auto-fullscreen on play — but only in landscape. In portrait we stay inline
   // so the user can keep browsing; rotating to landscape fullscreens it.
+  _isTv() { return document.body.classList.contains('tv-layout'); }
+
   autoFullscreen() {
+    // Native phone: starting playback in landscape goes straight to immersive. TV
+    // never auto-fullscreens (stays boxed: player + grid). Web keeps its behavior.
+    if (Capacitor.isNativePlatform()) {
+      if (this._isTv()) return;
+      const isL = this.isLandscape();
+      this._wasLandscape = isL;
+      this._setFsDirect(isL);
+      return;
+    }
     if (this.isLandscape()) this.enterFullscreen();
   }
 
   exitFullscreen() {
+    if (Capacitor.isNativePlatform()) {
+      this._setFsDirect(false); // back to BOXED (landscape stays landscape)
+      // Release the lock so a phone can rotate freely again — but NEVER force
+      // portrait (TV has none; that was the "exit goes portrait" bug).
+      if (!this._isTv()) { try { ScreenOrientation.unlock().catch(() => {}); } catch (e) {} }
+      return;
+    }
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
     }
@@ -453,6 +518,11 @@ export class VideoPlayer {
     this.isVodActive = isVod;
     this.hasStream = true; // gates orientation-driven fullscreen
     this.pendingSeek = isVod ? (resumeTime || 0) : 0;
+    if (this.idleScreen) this.idleScreen.classList.add('hidden'); // a stream is starting
+    // Mark an active playback session from the moment of tap (loading → playing), so
+    // the VOD player box appears immediately with the spinner — not only once libVLC
+    // reaches "ready" (native-video-active). Removed in stop().
+    document.body.classList.add('player-session');
     this.showSpinner();
     this.currentChannelName = name || 'Live Channel';
     const qBadge = getQualityBadgeHtml(this.currentChannelName);
@@ -496,7 +566,223 @@ export class VideoPlayer {
     this.destroyMpegts();
     this.hlsNetworkRetries = 0;
 
+    this._beginPlayback(url, isVod, this.pendingSeek);
+  }
+
+  // Native-first playback: try the device's native player (ExoPlayer on Android,
+  // mpv on Electron) which decodes E-AC3/AC3, HEVC and MKV that the browser
+  // <video> can't. On any failure/timeout, fall back to the browser engine so
+  // native issues never regress working playback. Web has no native layer.
+  async _beginPlayback(url, isVod, resumeTime = 0) {
+    this._nativeActive = false;
+    this._nativeSawLife = false;
+    if (isNativeAvailable() && !this._castMode) {
+      try {
+        // debug toast removed in production
+        await nativePlay(
+          { url, isLive: !isVod, startAt: isVod ? (resumeTime || 0) : 0, title: this.currentChannelName },
+          {
+            onReady: () => { this.hideSpinner(); },
+            onTime: (d) => this._onNativeTime(d),
+            onEnded: () => { if (typeof this.onVideoEnded === 'function') this.onVideoEnded(); },
+            onError: (d) => this._onNativeError(d),
+            // While loading: reflect the real libVLC state so a buffer loop is
+            // visible as buffering, not a generic spinner. After we've committed
+            // to native, a buffering event re-shows the loading overlay.
+            onBuffering: (d) => {
+              this._nativeSawLife = true;
+              const pct = d && typeof d.percent === 'number' ? Math.round(d.percent) : null;
+              this._showNativeStatus(pct != null ? `Buffering ${pct}%…` : 'Buffering…');
+            },
+            onState: (d) => {
+              const s = (d && d.state) || '';
+              if (s) this._nativeSawLife = true;
+              this._updateNativeHud({ state: s });
+              if (s === 'opening') this._showNativeStatus('Opening stream…');
+              else if (s.startsWith('vout')) this._showNativeStatus('Starting video…');
+              else if (s === 'playing') this.hideSpinner();
+            },
+            onVout: (d) => {
+              this._nativeSawLife = true;
+              this._nativeVout = d && typeof d.count === 'number' ? d.count : this._nativeVout;
+              this._updateNativeHud({ vout: this._nativeVout });
+            },
+          }
+        );
+        this._nativeActive = true;
+        this._nativePaused = false;
+        document.body.classList.add('native-video-active');
+        this.hideSpinner();
+        this._setPlayPauseIcon(true);
+        this._startNativeStallWatch();
+        // Boxed-by-default: the surface tracks the on-screen player box (full-screen
+        // only when body.player-fs makes the box fill the viewport).
+        this._startRectSync();
+        // Kick the auto-hide timer so the controls fade and reveal the video
+        // (mouse-move events don't fire on touch, so without this they'd persist).
+        this.showControlsTemporarily();
+        return;
+      } catch (e) {
+        const msg = (e && e.message) ? e.message : String(e);
+        const sawLife = !!(e && e.sawLife) || this._nativeSawLife;
+        console.warn('[player] native playback failed:', msg, '(sawLife:', sawLife, ')');
+        try { await nativeStop(); } catch (_) {}
+        document.body.classList.remove('native-video-active');
+        this._nativeActive = false;
+
+        // If libVLC actually opened the stream but couldn't sustain playback
+        // (sawLife) and this is VOD, the browser <video>/mpegts/hls path cannot
+        // decode it either (MKV/HEVC Main10/E-AC3) — falling through would just
+        // spin forever. Show a clear, actionable error instead.
+        if (sawLife && isVod) {
+          if (window.showToast) window.showToast(`Native could not play this title (${msg})`, 'error', 6000);
+          this.showError(
+            'This title could not be played. The native player opened the stream but ' +
+            'could not decode it smoothly — your device may be too slow to software-decode ' +
+            'this format (10-bit HEVC), or the connection stalled. Try again, lower quality, or another title.'
+          );
+          return;
+        }
+        // Engine never showed signs of life (or it's live) → browser fallback.
+        // fallback toast removed in production
+      }
+    } else if (window.showToast && isVod) {
+      window.showToast('Native player not available on this platform', 'error', 4000);
+    }
     this._startPlayback(url, isVod);
+  }
+
+  // Custom loading text in the spinner area (mirrors showSpinner() styling but
+  // with a state-specific message). Used to surface native libVLC progress.
+  _showNativeStatus(text) {
+    if (!this.spinner) return;
+    this.spinner.innerHTML = `<div class="spinner"></div><span>${text}</span>`;
+    this.spinner.classList.remove('video-loader-error', 'hidden');
+  }
+
+  // TEMP DEBUG HUD: a small always-on readout of what the native engine is doing
+  // — libVLC state, video-output count (vout>0 means frames ARE being rendered,
+  // so a black picture is a compositing problem, not a decode one), and elapsed
+  // time. Remove with the diagnostic toasts before final ship.
+  _updateNativeHud(partial) {
+    // Disabled in production
+  }
+
+  _hideNativeHud() {
+    // Disabled in production
+  }
+
+  // After committing to native, guard against a silent post-start stall (engine
+  // reports playing then buffers forever with no time progress). If no timeupdate
+  // advances for ~25s, surface an error rather than spinning indefinitely.
+  _startNativeStallWatch() {
+    this._stopNativeStallWatch();
+    this._lastNativeProgress = Date.now();
+    this._nativeStallTimer = setInterval(() => {
+      if (!this._nativeActive || this._nativePaused) { this._lastNativeProgress = Date.now(); return; }
+      if (Date.now() - this._lastNativeProgress > 25000) {
+        this._stopNativeStallWatch();
+        console.warn('[player] native playback stalled (no progress 25s)');
+        if (window.showToast) window.showToast('Playback stalled', 'error', 4000);
+        this.showError('Playback stalled. The connection may have dropped or the device cannot keep up with this stream. Try again or pick another title.');
+      }
+    }, 5000);
+  }
+
+  _stopNativeStallWatch() {
+    if (this._nativeStallTimer) { clearInterval(this._nativeStallTimer); this._nativeStallTimer = null; }
+  }
+
+  // The native video surface is composited behind the WebView; it must be sized
+  // and positioned to match the on-screen player box (#video-container). Convert
+  // the box's CSS rect to physical device pixels (origin = top-left of the
+  // WebView) for the plugin. When the player is fullscreen the box fills the
+  // viewport, so the same math yields a full-screen rect automatically.
+  _computeNativeRect() {
+    const el = document.getElementById('video-container');
+    if (!el) return { hide: true };
+    const r = el.getBoundingClientRect();
+    // offsetParent === null → the player box is in a display:none view (browsing a
+    // different tab while audio plays). Hide so the surface can't bleed; a real,
+    // laid-out box re-shows it. In player-fs the box is fixed full-screen → full rect.
+    const laidOut = el.offsetParent !== null || document.body.classList.contains('player-fs');
+    if (!laidOut || r.width <= 1 || r.height <= 1) return { hide: true };
+    const dpr = window.devicePixelRatio || 1;
+    return {
+      x: Math.round(r.left * dpr),
+      y: Math.round(r.top * dpr),
+      w: Math.round(r.width * dpr),
+      h: Math.round(r.height * dpr),
+    };
+  }
+
+  // Poll the box rect and push it to the native surface whenever it changes
+  // (covers scroll, orientation, fullscreen, layout shifts) without wiring every
+  // possible source. Cheap: getBoundingClientRect + a string compare.
+  _startRectSync() {
+    this._stopRectSync();
+    this._lastRectKey = null;
+    const tick = () => {
+      if (!this._nativeActive) return;
+      const r = this._computeNativeRect();
+      // r.hide (zero-area box, or stray full-screen while not truly fullscreen)
+      // → send a zero rect so the native surface hides instead of bleeding behind
+      // the UI; a real boxed rect re-shows and repositions/scrolls it.
+      const send = (r && !r.hide) ? { x: r.x, y: r.y, w: r.w, h: r.h } : { x: 0, y: 0, w: 0, h: 0 };
+      const key = `${send.x},${send.y},${send.w},${send.h}`;
+      if (key !== this._lastRectKey) {
+        this._lastRectKey = key;
+        nativeSetRect(send);
+        this._updateNativeHud({ rect: key });
+      }
+      this._rectTimer = setTimeout(tick, 200);
+    };
+    tick();
+  }
+
+  _stopRectSync() {
+    if (this._rectTimer) { clearTimeout(this._rectTimer); this._rectTimer = null; }
+    this._lastRectKey = null;
+  }
+
+  // Native player time tick → drive the same seek/time UI the browser path uses.
+  _onNativeTime(d) {
+    const cur = d.currentTime || 0;
+    const dur = d.duration || 0;
+    // Any forward progress resets the post-start stall watchdog.
+    if (cur > 0 && cur !== this._lastNativeCur) {
+      this._lastNativeProgress = Date.now();
+      this._lastNativeCur = cur;
+      if (this._nativeActive) this.hideSpinner();
+      this._updateNativeHud({ time: cur });
+    }
+    this._nativeDuration = dur;
+    if (this._streamIsVod && dur > 0 && !this.isSeeking) {
+      if (this.seek) this.seek.value = (cur / dur) * 100;
+      if (this.timeCurrent) this.timeCurrent.textContent = this.formatTime(cur);
+      if (this.timeDuration) this.timeDuration.textContent = this.formatTime(dur);
+      if (this.onVodProgress) this.onVodProgress(cur, dur);
+    }
+  }
+
+  // A native error AFTER we'd committed to native: tear native down and fall
+  // back to the browser engine for this same stream.
+  _onNativeError(d) {
+    if (!this._nativeActive) return; // pre-ready errors handled by nativePlay() reject
+    console.warn('[player] native error mid-playback:', d && d.message);
+    this._stopNativeStallWatch();
+    this._stopRectSync();
+    this._nativeActive = false;
+    document.body.classList.remove('native-video-active');
+    this._setFsDirect(false);
+    nativeStop().catch(() => {});
+    // For VOD, the browser path can't decode what libVLC was already playing, so
+    // a fallback would only hang — surface the error. Live can still retry browser.
+    if (this._streamIsVod) {
+      this.showError('Playback stopped unexpectedly. Please try again or pick another title.');
+      return;
+    }
+    this._startPlayback(this._streamUrl, this._streamIsVod);
   }
 
   // Show a retrying message in the spinner area
@@ -739,10 +1025,12 @@ export class VideoPlayer {
     if (isHls) {
       this._triedHlsOriginal = true;
       this._triedHlsRewritten = true;
+      if (isVod) this._armVodWatchdog();
       this._playAsHls(url, isVod);
     } else if (isMpegTs) {
       this._triedMpegtsOriginal = true;
       this._triedMpegtsRewritten = true;
+      if (isVod) this._armVodWatchdog();
       this._playAsMpegTs(url, isVod);
     } else {
       // Direct VOD media files (mp4, mkv, etc.)
@@ -773,11 +1061,29 @@ export class VideoPlayer {
     }
   }
 
+  // Arm a watchdog for a browser VOD stage (mpegts/hls/direct). If the stage
+  // neither starts playing nor fires its own error within the window, advance the
+  // fallback chain. Without this, an engine that stalls silently on an unsupported
+  // container (e.g. mpegts.js chewing on an MKV) leaves the spinner up forever.
+  // The existing 'playing'/'loadedmetadata' listeners clear this timer on success.
+  _armVodWatchdog(ms = 12000) {
+    clearTimeout(this._vodLoadTimeout);
+    this._vodLoadTimeout = setTimeout(() => {
+      if (!this.hasStream) return;
+      if (this.spinner && this.spinner.classList.contains('hidden')) return; // already playing
+      console.warn('VOD stage watchdog fired — advancing fallback chain.');
+      this._handleVodPlaybackFallback({ code: 4, message: 'stage load timeout' });
+    }, ms);
+  }
+
   // Common VOD fallback format router
   _handleVodPlaybackFallback(err) {
     clearTimeout(this._vodLoadTimeout);
     const url = this._streamUrl;
     const isVod = this._streamIsVod;
+    // Re-arm the watchdog for whichever stage we're about to try next so a silent
+    // stall can't park the spinner. The terminal error branch clears it below.
+    this._armVodWatchdog();
 
     if (!this._triedMpegtsOriginal) {
       this._triedMpegtsOriginal = true;
@@ -824,6 +1130,8 @@ export class VideoPlayer {
         this._handleVodPlaybackFallback(err);
       }
     } else {
+      // Exhausted every browser fallback — stop the watchdog and report.
+      clearTimeout(this._vodLoadTimeout);
       let errMsg = 'This VOD stream could not be played.';
       if (err) {
         if (err.code === 3) errMsg = 'Video decoding failed (unsupported format).';
@@ -948,7 +1256,21 @@ export class VideoPlayer {
     return `${m}:${String(s).padStart(2, '0')}`;
   }
 
+  // Set the play/pause button icon (used by both the browser <video> events and
+  // the native player, which has no DOM media events).
+  _setPlayPauseIcon(playing) {
+    if (!this.playPauseBtn) return;
+    const name = playing ? 'pause' : 'play';
+    this.playPauseBtn.innerHTML = `<i class="play-icon" data-lucide="${name}"></i>`;
+    try { lucide.createIcons({ attrs: { class: 'play-icon' }, nameList: [name], scope: this.playPauseBtn }); } catch (e) {}
+  }
+
   togglePlay() {
+    if (this._nativeActive) {
+      if (this._nativePaused) { nativePlayCtl(); this._nativePaused = false; this._setPlayPauseIcon(true); }
+      else { nativePauseCtl(); this._nativePaused = true; this._setPlayPauseIcon(false); }
+      return;
+    }
     if (this.video.paused) {
       this.video.play().catch(e => console.log(e));
     } else {
@@ -958,8 +1280,20 @@ export class VideoPlayer {
 
   stop() {
     clearTimeout(this._vodLoadTimeout);
+    this._stopNativeStallWatch();
+    this._stopRectSync();
+    this._hideNativeHud();
     this.stopFpsTracker();
     this.hasStream = false; // no active stream → no orientation fullscreen
+    if (this._nativeActive) {
+      nativeStop().catch(() => {});
+      this._nativeActive = false;
+      document.body.classList.remove('native-video-active');
+    }
+    this._setFsDirect(false);
+    document.body.classList.remove('player-session');
+    // Release any fullscreen orientation lock so the app returns to free rotation.
+    if (Capacitor.isNativePlatform()) { try { ScreenOrientation.unlock().catch(() => {}); } catch (e) {} }
     this.video.pause();
     this.destroyHls();
     this.destroyMpegts();
@@ -977,6 +1311,7 @@ export class VideoPlayer {
     }
     this.watermark.classList.add('hidden');
     this.hideSpinner();
+    if (this.idleScreen) this.idleScreen.classList.remove('hidden'); // back to idle
     this.setSeriesMode(false);
     
     if (Capacitor.isNativePlatform()) {
@@ -1099,6 +1434,13 @@ export class VideoPlayer {
     this._castMode = true;
     clearTimeout(this._retryTimer);
     clearTimeout(this._reconnectTimer);
+    this._stopNativeStallWatch();
+    this._stopRectSync();
+    if (this._nativeActive) {
+      nativeStop().catch(() => {});
+      this._nativeActive = false;
+      document.body.classList.remove('native-video-active');
+    }
     this.destroyHls();
     this.destroyMpegts();
     try { this.video.pause(); } catch (e) {}
@@ -1137,7 +1479,78 @@ export class VideoPlayer {
     lucide.createIcons({ scope: this.volumeBtn });
   }
 
+  // Native uses an explicit CSS state (body.player-fs) for immersive fullscreen —
+  // NOT the browser Fullscreen API (which broke the behind-WebView surface). The
+  // surface rect-syncs to #video-container, so toggling the class (which makes the
+  // box fixed/full-screen) full-screens the video. Web/desktop keep the real API.
+  // Fullscreen is DERIVED FROM ORIENTATION on native: player-fs (immersive) exists
+  // only in landscape, never in portrait. Portrait is always the docked/boxed view.
+  // The fullscreen button doesn't set fullscreen directly — it rotates the device
+  // (orientation lock), and this fn (called on every orientation change + on play)
+  // applies the matching state. TV is exempt (handled by remote, no rotation).
+  _applyFsForOrientation() {
+    if (!Capacitor.isNativePlatform() || this._isTv()) return;
+    const isL = this.isLandscape();
+    const wasL = this._wasLandscape;
+    this._wasLandscape = isL;
+
+    if (!isL) {
+      // Portrait: always force exit fullscreen
+      this._setFsDirect(false);
+    } else if (isL && !wasL && this.hasStream) {
+      // Transitioned from portrait to landscape while playing: auto-enter fullscreen
+      this._setFsDirect(true);
+    }
+  }
+
+  // TV (landscape-only, no portrait): fullscreen is a direct CSS toggle — boxed ↔
+  // immersive, both landscape, NO rotation. (Phones use _rotateForFs instead.)
+  _setFsDirect(on) {
+    document.body.classList.toggle('player-fs', !!on);
+    this._lastRectKey = null;
+    if (this.fullscreenBtn) {
+      this.fullscreenBtn.innerHTML = on ? '<i data-lucide="minimize"></i>' : '<i data-lucide="maximize"></i>';
+      if (typeof lucide !== 'undefined') {
+        try { lucide.createIcons({ scope: this.fullscreenBtn }); } catch (e) {}
+      }
+    }
+  }
+
+  // Rotate the device to drive fullscreen: portrait→landscape enters, landscape→
+  // portrait exits. player-fs itself is applied by _applyFsForOrientation once the
+  // orientation actually changes, so fullscreen never appears in portrait.
+  _rotateForFs(toLandscape) {
+    try {
+      ScreenOrientation.lock({ orientation: toLandscape ? 'landscape' : 'portrait' }).catch(() => {});
+    } catch (e) {}
+    // Re-derive fullscreen after the rotation settles, in case the resize/media
+    // events don't fire (some WebViews) — guarantees the state catches up.
+    [120, 400, 800].forEach(ms => setTimeout(() => this._applyFsForOrientation(), ms));
+  }
+
   toggleFullscreen() {
+    if (Capacitor.isNativePlatform()) {
+      if (this._isTv()) {
+        // TV (no portrait): pure CSS toggle, stays landscape.
+        this._setFsDirect(!document.body.classList.contains('player-fs'));
+      } else {
+        if (this.isLandscape()) {
+          const nextOn = !document.body.classList.contains('player-fs');
+          this._setFsDirect(nextOn);
+          if (!nextOn) {
+            // Toggled fullscreen OFF in landscape: unlock orientation so they can rotate physically
+            try { ScreenOrientation.unlock().catch(() => {}); } catch (e) {}
+          } else {
+            // Toggled fullscreen ON in landscape: lock orientation to landscape
+            try { ScreenOrientation.lock({ orientation: 'landscape' }).catch(() => {}); } catch (e) {}
+          }
+        } else {
+          // In portrait, toggle enters fullscreen by rotating to landscape
+          this._rotateForFs(true);
+        }
+      }
+      return;
+    }
     const container = this.video.parentElement;
     if (!document.fullscreenElement) {
       container.requestFullscreen().catch(err => {
@@ -1149,6 +1562,19 @@ export class VideoPlayer {
   }
 
   enterFullscreen() {
+    if (Capacitor.isNativePlatform()) {
+      if (this._isTv()) {
+        this._setFsDirect(true);      // TV: direct, stays landscape
+      } else {
+        if (this.isLandscape()) {
+          this._setFsDirect(true);
+          try { ScreenOrientation.lock({ orientation: 'landscape' }).catch(() => {}); } catch (e) {}
+        } else {
+          this._rotateForFs(true);                   // phone/tablet: rotate→landscape
+        }
+      }
+      return;
+    }
     const container = this.video.parentElement;
     if (!document.fullscreenElement) {
       container.requestFullscreen().catch(err => {
@@ -1272,7 +1698,11 @@ export class VideoPlayer {
   }
 
   hideControls() {
-    if (this.video.paused) return; // Don't hide controls if paused
+    // During native playback the <video> element is always "paused" (libVLC is
+    // the one playing), so the old guard kept controls up forever — treat an
+    // active, non-paused native stream as playing too.
+    const nativePlaying = this._nativeActive && !this._nativePaused;
+    if (!nativePlaying && this.video.paused) return; // Don't hide controls if paused
     this.controls.style.opacity = '0';
     this.watermark.style.opacity = '0.4';
     

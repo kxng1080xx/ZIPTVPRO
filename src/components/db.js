@@ -5,14 +5,14 @@ export const db = new Dexie('IPTVPlayerZeroDB');
 
 // Define tables and indexes. 
 // We only specify properties we need to query/filter by.
-db.version(1).stores({
-  live_categories: 'category_id, category_name',
-  vod_categories: 'category_id, category_name',
-  series_categories: 'category_id, category_name',
+db.version(2).stores({
+  live_categories: 'category_id',
+  vod_categories: 'category_id',
+  series_categories: 'category_id',
   
-  live_streams: 'stream_id, category_id, name',
-  vod_streams: 'stream_id, category_id, name, rating, year',
-  series_streams: 'series_id, category_id, name, rating, releaseDate',
+  live_streams: 'stream_id, category_id',
+  vod_streams: 'stream_id, category_id',
+  series_streams: 'series_id, category_id',
   
   favorites: '[type+id], type, id', // Composite primary key to uniquely map a favorite item
   recently_viewed: 'id, timestamp'

@@ -227,7 +227,7 @@
                 <i data-lucide="search"></i>
               </button>
               <button class="category-sort-btn" id="categories-sort-btn" tabindex="0" title="Sort categories">
-                <i data-lucide="arrow-up-down"></i> <span id="categories-sort-label">Default</span>
+                <i data-lucide="arrow-up-down"></i> <span id="categories-sort-label">—</span>
               </button>
             </div>
           </div>
@@ -257,6 +257,27 @@
             <div class="player-wrapper">
               <div class="video-container" id="video-container">
                 <video id="main-video-player" playsinline></video>
+
+                <!-- Idle / empty state — modern glass placeholder shown when no
+                     stream is playing; hidden on play, restored on stop. -->
+                <div class="player-idle" id="player-idle">
+                  <div class="player-idle__grid"></div>
+                  <div class="player-idle__brand">ZIPTV<span> PRO</span></div>
+                  <div class="player-idle__emblem-wrap">
+                    <span class="player-idle__pulse"></span>
+                    <div class="player-idle__emblem"><i data-lucide="play"></i></div>
+                  </div>
+                  <div class="player-idle__title">Ready to stream</div>
+                  <div class="player-idle__sub">Pick a channel or title to start watching</div>
+                  <div class="player-idle__hints">
+                    <span class="player-idle__hint"><i data-lucide="tv"></i>Live TV</span>
+                    <span class="player-idle__hint"><i data-lucide="film"></i>Movies</span>
+                    <span class="player-idle__hint"><i data-lucide="clapperboard"></i>Series</span>
+                  </div>
+                  <div class="player-idle__eq">
+                    <span></span><span></span><span></span><span></span><span></span>
+                  </div>
+                </div>
 
                 <!-- Always-on quality + FPS badge (top-right, independent of the
                      auto-hiding controls overlay) -->
@@ -412,7 +433,7 @@
                   <i data-lucide="search"></i>
                 </button>
                 <button class="epg-ctrl-btn" id="epg-channels-sort-btn" tabindex="0">
-                  <i data-lucide="arrow-up-down"></i> <span id="epg-channels-sort-label">Default Order</span>
+                  <i data-lucide="arrow-up-down"></i> <span id="epg-channels-sort-label">—</span>
                 </button>
               </div>
               
@@ -483,7 +504,7 @@
                 <i data-lucide="search"></i> <span id="movies-search-label">Search</span>
               </button>
               <button class="vod-filter-btn" id="movies-sort-btn" tabindex="0">
-                <i data-lucide="arrow-up-down"></i> <span id="movies-sort-label">Recently Added</span>
+                <i data-lucide="arrow-up-down"></i> <span id="movies-sort-label">—</span>
               </button>
             </div>
           </div>
@@ -515,7 +536,7 @@
                   <i data-lucide="search"></i> <span id="series-search-label">Search</span>
                 </button>
                 <button class="vod-filter-btn" id="series-sort-btn" tabindex="0">
-                  <i data-lucide="arrow-up-down"></i> <span id="series-sort-label">Recently Added</span>
+                  <i data-lucide="arrow-up-down"></i> <span id="series-sort-label">—</span>
                 </button>
               </div>
             </div>

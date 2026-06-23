@@ -1989,7 +1989,11 @@ const VOD_SORT_OPTIONS = [
   { value: 'name', label: 'Name (A-Z)' },
   { value: 'rating', label: 'Rating' }
 ];
-const VOD_SORT_LABEL = { added: 'Recently Added', name: 'Name (A-Z)', rating: 'Rating' };
+const getVodSortSymbol = (v) => {
+  if (v === 'name') return 'A-Z';
+  if (v === 'rating') return '★';
+  return '—';
+};
 
 // Wire the TV-navigable Search + Sort buttons for a VOD catalog (movies/series).
 function wireVodFilters(kind, reload) {
@@ -1999,7 +2003,7 @@ function wireVodFilters(kind, reload) {
   const sortBtn = document.getElementById(`${kind}-sort-btn`);
   const sortLabel = document.getElementById(`${kind}-sort-label`);
 
-  if (sortLabel) sortLabel.textContent = VOD_SORT_LABEL[st.sort] || 'Sort';
+  if (sortLabel) sortLabel.textContent = getVodSortSymbol(st.sort);
 
   if (searchBtn) {
     searchBtn.addEventListener('click', () => {
@@ -2024,7 +2028,7 @@ function wireVodFilters(kind, reload) {
         onSelect: (v) => {
           st.sort = v;
           st.page = 1;
-          if (sortLabel) sortLabel.textContent = VOD_SORT_LABEL[v] || 'Sort';
+          if (sortLabel) sortLabel.textContent = getVodSortSymbol(v);
           reload();
           navigation.setFocus('grid', sortBtn);
         }
@@ -2501,10 +2505,15 @@ function bindGlobalEvents() {
   // Categories list Sort (Default / Name / Count)
   const catSortBtn = document.getElementById('categories-sort-btn');
   const catSortLabel = document.getElementById('categories-sort-label');
+  const getCatSortSymbol = (v) => {
+    if (v === 'name') return 'A-Z';
+    if (v === 'count') return '#';
+    return '—';
+  };
   // Restore the saved sort preference.
   state.categorySort = localStorage.getItem('category_sort') || 'default';
   if (catSortLabel) {
-    catSortLabel.textContent = (CATEGORY_SORTS.find(s => s.value === state.categorySort) || CATEGORY_SORTS[0]).label;
+    catSortLabel.textContent = getCatSortSymbol(state.categorySort);
   }
   if (catSortBtn) {
     catSortBtn.addEventListener('click', () => {
@@ -2516,7 +2525,7 @@ function bindGlobalEvents() {
           state.categorySort = value;
           localStorage.setItem('category_sort', value);
           if (catSortLabel) {
-            catSortLabel.textContent = (CATEGORY_SORTS.find(s => s.value === value) || CATEGORY_SORTS[0]).label;
+            catSortLabel.textContent = getCatSortSymbol(value);
           }
           renderCategoriesList(state.lastCategories || []);
           navigation.setFocus('categories', catSortBtn);
@@ -2626,12 +2635,16 @@ function bindGlobalEvents() {
       { value: 'name_desc', label: 'Name (Z-A)' },
       { value: 'most_viewed', label: 'Most Viewed' }
     ];
-    const LIVE_SORT_LABEL = {
-      added: 'Default Order',
-      name: 'Name (A-Z)',
-      name_desc: 'Name (Z-A)',
-      most_viewed: 'Most Viewed'
+    const getLiveSortSymbol = (v) => {
+      if (v === 'name') return 'A-Z';
+      if (v === 'name_desc') return 'Z-A';
+      if (v === 'most_viewed') return '★';
+      return '—';
     };
+    // Initialize label
+    if (liveSortLabel && epgGridInstance) {
+      liveSortLabel.textContent = getLiveSortSymbol(epgGridInstance.channelsSort || 'added');
+    }
     liveSortBtn.addEventListener('click', () => {
       openSortDropdown({
         title: 'Sort Channels',
@@ -2639,7 +2652,7 @@ function bindGlobalEvents() {
         current: (epgGridInstance && epgGridInstance.channelsSort) || 'added',
         onSelect: (v) => {
           if (epgGridInstance) epgGridInstance.setChannelsSort(v);
-          if (liveSortLabel) liveSortLabel.textContent = LIVE_SORT_LABEL[v] || 'Default Order';
+          if (liveSortLabel) liveSortLabel.textContent = getLiveSortSymbol(v);
           navigation.setFocus('channels', liveSortBtn);
         }
       });

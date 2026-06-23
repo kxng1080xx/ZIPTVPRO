@@ -1374,6 +1374,34 @@ button {
   border: 1px solid var(--border-color);
 }
 
+/* Scale down pinned section in landscape by ~30% */
+@media (orientation: landscape) {
+  .sidebar-top-pins {
+    padding: 8px;
+    border-radius: var(--rd-r-12);
+  }
+  .pin-title-row {
+    font-size: 0.58rem;
+    padding: 4px 6px;
+    margin: 0 -6px 6px;
+  }
+  .pin-item {
+    padding: 5px 8px;
+    font-size: 0.68rem;
+  }
+  .pin-label {
+    gap: 5px;
+  }
+  .pin-label i {
+    width: 12px;
+    height: 12px;
+  }
+  .pin-count {
+    font-size: 0.58rem;
+    padding: 1px 5px;
+  }
+}
+
 /* Categories glass card — wraps the toolbar header + the scrolling list so they
    read as one panel, and fills the remaining sidebar height. */
 .categories-card {
@@ -1437,6 +1465,31 @@ button {
 .category-search-btn.filter-active {
   border-color: #00f3ff;
   color: #00f3ff;
+}
+
+/* Scale down search & sort buttons in landscape by ~30% */
+@media (orientation: landscape) {
+  .category-search-btn,
+  .category-sort-btn {
+    padding: 4px 6px;
+    font-size: 0.65rem;
+    border-radius: 5px;
+    gap: 4px;
+    height: 26px;
+  }
+  .category-search-btn {
+    width: 26px;
+    padding: 4px 0;
+  }
+  .category-search-btn i,
+  .category-sort-btn i {
+    width: 11px;
+    height: 11px;
+  }
+  .categories-actions {
+    gap: 4px;
+    margin-top: 6px;
+  }
 }
 
 .categories-header-row {
@@ -2343,6 +2396,133 @@ body.vod-mode .now-next-bar {
   background: rgba(255, 255, 255, 0.25);
 }
 
+/* ---- Idle / empty player state (modern glass placeholder) ---------------- */
+.player-idle {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border-radius: inherit;
+  overflow: hidden;
+  background:
+    radial-gradient(900px 500px at 82% -12%, rgba(37,99,235,0.22), transparent 60%),
+    radial-gradient(760px 520px at -8% 112%, rgba(6,182,212,0.18), transparent 60%),
+    var(--bg-base);
+}
+.player-idle__grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+  background-size: 46px 46px;
+  -webkit-mask-image: radial-gradient(circle at 50% 45%, #000, transparent 72%);
+  mask-image: radial-gradient(circle at 50% 45%, #000, transparent 72%);
+}
+.player-idle__brand {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  font-family: var(--font-title);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.5px;
+  color: #e5e7eb;
+}
+.player-idle__brand span { color: #38bdf8; }
+.player-idle__emblem-wrap { position: relative; animation: idleFloat 5.5s ease-in-out infinite; }
+.player-idle__pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(56,189,248,0.45);
+  animation: idlePulse 2.6s ease-out infinite;
+}
+.player-idle__emblem {
+  position: relative;
+  width: 86px;
+  height: 86px;
+  border-radius: 50%;
+  background: linear-gradient(140deg, #3b82f6, #06b6d4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 14px 40px rgba(6,182,212,0.4);
+}
+.player-idle__emblem i { width: 38px; height: 38px; color: #fff; margin-left: 4px; }
+.player-idle__title {
+  position: relative;
+  font-family: var(--font-title);
+  font-weight: 600;
+  font-size: 25px;
+  color: var(--text-primary);
+  margin-top: 24px;
+  letter-spacing: 0.2px;
+}
+.player-idle__sub {
+  position: relative;
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-top: 7px;
+  padding: 0 16px;
+}
+.player-idle__hints {
+  position: relative;
+  display: flex;
+  gap: 9px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.player-idle__hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: #cbd5e1;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  padding: 6px 13px;
+  border-radius: 999px;
+}
+.player-idle__hint i { width: 15px; height: 15px; color: #38bdf8; }
+.player-idle__eq {
+  position: absolute;
+  bottom: 18px;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 22px;
+  opacity: 0.5;
+}
+.player-idle__eq span {
+  display: inline-block;
+  width: 4px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #38bdf8, #2563eb);
+  animation: idleEq 1.1s ease-in-out infinite;
+}
+.player-idle__eq span:nth-child(2) { animation-delay: 0.15s; }
+.player-idle__eq span:nth-child(3) { animation-delay: 0.3s; }
+.player-idle__eq span:nth-child(4) { animation-delay: 0.45s; }
+.player-idle__eq span:nth-child(5) { animation-delay: 0.6s; }
+@keyframes idlePulse { 0% { transform: scale(1); opacity: 0.55; } 70% { transform: scale(1.45); opacity: 0; } 100% { opacity: 0; } }
+@keyframes idleFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes idleEq { 0%, 100% { height: 8px; } 50% { height: 22px; } }
+/* Compact player boxes (inline live/series) — scale the idle screen down. */
+@media (max-width: 900px) {
+  .player-idle__emblem { width: 64px; height: 64px; }
+  .player-idle__emblem i { width: 28px; height: 28px; }
+  .player-idle__title { font-size: 19px; margin-top: 16px; }
+  .player-idle__sub { font-size: 12.5px; }
+  .player-idle__hints { margin-top: 14px; }
+  .player-idle__eq { display: none; }
+}
+
 .video-loader {
   position: absolute;
   top: 0;
@@ -2716,6 +2896,37 @@ body.vod-mode .now-next-bar {
 
 .epg-section-container.timeline-hidden .epg-channel-row.active .epg-channel-row-name {
   color: #fff;
+}
+
+/* Scale down EPG channel rows in landscape by ~20% */
+@media (orientation: landscape) {
+  .epg-section-container.timeline-hidden .epg-channel-row {
+    min-height: 70px;
+    padding: 10px 12px;
+    gap: 10px;
+    contain-intrinsic-size: auto 70px;
+  }
+  .epg-section-container.timeline-hidden .epg-channel-row-logo {
+    width: 40px;
+    height: 40px;
+  }
+  .epg-section-container.timeline-hidden .epg-channel-row-name {
+    font-size: 0.75rem;
+  }
+  .epg-section-container.timeline-hidden .now-seg-time {
+    font-size: 0.7rem;
+  }
+  .epg-section-container.timeline-hidden .now-seg-title {
+    font-size: 0.73rem;
+  }
+  .epg-section-container.timeline-hidden .epg-channel-row-fav {
+    top: 8px;
+    right: 8px;
+  }
+  .epg-section-container.timeline-hidden .epg-channel-row-fav i {
+    width: 14px;
+    height: 14px;
+  }
 }
 
 /* The "CHANNELS (N)" cell reads as the grid's section label in card mode */
@@ -4976,30 +5187,67 @@ body.epg-fullscreen-active .epg-section-container {
     width: 220px;
     height: 100%;
     min-height: 0;
+    padding: 8px;
+    gap: 8px;
   }
 
   .sidebar-top-pins {
-    padding: 10px 12px;
+    padding: 6px 10px;
   }
 
   .pin-item {
-    padding: 6px 10px;
-    font-size: 0.82rem;
+    padding: 4px 8px;
+    font-size: 0.78rem;
   }
 
   .categories-search-section {
-    padding: 10px 12px;
+    padding: 6px 10px;
   }
 
   .categories-list-container {
-    padding: 8px;
+    padding: 6px;
     min-height: 0;
     overflow-y: auto;
   }
 
   .category-item {
-    padding: 7px 10px;
-    font-size: 0.8rem;
+    padding: 4px 8px;
+    font-size: 0.72rem;
+  }
+
+  .cat-count {
+    font-size: 0.62rem;
+    padding: 1px 5px;
+  }
+
+  /* --- Shorter player idle layout so elements fit without vertical overflow --- */
+  .player-idle__brand {
+    display: none !important;
+  }
+  .player-idle__emblem {
+    width: 44px !important;
+    height: 44px !important;
+    box-shadow: 0 6px 15px rgba(6,182,212,0.3) !important;
+  }
+  .player-idle__emblem i {
+    width: 18px !important;
+    height: 18px !important;
+    margin-left: 2px !important;
+  }
+  .player-idle__title {
+    font-size: 15px !important;
+    margin-top: 8px !important;
+  }
+  .player-idle__sub {
+    font-size: 10.5px !important;
+    margin-top: 3px !important;
+    padding: 0 10px !important;
+  }
+  .player-idle__hints {
+    display: none !important;
+  }
+  .player-idle__eq {
+    display: none !important;
   }
 
   /* --- Live TV: cap the player/details row so the EPG always has room
@@ -6621,6 +6869,104 @@ body.tv-layout .epg-channel-header-cell {
 }
 
 /* ==========================================================================
+   NATIVE VIDEO (ExoPlayer on Android / mpv on Electron)
+   The native player renders on a surface BEHIND the transparent WebView. To
+   make it visible we punch the app/player background through to it while native
+   playback is active (which is fullscreen), and hide the now-unused HTML
+   <video>. The controls overlay keeps its own gradient backgrounds so it stays
+   visible on top. Falls back to the normal opaque UI the moment native stops.
+   ========================================================================== */
+/* Native video is composited BEHIND the WebView. For it to show through, every
+   layer from <body> down to the player box must be transparent — any opaque
+   ancestor (the app shell, the content <main>, the view panel, the player
+   wrapper) paints over the video. This is the full chain for both Live and
+   Series/VOD; missing any one of them shows that layer's solid colour instead of
+   the video (we hit .series-player-wrapper #000, then .content-viewport navy). */
+body.native-video-active,
+body.native-video-active #app,
+body.native-video-active #app-container,
+body.native-video-active .app-layout,
+body.native-video-active .content-viewport,
+body.native-video-active .view-panel,
+body.native-video-active .live-top-row,
+body.native-video-active .series-playback-container,
+body.native-video-active .series-top-row,
+body.native-video-active .player-wrapper,
+body.native-video-active .series-player-wrapper,
+body.native-video-active .player-stage,
+body.native-video-active .video-container,
+body.native-video-active .player-container {
+  background: transparent !important;
+  background-image: none !important;
+  /* Neutralize any transform/filter on the player's ancestor chain — those create
+     a containing block that would trap the position:fixed #video-container overlay
+     and stop it filling the viewport. */
+  transform: none !important;
+  filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  perspective: none !important;
+  will-change: auto !important;
+}
+body.native-video-active .series-player-wrapper { border-color: transparent !important; }
+/* display:none (not visibility) — defeats the Android WebView <video> overlay that
+   ignores visibility, so the empty browser <video>'s gray play-button placeholder
+   never paints over the native surface. */
+body.native-video-active #main-video-player { display: none !important; }
+
+/* ── Native (Android libVLC) player ──────────────────────────────────────────
+   DEFAULT = BOXED: the libVLC surface (full-screen behind the WebView) is sized
+   to the on-screen player box via rect-sync, so the existing responsive layout
+   decides where the video sits — portrait stacked, landscape side-by-side, TV
+   player+grid. The chrome around it stays visible; the transparency chain above
+   lets the surface show through the box, and the #070A13 native backing (= the
+   app's --bg-darkest) fills everywhere else so there's no bleed. No Fullscreen API.
+
+   IMMERSIVE FULLSCREEN = body.player-fs (toggled by the player on native only —
+   fullscreen button / rotate-to-landscape on phone / remote on TV): hide all app
+   chrome and make #video-container a fixed, transparent, full-screen overlay so
+   the surface (which rect-syncs to it) fills the screen. */
+/* Gated to LANDSCAPE: immersive fullscreen must never apply in portrait (portrait
+   is always the docked view), so even a stray player-fs class can't full-screen it. */
+@media (orientation: landscape) {
+  body.native-video-active.player-fs #app-container { visibility: hidden !important; }
+  body.native-video-active.player-fs #video-container,
+  body.native-video-active.player-fs #video-container * { visibility: visible !important; }
+  body.native-video-active.player-fs #video-container {
+    position: fixed !important;
+    inset: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    z-index: 9000 !important;
+    background: transparent !important;
+  }
+}
+/* Controls reachable on touch (no hover) in both states. */
+body.native-video-active .player-controls-overlay { pointer-events: auto; }
+
+/* VOD (series) on native: browse = list only, watch = player. Hide the inline
+   series player box while NOT playing so the episode list shows alone; once an
+   episode plays it reappears (boxed/YouTube-style in portrait, fullscreen in
+   landscape), and stop() hides it again. Live keeps its box (always watching). */
+body.app-native:not(.player-session) .series-player-wrapper { display: none !important; }
+/* Portrait watch = YouTube layout: video pinned at the top, content scrolls below. */
+@media (orientation: portrait) {
+  body.app-native.player-session:not(.player-fs) .series-top-row { display: block !important; }
+  body.app-native.player-session:not(.player-fs) .series-player-wrapper {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 50 !important;
+    width: 100% !important;
+    aspect-ratio: 16 / 9 !important;
+  }
+}
+
+/* ==========================================================================
    PERFORMANCE (LITE) MODE  — body.perf-lite
    --------------------------------------------------------------------------
    Auto-enabled on low-power targets (Fire TV / Tizen / WebOS / Android
@@ -6678,5 +7024,6 @@ body.perf-lite .playlist-drawer-panel,
 body.perf-lite .vod-modal,
 body.perf-lite .gsearch-overlay,
 body.perf-lite .settings-modal {
+  /* (native-video compositing fix applied above) */
   background-color: var(--rd-glass-modal) !important;
 }

@@ -7,9 +7,14 @@ android {
         applicationId "com.iptv.player.zero"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 115
-        versionName "4.1.5"
+        versionCode 117
+        versionName "4.2.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        // libVLC ships native libs per-ABI; limit to the two that cover ~all
+        // real Android phones / TV boxes / Fire TV to keep the APK size down.
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+        }
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
@@ -40,6 +45,11 @@ dependencies {
     implementation "androidx.mediarouter:mediarouter:1.6.0"
     implementation "com.google.android.gms:play-services-cast-framework:21.5.0"
     implementation "androidx.media:media:1.6.0"
+    // libVLC — native VOD+live playback that decodes E-AC3/AC3, HEVC (incl.
+    // Main10/10-bit), and MKV which neither the WebView <video> nor ExoPlayer's
+    // hardware path can handle on many devices. Software-decodes when hardware
+    // can't — same engine IPTV Smarters uses for problem streams.
+    implementation "org.videolan.android:libvlc-all:3.6.5"
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
