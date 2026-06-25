@@ -15,10 +15,10 @@
     "start": "node server/index.js",
     "electron:start": "electron .",
     "fetch:ffmpeg": "node scripts/fetch-ffmpeg.mjs",
-    "electron:dist": "npm run fetch:ffmpeg && npm run bump && npm run build && electron-builder && node -e \"const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('./package.json')); fs.copyFileSync('dist-electron/ZIPTV-Pro-Setup-' + pkg.version + '.exe', 'latest.exe');\"",
+    "electron:dist": "npm run fetch:ffmpeg && npm run bump -- --no-bump && npm run build && electron-builder && node -e \"const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('./package.json')); fs.copyFileSync('dist-electron/ZIPTV-Pro-Setup-' + pkg.version + '.exe', 'latest.exe');\"",
     "electron:dist:codecs": "npm run fetch:ffmpeg && npm run build && electron-builder --config.electronDist=electron-codecs/dist --config.electronVersion=42.4.0 && node -e \"const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('./package.json')); fs.copyFileSync('dist-electron/ZIPTV-Pro-Setup-' + pkg.version + '.exe', 'latest.exe');\"",
     "release": "node scripts/publish-release.mjs",
-    "apk": "npm run bump && npm run build && npx cap sync android && cd android && gradlew.bat assembleDebug && cd .. && copy /Y android\\app\\build\\outputs\\apk\\debug\\app-debug.apk app.apk && copy /Y app.apk ZIPTV-Pro.apk && echo APK ready: app.apk + ZIPTV-Pro.apk"
+    "apk": "npm run bump -- --no-bump && npm run build && npx cap sync android && cd android && gradlew.bat assembleDebug && cd .. && copy /Y android\\app\\build\\outputs\\apk\\debug\\app-debug.apk app.apk && copy /Y app.apk ZIPTV-Pro.apk && echo APK ready: app.apk + ZIPTV-Pro.apk"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.0",

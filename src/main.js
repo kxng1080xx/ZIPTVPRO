@@ -3162,7 +3162,7 @@ function showDashboard() {
       domain = urlObj.hostname;
     } catch(e){}
 
-    document.getElementById('nav-playlist-name').textContent = `${creds.playlistName} (${domain})`;
+    document.getElementById('nav-playlist-name').textContent = `${creds.playlistName}`;
 
     // Account avatar initials (from the playlist name; fall back to host)
     const avatarEl = document.getElementById('profile-avatar');
@@ -3418,6 +3418,20 @@ async function applyCloudState(state) {
   // once the device is managed. This protects existing users during migration.
   const managed = state.status && state.status !== 'pending';
   await reconcilePlaylists(state.playlists || [], { allowRemovals: managed });
+
+  // Managed device whose playlists were ALL removed from the dashboard → treat
+  // like an expired subscription: stop playback, return to the login screen and
+  // show the notice.
+  if (managed) {
+    try {
+      const { playlists } = await getPlaylists();
+      if (!playlists || playlists.length === 0) { await deactivateToLogin(state.notice); return; }
+    } catch (e) {}
+  }
+
+  // Healthy + active: clear any lingering expiry banner.
+  const banner = document.getElementById('expiry-banner');
+  if (banner) banner.remove();
 }
 
 // Make the local playlists match the dashboard's list (match on host+username).
@@ -3462,7 +3476,7 @@ async function reconcilePlaylists(remote, { allowRemovals } = {}) {
   }
 }
 
-// Wipe all local playlists and show the expiry notice once per expiry date.
+// Wipe all local playlists, stop playback and bounce to the login screen.
 async function enforceDeviceExpiry(state) {
   localStorage.setItem(DEVICE_EXPIRY_KEY, state.expires_at || '');
   try {
@@ -3471,19 +3485,25 @@ async function enforceDeviceExpiry(state) {
       try { await removePlaylist(p.id); } catch (e) {}
     }
   } catch (e) {}
-  localStorage.removeItem('last_playlist_id');
-
-  const stamp = state.expires_at || 'expired';
-  if (localStorage.getItem('ziptv_expiry_notified') !== stamp) {
-    localStorage.setItem('ziptv_expiry_notified', stamp);
-    showExpiryNotice(state.notice);
-  }
-  showLogin();
+  await deactivateToLogin(state.notice);
 }
 
-function showExpiryNotice(text) {
+// Log the user out (stop playback, clear session) and show the expired notice on
+// the activation screen. The toast fires only on the active->login transition so
+// it doesn't repeat every sync while parked on the login screen.
+async function deactivateToLogin(noticeText) {
+  const appC = document.getElementById('app-container');
+  const wasActive = appC && !appC.classList.contains('hidden');
+  try { if (playerInstance) playerInstance.stop(); } catch (e) {}
+  state.user = null;
+  localStorage.removeItem('last_playlist_id');
+  showLogin();
+  showExpiryNotice(noticeText, { toast: wasActive });
+}
+
+function showExpiryNotice(text, { toast = true } = {}) {
   const msg = (text && String(text).trim()) || 'Your subscription has expired. Please contact your provider to renew.';
-  try { showToast(msg, 'error', 8000); } catch (e) {}
+  if (toast) { try { showToast(msg, 'error', 8000); } catch (e) {} }
   const codeEl = document.getElementById('remote-device-code');
   if (codeEl && codeEl.parentElement) {
     let banner = document.getElementById('expiry-banner');
