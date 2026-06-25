@@ -6274,6 +6274,90 @@ body.epg-fullscreen-active .epg-section-container {
 .update-btn-primary { background: #00f3ff; color: #00131a; border-color: #00f3ff; }
 .update-btn-primary:hover { filter: brightness(1.08); }
 
+/* Download progress bar (Android in-app update). Shown in place of the action
+   buttons once Download is tapped; driven by the plugin's downloadProgress event. */
+.update-progress {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+.update-progress-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--bg-surface, #131c2c);
+  border: 1px solid var(--border-color, #1e2a3e);
+  overflow: hidden;
+}
+.update-progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #00b8d4, #00f3ff);
+  box-shadow: 0 0 10px rgba(0, 243, 255, 0.5);
+  transition: width 0.25s ease;
+}
+.update-progress-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary, #9fb0c8);
+  font-variant-numeric: tabular-nums;
+}
+/* Unknown total size → animate an indeterminate sweep instead of a fixed width. */
+.update-progress.indeterminate .update-progress-fill {
+  width: 40% !important;
+  transition: none;
+  animation: update-progress-sweep 1.1s ease-in-out infinite;
+}
+@keyframes update-progress-sweep {
+  0%   { margin-left: -40%; }
+  100% { margin-left: 100%; }
+}
+
+/* Desktop (Electron) auto-update toast — bottom-right, with the shared progress bar. */
+.updater-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 5200;
+  width: min(320px, 90vw);
+  background: var(--bg-panel, #0d1320);
+  border: 1px solid var(--border-color, #1e2a3e);
+  border-radius: 12px;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.55);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: updater-toast-in 0.25s ease;
+}
+@keyframes updater-toast-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.updater-toast-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.updater-toast-row i { width: 18px; height: 18px; color: #00f3ff; flex-shrink: 0; }
+.updater-toast-title { font-size: 0.92rem; font-weight: 700; flex: 1; }
+.updater-toast-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary, #9fb0c8);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.updater-toast-close:hover { color: var(--text-primary, #fff); }
+.updater-toast-text { font-size: 0.82rem; color: var(--text-secondary, #9fb0c8); }
+.updater-toast-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.updater-toast-actions .update-btn { padding: 7px 12px; font-size: 0.82rem; }
+
 /* ==========================================================================
    "PLAYING ON TV" CAST OVERLAY (covers the player while casting)
    ========================================================================== */
@@ -6310,6 +6394,91 @@ body.epg-fullscreen-active .epg-section-container {
 }
 .cast-overlay-stop:hover { background: rgba(255, 107, 107, 0.22); }
 .cast-overlay-stop i { width: 17px; height: 17px; }
+
+/* Casting overlay transport controls */
+.cast-overlay-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  margin-top: 4px;
+}
+.cast-ctrl-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.cast-ctrl-btn:hover { background: rgba(0, 243, 255, 0.16); border-color: rgba(0, 243, 255, 0.5); }
+.cast-ctrl-btn:active { transform: scale(0.94); }
+.cast-ctrl-btn i { width: 20px; height: 20px; }
+.cast-ctrl-main {
+  width: 58px;
+  height: 58px;
+  background: rgba(0, 243, 255, 0.14);
+  border-color: rgba(0, 243, 255, 0.45);
+  color: #00f3ff;
+}
+.cast-ctrl-main i { width: 26px; height: 26px; }
+
+/* Seek bar (VOD) */
+.cast-overlay-seek {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(420px, 70%);
+  margin-top: 6px;
+}
+.cast-seek-time { font-size: 0.8rem; color: var(--text-secondary, #9fb0c8); min-width: 42px; text-align: center; }
+.cast-seek-bar { flex: 1; }
+
+/* Volume */
+.cast-overlay-volume {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(260px, 60%);
+  margin-top: 2px;
+}
+.cast-vol-bar { flex: 1; }
+
+/* Shared range styling for cast sliders */
+.cast-seek-bar, .cast-vol-bar {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.22);
+  cursor: pointer;
+  outline: none;
+}
+.cast-seek-bar::-webkit-slider-thumb,
+.cast-vol-bar::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #00f3ff;
+  border: none;
+  cursor: pointer;
+}
+.cast-seek-bar::-moz-range-thumb,
+.cast-vol-bar::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #00f3ff;
+  border: none;
+  cursor: pointer;
+}
 
 
 
@@ -7027,3 +7196,5 @@ body.perf-lite .settings-modal {
   /* (native-video compositing fix applied above) */
   background-color: var(--rd-glass-modal) !important;
 }
+
+

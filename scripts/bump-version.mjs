@@ -16,34 +16,44 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pkgPath = join(root, 'package.json');
 const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
 
-const parts = pkg.version.split('.').map(Number);
-let newMajor = parts[0];
-let newMinor = parts[1];
-let newPatch = parts[2];
+const isNoBump = (process.env.NO_BUMP && process.env.NO_BUMP.trim() === 'true') || process.argv.includes('--no-bump');
+let newVersion;
 
-if (process.argv.includes('--major')) {
-  newMajor += 1;
-  newMinor = 0;
-  newPatch = 0;
-} else if (process.argv.includes('--minor')) {
-  newMinor += 1;
-  newPatch = 0;
+if (isNoBump) {
+  newVersion = pkg.version;
+  console.log(`NO_BUMP active: Synchronizing version fields to ${newVersion} without bumping...`);
 } else {
-  // Default to patch bump (+0.0.1) for bug fixes
-  newPatch += 1;
+  const parts = pkg.version.split('.').map(Number);
+  let newMajor = parts[0];
+  let newMinor = parts[1];
+  let newPatch = parts[2];
+
+  if (process.argv.includes('--major')) {
+    newMajor += 1;
+    newMinor = 0;
+    newPatch = 0;
+  } else if (process.argv.includes('--minor')) {
+    newMinor += 1;
+    newPatch = 0;
+  } else {
+    // Default to patch bump (+0.0.1) for bug fixes
+    newPatch += 1;
+  }
+
+  newVersion = `${newMajor}.${newMinor}.${newPatch}`;
+
+  pkg.version = newVersion;
+  writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
 }
-
-const newVersion = `${newMajor}.${newMinor}.${newPatch}`;
-
-pkg.version = newVersion;
-writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
 
 // --- 2. android/app/build.gradle ------------------------------------------
 const gradlePath = join(root, 'android', 'app', 'build.gradle');
 let gradle = readFileSync(gradlePath, 'utf8');
 gradle = gradle.replace(/versionName\s+"[^"]*"/, `versionName "${newVersion}"`);
-gradle = gradle.replace(/versionCode\s+(\d+)/, (_, code) => `versionCode ${Number(code) + 1}`);
+if (!isNoBump) {
+  gradle = gradle.replace(/versionCode\s+(\d+)/, (_, code) => `versionCode ${Number(code) + 1}`);
+}
 writeFileSync(gradlePath, gradle);
 
-console.log(`Version bumped -> ${newVersion} (android versionName "${newVersion}")`);
+console.log(`Version synchronized -> ${newVersion} (android versionName "${newVersion}")`);
 

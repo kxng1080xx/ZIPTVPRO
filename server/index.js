@@ -6,6 +6,7 @@ import fs from 'fs';
 import os from 'os';
 import http from 'http';
 import https from 'https';
+import { spawn, spawnSync } from 'child_process';
 
 function getLocalIpAddresses() {
   const interfaces = os.networkInterfaces();
@@ -727,6 +728,11 @@ function proxyLiveStream(targetUrl, req, res, opts) {
 // manager. FLAGS mirror what Samsung advertises (ED10…).
 function dlnaProfile(isLive, ext) {
   const FLAGS = 'ED100000000000000000000000000000';
+  if (isLive && ext === 'm3u8') {
+    // eShare-type renderers get live as HLS (the renderer fetches the segments).
+    // Advertise the HLS mime, no DLNA.ORG_PN, no seek (live).
+    return { mime: 'application/x-mpegurl', features: `DLNA.ORG_OP=00;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=${FLAGS}` };
+  }
   if (isLive) {
     // IPTV live is 188-byte MPEG-TS → MPEG_TS_NA_ISO (video/mpeg), no seek.
     return { mime: 'video/mpeg', features: `DLNA.ORG_PN=MPEG_TS_NA_ISO;DLNA.ORG_OP=00;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=${FLAGS}` };
@@ -921,6 +927,176 @@ app.get('/api/stream-info/:id', async (req, res) => {
     console.error(`Error fetching info for ${type} ${id}:`, err);
     res.status(500).json({ error: err.message });
   }
+});
+
+// ==========================================================================
+// DESKTOP PREMIUM-VOD TRANSCODE (Electron only)
+// Browser <video> in stock Electron can HW-decode HEVC but NOT E-AC3 audio, so
+// premium VOD (MKV/HEVC Main10 + E-AC3) plays silent or not at all. This endpoint
+// pipes the stream through ffmpeg and serves a fragmented MP4 the <video> can play:
+//   - mode=audio (default): copy the HEVC video untouched, transcode only the
+//     E-AC3 audio -> AAC. Near-zero CPU; relies on the GPU HEVC decoder.
+//   - mode=full: also transcode video -> H.264 for GPUs that can't HW-decode HEVC.
+// Only the desktop player calls this (see player.js _playViaTranscode); the web
+// build never hits it (and a host without ffmpeg simply 500s, never called).
+// ==========================================================================
+function findFfmpeg() {
+  const isWin = process.platform === 'win32';
+  const bin = isWin ? 'ffmpeg.exe' : 'ffmpeg';
+  const candidates = [];
+  // Packaged Electron: extraResources copied to <resources>/bin/
+  if (process.resourcesPath) candidates.push(path.join(process.resourcesPath, 'bin', bin));
+  // Dev / unpackaged
+  candidates.push(
+    path.join(__dirname, '..', 'extraResources', bin),
+    path.join(__dirname, '..', 'extraResources', process.platform, bin)
+  );
+  for (const c of candidates) {
+    try { if (fs.existsSync(c)) return c; } catch (e) {}
+  }
+  return bin; // fall back to PATH
+}
+
+// --- Child-process lifecycle ------------------------------------------------
+// The ffmpeg children spawned for transcode/probe must die with the app. On
+// Windows a child is NOT auto-killed when its parent (the Electron main process,
+// which hosts this in-process server) exits — that's the stray ffmpeg.exe left
+// running after closing the app. Track every spawn and force-kill them all on
+// shutdown, however it's triggered.
+const activeChildren = new Set();
+
+function trackChild(proc) {
+  if (!proc) return proc;
+  activeChildren.add(proc);
+  const drop = () => activeChildren.delete(proc);
+  proc.on('exit', drop);
+  proc.on('error', drop);
+  return proc;
+}
+
+function killAllChildren() {
+  for (const proc of activeChildren) {
+    try {
+      if (process.platform === 'win32' && proc.pid) {
+        // taskkill /T kills the whole tree, /F forces it — a bare SIGKILL can
+        // leave ffmpeg alive on Windows. spawnSync so it runs during 'exit'.
+        spawnSync('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true });
+      } else {
+        proc.kill('SIGKILL');
+      }
+    } catch (e) {}
+  }
+  activeChildren.clear();
+}
+
+// Fire on any shutdown path. 'exit' handlers must be synchronous — spawnSync is.
+process.on('exit', killAllChildren);
+process.on('SIGINT', () => { killAllChildren(); process.exit(0); });
+process.on('SIGTERM', () => { killAllChildren(); process.exit(0); });
+// Let the Electron main process trigger cleanup before it quits (same process,
+// so globalThis is shared between main.electron.cjs and this module).
+globalThis.__ziptvKillChildren = killAllChildren;
+
+app.get('/api/transcode', (req, res) => {
+  const target = req.query.url;
+  if (!target || !/^https?:\/\//i.test(target)) {
+    return res.status(400).send('missing or invalid url');
+  }
+  const mode = req.query.mode === 'full' ? 'full' : 'audio';
+  const start = Math.max(0, parseInt(req.query.start, 10) || 0);
+  const ffmpeg = findFfmpeg();
+
+  const args = [];
+  // Fast input seek (before -i) for resume / restart-at-offset.
+  if (start > 0) args.push('-ss', String(start));
+  args.push(
+    '-user_agent', 'VLC/3.0.20',
+    '-i', target
+  );
+  if (mode === 'audio') {
+    // Keep HEVC video as-is (Electron HW-decodes it); tag hvc1 for Chromium.
+    args.push('-c:v', 'copy', '-tag:v', 'hvc1');
+  } else {
+    // Re-encode video for hardware that can't decode HEVC10.
+    args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p');
+  }
+  args.push(
+    '-c:a', 'aac', '-b:a', '256k', '-ac', '2',
+    '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
+    '-f', 'mp4',
+    'pipe:1'
+  );
+
+  res.setHeader('Content-Type', 'video/mp4');
+  res.setHeader('Cache-Control', 'no-store');
+
+  let proc;
+  try {
+    proc = trackChild(spawn(ffmpeg, args, { windowsHide: true }));
+  } catch (err) {
+    console.error('[transcode] ffmpeg spawn failed:', err);
+    if (!res.headersSent) res.status(500);
+    return res.end();
+  }
+
+  proc.stdout.pipe(res);
+  // ffmpeg logs to stderr; surface only on failure to keep logs quiet.
+  let stderrTail = '';
+  proc.stderr.on('data', (d) => { stderrTail = (stderrTail + d).slice(-2000); });
+
+  const kill = () => { try { proc.kill('SIGKILL'); } catch (e) {} };
+  req.on('close', kill);
+  res.on('close', kill);
+
+  proc.on('error', (err) => {
+    console.error('[transcode] ffmpeg error:', err && err.message, '| is ffmpeg installed/bundled?');
+    if (!res.headersSent) res.status(500);
+    try { res.end(); } catch (e) {}
+  });
+  proc.on('exit', (code) => {
+    if (code && code !== 0 && code !== 255) {
+      console.error(`[transcode] ffmpeg exited ${code} (${mode}). Tail:\n${stderrTail}`);
+    }
+    try { res.end(); } catch (e) {}
+  });
+});
+
+// Probe a stream's total duration with the bundled ffmpeg (no ffprobe needed):
+// `ffmpeg -i <url>` prints "Duration: HH:MM:SS.ss" to stderr then exits. Used by
+// the desktop transcode path to give the (otherwise piped/non-seekable) fMP4 a
+// real total duration so the seek bar works. Returns { duration } in seconds.
+app.get('/api/probe', (req, res) => {
+  const target = req.query.url;
+  if (!target || !/^https?:\/\//i.test(target)) {
+    return res.status(400).json({ error: 'missing or invalid url' });
+  }
+  const ffmpeg = findFfmpeg();
+  let stderr = '';
+  let proc;
+  try {
+    proc = trackChild(spawn(ffmpeg, ['-user_agent', 'VLC/3.0.20', '-i', target], { windowsHide: true }));
+  } catch (err) {
+    return res.json({ duration: 0 });
+  }
+  // ffmpeg writes header/metadata then errors (no output specified). We only need
+  // the first stderr chunks containing "Duration:"; kill once we have enough.
+  proc.stderr.on('data', (d) => {
+    stderr += d;
+    if (/Duration:\s*\d+:\d+:\d+/.test(stderr) || stderr.length > 16000) {
+      try { proc.kill('SIGKILL'); } catch (e) {}
+    }
+  });
+  let sent = false;
+  const finish = () => {
+    if (sent) return; sent = true;
+    const m = stderr.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+    let duration = 0;
+    if (m) duration = (+m[1]) * 3600 + (+m[2]) * 60 + parseFloat(m[3]);
+    if (!res.headersSent) res.json({ duration });
+  };
+  proc.on('error', finish);
+  proc.on('exit', finish);
+  req.on('close', () => { try { proc.kill('SIGKILL'); } catch (e) {} });
 });
 
 // Serve Vite frontend in production

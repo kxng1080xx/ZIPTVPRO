@@ -44,3 +44,9 @@ public/version.json
 # Local binaries for packaging
 extraResources/
 
+# Custom Electron codec build — huge upstream checkout + built dist are local-only.
+# (The guide, scripts, and ported patches under electron-codecs/ ARE committed.)
+electron-codecs/upstream/
+electron-codecs/dist/
+electron-src/
+

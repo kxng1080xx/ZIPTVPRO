@@ -24,6 +24,10 @@ let devices = [];
 let activeDeviceId = null;
 let overlayEl = null;
 let rescanTimer = null;
+let castPaused = false;     // play/pause state of the active cast
+let lastVolume = 1;         // remembered volume for mute toggle (0..1)
+let statusPollTimer = null; // polls receiver position for the VOD seek bar
+let seekDragging = false;   // suppress poll updates while the user scrubs
 
 function getBackend() {
   if (window.electronCast && window.electronCast.available) return 'electron';
@@ -61,6 +65,32 @@ async function backendStop() {
   if (b === 'native') return NativeCast.stop();
 }
 
+// Generic transport control (pause/resume/seek/volume) for the active cast.
+// Best-effort and non-throwing — DLNA receivers vary in what they implement.
+async function backendControl(action, value) {
+  const b = getBackend();
+  try {
+    if (b === 'electron') return await window.electronCast.control({ deviceId: activeDeviceId, action, value });
+    if (b === 'native' && NativeCast) {
+      if (action === 'pause' && NativeCast.pause) return NativeCast.pause();
+      if (action === 'resume' && NativeCast.resume) return NativeCast.resume();
+      if (action === 'seek' && NativeCast.seek) return NativeCast.seek({ position: value });
+      if (action === 'volume' && NativeCast.setVolume) return NativeCast.setVolume({ volume: value });
+    }
+  } catch (e) {
+    console.warn('[cast] control failed:', action, e && e.message);
+  }
+}
+
+// Best-effort playback status for the seek bar: { currentTime, duration, volume }.
+async function backendStatus() {
+  const b = getBackend();
+  try {
+    if (b === 'electron') return (await window.electronCast.status({ deviceId: activeDeviceId })) || {};
+  } catch (e) {}
+  return {};
+}
+
 // Called by the player whenever something starts playing, so the Cast button
 // knows what to send. `ext` is the VOD container extension (mp4/mkv/…).
 export function setCastContext(ctx) {
@@ -83,9 +113,45 @@ export function initCastUI() {
     btn.style.display = '';
     btn.addEventListener('click', openCastPicker);
   }
-  // "Stop Casting" button on the player's casting overlay.
+  // --- Casting overlay transport controls ----------------------------------
   const overlayStop = document.getElementById('cast-overlay-stop');
   if (overlayStop) overlayStop.addEventListener('click', stopCasting);
+
+  const playPauseBtn = document.getElementById('cast-ctrl-playpause');
+  if (playPauseBtn) playPauseBtn.addEventListener('click', toggleCastPlayPause);
+
+  const prevBtn = document.getElementById('cast-ctrl-prev');
+  if (prevBtn) prevBtn.addEventListener('click', () => {
+    if (window.playerInstance && window.playerInstance.onPrevChannelCallback) {
+      window.playerInstance.onPrevChannelCallback();
+    }
+  });
+  const nextBtn = document.getElementById('cast-ctrl-next');
+  if (nextBtn) nextBtn.addEventListener('click', () => {
+    if (window.playerInstance && window.playerInstance.onNextChannelCallback) {
+      window.playerInstance.onNextChannelCallback();
+    }
+  });
+
+  const muteBtn = document.getElementById('cast-ctrl-mute');
+  if (muteBtn) muteBtn.addEventListener('click', toggleCastMute);
+
+  const volBar = document.getElementById('cast-vol-bar');
+  if (volBar) volBar.addEventListener('input', () => {
+    const v = Math.max(0, Math.min(1, Number(volBar.value) / 100));
+    lastVolume = v > 0 ? v : lastVolume;
+    backendControl('volume', v);
+    updateCastVolIcon(v);
+  });
+
+  const seekBar = document.getElementById('cast-seek-bar');
+  if (seekBar) {
+    seekBar.addEventListener('input', () => { seekDragging = true; });
+    seekBar.addEventListener('change', () => {
+      backendControl('seek', Number(seekBar.value));
+      seekDragging = false;
+    });
+  }
 
   // Push updates as new devices are discovered while the picker is open.
   backendOnDevices((list) => {
@@ -139,7 +205,13 @@ async function openCastPicker() {
 }
 
 function buildOverlay() {
+  // The video container (not body) is what enters the browser Fullscreen API on
+  // desktop, and a fullscreen element only renders its own descendants. Mount the
+  // picker INTO the current fullscreen element so it isn't stuck behind the video
+  // in fullscreen; fall back to body otherwise. appendChild moves it if needed.
+  const parent = document.fullscreenElement || document.body;
   if (overlayEl) {
+    if (overlayEl.parentElement !== parent) parent.appendChild(overlayEl);
     overlayEl.classList.remove('hidden');
     return;
   }
@@ -158,7 +230,7 @@ function buildOverlay() {
         <button class="cast-stop-btn" style="display:none;"><i data-lucide="square"></i> Stop casting</button>
       </div>
     </div>`;
-  document.body.appendChild(overlayEl);
+  parent.appendChild(overlayEl);
 
   overlayEl.addEventListener('click', (e) => { if (e.target === overlayEl) closeOverlay(); });
   overlayEl.querySelector('.cast-modal-close').addEventListener('click', closeOverlay);
@@ -250,8 +322,13 @@ async function buildCastMedia(ctx, isDlna, isEShare) {
   let ext;
   let contentType;
   if (ctx.isLive) {
-    ext = isDlna ? 'ts' : 'm3u8';
-    contentType = isDlna ? 'video/mpeg' : 'application/x-mpegurl';
+    // Chromecast plays HLS. For DLNA, real UPnP TVs (Samsung) need raw MPEG-TS,
+    // but eShare-type renderers can't sustain raw live TS — they buffer forever —
+    // and play HLS instead (mirrors the native/Android isEShare branch). Gate HLS
+    // to eShare so the proven Samsung/Fire TV TS path is untouched.
+    const useHls = !isDlna || isEShare;
+    ext = useHls ? 'm3u8' : 'ts';
+    contentType = useHls ? 'application/x-mpegurl' : 'video/mpeg';
   } else {
     ext = (ctx.ext || 'mp4').toLowerCase();
     contentType = VOD_MIME[ext] || 'video/mp4';
@@ -309,6 +386,7 @@ async function castToDevice(deviceId) {
         window.playerInstance.setCastOverlayDevice(name);
       }
     } catch (e) {}
+    refreshCastControls();
     closeOverlay();
   } catch (e) {
     console.error('[cast] play failed:', e);
@@ -333,13 +411,110 @@ function withTimeout(promise, ms, message) {
 
 async function stopCasting() {
   if (!activeDeviceId) return;
+  stopStatusPoll();
   try {
     await backendStop();
   } catch (e) {
     console.error('[cast] stop failed:', e);
   }
   activeDeviceId = null;
+  castPaused = false;
   // Resume local playback and hide the "Playing on TV" overlay.
   try { if (window.playerInstance) window.playerInstance.resumeLocalPlayback(); } catch (e) {}
   render();
+}
+
+// --- Casting overlay control helpers ----------------------------------------
+// Configure the overlay controls for the current cast: reset play/pause state,
+// show the seek bar only for VOD, label prev/next, and start/stop the status
+// poll that drives the seek bar.
+function refreshCastControls() {
+  castPaused = false;
+  updateCastPlayPauseIcon();
+
+  const isLive = !!(castCtx && castCtx.isLive);
+  const seekWrap = document.getElementById('cast-overlay-seek');
+  if (seekWrap) seekWrap.style.display = isLive ? 'none' : '';
+
+  // Prev/Next are channel-zapping for live, episode-zapping for series, and not
+  // useful for a single movie — hide them only for movies.
+  const navWrap = document.getElementById('cast-overlay-nav');
+  if (navWrap) navWrap.style.display = (castCtx && castCtx.type === 'movie') ? 'none' : '';
+
+  const volBar = document.getElementById('cast-vol-bar');
+  if (volBar) volBar.value = String(Math.round(lastVolume * 100));
+  updateCastVolIcon(lastVolume);
+
+  if (isLive) stopStatusPoll(); else startStatusPoll();
+}
+
+async function toggleCastPlayPause() {
+  if (!activeDeviceId) return;
+  castPaused = !castPaused;
+  await backendControl(castPaused ? 'pause' : 'resume');
+  updateCastPlayPauseIcon();
+}
+
+function toggleCastMute() {
+  const volBar = document.getElementById('cast-vol-bar');
+  const cur = volBar ? Number(volBar.value) / 100 : lastVolume;
+  let next;
+  if (cur > 0) { lastVolume = cur; next = 0; }
+  else { next = lastVolume > 0 ? lastVolume : 1; }
+  if (volBar) volBar.value = String(Math.round(next * 100));
+  backendControl('volume', next);
+  updateCastVolIcon(next);
+}
+
+function updateCastPlayPauseIcon() {
+  const btn = document.getElementById('cast-ctrl-playpause');
+  if (!btn) return;
+  btn.innerHTML = `<i data-lucide="${castPaused ? 'play' : 'pause'}"></i>`;
+  btn.title = castPaused ? 'Resume' : 'Pause';
+  if (window.lucide) lucide.createIcons({ scope: btn });
+}
+
+function updateCastVolIcon(v) {
+  const btn = document.getElementById('cast-ctrl-mute');
+  if (!btn) return;
+  const icon = v <= 0 ? 'volume-x' : (v < 0.4 ? 'volume-1' : 'volume-2');
+  btn.innerHTML = `<i data-lucide="${icon}"></i>`;
+  btn.title = v <= 0 ? 'Unmute' : 'Mute';
+  if (window.lucide) lucide.createIcons({ scope: btn });
+}
+
+function fmtTime(secs) {
+  if (secs == null || !isFinite(secs) || secs < 0) return '0:00';
+  const s = Math.floor(secs % 60);
+  const m = Math.floor((secs / 60) % 60);
+  const h = Math.floor(secs / 3600);
+  const mm = h > 0 ? String(m).padStart(2, '0') : String(m);
+  const ss = String(s).padStart(2, '0');
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+// Poll the receiver for VOD position/duration to drive the seek bar. DLNA status
+// is best-effort; if the device reports nothing the bar simply stays put.
+function startStatusPoll() {
+  stopStatusPoll();
+  statusPollTimer = setInterval(async () => {
+    if (!activeDeviceId || seekDragging) return;
+    const st = await backendStatus();
+    const bar = document.getElementById('cast-seek-bar');
+    const curEl = document.getElementById('cast-seek-cur');
+    const durEl = document.getElementById('cast-seek-dur');
+    if (!bar) return;
+    if (st.duration && isFinite(st.duration)) bar.max = String(Math.floor(st.duration));
+    if (st.currentTime != null && isFinite(st.currentTime)) bar.value = String(Math.floor(st.currentTime));
+    if (curEl) curEl.textContent = fmtTime(st.currentTime);
+    if (durEl) durEl.textContent = fmtTime(st.duration);
+    if (st.volume != null) {
+      const volBar = document.getElementById('cast-vol-bar');
+      if (volBar && !volBar.matches(':active')) volBar.value = String(Math.round(st.volume * 100));
+    }
+  }, 1000);
+}
+
+function stopStatusPoll() {
+  if (statusPollTimer) { clearInterval(statusPollTimer); statusPollTimer = null; }
 }

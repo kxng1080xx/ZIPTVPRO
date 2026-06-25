@@ -56,16 +56,26 @@ function isAndroidNative() {
 // Download + install the app. On Android, do it in-app via the native installer
 // (browser can't on Fire TV). On Electron, open the .exe link in the system
 // browser. On plain web, open the link. Returns a small status object.
-export async function downloadApp(url, onStatus) {
+export async function downloadApp(url, onStatus, onProgress) {
   if (isAndroidNative()) {
     if (onStatus) onStatus('Downloading update…');
+    let progressHandle = null;
     try {
+      // Subscribe BEFORE starting so no early progress ticks are missed. The
+      // native plugin emits { percent, downloaded, total } on this event.
+      if (onProgress) {
+        try {
+          progressHandle = await ApkInstaller.addListener('downloadProgress', (d) => onProgress(d || {}));
+        } catch (e) {}
+      }
       await ApkInstaller.downloadAndInstall({ url });
       return { ok: true };
     } catch (e) {
       const msg = (e && (e.message || e.errorMessage)) || String(e);
       if (msg.includes('NEEDS_PERMISSION')) return { ok: false, needsPermission: true };
       return { ok: false, error: msg };
+    } finally {
+      try { if (progressHandle && progressHandle.remove) await progressHandle.remove(); } catch (e) {}
     }
   }
 
@@ -153,17 +163,49 @@ function showUpdateModal(remote, local, manifest) {
     const textEl = overlay.querySelector('.update-modal-text');
     const setText = (msg) => { if (textEl) textEl.textContent = msg; };
 
-    // On Android, keep the modal up and show progress; the system installer
-    // takes over on success. Elsewhere, just open the link and close.
+    // On Android, keep the modal up and show a live progress bar; the system
+    // installer takes over on success. Elsewhere, just open the link and close.
     if (isAndroidNative()) {
       if (actions) actions.style.display = 'none';
-      const res = await downloadApp(downloadUrlFor(manifest), setText);
+      setText('Downloading update…');
+
+      // Inject the progress bar (removed again if the download fails).
+      const modal = overlay.querySelector('.update-modal');
+      const prog = document.createElement('div');
+      prog.className = 'update-progress indeterminate';
+      prog.innerHTML = `
+        <div class="update-progress-track"><div class="update-progress-fill"></div></div>
+        <div class="update-progress-label">Starting…</div>`;
+      if (modal) modal.appendChild(prog);
+      const fill = prog.querySelector('.update-progress-fill');
+      const label = prog.querySelector('.update-progress-label');
+
+      const onProgress = (d) => {
+        const pct = typeof d.percent === 'number' ? d.percent : -1;
+        if (pct >= 0) {
+          // Known size → determinate bar with a percentage.
+          prog.classList.remove('indeterminate');
+          if (fill) fill.style.width = `${pct}%`;
+          if (label) label.textContent = `${pct}%`;
+        } else {
+          // Unknown size → keep the bar animating, show MB downloaded.
+          prog.classList.add('indeterminate');
+          const mb = d.downloaded ? (d.downloaded / 1048576).toFixed(1) : '0';
+          if (label) label.textContent = `${mb} MB`;
+        }
+      };
+
+      const res = await downloadApp(downloadUrlFor(manifest), setText, onProgress);
       if (res.ok) {
+        if (fill) fill.style.width = '100%';
+        if (label) label.textContent = 'Installing…';
         close();
       } else if (res.needsPermission) {
+        prog.remove();
         setText('Allow "Install unknown apps" for ZIPTV Pro, then press Download again.');
         if (actions) actions.style.display = '';
       } else {
+        prog.remove();
         setText(`Update failed: ${res.error || 'unknown error'}`);
         if (actions) actions.style.display = '';
       }
@@ -198,4 +240,88 @@ function showUpdateModal(remote, local, manifest) {
   };
   document.addEventListener('keydown', onKey, true);
   focusBtn(fIdx);
+}
+
+// ---------------------------------------------------------------------------
+// Desktop (Electron) auto-updater UI. electron-updater downloads in the
+// background; this surfaces a small toast with a live progress bar and, when
+// ready, a "Restart & update" button. Call once on boot in the Electron app.
+// ---------------------------------------------------------------------------
+function formatSpeed(bps) {
+  if (!bps || bps <= 0) return '';
+  const mb = bps / 1048576;
+  if (mb >= 1) return ` · ${mb.toFixed(1)} MB/s`;
+  return ` · ${(bps / 1024).toFixed(0)} KB/s`;
+}
+
+export function initElectronUpdaterUI() {
+  if (!(window.appHost && typeof window.appHost.onUpdate === 'function')) return;
+
+  let toast = null;
+  const build = () => {
+    if (toast) return toast;
+    toast = document.createElement('div');
+    toast.id = 'updater-toast';
+    toast.className = 'updater-toast';
+    toast.innerHTML = `
+      <div class="updater-toast-row">
+        <i data-lucide="arrow-up-circle"></i>
+        <span class="updater-toast-title">Update available</span>
+        <button class="updater-toast-close" aria-label="Dismiss">&times;</button>
+      </div>
+      <div class="updater-toast-text">Preparing download…</div>
+      <div class="update-progress indeterminate">
+        <div class="update-progress-track"><div class="update-progress-fill"></div></div>
+        <div class="update-progress-label">0%</div>
+      </div>
+      <div class="updater-toast-actions" style="display:none">
+        <button class="update-btn update-btn-primary" data-action="restart"><i data-lucide="refresh-cw"></i> Restart &amp; update</button>
+        <button class="update-btn update-btn-ghost" data-action="later">Later</button>
+      </div>`;
+    document.body.appendChild(toast);
+    if (window.lucide) { try { lucide.createIcons({ scope: toast }); } catch (e) {} }
+    toast.querySelector('.updater-toast-close').addEventListener('click', () => { toast.remove(); toast = null; });
+    toast.querySelector('[data-action="later"]').addEventListener('click', () => { toast.remove(); toast = null; });
+    toast.querySelector('[data-action="restart"]').addEventListener('click', () => {
+      try { window.appHost.installUpdate(); } catch (e) {}
+    });
+    return toast;
+  };
+
+  const setText = (t) => { const el = toast && toast.querySelector('.updater-toast-text'); if (el) el.textContent = t; };
+  const setTitle = (t) => { const el = toast && toast.querySelector('.updater-toast-title'); if (el) el.textContent = t; };
+
+  window.appHost.onUpdate((e) => {
+    if (!e || !e.type) return;
+
+    if (e.type === 'available') {
+      build();
+      setTitle(`Downloading update${e.version ? ' v' + e.version : ''}`);
+      setText('Starting…');
+    } else if (e.type === 'progress') {
+      build();
+      const prog = toast.querySelector('.update-progress');
+      const fill = toast.querySelector('.update-progress-fill');
+      const label = toast.querySelector('.update-progress-label');
+      const pct = Math.max(0, Math.min(100, Math.round(e.percent || 0)));
+      prog.classList.remove('indeterminate');
+      if (fill) fill.style.width = `${pct}%`;
+      if (label) label.textContent = `${pct}%`;
+      setText(`Downloading…${formatSpeed(e.bytesPerSecond)}`);
+    } else if (e.type === 'downloaded') {
+      build();
+      setTitle('Update ready');
+      setText(`Version ${e.version || ''} downloaded.`.trim());
+      const fill = toast.querySelector('.update-progress-fill');
+      const label = toast.querySelector('.update-progress-label');
+      toast.querySelector('.update-progress').classList.remove('indeterminate');
+      if (fill) fill.style.width = '100%';
+      if (label) label.textContent = '100%';
+      const actions = toast.querySelector('.updater-toast-actions');
+      if (actions) actions.style.display = '';
+    } else if (e.type === 'error') {
+      // Stay quiet unless a download was already visibly in progress.
+      if (toast) { setText('Update failed. It will retry later.'); }
+    }
+  });
 }

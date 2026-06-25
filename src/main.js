@@ -25,9 +25,10 @@ import { VideoPlayer } from './components/player.js';
 import { EPGGrid } from './components/epg.js';
 import { navigation } from './components/tv-navigation.js';
 import { initCastUI, setCastContext } from './components/cast.js';
-import { checkForUpdate, downloadApp, startPeriodicUpdateCheck } from './components/update-check.js';
+import { checkForUpdate, downloadApp, startPeriodicUpdateCheck, initElectronUpdaterUI } from './components/update-check.js';
 import { openSearchKeyboard, openSortDropdown } from './components/tv-search.js';
 import { openGlobalSearch, setGlobalSearchQuery } from './components/global-search.js';
+import { isNativeAvailable } from './components/native-player.js';
 
 // Supabase Configuration for Remote Playlist Pairing
 // Swap these with your own Supabase project credentials
@@ -238,6 +239,10 @@ async function initApp() {
     if (/Windows NT/i.test(navigator.userAgent)) {
       startPeriodicUpdateCheck(3 * 60 * 60 * 1000);
     }
+  } else {
+    // Desktop: electron-updater handles downloads in the background; surface its
+    // progress + restart prompt via the in-app updater toast.
+    initElectronUpdaterUI();
   }
 
   // (Settings update check is wired on the Updates tile — see bindGlobalEvents.)
@@ -635,6 +640,21 @@ function refreshSettingsTiles() {
 
   const fmtEl = document.getElementById('tile-stream-format-val');
   if (fmtEl) fmtEl.textContent = (creds.stream_format === 'm3u8') ? 'HLS (.m3u8)' : 'MPEG-TS (.ts)';
+
+  const engineTile = document.getElementById('tile-player-engine');
+  const engineValEl = document.getElementById('tile-player-engine-val');
+  if (engineTile) {
+    const nativeAvail = isNativeAvailable();
+    engineTile.style.display = nativeAvail ? 'flex' : 'none';
+    if (nativeAvail && engineValEl) {
+      const saved = localStorage.getItem('playerEngine') || 'native';
+      if (saved === 'web') {
+        engineValEl.textContent = 'Web Player';
+      } else {
+        engineValEl.textContent = 'Native Player';
+      }
+    }
+  }
 
   const proxyOn = creds.proxy_streams ?? true;
   const proxyEl = document.getElementById('tile-proxy-val');
@@ -1891,7 +1911,20 @@ function refreshContinueWatching() {
 function renderContinueWatching(type) {
   const container = document.getElementById(type === 'movie' ? 'movies-continue' : 'series-continue');
   if (!container) return;
-  const items = getContinueWatching(type);
+  let items = getContinueWatching(type);
+  // For series, collapse to one card per show — the most recently watched
+  // episode. getContinueWatching() is sorted by lastWatched (newest first), so
+  // keeping the first occurrence per series keeps the latest episode. This is
+  // display-only; every episode's progress stays saved in storage.
+  if (type === 'series') {
+    const seen = new Set();
+    items = items.filter(it => {
+      const key = String(it.seriesId || it.seriesName || it.id);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
   if (!items.length) {
     container.innerHTML = '';
     container.classList.add('hidden');
@@ -2331,6 +2364,25 @@ function bindGlobalEvents() {
         if (state.user && state.user.credentials) state.user.credentials.stream_format = v;
         refreshSettingsTiles();
         navigation.setFocus('modal', document.getElementById('tile-stream-format'));
+      }
+    });
+  });
+
+  // --- Tile: Player Engine ---
+  document.getElementById('tile-player-engine')?.addEventListener('click', () => {
+    openSortDropdown({
+      title: 'Player Engine',
+      options: [
+        { value: 'native', label: 'Native Player' },
+        { value: 'web', label: 'Web Player (HTML5 / Built-in)' }
+      ],
+      current: localStorage.getItem('playerEngine') === 'web' ? 'web' : 'native',
+      onSelect: (v) => {
+        localStorage.setItem('playerEngine', v);
+        refreshSettingsTiles();
+        const activeLabel = v === 'web' ? 'Web Player' : 'Native Player';
+        showToast(`Player engine set to ${activeLabel}`, 'success');
+        navigation.setFocus('modal', document.getElementById('tile-player-engine'));
       }
     });
   });

@@ -1,0 +1,6 @@
+# Ported, Chromium-148-correct patches live here:
+#   media_hevc_ac3_chromium.patch   (applied in src/)
+#   media_hevc_ac3_electron.patch   (applied in src/electron/)
+#   media_hevc_ac3_ffmpeg.patch     (applied in src/third_party/ffmpeg/)
+# Run electron-codecs/fetch-baseline.{ps1,sh} to seed these from upstream, then
+# reconcile against Chromium 148 per electron-codecs/README.md.

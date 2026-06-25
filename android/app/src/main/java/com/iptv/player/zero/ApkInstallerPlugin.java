@@ -71,16 +71,56 @@ public class ApkInstallerPlugin extends Plugin {
                         return;
                     }
 
+                    // Total size for the progress bar. -1 (unknown) → JS shows an
+                    // indeterminate bar; APKs are well under 2GB so a long is plenty.
+                    long total;
+                    try {
+                        total = conn.getContentLengthLong();
+                    } catch (Throwable t) {
+                        total = conn.getContentLength();
+                    }
+
                     InputStream in = conn.getInputStream();
                     FileOutputStream out = new FileOutputStream(apk);
                     byte[] buf = new byte[8192];
                     int n;
+                    long downloaded = 0;
+                    int lastPct = -1;
+                    long lastEmitBytes = 0;
                     while ((n = in.read(buf)) != -1) {
                         out.write(buf, 0, n);
+                        downloaded += n;
+
+                        // Emit progress to JS. With a known total, emit on each whole
+                        // percent change; otherwise emit roughly every 512KB so the UI
+                        // can still show bytes downloaded.
+                        boolean emit = false;
+                        int pct = -1;
+                        if (total > 0) {
+                            pct = (int) (downloaded * 100 / total);
+                            if (pct != lastPct) { lastPct = pct; emit = true; }
+                        } else if (downloaded - lastEmitBytes >= 512 * 1024) {
+                            lastEmitBytes = downloaded;
+                            emit = true;
+                        }
+                        if (emit) {
+                            JSObject ev = new JSObject();
+                            ev.put("percent", pct);          // -1 when total unknown
+                            ev.put("downloaded", downloaded);
+                            ev.put("total", total);
+                            notifyListeners("downloadProgress", ev);
+                        }
                     }
                     out.flush();
                     out.close();
                     in.close();
+
+                    // Final 100% tick so the bar always lands full before install.
+                    JSObject doneEv = new JSObject();
+                    doneEv.put("percent", 100);
+                    doneEv.put("downloaded", downloaded);
+                    doneEv.put("total", total > 0 ? total : downloaded);
+                    notifyListeners("downloadProgress", doneEv);
 
                     final Uri uri = FileProvider.getUriForFile(getContext(),
                             getContext().getPackageName() + ".fileprovider", apk);

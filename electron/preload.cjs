@@ -11,8 +11,10 @@ contextBridge.exposeInMainWorld('electronCast', {
   list: () => ipcRenderer.invoke('cast:list'),
   // { deviceId, path, title, contentType, isLive }
   play: (opts) => ipcRenderer.invoke('cast:play', opts),
-  // { deviceId, action: 'pause'|'resume'|'stop'|'seek', value? }
+  // { deviceId, action: 'pause'|'resume'|'stop'|'seek'|'volume', value? }
   control: (opts) => ipcRenderer.invoke('cast:control', opts),
+  // { deviceId } → { currentTime, duration, volume } (best-effort; {} if unsupported)
+  status: (opts) => ipcRenderer.invoke('cast:status', opts),
   // Subscribe to live device-list updates; returns an unsubscribe fn.
   onDevices: (cb) => {
     const handler = (_e, list) => cb(list);
@@ -25,24 +27,19 @@ contextBridge.exposeInMainWorld('electronCast', {
 // rather than a child Electron window).
 contextBridge.exposeInMainWorld('appHost', {
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
-  nativeVideo: {
-    load: (opts) => ipcRenderer.invoke('native-video:load', opts),
-    play: () => ipcRenderer.invoke('native-video:play'),
-    pause: () => ipcRenderer.invoke('native-video:pause'),
-    seek: (position) => ipcRenderer.invoke('native-video:seek', position),
-    setVolume: (volume) => ipcRenderer.invoke('native-video:set-volume', volume),
-    setRect: (rect) => ipcRenderer.invoke('native-video:set-rect', rect),
-    stop: () => ipcRenderer.invoke('native-video:stop'),
-    getAudioTracks: () => ipcRenderer.invoke('native-video:get-audio-tracks'),
-    on: (event, cb) => {
-      const channel = `native-video:event:${event}`;
-      const handler = (_e, data) => cb(data);
-      ipcRenderer.on(channel, handler);
-      return {
-        remove: () => {
-          ipcRenderer.removeListener(channel, handler);
-        }
-      };
-    }
-  }
+
+  // Auto-updater (electron-updater) → in-app UI. Subscribe to update lifecycle
+  // events; cb receives { type: 'available'|'progress'|'downloaded'|'error', ... }.
+  // Returns an unsubscribe function.
+  onUpdate: (cb) => {
+    const channels = ['update:available', 'update:progress', 'update:downloaded', 'update:error'];
+    const handlers = channels.map((ch) => {
+      const handler = (_e, data) => cb({ type: ch.split(':')[1], ...(data || {}) });
+      ipcRenderer.on(ch, handler);
+      return [ch, handler];
+    });
+    return () => handlers.forEach(([ch, handler]) => ipcRenderer.removeListener(ch, handler));
+  },
+  // Trigger install + restart once an update has finished downloading.
+  installUpdate: () => ipcRenderer.invoke('update:install')
 });

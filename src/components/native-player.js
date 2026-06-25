@@ -4,8 +4,9 @@
  * live) streams use — you get video with no audio, or nothing at all. This
  * routes playback to a real native player that uses the device's hardware
  * codecs (same as IPTV Smarters / VLC):
- *   - Android (APK):  ExoPlayer (Media3) via the NativeVideo Capacitor plugin.
- *   - Electron (PC):  embedded mpv via the appHost.nativeVideo IPC bridge.
+ *   - Android (APK):  libVLC via the NativeVideo Capacitor plugin.
+ *   - Electron (PC):  no native layer → premium VOD goes through the server
+ *                     ffmpeg transcode (/api/transcode); everything else <video>.
  *   - Web:            unavailable (no native layer) → caller uses <video>.
  *
  * The player.js engine tries this first and falls back to the browser path on
@@ -22,26 +23,12 @@ const AndroidNative = (() => {
   return null;
 })();
 
-// Electron exposes a native-video bridge on the preload (window.appHost.nativeVideo).
-const ElectronNative = (() => {
-  try {
-    if (window.appHost && window.appHost.nativeVideo) return window.appHost.nativeVideo;
-  } catch (e) {}
-  return null;
-})();
-
 export function isNativeAvailable() {
-  return !!(AndroidNative || ElectronNative);
+  return !!AndroidNative;
 }
 
-export function nativeBackend() {
-  if (AndroidNative) return 'android';
-  if (ElectronNative) return 'electron';
-  return null;
-}
-
-// Normalize both backends behind one interface. All methods are async and must
-// never throw synchronously (callers race them against a fallback timer).
+// Normalize the native backend behind one interface. All methods are async and
+// must never throw synchronously (callers race them against a fallback timer).
 function impl() {
   if (AndroidNative) {
     return {
@@ -54,28 +41,6 @@ function impl() {
       stop: () => AndroidNative.stop(),
       getAudioTracks: () => AndroidNative.getAudioTracks(),
       on: (event, cb) => AndroidNative.addListener(event, cb),
-    };
-  }
-  if (ElectronNative) {
-    return {
-      load: (o) => ElectronNative.load(o),
-      play: () => ElectronNative.play(),
-      pause: () => ElectronNative.pause(),
-      seek: (position) => ElectronNative.seek(position),
-      setVolume: (volume) => ElectronNative.setVolume(volume),
-      setRect: (r) => {
-        if (!ElectronNative.setRect) return null;
-        const dpr = window.devicePixelRatio || 1;
-        return ElectronNative.setRect({
-          x: r.x / dpr,
-          y: r.y / dpr,
-          w: r.w / dpr,
-          h: r.h / dpr
-        });
-      },
-      stop: () => ElectronNative.stop(),
-      getAudioTracks: () => ElectronNative.getAudioTracks(),
-      on: (event, cb) => ElectronNative.on(event, cb),
     };
   }
   return null;

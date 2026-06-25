@@ -4,7 +4,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { proxifyImage } from './xtream-api.js';
 import {
-  isNativeAvailable, nativeBackend, nativePlay, nativeStop, nativePlayCtl, nativePauseCtl,
+  isNativeAvailable, nativePlay, nativeStop, nativePlayCtl, nativePauseCtl,
   nativeSeek, nativeSetVolume, nativeSetRect
 } from './native-player.js';
 
@@ -233,22 +233,27 @@ export class VideoPlayer {
     if (this.seek) {
       this.video.addEventListener('timeupdate', () => {
         if (!this.isSeeking) {
-          const d = this.video.duration;
+          const d = this._totalDuration();
+          const cur = this._currentTime();
           if (d && isFinite(d)) {
-            this.seek.value = (this.video.currentTime / d) * 100;
-            this.timeCurrent.textContent = this.formatTime(this.video.currentTime);
+            this.seek.value = (cur / d) * 100;
+            this.timeCurrent.textContent = this.formatTime(cur);
           }
         }
         // Report progress for Continue Watching (VOD / series only)
         if (this.isVodActive && this.onVodProgress) {
-          this.onVodProgress(this.video.currentTime, this.video.duration);
+          this.onVodProgress(this._currentTime(), this._totalDuration());
         }
       });
       const refreshDuration = () => {
-        const d = this.video.duration;
+        const d = this._totalDuration();
         this.timeDuration.textContent = (d && isFinite(d)) ? this.formatTime(d) : '';
       };
+      this._refreshTimeUi = refreshDuration;
       const seekToResume = () => {
+        // A transcoded stream starts at its requested offset, so the element's
+        // currentTime is already correct (0 = _transcodeOffset) — don't re-seek it.
+        if (this._transcodeActive) return;
         if (this.pendingSeek > 0 && isFinite(this.video.duration)) {
           try { this.video.currentTime = this.pendingSeek; } catch (e) {}
           this.pendingSeek = 0;
@@ -266,7 +271,14 @@ export class VideoPlayer {
           this.isSeeking = false;
           return;
         }
-        const d = this.video.duration;
+        const d = this._totalDuration();
+        if (this._transcodeActive) {
+          // Piped fMP4 isn't byte-range seekable — re-request the transcode at the
+          // new offset (server -ss) and resume from there.
+          if (d && isFinite(d)) this._seekTranscode((this.seek.value / 100) * d);
+          this.isSeeking = false;
+          return;
+        }
         if (d && isFinite(d)) this.video.currentTime = (this.seek.value / 100) * d;
         this.isSeeking = false;
       });
@@ -557,6 +569,16 @@ export class VideoPlayer {
     this._triedMpegtsRewritten = false;
     this._triedHlsRewritten = false;
     this._triedExtensionless = false;
+    // Desktop-only: server-side ffmpeg transcode fallback for premium VOD
+    // (HEVC + E-AC3) the browser can't play. Two tiers: audio-only, then full.
+    this._triedTranscodeAudio = false;
+    this._triedTranscodeFull = false;
+    // Transcode seek state: active flag, current segment base offset (s), real
+    // total duration (s, from /api/probe), and which tier is streaming.
+    this._transcodeActive = false;
+    this._transcodeOffset = 0;
+    this._transcodeDuration = 0;
+    this._transcodeMode = null;
     // Bumped on every new stream so a pending live reconnect for an old
     // channel cancels itself once the user has switched away.
     this._streamGen = (this._streamGen || 0) + 1;
@@ -569,14 +591,20 @@ export class VideoPlayer {
     this._beginPlayback(url, isVod, this.pendingSeek);
   }
 
-  // Native-first playback: try the device's native player (ExoPlayer on Android,
-  // mpv on Electron) which decodes E-AC3/AC3, HEVC and MKV that the browser
-  // <video> can't. On any failure/timeout, fall back to the browser engine so
-  // native issues never regress working playback. Web has no native layer.
+  // Native-first playback: try the device's native player (libVLC on Android) which
+  // decodes E-AC3/AC3, HEVC and MKV that the browser <video> can't. On any
+  // failure/timeout, fall back to the browser engine so native issues never
+  // regress working playback. Electron/web have no native layer (Electron uses the
+  // server ffmpeg transcode fallback instead; see _playViaTranscode).
   async _beginPlayback(url, isVod, resumeTime = 0) {
     this._nativeActive = false;
     this._nativeSawLife = false;
-    if (isNativeAvailable() && !this._castMode) {
+    let useNative = true;
+    try {
+      useNative = localStorage.getItem('playerEngine') !== 'web';
+    } catch (e) {}
+
+    if (isNativeAvailable() && useNative && !this._castMode) {
       try {
         // debug toast removed in production
         await nativePlay(
@@ -1129,6 +1157,17 @@ export class VideoPlayer {
         // Skip extensionless direct fallback if URL was already extensionless
         this._handleVodPlaybackFallback(err);
       }
+    } else if (this._isElectron() && !this._triedTranscodeAudio) {
+      // Desktop: browser couldn't play it (likely HEVC + E-AC3). Hand the stream
+      // to the server's ffmpeg transcode — first audio-only (cheap: copy video,
+      // E-AC3 -> AAC), which works whenever the GPU can HW-decode the HEVC video.
+      this._triedTranscodeAudio = true;
+      this._playViaTranscode('audio');
+    } else if (this._isElectron() && !this._triedTranscodeFull) {
+      // Audio-only still failed -> the video codec isn't decodable here either,
+      // so transcode video too (H.264). Heavier, but plays on any GPU.
+      this._triedTranscodeFull = true;
+      this._playViaTranscode('full');
     } else {
       // Exhausted every browser fallback — stop the watchdog and report.
       clearTimeout(this._vodLoadTimeout);
@@ -1141,6 +1180,107 @@ export class VideoPlayer {
 
       this.showError(errMsg);
     }
+  }
+
+  // True only inside the Electron desktop app (preload exposes appHost/electronCast).
+  // Web and Android never transcode (Android uses libVLC; web has no ffmpeg host).
+  _isElectron() {
+    return !!(window.appHost || window.electronCast);
+  }
+
+  // Build the /api/transcode URL from a resolved playback URL. The resolved URL is
+  // either /api/proxy?url=<target> or a direct provider URL; we hand the real
+  // target to ffmpeg so it streams from the source, not back through our proxy.
+  _buildTranscodeUrl(url, mode = 'audio', start = 0) {
+    const target = this._transcodeTarget(url);
+    const params = new URLSearchParams({ url: target, mode });
+    if (start > 0) params.set('start', String(Math.floor(start)));
+    return `/api/transcode?${params.toString()}`;
+  }
+
+  // Resolve the real upstream URL ffmpeg should fetch (unwrap our /api/proxy, make
+  // relative URLs absolute). Shared by transcode + probe.
+  _transcodeTarget(url) {
+    let target = url;
+    try {
+      if (/\/api\/proxy/.test(url)) {
+        const m = url.match(/[?&]url=([^&]+)/);
+        if (m) target = decodeURIComponent(m[1]);
+      } else if (!/^https?:\/\//i.test(url)) {
+        target = new URL(url, window.location.origin).href;
+      }
+    } catch (e) {}
+    return target;
+  }
+
+  // Total duration (s) the seek bar should use: the probed real length for a
+  // transcoded stream (the piped fMP4's own duration is just the buffered amount),
+  // else the element's duration.
+  _totalDuration() {
+    if (this._transcodeActive && this._transcodeDuration > 0) return this._transcodeDuration;
+    return this.video.duration;
+  }
+
+  // Logical current time (s): a transcoded segment plays from 0 but represents
+  // _transcodeOffset into the title, so add the offset back.
+  _currentTime() {
+    if (this._transcodeActive) return this._transcodeOffset + (this.video.currentTime || 0);
+    return this.video.currentTime;
+  }
+
+  // Scrub on a transcoded stream: re-request the transcode starting at `target`
+  // seconds (server applies -ss), tracking the new base offset.
+  _seekTranscode(target) {
+    this._transcodeOffset = Math.max(0, Math.floor(target));
+    const turl = this._buildTranscodeUrl(this._streamUrl, this._transcodeMode || 'audio', this._transcodeOffset);
+    this.showSpinner();
+    this.destroyHls();
+    this.destroyMpegts();
+    this._armVodWatchdog(25000);
+    this.video.src = turl;
+    this.video.load();
+    this.video.play()
+      .then(() => this.hideSpinner())
+      .catch((err) => { console.error('Transcode seek play failed:', err); });
+  }
+
+  // Play the current VOD via the server ffmpeg transcode (desktop only). The
+  // result is a fragmented MP4 the <video> element plays directly. Transcode
+  // start-up is slower than a direct open, so the watchdog window is widened.
+  // NOTE: a piped transcode isn't byte-range seekable; scrubbing would need a
+  // re-request with ?start= (TODO). Resume offset is honored via pendingSeek.
+  _playViaTranscode(mode) {
+    const start = this._streamIsVod ? (this.pendingSeek || 0) : 0;
+    this._transcodeActive = true;
+    this._transcodeMode = mode;
+    this._transcodeOffset = start;
+    this.pendingSeek = 0; // the transcode itself starts at `start`; don't re-seek the element
+    const turl = this._buildTranscodeUrl(this._streamUrl, mode, start);
+    console.warn(`Falling back to server transcode (${mode}): ${turl}`);
+    // Probe the real total duration once so the seek bar is scrubbable (the piped
+    // fMP4 reports only the buffered length). Best-effort; bar falls back if it fails.
+    if (!this._transcodeDuration && this._streamIsVod) {
+      const target = this._transcodeTarget(this._streamUrl);
+      fetch(`/api/probe?url=${encodeURIComponent(target)}`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (d && d.duration > 0 && this._transcodeActive) {
+            this._transcodeDuration = d.duration;
+            if (this._refreshTimeUi) this._refreshTimeUi();
+          }
+        })
+        .catch(() => {});
+    }
+    this.destroyHls();
+    this.destroyMpegts();
+    this._armVodWatchdog(25000);
+    this.video.src = turl;
+    this.video.load();
+    this.video.play()
+      .then(() => this.hideSpinner())
+      .catch((err) => {
+        console.error(`Transcode (${mode}) play failed:`, err);
+      });
   }
 
   // Briefly surface the current channel (logo, name, time/date) plus a short
@@ -1291,6 +1431,10 @@ export class VideoPlayer {
       document.body.classList.remove('native-video-active');
     }
     this._setFsDirect(false);
+    this._transcodeActive = false;
+    this._transcodeOffset = 0;
+    this._transcodeDuration = 0;
+    this._transcodeMode = null;
     document.body.classList.remove('player-session');
     // Release any fullscreen orientation lock so the app returns to free rotation.
     if (Capacitor.isNativePlatform()) { try { ScreenOrientation.unlock().catch(() => {}); } catch (e) {} }

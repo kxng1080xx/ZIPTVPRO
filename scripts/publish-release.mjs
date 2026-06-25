@@ -18,7 +18,8 @@ import { dirname, join } from 'path';
 
 const OWNER = 'kxng1080xx';
 const REPO = 'ZIPTVPRO';
-const ASSET_NAME = 'latest.exe';
+const EXE_ASSET_NAME = 'latest.exe';
+const APK_ASSET_NAME = 'app.apk';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -40,10 +41,31 @@ if (!token) {
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const version = pkg.version;
 const tag = `v${version}`;
-const exePath = join(root, ASSET_NAME);
+const exePath = join(root, EXE_ASSET_NAME);
+const apkPath = join(root, APK_ASSET_NAME);
+
+// Verify version alignment between package.json and android/app/build.gradle
+const gradlePath = join(root, 'android', 'app', 'build.gradle');
+const gradle = readFileSync(gradlePath, 'utf8');
+const match = gradle.match(/versionName\s+"([^"]*)"/);
+if (!match) {
+  console.error('ERROR: Could not find versionName in android/app/build.gradle');
+  process.exit(1);
+}
+const gradleVersion = match[1];
+if (gradleVersion !== version) {
+  console.error(`ERROR: Version mismatch! package.json has ${version} but android/app/build.gradle has ${gradleVersion}.`);
+  process.exit(1);
+}
+console.log(`Version alignment verified: ${version}`);
 
 try { statSync(exePath); } catch {
-  console.error(`ERROR: ${ASSET_NAME} not found. Run "npm run electron:dist" first.`);
+  console.error(`ERROR: ${EXE_ASSET_NAME} not found. Run "npm run electron:dist" first.`);
+  process.exit(1);
+}
+
+try { statSync(apkPath); } catch {
+  console.error(`ERROR: ${APK_ASSET_NAME} not found. Run "npm run apk" first.`);
   process.exit(1);
 }
 
@@ -86,32 +108,40 @@ let release;
   }
 }
 
-// 2. Remove any existing asset named latest.exe so the new upload sticks.
+// 2. Remove any existing assets named latest.exe or ZIPTV-Pro.apk so the new uploads stick.
 for (const asset of release.assets || []) {
-  if (asset.name === ASSET_NAME) {
-    console.log(`Deleting existing asset ${ASSET_NAME} (id ${asset.id})...`);
+  if (asset.name === EXE_ASSET_NAME || asset.name === APK_ASSET_NAME) {
+    console.log(`Deleting existing asset ${asset.name} (id ${asset.id})...`);
     await gh(`${api}/repos/${OWNER}/${REPO}/releases/assets/${asset.id}`, { method: 'DELETE' });
   }
 }
 
-// 3. Upload latest.exe.
-const size = statSync(exePath).size;
-const fd = openSync(exePath, 'r');
-const buf = Buffer.allocUnsafe(size);
-readSync(fd, buf, 0, size, 0);
-closeSync(fd);
+// 3. Helper to upload an asset
+async function uploadAsset(filePath, assetName) {
+  const size = statSync(filePath).size;
+  const fd = openSync(filePath, 'r');
+  const buf = Buffer.allocUnsafe(size);
+  readSync(fd, buf, 0, size, 0);
+  closeSync(fd);
 
-console.log(`Uploading ${ASSET_NAME} (${(size / 1048576).toFixed(1)} MB)...`);
-const up = await fetch(
-  `${uploads}/repos/${OWNER}/${REPO}/releases/${release.id}/assets?name=${ASSET_NAME}`,
-  {
-    method: 'POST',
-    headers: { ...headers, 'Content-Type': 'application/octet-stream', 'Content-Length': String(size) },
-    body: buf,
+  console.log(`Uploading ${assetName} (${(size / 1048576).toFixed(1)} MB)...`);
+  const up = await fetch(
+    `${uploads}/repos/${OWNER}/${REPO}/releases/${release.id}/assets?name=${assetName}`,
+    {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/octet-stream', 'Content-Length': String(size) },
+      body: buf,
+    }
+  );
+  if (!up.ok) {
+    throw new Error(`Upload failed -> ${up.status} ${await up.text()}`);
   }
-);
-if (!up.ok) {
-  throw new Error(`Upload failed -> ${up.status} ${await up.text()}`);
+  console.log(`Uploaded ${assetName} successfully.`);
 }
 
-console.log(`Done. https://github.com/${OWNER}/${REPO}/releases/latest/download/${ASSET_NAME} -> ${tag}`);
+await uploadAsset(exePath, EXE_ASSET_NAME);
+await uploadAsset(apkPath, APK_ASSET_NAME);
+
+console.log(`Done. Releases available at:`);
+console.log(`  - https://github.com/${OWNER}/${REPO}/releases/latest/download/${EXE_ASSET_NAME}`);
+console.log(`  - https://github.com/${OWNER}/${REPO}/releases/latest/download/${APK_ASSET_NAME}`);

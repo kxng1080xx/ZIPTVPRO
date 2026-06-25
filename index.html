@@ -335,6 +335,35 @@
                   <i data-lucide="cast" class="cast-overlay-icon"></i>
                   <div class="cast-overlay-title">Playing on TV</div>
                   <div class="cast-overlay-device" id="cast-overlay-device"></div>
+
+                  <!-- Seek bar (VOD only; hidden for live) -->
+                  <div class="cast-overlay-seek" id="cast-overlay-seek" style="display:none;">
+                    <span class="cast-seek-time" id="cast-seek-cur">0:00</span>
+                    <input type="range" class="cast-seek-bar" id="cast-seek-bar" min="0" max="100" value="0">
+                    <span class="cast-seek-time" id="cast-seek-dur">0:00</span>
+                  </div>
+
+                  <!-- Transport controls -->
+                  <div class="cast-overlay-controls" id="cast-overlay-nav">
+                    <button class="cast-ctrl-btn" id="cast-ctrl-prev" title="Previous">
+                      <i data-lucide="skip-back"></i>
+                    </button>
+                    <button class="cast-ctrl-btn cast-ctrl-main" id="cast-ctrl-playpause" title="Pause">
+                      <i data-lucide="pause"></i>
+                    </button>
+                    <button class="cast-ctrl-btn" id="cast-ctrl-next" title="Next">
+                      <i data-lucide="skip-forward"></i>
+                    </button>
+                  </div>
+
+                  <!-- Volume -->
+                  <div class="cast-overlay-volume">
+                    <button class="cast-ctrl-btn" id="cast-ctrl-mute" title="Mute">
+                      <i data-lucide="volume-2"></i>
+                    </button>
+                    <input type="range" class="cast-vol-bar" id="cast-vol-bar" min="0" max="100" value="100">
+                  </div>
+
                   <button class="cast-overlay-stop" id="cast-overlay-stop">
                     <i data-lucide="square"></i> Stop Casting
                   </button>
@@ -728,6 +757,12 @@
             <div class="settings-tile-icon"><i data-lucide="clapperboard"></i></div>
             <div class="settings-tile-title">Stream Format</div>
             <div class="settings-tile-sub">Current: <strong id="tile-stream-format-val">—</strong></div>
+          </button>
+
+          <button class="settings-tile" id="tile-player-engine" tabindex="0" style="display: none;">
+            <div class="settings-tile-icon"><i data-lucide="play-circle"></i></div>
+            <div class="settings-tile-title">Player Engine</div>
+            <div class="settings-tile-sub">Current: <strong id="tile-player-engine-val">Native Player</strong></div>
           </button>
 
           <button class="settings-tile" id="tile-proxy" tabindex="0">
