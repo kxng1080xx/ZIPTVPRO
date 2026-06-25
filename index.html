@@ -331,42 +331,12 @@
                 </div>
 
                 <!-- Casting state overlay (covers the video while a cast is active) -->
+                <!-- Backdrop only: the real #player-controls bar sits above this and
+                     drives playback on the TV while casting. -->
                 <div class="player-cast-overlay hidden" id="player-cast-overlay">
                   <i data-lucide="cast" class="cast-overlay-icon"></i>
                   <div class="cast-overlay-title">Playing on TV</div>
                   <div class="cast-overlay-device" id="cast-overlay-device"></div>
-
-                  <!-- Seek bar (VOD only; hidden for live) -->
-                  <div class="cast-overlay-seek" id="cast-overlay-seek" style="display:none;">
-                    <span class="cast-seek-time" id="cast-seek-cur">0:00</span>
-                    <input type="range" class="cast-seek-bar" id="cast-seek-bar" min="0" max="100" value="0">
-                    <span class="cast-seek-time" id="cast-seek-dur">0:00</span>
-                  </div>
-
-                  <!-- Transport controls -->
-                  <div class="cast-overlay-controls" id="cast-overlay-nav">
-                    <button class="cast-ctrl-btn" id="cast-ctrl-prev" title="Previous">
-                      <i data-lucide="skip-back"></i>
-                    </button>
-                    <button class="cast-ctrl-btn cast-ctrl-main" id="cast-ctrl-playpause" title="Pause">
-                      <i data-lucide="pause"></i>
-                    </button>
-                    <button class="cast-ctrl-btn" id="cast-ctrl-next" title="Next">
-                      <i data-lucide="skip-forward"></i>
-                    </button>
-                  </div>
-
-                  <!-- Volume -->
-                  <div class="cast-overlay-volume">
-                    <button class="cast-ctrl-btn" id="cast-ctrl-mute" title="Mute">
-                      <i data-lucide="volume-2"></i>
-                    </button>
-                    <input type="range" class="cast-vol-bar" id="cast-vol-bar" min="0" max="100" value="100">
-                  </div>
-
-                  <button class="cast-overlay-stop" id="cast-overlay-stop">
-                    <i data-lucide="square"></i> Stop Casting
-                  </button>
                 </div>
 
                 <!-- Channel Logo Overlay (Watermark top left when overlay hidden) -->

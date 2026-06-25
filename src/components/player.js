@@ -156,10 +156,17 @@ export class VideoPlayer {
       this.video.volume = vol;
       this.video.muted = vol === 0;
       if (this._nativeActive) nativeSetVolume(vol);
+      // While casting, also drive the TV's volume.
+      if (this._castMode && window.castControls && window.castControls.isActive()) {
+        window.castControls.setVolume(vol);
+      }
       this.updateVolumeIcon();
     });
 
     this.volumeBtn.addEventListener('click', () => {
+      if (this._castMode && window.castControls && window.castControls.isActive()) {
+        window.castControls.toggleMute();
+      }
       this.video.muted = !this.video.muted;
       this.updateVolumeIcon();
     });
@@ -265,6 +272,12 @@ export class VideoPlayer {
       this.video.addEventListener('durationchange', refreshDuration);
       this.seek.addEventListener('input', () => { this.isSeeking = true; });
       this.seek.addEventListener('change', () => {
+        // While casting, seek the TV (the bar is a 0..100 percentage).
+        if (this._castMode && window.castControls && window.castControls.isActive()) {
+          window.castControls.seekFraction(this.seek.value / 100);
+          this.isSeeking = false;
+          return;
+        }
         if (this._nativeActive) {
           const d = this._nativeDuration || 0;
           if (d > 0) nativeSeek((this.seek.value / 100) * d);
@@ -1406,6 +1419,11 @@ export class VideoPlayer {
   }
 
   togglePlay() {
+    // While casting, the control bar drives the TV, not the local <video>.
+    if (this._castMode && window.castControls && window.castControls.isActive()) {
+      window.castControls.playPause();
+      return;
+    }
     if (this._nativeActive) {
       if (this._nativePaused) { nativePlayCtl(); this._nativePaused = false; this._setPlayPauseIcon(true); }
       else { nativePauseCtl(); this._nativePaused = true; this._setPlayPauseIcon(false); }
@@ -1419,6 +1437,11 @@ export class VideoPlayer {
   }
 
   stop() {
+    // While casting, the bar's Stop ends the cast (and returns to local playback).
+    if (this._castMode && window.castControls && window.castControls.isActive()) {
+      window.castControls.stop();
+      return;
+    }
     clearTimeout(this._vodLoadTimeout);
     this._stopNativeStallWatch();
     this._stopRectSync();
@@ -1591,10 +1614,14 @@ export class VideoPlayer {
     this.hideSpinner();
     const overlay = document.getElementById('player-cast-overlay');
     if (overlay) overlay.classList.remove('hidden');
+    // Keep the control bar visible + interactive over the cast backdrop (CSS uses
+    // body.casting to force the otherwise hover-only overlay on).
+    document.body.classList.add('casting');
   }
 
   resumeLocalPlayback() {
     this._castMode = false;
+    document.body.classList.remove('casting');
     const overlay = document.getElementById('player-cast-overlay');
     if (overlay) overlay.classList.add('hidden');
     if (this._streamUrl) {

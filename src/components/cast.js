@@ -113,45 +113,9 @@ export function initCastUI() {
     btn.style.display = '';
     btn.addEventListener('click', openCastPicker);
   }
-  // --- Casting overlay transport controls ----------------------------------
-  const overlayStop = document.getElementById('cast-overlay-stop');
-  if (overlayStop) overlayStop.addEventListener('click', stopCasting);
-
-  const playPauseBtn = document.getElementById('cast-ctrl-playpause');
-  if (playPauseBtn) playPauseBtn.addEventListener('click', toggleCastPlayPause);
-
-  const prevBtn = document.getElementById('cast-ctrl-prev');
-  if (prevBtn) prevBtn.addEventListener('click', () => {
-    if (window.playerInstance && window.playerInstance.onPrevChannelCallback) {
-      window.playerInstance.onPrevChannelCallback();
-    }
-  });
-  const nextBtn = document.getElementById('cast-ctrl-next');
-  if (nextBtn) nextBtn.addEventListener('click', () => {
-    if (window.playerInstance && window.playerInstance.onNextChannelCallback) {
-      window.playerInstance.onNextChannelCallback();
-    }
-  });
-
-  const muteBtn = document.getElementById('cast-ctrl-mute');
-  if (muteBtn) muteBtn.addEventListener('click', toggleCastMute);
-
-  const volBar = document.getElementById('cast-vol-bar');
-  if (volBar) volBar.addEventListener('input', () => {
-    const v = Math.max(0, Math.min(1, Number(volBar.value) / 100));
-    lastVolume = v > 0 ? v : lastVolume;
-    backendControl('volume', v);
-    updateCastVolIcon(v);
-  });
-
-  const seekBar = document.getElementById('cast-seek-bar');
-  if (seekBar) {
-    seekBar.addEventListener('input', () => { seekDragging = true; });
-    seekBar.addEventListener('change', () => {
-      backendControl('seek', Number(seekBar.value));
-      seekDragging = false;
-    });
-  }
+  // Transport controls are the player's own #player-controls bar — the player
+  // routes its play/pause, seek, volume, and skip to the TV while casting (see
+  // window.castControls below). No separate cast control wiring needed here.
 
   // Push updates as new devices are discovered while the picker is open.
   backendOnDevices((list) => {
@@ -424,63 +388,54 @@ async function stopCasting() {
   render();
 }
 
-// --- Casting overlay control helpers ----------------------------------------
-// Configure the overlay controls for the current cast: reset play/pause state,
-// show the seek bar only for VOD, label prev/next, and start/stop the status
-// poll that drives the seek bar.
+// --- Casting drives the real #player-controls bar ---------------------------
+let castDuration = 0; // last known media duration (s), for seek-fraction → seconds
+
+// Public API the player's control bar calls while a cast is active. The player
+// checks castControls.isActive() in its own handlers and routes play/pause,
+// seek, volume, mute, and stop here instead of touching the local <video>.
+window.castControls = {
+  isActive: () => !!activeDeviceId,
+  playPause: () => { toggleCastPlayPause(); },
+  // frac is 0..1 from the player's percentage seek bar.
+  seekFraction: (frac) => {
+    if (!activeDeviceId || !castDuration) return;
+    const sec = Math.max(0, Math.min(castDuration, frac * castDuration));
+    backendControl('seek', sec);
+  },
+  setVolume: (v) => {
+    if (!activeDeviceId) return;
+    const vol = Math.max(0, Math.min(1, v));
+    if (vol > 0) lastVolume = vol;
+    backendControl('volume', vol);
+  },
+  toggleMute: () => {
+    if (!activeDeviceId) return;
+    const slider = document.getElementById('player-volume-slider');
+    const cur = slider ? Number(slider.value) : lastVolume;
+    if (cur > 0) lastVolume = cur;
+    const next = cur > 0 ? 0 : (lastVolume > 0 ? lastVolume : 1);
+    if (slider) slider.value = String(next);
+    backendControl('volume', next);
+  },
+  stop: () => { stopCasting(); },
+};
+
+// Configure the player bar for a freshly-started cast: reflect "playing" on the
+// play/pause button and start the position poll (VOD only — live has no seek,
+// and the bar's vod-only seek row is already hidden for live).
 function refreshCastControls() {
   castPaused = false;
-  updateCastPlayPauseIcon();
-
-  const isLive = !!(castCtx && castCtx.isLive);
-  const seekWrap = document.getElementById('cast-overlay-seek');
-  if (seekWrap) seekWrap.style.display = isLive ? 'none' : '';
-
-  // Prev/Next are channel-zapping for live, episode-zapping for series, and not
-  // useful for a single movie — hide them only for movies.
-  const navWrap = document.getElementById('cast-overlay-nav');
-  if (navWrap) navWrap.style.display = (castCtx && castCtx.type === 'movie') ? 'none' : '';
-
-  const volBar = document.getElementById('cast-vol-bar');
-  if (volBar) volBar.value = String(Math.round(lastVolume * 100));
-  updateCastVolIcon(lastVolume);
-
-  if (isLive) stopStatusPoll(); else startStatusPoll();
+  castDuration = 0;
+  try { if (window.playerInstance) window.playerInstance._setPlayPauseIcon(true); } catch (e) {}
+  if (castCtx && castCtx.isLive) stopStatusPoll(); else startStatusPoll();
 }
 
 async function toggleCastPlayPause() {
   if (!activeDeviceId) return;
   castPaused = !castPaused;
   await backendControl(castPaused ? 'pause' : 'resume');
-  updateCastPlayPauseIcon();
-}
-
-function toggleCastMute() {
-  const volBar = document.getElementById('cast-vol-bar');
-  const cur = volBar ? Number(volBar.value) / 100 : lastVolume;
-  let next;
-  if (cur > 0) { lastVolume = cur; next = 0; }
-  else { next = lastVolume > 0 ? lastVolume : 1; }
-  if (volBar) volBar.value = String(Math.round(next * 100));
-  backendControl('volume', next);
-  updateCastVolIcon(next);
-}
-
-function updateCastPlayPauseIcon() {
-  const btn = document.getElementById('cast-ctrl-playpause');
-  if (!btn) return;
-  btn.innerHTML = `<i data-lucide="${castPaused ? 'play' : 'pause'}"></i>`;
-  btn.title = castPaused ? 'Resume' : 'Pause';
-  if (window.lucide) lucide.createIcons({ scope: btn });
-}
-
-function updateCastVolIcon(v) {
-  const btn = document.getElementById('cast-ctrl-mute');
-  if (!btn) return;
-  const icon = v <= 0 ? 'volume-x' : (v < 0.4 ? 'volume-1' : 'volume-2');
-  btn.innerHTML = `<i data-lucide="${icon}"></i>`;
-  btn.title = v <= 0 ? 'Unmute' : 'Mute';
-  if (window.lucide) lucide.createIcons({ scope: btn });
+  try { if (window.playerInstance) window.playerInstance._setPlayPauseIcon(!castPaused); } catch (e) {}
 }
 
 function fmtTime(secs) {
@@ -493,25 +448,24 @@ function fmtTime(secs) {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-// Poll the receiver for VOD position/duration to drive the seek bar. DLNA status
-// is best-effort; if the device reports nothing the bar simply stays put.
+// Poll the receiver for VOD position/duration and update the player's own seek
+// bar (#player-seek is a 0..100 percentage). Best-effort: if the device reports
+// nothing the bar simply stays put. Skips updates while the user is scrubbing.
 function startStatusPoll() {
   stopStatusPoll();
   statusPollTimer = setInterval(async () => {
-    if (!activeDeviceId || seekDragging) return;
+    if (!activeDeviceId) return;
+    if (window.playerInstance && window.playerInstance.isSeeking) return;
     const st = await backendStatus();
-    const bar = document.getElementById('cast-seek-bar');
-    const curEl = document.getElementById('cast-seek-cur');
-    const durEl = document.getElementById('cast-seek-dur');
-    if (!bar) return;
-    if (st.duration && isFinite(st.duration)) bar.max = String(Math.floor(st.duration));
-    if (st.currentTime != null && isFinite(st.currentTime)) bar.value = String(Math.floor(st.currentTime));
-    if (curEl) curEl.textContent = fmtTime(st.currentTime);
-    if (durEl) durEl.textContent = fmtTime(st.duration);
-    if (st.volume != null) {
-      const volBar = document.getElementById('cast-vol-bar');
-      if (volBar && !volBar.matches(':active')) volBar.value = String(Math.round(st.volume * 100));
+    if (st.duration && isFinite(st.duration)) castDuration = st.duration;
+    const bar = document.getElementById('player-seek');
+    const curEl = document.getElementById('player-time-current');
+    const durEl = document.getElementById('player-time-duration');
+    if (bar && castDuration && st.currentTime != null && isFinite(st.currentTime)) {
+      bar.value = String(Math.min(100, (st.currentTime / castDuration) * 100));
     }
+    if (curEl && st.currentTime != null) curEl.textContent = fmtTime(st.currentTime);
+    if (durEl && castDuration) durEl.textContent = fmtTime(castDuration);
   }, 1000);
 }
 

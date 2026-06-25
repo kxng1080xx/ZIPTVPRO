@@ -1,4 +1,4 @@
-# ZIPTV Pro v4.5.1
+# ZIPTV Pro v4.5.3
 
 Casting reliability overhaul, new on-TV playback controls, and shutdown cleanup.
 

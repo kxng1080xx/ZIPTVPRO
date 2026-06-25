@@ -6364,17 +6364,24 @@ body.epg-fullscreen-active .epg-section-container {
 .player-cast-overlay {
   position: absolute;
   inset: 0;
-  z-index: 30;
+  /* Below the control bar (z-index 10) so the bar sits on top and drives the
+     cast; this is just the "Playing on TV" backdrop. */
+  z-index: 8;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* Sit in the upper third so the icon/title/device don't collide with the
+     control bar's centered play/pause button. */
+  justify-content: flex-start;
+  padding-top: 16%;
   gap: 12px;
   background: radial-gradient(circle at center, #0b1b2e 0%, #05080f 100%);
   text-align: center;
-  padding: 24px;
 }
 .player-cast-overlay.hidden { display: none !important; }
+/* While casting, keep the control bar fully visible (it's hover-only otherwise)
+   so the reused transport controls are always available over the backdrop. */
+body.casting .player-controls-overlay { opacity: 1 !important; }
 .cast-overlay-icon { width: 56px; height: 56px; color: #00f3ff; }
 .cast-overlay-title { font-size: 1.4rem; font-weight: 700; color: #fff; }
 .cast-overlay-device { font-size: 1rem; color: var(--text-secondary, #9fb0c8); }
