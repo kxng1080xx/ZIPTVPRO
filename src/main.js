@@ -29,13 +29,12 @@ import { checkForUpdate, downloadApp, startPeriodicUpdateCheck, initElectronUpda
 import { openSearchKeyboard, openSortDropdown } from './components/tv-search.js';
 import { openGlobalSearch, setGlobalSearchQuery } from './components/global-search.js';
 import { isNativeAvailable } from './components/native-player.js';
+import { getDeviceCode, syncDevice, readCachedState, clearCachedState, isStateExpired } from './components/cloud-sync.js';
 
-// Supabase Configuration for Remote Playlist Pairing
-// Swap these with your own Supabase project credentials
-const SUPABASE_URL = 'https://jnocgdemunelygygnozw.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_uK2Tm5mvnvpODwlaHX6bZw_mry7o2FN';
-
-let remoteLoginInterval = null;
+// Cloud sync (ZIPTV Pro 5.0): device + playlist state lives in Supabase, managed
+// from the /connect dashboard and pulled via the serverless /api/device endpoint.
+// The app no longer holds a Supabase key — all DB access is server-side.
+let cloudSyncInterval = null;
 let deviceCode = null;
 
 // Application State
@@ -144,8 +143,8 @@ async function initApp() {
   // for those targets; a Settings toggle (stored in localStorage) overrides.
   applyPerfMode();
 
-  // Initialize device code for remote login
-  deviceCode = getOrCreateDeviceCode();
+  // Initialize device code (identity for the /connect dashboard).
+  deviceCode = getDeviceCode();
   const codeEl = document.getElementById('remote-device-code');
   if (codeEl) codeEl.textContent = deviceCode;
 
@@ -266,6 +265,11 @@ async function initApp() {
     console.error('Failed to initialize app session:', err);
     showLogin();
   }
+
+  // 5. Start the cloud sync loop (heartbeat + mirror dashboard state + enforce
+  // expiry). Runs for the whole app lifetime, on launch + every few minutes +
+  // on resume. Started after the boot playlist check to avoid a double-enter race.
+  startCloudSync();
 }
 
 // ==========================================================================
@@ -2776,6 +2780,11 @@ function showRemoteActivation() {
   
   const box = document.getElementById('remote-login-box');
   if (box) box.classList.remove('hidden');
+
+  // 5.0 is dashboard-managed: hide the in-app manual login. Playlists are added
+  // from the /connect dashboard and arrive via cloud sync.
+  document.getElementById('remote-manual-login-btn')?.classList.add('hidden');
+
   startRemoteLoginPolling();
 
   // Show back to playlists button if there are playlists
@@ -3167,18 +3176,15 @@ function showDashboard() {
     }
   }
 
-  // Set expiry text
-  if (state.user && state.user.user_info) {
-    const info = state.user.user_info;
-    const expiryEl = document.getElementById('expiry-text');
-    
-    if (info.exp_date === null || info.exp_date === undefined || info.exp_date === '0') {
-      expiryEl.textContent = 'Active - Unlimited';
-    } else {
-      const expDate = new Date(parseInt(info.exp_date) * 1000);
-      const diffTime = expDate - Date.now();
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      
+  // Set expiry text. Prefer the admin-set device expiry (from the /connect
+  // dashboard, stored by the cloud sync). Fall back to the provider's Xtream
+  // expiry only when no device expiry has been set (e.g. unmanaged device).
+  const expiryEl = document.getElementById('expiry-text');
+  if (expiryEl) {
+    const deviceExpiry = localStorage.getItem(DEVICE_EXPIRY_KEY);
+    if (deviceExpiry) {
+      const expDate = new Date(deviceExpiry);
+      const diffDays = Math.ceil((expDate - Date.now()) / (1000 * 60 * 60 * 24));
       if (diffDays <= 0) {
         expiryEl.textContent = 'Expired';
         expiryEl.parentElement.classList.replace('gold-badge', 'danger-badge');
@@ -3186,6 +3192,22 @@ function showDashboard() {
         expiryEl.textContent = `${diffDays} days left`;
       } else {
         expiryEl.textContent = `Expires ${expDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+      }
+    } else if (state.user && state.user.user_info) {
+      const info = state.user.user_info;
+      if (info.exp_date === null || info.exp_date === undefined || info.exp_date === '0') {
+        expiryEl.textContent = 'Active - Unlimited';
+      } else {
+        const expDate = new Date(parseInt(info.exp_date) * 1000);
+        const diffDays = Math.ceil((expDate - Date.now()) / (1000 * 60 * 60 * 24));
+        if (diffDays <= 0) {
+          expiryEl.textContent = 'Expired';
+          expiryEl.parentElement.classList.replace('gold-badge', 'danger-badge');
+        } else if (diffDays <= 7) {
+          expiryEl.textContent = `${diffDays} days left`;
+        } else {
+          expiryEl.textContent = `Expires ${expDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+        }
       }
     }
   }
@@ -3329,84 +3351,150 @@ function updateHeaderTvIpBadge(status) {
 // ==========================================================================
 // SUPABASE REMOTE LOGIN SYSTEM
 // ==========================================================================
-function getOrCreateDeviceCode() {
-  let code = localStorage.getItem('ziptv_device_code');
-  if (!code) {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Avoid confusing characters
-    code = '';
-    for (let i = 0; i < 6; i++) {
-      code += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    localStorage.setItem('ziptv_device_code', code);
-  }
-  return code;
+
+// ==========================================================================
+// CLOUD SYNC (5.0) — the /connect dashboard is the source of truth. The app
+// heartbeats to /api/device, mirrors the device's playlists, shows the admin's
+// expiration, and wipes everything when the device expires.
+// ==========================================================================
+const CLOUD_SYNC_MS = 5 * 60 * 1000;      // reconcile every 5 min while open
+const DEVICE_EXPIRY_KEY = 'ziptv_device_expiry';
+let cloudSyncBusy = false;
+
+// Back-compat shims: the login/activation screens call these. With 5.0 the sync
+// loop runs continuously for the whole app lifetime, so "start" just guarantees
+// it's running and "stop" is a no-op (we never want to stop mirroring).
+function startRemoteLoginPolling() { startCloudSync(); }
+function stopRemoteLoginPolling() { /* cloud sync runs continuously now */ }
+
+function appVersion() {
+  return (typeof __APP_VERSION__ !== 'undefined') ? __APP_VERSION__ : null;
 }
 
-function startRemoteLoginPolling() {
-  if (remoteLoginInterval) return;
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    console.warn('Supabase URL or Anon Key is missing. Remote login polling disabled.');
-    return;
-  }
-
-  // Insert base pairing record if not exists
-  ensureDevicePairingExists();
-
-  remoteLoginInterval = setInterval(async () => {
-    try {
-      const url = `${SUPABASE_URL}/rest/v1/device_pairings?device_id=eq.${deviceCode}&select=*`;
-      const res = await fetch(url, {
-        headers: {
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-        }
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data && data.length > 0) {
-        const pairing = data[0];
-        if (pairing.status === 'loaded' && pairing.server_url && pairing.username && pairing.password) {
-          stopRemoteLoginPolling();
-          
-          // Show connecting status on screen
-          const codeEl = document.getElementById('remote-device-code');
-          if (codeEl) codeEl.textContent = 'LINKING…';
-
-          // Attempt login/save credentials
-          await saveRemotePlaylist(pairing);
-        }
-      }
-    } catch (err) {
-      console.error('Error polling remote login status:', err);
-    }
-  }, 4000);
+// Idempotent: starts the persistent heartbeat/reconcile loop + resume triggers.
+function startCloudSync() {
+  runCloudSync();
+  if (cloudSyncInterval) return;
+  cloudSyncInterval = setInterval(runCloudSync, CLOUD_SYNC_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) runCloudSync(); });
+  window.addEventListener('online', runCloudSync);
 }
 
-function stopRemoteLoginPolling() {
-  if (remoteLoginInterval) {
-    clearInterval(remoteLoginInterval);
-    remoteLoginInterval = null;
-  }
-}
-
-async function ensureDevicePairingExists() {
+// One sync cycle. On network failure, fall back to the cached state and only
+// enforce a known expiry locally — never delete playlists over a blip (grace).
+async function runCloudSync() {
+  if (cloudSyncBusy) return;
+  cloudSyncBusy = true;
   try {
-    const url = `${SUPABASE_URL}/rest/v1/device_pairings`;
-    await fetch(url, {
-      method: 'POST',
-      headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'resolution=merge-duplicates'
-      },
-      body: JSON.stringify({
-        device_id: deviceCode,
-        status: 'pending'
-      })
-    });
+    let state;
+    try {
+      state = await syncDevice(deviceCode, appVersion());
+    } catch (netErr) {
+      const cached = readCachedState();
+      if (cached && isStateExpired(cached)) await enforceDeviceExpiry(cached);
+      return;
+    }
+    await applyCloudState(state);
   } catch (err) {
-    console.error('Error ensuring device pairing record exists:', err);
+    console.warn('Cloud sync error:', err);
+  } finally {
+    cloudSyncBusy = false;
+  }
+}
+
+// Apply a fresh state from /api/device.
+async function applyCloudState(state) {
+  if (!state) return;
+
+  // Expired → wipe + notice.
+  if (state.expired || isStateExpired(state)) { await enforceDeviceExpiry(state); return; }
+
+  // Remember the admin-set expiry for the in-app badge (or clear it).
+  if (state.expires_at) localStorage.setItem(DEVICE_EXPIRY_KEY, state.expires_at);
+  else localStorage.removeItem(DEVICE_EXPIRY_KEY);
+
+  // A brand-new ('pending') device that the admin hasn't provisioned yet keeps
+  // whatever the user may already have locally — we only mirror (incl. removals)
+  // once the device is managed. This protects existing users during migration.
+  const managed = state.status && state.status !== 'pending';
+  await reconcilePlaylists(state.playlists || [], { allowRemovals: managed });
+}
+
+// Make the local playlists match the dashboard's list (match on host+username).
+async function reconcilePlaylists(remote, { allowRemovals } = {}) {
+  const norm = (s) => String(s || '').trim().toLowerCase().replace(/\/+$/, '').replace(/^https?:\/\//, '');
+  const key = (p) => norm(p.server_url) + '|' + String(p.username || '').toLowerCase();
+
+  const { playlists: local } = await getPlaylists();
+  const localKeys = new Set((local || []).map(key));
+  const remoteKeys = new Set((remote || []).map(key));
+
+  let added = false;
+  for (const r of remote) {
+    if (localKeys.has(key(r))) continue;
+    try {
+      await login(r.server_url, r.username, r.password, r.playlistName || 'Playlist');
+      added = true;
+    } catch (e) {
+      console.warn('Could not add synced playlist:', r.playlistName, e.message);
+    }
+  }
+
+  if (allowRemovals) {
+    for (const l of (local || [])) {
+      if (!remoteKeys.has(key(l))) {
+        try { await removePlaylist(l.id); } catch (e) { console.warn('Could not remove playlist:', e.message); }
+      }
+    }
+  }
+
+  // First playlist arrived while on the activation screen -> enter the app.
+  const onLoginScreen = !document.getElementById('app-container') ||
+    document.getElementById('app-container').classList.contains('hidden');
+  if (added && onLoginScreen) {
+    try {
+      const { playlists, activeId } = await getPlaylists();
+      if (playlists && playlists.length > 0) {
+        showToast('Playlist connected', 'success');
+        await autoEnterSinglePlaylist(playlists[0].id, activeId);
+      }
+    } catch (e) { console.warn('Auto-enter after sync failed:', e.message); }
+  }
+}
+
+// Wipe all local playlists and show the expiry notice once per expiry date.
+async function enforceDeviceExpiry(state) {
+  localStorage.setItem(DEVICE_EXPIRY_KEY, state.expires_at || '');
+  try {
+    const { playlists } = await getPlaylists();
+    for (const p of (playlists || [])) {
+      try { await removePlaylist(p.id); } catch (e) {}
+    }
+  } catch (e) {}
+  localStorage.removeItem('last_playlist_id');
+
+  const stamp = state.expires_at || 'expired';
+  if (localStorage.getItem('ziptv_expiry_notified') !== stamp) {
+    localStorage.setItem('ziptv_expiry_notified', stamp);
+    showExpiryNotice(state.notice);
+  }
+  showLogin();
+}
+
+function showExpiryNotice(text) {
+  const msg = (text && String(text).trim()) || 'Your subscription has expired. Please contact your provider to renew.';
+  try { showToast(msg, 'error', 8000); } catch (e) {}
+  const codeEl = document.getElementById('remote-device-code');
+  if (codeEl && codeEl.parentElement) {
+    let banner = document.getElementById('expiry-banner');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'expiry-banner';
+      banner.style.cssText = 'margin:12px 0;padding:12px 14px;border-radius:10px;background:rgba(239,68,68,.12);' +
+        'border:1px solid rgba(239,68,68,.35);color:#fecaca;font-size:.9rem;white-space:pre-wrap;text-align:center;';
+      codeEl.parentElement.insertBefore(banner, codeEl.parentElement.firstChild);
+    }
+    banner.textContent = msg;
   }
 }
 
@@ -3430,61 +3518,3 @@ function showToast(message, type = 'success', duration = 3500) {
   }, duration);
 }
 window.showToast = showToast;
-
-// Report the remote-pairing outcome back to Supabase so the connect page knows.
-function reportPairingStatus(status) {
-  const updateUrl = `${SUPABASE_URL}/rest/v1/device_pairings?device_id=eq.${deviceCode}`;
-  return fetch(updateUrl, {
-    method: 'PATCH',
-    headers: {
-      'apikey': SUPABASE_ANON_KEY,
-      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ status })
-  }).catch(e => console.error('Failed to report pairing status:', e));
-}
-
-async function saveRemotePlaylist(pairing) {
-  try {
-    // Use the shared login() helper — it works in both server mode and native
-    // (APK) client mode. Calling /api/login directly fails on the TV because
-    // there's no Express server there (the WebView returns index.html → the
-    // "Unexpected token < in JSON" error).
-    const loginRes = await login(
-      pairing.server_url,
-      pairing.username,
-      pairing.password,
-      pairing.playlist_name || 'Remote Playlist'
-    );
-    if (!loginRes || !loginRes.success) {
-      throw new Error('Login failed');
-    }
-
-    // Tell the connect page it worked (don't delete yet, so the phone can read it).
-    await reportPairingStatus('connected');
-
-    state.user = loginRes;
-    showDashboard();
-
-    const box = document.getElementById('remote-login-box');
-    if (box) box.classList.add('hidden');
-
-    showToast('Playlist connected', 'success');
-
-    await triggerFullSync();
-    state.activeCategory = null;
-    await loadTabCategoriesAndContent();
-
-  } catch (err) {
-    console.error('Failed to link remote playlist:', err);
-    const codeEl = document.getElementById('remote-device-code');
-    if (codeEl) codeEl.textContent = deviceCode;
-
-    // Tell the connect page it failed, then resume polling for a retry.
-    await reportPairingStatus('failed');
-
-    showToast('Could not connect playlist: ' + err.message, 'error', 5000);
-    startRemoteLoginPolling();
-  }
-}

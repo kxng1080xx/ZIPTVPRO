@@ -8,7 +8,7 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 132
-        versionName "4.5.5"
+        versionName "5.0.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         // libVLC ships native libs per-ABI; limit to the two that cover ~all
         // real Android phones / TV boxes / Fire TV to keep the APK size down.

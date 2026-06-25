@@ -1,587 +1,390 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ZIPTV Pro - Connect Portal</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ZIPTV Pro — Control</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://unpkg.com/lucide@latest"></script>
   <style>
     :root {
-      --bg-base: #030712;
-      --bg-panel: #0b0f19;
-      --bg-surface: #111827;
-      --bg-surface-hover: #1f2937;
-      --accent-cyan: #00f3ff;
-      --accent-blue: #2563eb;
-      --text-primary: #f3f4f6;
-      --text-secondary: #9ca3af;
-      --text-muted: #6b7280;
-      --border-color: rgba(255, 255, 255, 0.08);
-      --border-radius-lg: 16px;
-      --border-radius-md: 12px;
-      --border-radius-sm: 8px;
+      --bg-base:#030712; --bg-panel:#0b0f19; --bg-surface:#111827; --bg-surface-2:#1f2937;
+      --accent-cyan:#00f3ff; --accent-blue:#2563eb; --green:#22c55e; --amber:#f59e0b; --red:#ef4444;
+      --text:#f3f4f6; --text-2:#9ca3af; --text-3:#6b7280; --border:rgba(255,255,255,.08);
+      --r-lg:16px; --r-md:12px; --r-sm:8px;
     }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { background:var(--bg-base); color:var(--text); font-family:'Plus Jakarta Sans',sans-serif; min-height:100vh; padding:20px; }
+    a { color:var(--accent-cyan); }
+    .wrap { max-width:1100px; margin:0 auto; }
+    h1 { font-family:'Outfit',sans-serif; font-weight:800; font-size:1.6rem; background:linear-gradient(135deg,#fff,var(--accent-cyan)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+    .muted { color:var(--text-2); font-size:.85rem; }
+    label { display:block; font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-2); margin-bottom:6px; }
+    input, select, textarea { width:100%; background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--r-sm); color:var(--text); padding:11px 12px; font-size:.92rem; font-family:inherit; }
+    input:focus, select:focus, textarea:focus { outline:none; border-color:var(--accent-cyan); }
+    button { cursor:pointer; font-family:inherit; border:none; border-radius:var(--r-sm); font-weight:700; }
+    .btn { padding:10px 16px; background:linear-gradient(135deg,var(--accent-blue),var(--accent-cyan)); color:#001018; }
+    .btn-ghost { padding:8px 12px; background:var(--bg-surface-2); color:var(--text); border:1px solid var(--border); }
+    .btn-sm { padding:6px 10px; font-size:.8rem; }
+    .btn-danger { background:rgba(239,68,68,.15); color:#fecaca; border:1px solid rgba(239,68,68,.35); }
+    .btn-chip { padding:6px 11px; background:var(--bg-surface); border:1px solid var(--border); color:var(--text-2); font-size:.8rem; }
+    .btn-chip:hover { color:var(--text); border-color:var(--accent-cyan); }
+    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .panel { background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--r-lg); padding:20px; }
+    .hidden { display:none !important; }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    #login-view { max-width:380px; margin:12vh auto 0; }
+    #login-view .panel { padding:28px 24px; }
+    .err { background:rgba(239,68,68,.12); border:1px solid rgba(239,68,68,.3); color:#fecaca; padding:10px 12px; border-radius:var(--r-sm); font-size:.85rem; margin-top:12px; }
 
-    body {
-      background-color: var(--bg-base);
-      color: var(--text-primary);
-      font-family: 'Plus Jakarta Sans', sans-serif;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      padding: 20px;
-      overflow-x: hidden;
-      position: relative;
-    }
+    .topbar { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:18px; flex-wrap:wrap; }
+    .toolbar { display:flex; gap:10px; align-items:center; margin-bottom:16px; flex-wrap:wrap; }
+    .toolbar input[type=text] { flex:1; min-width:200px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:14px; }
 
-    /* Decorative background glow */
-    body::before {
-      content: '';
-      position: absolute;
-      width: 400px;
-      height: 400px;
-      background: radial-gradient(circle, rgba(6, 182, 212, 0.15) 0%, rgba(37, 99, 235, 0.05) 50%, transparent 100%);
-      top: -100px;
-      right: -100px;
-      z-index: 0;
-      pointer-events: none;
-    }
-    body::after {
-      content: '';
-      position: absolute;
-      width: 450px;
-      height: 450px;
-      background: radial-gradient(circle, rgba(37, 99, 235, 0.12) 0%, rgba(6, 182, 212, 0.04) 50%, transparent 100%);
-      bottom: -150px;
-      left: -150px;
-      z-index: 0;
-      pointer-events: none;
-    }
-
-    .container {
-      width: 100%;
-      max-width: 480px;
-      background: var(--bg-panel);
-      border: 1px solid var(--border-color);
-      border-radius: var(--border-radius-lg);
-      padding: 32px 24px;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
-      z-index: 10;
-      backdrop-filter: blur(10px);
-      transition: all 0.3s ease;
-    }
-
-    .logo-header {
-      text-align: center;
-      margin-bottom: 28px;
-    }
-
-    .logo-header h1 {
-      font-family: 'Outfit', sans-serif;
-      font-size: 2rem;
-      font-weight: 800;
-      background: linear-gradient(135deg, #fff 0%, var(--accent-cyan) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      margin-bottom: 6px;
-      letter-spacing: -0.5px;
-    }
-
-    .logo-header p {
-      color: var(--text-secondary);
-      font-size: 0.88rem;
-    }
-
-    .form-group {
-      margin-bottom: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    label {
-      font-size: 0.78rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--text-secondary);
-    }
-
-    input {
-      width: 100%;
-      padding: 12px 16px;
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid var(--border-color);
-      border-radius: var(--border-radius-sm);
-      color: var(--text-primary);
-      font-family: inherit;
-      font-size: 0.92rem;
-      outline: none;
-      transition: all 0.2s ease;
-    }
-
-    input:focus {
-      border-color: var(--accent-cyan);
-      box-shadow: 0 0 12px rgba(6, 182, 212, 0.25);
-      background: rgba(255, 255, 255, 0.05);
-    }
-
-    .device-code-input {
-      font-family: 'Outfit', sans-serif;
-      font-size: 1.4rem;
-      font-weight: 700;
-      text-align: center;
-      letter-spacing: 4px;
-      text-transform: uppercase;
-      color: var(--accent-cyan);
-      border-color: rgba(6, 182, 212, 0.3);
-      background: rgba(6, 182, 212, 0.05);
-    }
-
-    .device-code-input:focus {
-      border-color: var(--accent-cyan);
-      box-shadow: 0 0 16px rgba(6, 182, 212, 0.4);
-    }
-
-    .btn-connect {
-      width: 100%;
-      padding: 14px;
-      background: linear-gradient(135deg, var(--accent-blue) 0%, #0891b2 100%);
-      border: none;
-      border-radius: var(--border-radius-sm);
-      color: white;
-      font-family: inherit;
-      font-weight: 700;
-      font-size: 0.95rem;
-      cursor: pointer;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      gap: 8px;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3);
-      margin-top: 10px;
-    }
-
-    .btn-connect:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.45);
-    }
-
-    .btn-connect:active {
-      transform: translateY(1px);
-    }
-
-    .btn-loader {
-      width: 18px;
-      height: 18px;
-      border: 2px solid rgba(255, 255, 255, 0.3);
-      border-top-color: white;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      display: none;
-    }
-
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-
-    /* OR divider on form */
-    .login-or-divider {
-      display: flex;
-      align-items: center;
-      text-align: center;
-      margin: 18px 0;
-      color: var(--text-muted);
-      font-size: 0.65rem;
-      font-weight: 700;
-      letter-spacing: 1.5px;
-      font-family: 'Outfit', sans-serif;
-      opacity: 0.8;
-      text-transform: uppercase;
-    }
-
-    .login-or-divider::before,
-    .login-or-divider::after {
-      content: '';
-      flex: 1;
-      border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
-    }
-
-    .login-or-divider:not(:empty)::before {
-      margin-right: 14px;
-    }
-
-    .login-or-divider:not(:empty)::after {
-      margin-left: 14px;
-    }
-
-    /* Message Boxes */
-    .msg-box {
-      padding: 14px 16px;
-      border-radius: var(--border-radius-sm);
-      font-size: 0.85rem;
-      line-height: 1.4;
-      margin-bottom: 20px;
-      display: none;
-      align-items: flex-start;
-      gap: 10px;
-    }
-
-    .msg-error {
-      background: rgba(239, 68, 68, 0.1);
-      border: 1px solid rgba(239, 68, 68, 0.2);
-      color: #f87171;
-    }
-
-    .msg-success {
-      background: rgba(16, 185, 129, 0.1);
-      border: 1px solid rgba(16, 185, 129, 0.2);
-      color: #34d399;
-      text-align: center;
-      flex-direction: column;
-      align-items: center;
-      padding: 24px;
-      gap: 16px;
-    }
-
-    .success-icon-wrap {
-      width: 48px;
-      height: 48px;
-      background: rgba(16, 185, 129, 0.15);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #10b981;
-    }
-
-    .success-icon-wrap i {
-      width: 24px;
-      height: 24px;
-    }
-
-    .msg-success h3 {
-      font-family: 'Outfit', sans-serif;
-      font-size: 1.25rem;
-      font-weight: 700;
-      color: white;
-    }
-
-    .msg-success p {
-      color: var(--text-secondary);
-      font-size: 0.88rem;
-    }
+    .card { background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--r-md); padding:16px; }
+    .card.pending { border-color:rgba(0,243,255,.4); }
+    .card.expired { border-color:rgba(239,68,68,.35); }
+    .card-head { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+    .label-edit { font-weight:700; font-size:1.02rem; background:transparent; border:1px solid transparent; padding:4px 6px; margin:-4px -6px; border-radius:6px; }
+    .label-edit:hover { border-color:var(--border); }
+    .code { font-family:'Outfit',monospace; letter-spacing:2px; color:var(--accent-cyan); font-size:.9rem; margin-top:6px; }
+    .meta { display:flex; gap:8px; flex-wrap:wrap; margin:10px 0; }
+    .tag { font-size:.72rem; padding:3px 8px; border-radius:99px; background:var(--bg-surface-2); color:var(--text-2); display:inline-flex; align-items:center; gap:5px; }
+    .dot { width:8px; height:8px; border-radius:99px; background:var(--text-3); }
+    .dot.on { background:var(--green); box-shadow:0 0 8px var(--green); }
+    .exp-good { color:var(--green); } .exp-soon { color:var(--amber); } .exp-bad { color:var(--red); }
+    .sec-title { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-3); margin:14px 0 8px; }
+    .pl { display:flex; justify-content:space-between; align-items:center; gap:8px; background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--r-sm); padding:8px 10px; margin-bottom:6px; }
+    .pl small { color:var(--text-3); }
+    .expiry-row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:6px; }
+    details > summary { cursor:pointer; color:var(--accent-cyan); font-size:.82rem; font-weight:600; list-style:none; margin-top:10px; }
+    details > summary::-webkit-details-marker { display:none; }
+    .addform { margin-top:10px; display:flex; flex-direction:column; gap:8px; }
+    #toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(10px); background:var(--bg-surface-2); border:1px solid var(--border); padding:12px 18px; border-radius:var(--r-md); font-size:.88rem; opacity:0; transition:opacity .2s, transform .2s; pointer-events:none; z-index:50; }
+    #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+    #toast.err { border-color:rgba(239,68,68,.4); color:#fecaca; }
+    .modal-scrim { position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; padding:20px; z-index:40; }
+    .modal { width:100%; max-width:460px; }
   </style>
 </head>
 <body>
-
-  <div class="container">
-    <div class="logo-header">
-      <h1>ZIPTV Pro</h1>
-      <p>Remote Playlist Loader</p>
+  <div id="login-view" class="wrap hidden">
+    <div class="panel">
+      <h1 style="margin-bottom:4px;">ZIPTV Pro</h1>
+      <p class="muted" style="margin-bottom:20px;">Control Panel</p>
+      <form id="login-form">
+        <label for="pw">Admin Password</label>
+        <input id="pw" type="password" autocomplete="current-password" required />
+        <button class="btn" id="login-btn" type="submit" style="width:100%; margin-top:16px;">Sign in</button>
+      </form>
+      <div id="login-err" class="err hidden"></div>
     </div>
-
-    <!-- Error state -->
-    <div id="error-box" class="msg-box msg-error">
-      <i data-lucide="alert-circle" style="flex-shrink:0; width:18px; height:18px;"></i>
-      <span id="error-message"></span>
-    </div>
-
-    <!-- Success state -->
-    <div id="success-box" class="msg-box msg-success">
-      <div class="success-icon-wrap">
-        <i data-lucide="check-circle"></i>
-      </div>
-      <h3>Playlist Loaded!</h3>
-      <p>Your TV confirmed it connected to this playlist successfully. You're all set.</p>
-    </div>
-
-    <form id="connect-form">
-      <div class="form-group">
-        <label for="device-code">Device Code</label>
-        <input type="text" id="device-code" class="device-code-input" placeholder="XXXXXX" maxlength="6" required autocomplete="off" autofocus>
-      </div>
-
-      <div class="form-group">
-        <label for="playlist-name">Playlist Name</label>
-        <input type="text" id="playlist-name" placeholder="e.g. TV CODE">
-      </div>
-
-      <div class="form-group">
-        <label for="m3u-url">Paste M3U URL (Auto-Extracts Login)</label>
-        <input type="url" id="m3u-url" placeholder="Paste your full M3U URL here" autocomplete="off">
-      </div>
-
-      <div class="login-or-divider">
-        <span>or enter credentials manually</span>
-      </div>
-
-      <div class="form-group">
-        <label for="server-url">Server URL</label>
-        <input type="url" id="server-url" placeholder="e.g. http://your-provider.com:8080" autocomplete="off">
-      </div>
-
-      <div class="form-group">
-        <label for="username">Username</label>
-        <input type="text" id="username" placeholder="Enter Username" autocomplete="off">
-      </div>
-
-      <div class="form-group">
-        <label for="password">Password</label>
-        <input type="password" id="password" placeholder="Enter Password">
-      </div>
-
-      <button type="submit" id="btn-submit" class="btn-connect">
-        <i data-lucide="link" style="width:16px; height:16px;"></i>
-        <span id="btn-text">Link Playlist</span>
-        <div id="btn-loader" class="btn-loader"></div>
-      </button>
-    </form>
   </div>
 
+  <div id="dash-view" class="wrap hidden">
+    <div class="topbar">
+      <div>
+        <h1>Devices</h1>
+        <p class="muted" id="summary">—</p>
+      </div>
+      <div class="row">
+        <button class="btn-ghost btn-sm" id="btn-config"><i data-lucide="settings"></i></button>
+        <button class="btn-ghost btn-sm" id="btn-refresh"><i data-lucide="refresh-cw"></i> Refresh</button>
+        <button class="btn-ghost btn-sm" id="btn-logout">Sign out</button>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <input type="text" id="search" placeholder="Search by name or code…" />
+      <label class="row" style="margin:0; color:var(--text-2); text-transform:none; font-weight:500; letter-spacing:0; font-size:.85rem;">
+        <input type="checkbox" id="show-archived" style="width:auto;" /> Show archived
+      </label>
+    </div>
+
+    <div id="device-grid" class="grid"></div>
+    <div id="empty" class="muted hidden" style="text-align:center; padding:40px;">No devices yet. When a customer opens the app, their code appears here.</div>
+  </div>
+
+  <div id="toast"></div>
+
   <script>
-    // Supabase Configuration
-    // Swap these with your own Supabase project credentials
-    const SUPABASE_URL = 'https://jnocgdemunelygygnozw.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'sb_publishable_uK2Tm5mvnvpODwlaHX6bZw_mry7o2FN';
+    const API = '/api/admin';
+    const TOKEN_KEY = 'ziptv_admin_token';
+    const ONLINE_MS = 10 * 60 * 1000;
+    const AUTO_REFRESH_MS = 30 * 1000;
 
-    lucide.createIcons();
+    let token = sessionStorage.getItem(TOKEN_KEY) || '';
+    let devices = [];
+    let refreshTimer = null;
 
-    const form = document.getElementById('connect-form');
-    const submitBtn = document.getElementById('btn-submit');
-    const btnText = document.getElementById('btn-text');
-    const btnLoader = document.getElementById('btn-loader');
-    const errorBox = document.getElementById('error-box');
-    const successBox = document.getElementById('success-box');
-    const errorMsg = document.getElementById('error-message');
+    const $ = (id) => document.getElementById(id);
+    const icons = () => { try { lucide.createIcons(); } catch (e) {} };
 
-    // Force uppercase alphanumeric on code input and auto-fill playlist name
-    const codeInput = document.getElementById('device-code');
-    const nameInput = document.getElementById('playlist-name');
-    let prevCodeVal = '';
+    function toast(msg, isErr) {
+      const t = $('toast'); t.textContent = msg; t.className = 'show' + (isErr ? ' err' : '');
+      setTimeout(() => { t.className = ''; }, 2600);
+    }
 
-    codeInput.addEventListener('input', (e) => {
-      const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-      e.target.value = val;
+    async function api(action, { method = 'GET', body, auth = true } = {}) {
+      const headers = {};
+      if (body) headers['Content-Type'] = 'application/json';
+      if (auth && token) headers['Authorization'] = 'Bearer ' + token;
+      const res = await fetch(`${API}?action=${action}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+      if (res.status === 401 && auth) { logout(); throw new Error('Session expired — sign in again.'); }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Request failed');
+      return data;
+    }
 
-      // If playlist name is empty or matches the old code, update it to the new code
-      if (nameInput && (!nameInput.value || nameInput.value === prevCodeVal)) {
-        nameInput.value = val;
+    $('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = $('login-btn'); const err = $('login-err');
+      err.classList.add('hidden'); btn.disabled = true; btn.textContent = 'Signing in…';
+      try {
+        const { token: t } = await api('login', { method: 'POST', body: { password: $('pw').value }, auth: false });
+        token = t; sessionStorage.setItem(TOKEN_KEY, t);
+        showDash();
+      } catch (ex) {
+        err.textContent = ex.message; err.classList.remove('hidden');
+      } finally {
+        btn.disabled = false; btn.textContent = 'Sign in';
       }
-      prevCodeVal = val;
     });
 
-    // M3U URL Autoparser
-    function parseM3uUrl(urlStr) {
+    function logout() {
+      token = ''; sessionStorage.removeItem(TOKEN_KEY);
+      clearInterval(refreshTimer);
+      $('dash-view').classList.add('hidden'); $('login-view').classList.remove('hidden');
+    }
+    $('btn-logout').addEventListener('click', logout);
+
+    function showDash() {
+      $('login-view').classList.add('hidden'); $('dash-view').classList.remove('hidden');
+      load();
+      clearInterval(refreshTimer);
+      refreshTimer = setInterval(() => load(true), AUTO_REFRESH_MS);
+    }
+
+    $('btn-refresh').addEventListener('click', () => load());
+    $('show-archived').addEventListener('change', () => load());
+    $('search').addEventListener('input', render);
+
+    async function load(silent) {
       try {
-        const url = new URL(urlStr.trim());
-        const host = url.origin;
-        const username = url.searchParams.get('username') || url.searchParams.get('auth_username');
-        const password = url.searchParams.get('password') || url.searchParams.get('auth_password');
-        if (host && username && password) {
-          return { host, username, password };
-        }
+        const archived = $('show-archived').checked ? '1' : '0';
+        const { devices: rows } = await api(`devices&archived=${archived}`);
+        devices = rows || [];
+        render();
+      } catch (ex) { if (!silent) toast(ex.message, true); }
+    }
+
+    function fmtExpiry(iso) {
+      if (!iso) return { text: 'No expiry set', cls: '' };
+      const ms = new Date(iso) - Date.now();
+      const days = Math.ceil(ms / 86400000);
+      const dateStr = new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      if (ms <= 0) return { text: `Expired ${dateStr}`, cls: 'exp-bad' };
+      if (days <= 7) return { text: `${days}d left · ${dateStr}`, cls: 'exp-soon' };
+      return { text: `${days}d left · ${dateStr}`, cls: 'exp-good' };
+    }
+
+    function relTime(iso) {
+      if (!iso) return 'never';
+      const s = Math.floor((Date.now() - new Date(iso)) / 1000);
+      if (s < 60) return 'just now';
+      if (s < 3600) return Math.floor(s / 60) + 'm ago';
+      if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+      return Math.floor(s / 86400) + 'd ago';
+    }
+
+    function render() {
+      const q = $('search').value.trim().toLowerCase();
+      const list = devices.filter(d =>
+        !q || (d.label || '').toLowerCase().includes(q) || d.device_id.toLowerCase().includes(q)
+      );
+      const online = devices.filter(d => d.last_seen && (Date.now() - new Date(d.last_seen) < ONLINE_MS)).length;
+      $('summary').textContent = `${devices.length} device${devices.length !== 1 ? 's' : ''} · ${online} online`;
+      $('empty').classList.toggle('hidden', list.length !== 0);
+      $('device-grid').innerHTML = list.map(cardHTML).join('');
+      icons();
+      list.forEach(wireCard);
+    }
+
+    function cardHTML(d) {
+      const isOnline = d.last_seen && (Date.now() - new Date(d.last_seen) < ONLINE_MS);
+      const exp = fmtExpiry(d.expires_at);
+      const pending = d.status === 'pending' && (!d.playlists || d.playlists.length === 0);
+      const expired = d.expires_at && new Date(d.expires_at) < new Date();
+      const cls = expired ? 'expired' : (pending ? 'pending' : '');
+      const pls = (d.playlists || []).map(p => `
+        <div class="pl">
+          <div><div>${esc(p.name)}</div><small>${esc(p.username)} · ${esc(p.type)}</small></div>
+          <button class="btn-chip btn-danger" data-rmpl="${p.id}"><i data-lucide="trash-2"></i></button>
+        </div>`).join('') || '<div class="muted" style="font-size:.82rem;">No playlists.</div>';
+
+      return `
+      <div class="card ${cls}" data-card="${d.device_id}">
+        <div class="card-head">
+          <div style="flex:1;">
+            <input class="label-edit" data-label value="${esc(d.label || '')}" placeholder="Add customer name…" />
+            <div class="code">${d.device_id}</div>
+          </div>
+          <button class="btn-chip" data-menu><i data-lucide="more-vertical"></i></button>
+        </div>
+        <div class="meta">
+          <span class="tag"><span class="dot ${isOnline ? 'on' : ''}"></span>${isOnline ? 'Online' : 'Seen ' + relTime(d.last_seen)}</span>
+          ${d.platform && d.platform !== 'unknown' ? `<span class="tag">${esc(d.platform.toUpperCase())}${d.app_version ? ' v' + esc(d.app_version) : ''}</span>` : ''}
+          ${pending ? '<span class="tag" style="color:var(--accent-cyan)">Awaiting setup</span>' : ''}
+        </div>
+        <div class="sec-title">Expiry</div>
+        <div class="${exp.cls}" style="font-weight:600; font-size:.9rem;">${exp.text}</div>
+        <div class="expiry-row">
+          <button class="btn-chip" data-add-days="30">+30d</button>
+          <button class="btn-chip" data-add-days="90">+90d</button>
+          <button class="btn-chip" data-add-days="365">+365d</button>
+          <input type="date" style="width:auto; padding:6px 8px; font-size:.8rem;" data-date />
+          <button class="btn-chip" data-set-date>Set</button>
+          ${d.expires_at ? `<button class="btn-chip btn-danger" data-clear-exp>Clear</button>` : ''}
+        </div>
+        <div class="sec-title">Playlists (${(d.playlists || []).length})</div>
+        ${pls}
+        <details>
+          <summary>+ Add playlist</summary>
+          <div class="addform" data-addform>
+            <input type="text" data-f="name" placeholder="Playlist name (optional)" />
+            <input type="text" data-f="m3u" placeholder="Paste M3U URL (auto-fills below)…" />
+            <input type="text" data-f="server" placeholder="Server URL (http://host:port)" />
+            <div class="row">
+              <input type="text" data-f="user" placeholder="Username" style="flex:1;" />
+              <input type="text" data-f="pass" placeholder="Password" style="flex:1;" />
+            </div>
+            <button class="btn btn-sm" data-savepl>Add playlist</button>
+          </div>
+        </details>
+      </div>`;
+    }
+
+    function wireCard(d) {
+      const id = d.device_id;
+      const card = document.querySelector(`[data-card="${cssq(id)}"]`);
+      if (!card) return;
+
+      const lbl = card.querySelector('[data-label]');
+      const saveLabel = async () => {
+        if (lbl.value === (d.label || '')) return;
+        try { await api('update-device', { method: 'POST', body: { device_id: id, label: lbl.value } }); d.label = lbl.value; toast('Saved'); }
+        catch (e) { toast(e.message, true); }
+      };
+      lbl.addEventListener('blur', saveLabel);
+      lbl.addEventListener('keydown', (e) => { if (e.key === 'Enter') lbl.blur(); });
+
+      card.querySelectorAll('[data-add-days]').forEach(b => b.addEventListener('click', async () => {
+        const days = parseInt(b.getAttribute('data-add-days'), 10);
+        const base = d.expires_at && new Date(d.expires_at) > new Date() ? new Date(d.expires_at) : new Date();
+        base.setDate(base.getDate() + days);
+        await setExpiry(id, base.toISOString());
+      }));
+      const setBtn = card.querySelector('[data-set-date]');
+      if (setBtn) setBtn.addEventListener('click', async () => {
+        const v = card.querySelector('[data-date]').value;
+        if (!v) return toast('Pick a date', true);
+        await setExpiry(id, new Date(v + 'T23:59:59').toISOString());
+      });
+      const clr = card.querySelector('[data-clear-exp]');
+      if (clr) clr.addEventListener('click', () => setExpiry(id, null));
+
+      card.querySelectorAll('[data-rmpl]').forEach(b => b.addEventListener('click', async () => {
+        if (!confirm('Remove this playlist? It will disappear from the device on its next sync.')) return;
+        try { await api('remove-playlist', { method: 'POST', body: { id: b.getAttribute('data-rmpl') } }); toast('Removed'); load(); }
+        catch (e) { toast(e.message, true); }
+      }));
+
+      const form = card.querySelector('[data-addform]');
+      const m3u = form.querySelector('[data-f=m3u]');
+      m3u.addEventListener('input', () => {
+        const p = parseM3u(m3u.value);
+        if (p) { form.querySelector('[data-f=server]').value = p.host; form.querySelector('[data-f=user]').value = p.user; form.querySelector('[data-f=pass]').value = p.pass; }
+      });
+      card.querySelector('[data-savepl]').addEventListener('click', async () => {
+        const server = form.querySelector('[data-f=server]').value.trim();
+        const user = form.querySelector('[data-f=user]').value.trim();
+        const pass = form.querySelector('[data-f=pass]').value.trim();
+        if (!server || !user || !pass) return toast('Need server, username & password (or an M3U URL).', true);
+        try {
+          await api('add-playlist', { method: 'POST', body: {
+            device_id: id, name: form.querySelector('[data-f=name]').value.trim() || hostName(server),
+            type: 'xtream', server_url: server, username: user, password: pass
+          }});
+          toast('Playlist added'); load();
+        } catch (e) { toast(e.message, true); }
+      });
+
+      card.querySelector('[data-menu]').addEventListener('click', async () => {
+        const choice = prompt(`Device ${id}\nType:  A = ${d.archived ? 'unarchive' : 'archive'},  D = delete permanently`, '');
+        if (!choice) return;
+        const c = choice.trim().toUpperCase();
+        try {
+          if (c === 'A') { await api('update-device', { method: 'POST', body: { device_id: id, archived: !d.archived } }); toast(d.archived ? 'Unarchived' : 'Archived'); load(); }
+          else if (c === 'D') { if (confirm('Delete this device and all its playlists permanently?')) { await api('delete-device', { method: 'POST', body: { device_id: id } }); toast('Deleted'); load(); } }
+        } catch (e) { toast(e.message, true); }
+      });
+    }
+
+    async function setExpiry(device_id, iso) {
+      try { await api('update-device', { method: 'POST', body: { device_id, expires_at: iso } }); toast(iso ? 'Expiry updated' : 'Expiry cleared'); load(); }
+      catch (e) { toast(e.message, true); }
+    }
+
+    $('btn-config').addEventListener('click', async () => {
+      let cfg = {};
+      try { ({ config: cfg } = await api('config')); } catch (e) { return toast(e.message, true); }
+      const scrim = document.createElement('div');
+      scrim.className = 'modal-scrim';
+      scrim.innerHTML = `
+        <div class="panel modal">
+          <h1 style="font-size:1.2rem; margin-bottom:14px;">Expiry notice</h1>
+          <label>Message shown in-app when a device expires</label>
+          <textarea id="cfg-notice" rows="3">${esc(cfg.expiry_notice || '')}</textarea>
+          <div style="height:12px;"></div>
+          <label>Contact info (WhatsApp / Telegram / email)</label>
+          <input id="cfg-contact" type="text" value="${esc(cfg.contact_info || '')}" />
+          <div class="row" style="justify-content:flex-end; margin-top:16px;">
+            <button class="btn-ghost" id="cfg-cancel">Cancel</button>
+            <button class="btn" id="cfg-save">Save</button>
+          </div>
+        </div>`;
+      document.body.appendChild(scrim);
+      scrim.addEventListener('click', (e) => { if (e.target === scrim) scrim.remove(); });
+      scrim.querySelector('#cfg-cancel').addEventListener('click', () => scrim.remove());
+      scrim.querySelector('#cfg-save').addEventListener('click', async () => {
+        try {
+          await api('config', { method: 'POST', body: {
+            expiry_notice: scrim.querySelector('#cfg-notice').value,
+            contact_info: scrim.querySelector('#cfg-contact').value
+          }});
+          toast('Saved'); scrim.remove();
+        } catch (e) { toast(e.message, true); }
+      });
+    });
+
+    function parseM3u(str) {
+      try {
+        const u = new URL(str.trim());
+        const user = u.searchParams.get('username') || u.searchParams.get('auth_username');
+        const pass = u.searchParams.get('password') || u.searchParams.get('auth_password');
+        if (u.origin && user && pass) return { host: u.origin, user, pass };
       } catch (e) {}
       return null;
     }
+    function hostName(s) { try { return new URL(/^https?:/i.test(s) ? s : 'http://' + s).hostname; } catch { return 'Playlist'; } }
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+    function cssq(s) { return (window.CSS && CSS.escape) ? CSS.escape(s) : s.replace(/"/g, '\\"'); }
 
-    const m3uInput = document.getElementById('m3u-url');
-    if (m3uInput) {
-      const handleM3uInput = () => {
-        const val = m3uInput.value;
-        const parsed = parseM3uUrl(val);
-        if (parsed) {
-          document.getElementById('server-url').value = parsed.host;
-          document.getElementById('username').value = parsed.username;
-          document.getElementById('password').value = parsed.password;
-          
-          // Auto-set playlist name if empty or default
-          try {
-            const host = new URL(parsed.host).hostname;
-            const nameEl = document.getElementById('playlist-name');
-            if (nameEl && (!nameEl.value || nameEl.value === 'Xtream Codes')) {
-              nameEl.value = host;
-            }
-          } catch (e) {}
-        }
-      };
-      m3uInput.addEventListener('input', handleM3uInput);
-      m3uInput.addEventListener('paste', () => setTimeout(handleM3uInput, 20));
-    }
-
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      
-      // Reset status messages
-      errorBox.style.display = 'none';
-      
-      if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-        showError('Supabase config credentials are missing. Please edit connect.html and provide SUPABASE_URL and SUPABASE_ANON_KEY.');
-        return;
-      }
-
-      // Collect and parse data
-      const deviceId = codeInput.value.trim();
-      const playlistName = document.getElementById('playlist-name').value.trim();
-      const m3uUrl = m3uInput.value.trim();
-      let serverUrl = document.getElementById('server-url').value.trim();
-      let username = document.getElementById('username').value.trim();
-      let password = document.getElementById('password').value.trim();
-
-      // If M3U is pasted, make sure we run the parser on submit too
-      if (m3uUrl && (!serverUrl || !username || !password)) {
-        const parsed = parseM3uUrl(m3uUrl);
-        if (parsed) {
-          serverUrl = parsed.host;
-          username = parsed.username;
-          password = parsed.password;
-          document.getElementById('server-url').value = parsed.host;
-          document.getElementById('username').value = parsed.username;
-          document.getElementById('password').value = parsed.password;
-        }
-      }
-
-      // Validate: require EITHER valid M3U URL OR (server + username + password)
-      if (!serverUrl || !username || !password) {
-        showError('Please provide either:<br>1. A valid M3U URL, OR<br>2. Server URL, Username, and Password');
-        return;
-      }
-
-      // Normalize server URL protocol
-      if (!/^https?:\/\//i.test(serverUrl)) {
-        serverUrl = 'http://' + serverUrl;
-      }
-      if (serverUrl.endsWith('/')) {
-        serverUrl = serverUrl.slice(0, -1);
-      }
-
-      // Show loading state
-      submitBtn.disabled = true;
-      btnLoader.style.display = 'block';
-      btnText.style.display = 'none';
-
-      try {
-        // Query to check if pairing record exists
-        const queryUrl = `${SUPABASE_URL}/rest/v1/device_pairings?device_id=eq.${deviceId}&select=*`;
-        const queryRes = await fetch(queryUrl, {
-          headers: {
-            'apikey': SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-          }
-        });
-
-        if (!queryRes.ok) {
-          throw new Error('Could not connect to the database. Verify Anon Key.');
-        }
-
-        const data = await queryRes.json();
-        if (!data || data.length === 0) {
-          throw new Error(`Device code "${deviceId}" not found. Ensure the IPTV Player app is open on the login screen.`);
-        }
-
-        // Perform patch update
-        const patchUrl = `${SUPABASE_URL}/rest/v1/device_pairings?device_id=eq.${deviceId}`;
-        const patchRes = await fetch(patchUrl, {
-          method: 'PATCH',
-          headers: {
-            'apikey': SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            playlist_name: playlistName,
-            server_url: serverUrl,
-            username: username,
-            password: password,
-            status: 'loaded'
-          })
-        });
-
-        if (!patchRes.ok) {
-          throw new Error('Failed to upload credentials. Please try again.');
-        }
-
-        // Credentials sent. Now wait for the TV to actually load the playlist
-        // and report back, so we show real feedback (not a premature success).
-        btnText.textContent = 'Waiting for your TV…';
-        btnText.style.display = 'block';
-        btnLoader.style.display = 'block';
-        pollForResult(deviceId);
-
-      } catch (err) {
-        showError(err.message);
-        submitBtn.disabled = false;
-        btnLoader.style.display = 'none';
-        btnText.style.display = 'block';
-      }
-    });
-
-    // Poll the pairing record for the TV's outcome: 'connected' or 'failed'.
-    function pollForResult(deviceId) {
-      const startedAt = Date.now();
-      const poll = setInterval(async () => {
-        try {
-          const res = await fetch(`${SUPABASE_URL}/rest/v1/device_pairings?device_id=eq.${deviceId}&select=status`, {
-            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
-          });
-          if (res.ok) {
-            const rows = await res.json();
-            const status = rows && rows[0] && rows[0].status;
-
-            if (status === 'connected') {
-              clearInterval(poll);
-              errorBox.style.display = 'none';
-              form.style.display = 'none';
-              successBox.style.display = 'flex';
-              // Tidy up the pairing record now that it's done.
-              fetch(`${SUPABASE_URL}/rest/v1/device_pairings?device_id=eq.${deviceId}`, {
-                method: 'DELETE',
-                headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
-              }).catch(() => {});
-              return;
-            }
-
-            if (status === 'failed') {
-              clearInterval(poll);
-              resetButton();
-              showError('Your TV could not load this playlist. Double-check the M3U URL / credentials and try again.');
-              return;
-            }
-          }
-        } catch (e) {}
-
-        // Give up confirming after 90s (credentials were still sent).
-        if (Date.now() - startedAt > 90000) {
-          clearInterval(poll);
-          resetButton();
-          showError('Sent, but no confirmation from your TV yet. Make sure the app is open on the Device Activation screen, then try again.');
-        }
-      }, 3000);
-    }
-
-    function resetButton() {
-      submitBtn.disabled = false;
-      btnLoader.style.display = 'none';
-      btnText.textContent = 'Link Playlist';
-      btnText.style.display = 'block';
-    }
-
-    function showError(message) {
-      errorMsg.textContent = message;
-      errorBox.style.display = 'flex';
-      errorBox.scrollIntoView({ behavior: 'smooth' });
-    }
+    if (token) showDash(); else $('login-view').classList.remove('hidden');
+    icons();
   </script>
 </body>
 </html>

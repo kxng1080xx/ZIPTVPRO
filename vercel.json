@@ -6,6 +6,12 @@
   "functions": {
     "api/proxy.js": {
       "maxDuration": 60
+    },
+    "api/admin.js": {
+      "maxDuration": 15
+    },
+    "api/device.js": {
+      "maxDuration": 15
     }
   },
   "headers": [
@@ -39,6 +45,7 @@
     }
   ],
   "rewrites": [
-    { "source": "/((?!api/|app.apk|cast.apk|latest.exe|version.json).*)", "destination": "/index.html" }
+    { "source": "/connect", "destination": "/connect.html" },
+    { "source": "/((?!api/|app.apk|cast.apk|latest.exe|version.json|connect).*)", "destination": "/index.html" }
   ]
 }
