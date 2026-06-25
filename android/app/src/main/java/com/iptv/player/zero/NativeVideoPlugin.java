@@ -5,6 +5,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.webkit.WebView;
 import android.widget.FrameLayout;
 
@@ -55,6 +56,30 @@ public class NativeVideoPlugin extends Plugin {
         JSObject d = new JSObject();
         d.put("state", state);
         notifyListeners("state", d);
+    }
+
+    // Keep the device screen on during playback. Activity-level FLAG_KEEP_SCREEN_ON
+    // covers both the libVLC surface and the WebView <video> fallback, and is the
+    // reliable Android way (WebView doesn't hold a wake lock on its own). Window
+    // flags must be toggled on the UI thread. player.js calls these on play/stop.
+    @PluginMethod
+    public void keepAwake(PluginCall call) {
+        ui.post(() -> {
+            try {
+                getActivity().getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            } catch (Exception e) {}
+        });
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void allowSleep(PluginCall call) {
+        ui.post(() -> {
+            try {
+                getActivity().getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            } catch (Exception e) {}
+        });
+        call.resolve();
     }
 
     private void ensurePlayer() {

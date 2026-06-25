@@ -5,7 +5,7 @@ import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { proxifyImage } from './xtream-api.js';
 import {
   isNativeAvailable, nativePlay, nativeStop, nativePlayCtl, nativePauseCtl,
-  nativeSeek, nativeSetVolume, nativeSetRect
+  nativeSeek, nativeSetVolume, nativeSetRect, setScreenAwake
 } from './native-player.js';
 
 function getQualityTag(name) {
@@ -548,6 +548,8 @@ export class VideoPlayer {
     // the VOD player box appears immediately with the spinner — not only once libVLC
     // reaches "ready" (native-video-active). Removed in stop().
     document.body.classList.add('player-session');
+    // Keep the phone screen on for the duration of playback (Android APK).
+    setScreenAwake(true);
     this.showSpinner();
     this.currentChannelName = name || 'Live Channel';
     const qBadge = getQualityBadgeHtml(this.currentChannelName);
@@ -1442,6 +1444,8 @@ export class VideoPlayer {
       window.castControls.stop();
       return;
     }
+    // Playback is ending — let the phone screen sleep normally again.
+    setScreenAwake(false);
     clearTimeout(this._vodLoadTimeout);
     this._stopNativeStallWatch();
     this._stopRectSync();
@@ -1617,6 +1621,8 @@ export class VideoPlayer {
     // Keep the control bar visible + interactive over the cast backdrop (CSS uses
     // body.casting to force the otherwise hover-only overlay on).
     document.body.classList.add('casting');
+    // The TV is playing now — let the phone screen sleep.
+    setScreenAwake(false);
   }
 
   resumeLocalPlayback() {
@@ -1625,6 +1631,7 @@ export class VideoPlayer {
     const overlay = document.getElementById('player-cast-overlay');
     if (overlay) overlay.classList.add('hidden');
     if (this._streamUrl) {
+      setScreenAwake(true); // back to local playback — keep the screen on
       this._startPlayback(this._streamUrl, this._streamIsVod);
     }
   }

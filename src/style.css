@@ -6382,6 +6382,12 @@ body.epg-fullscreen-active .epg-section-container {
 /* While casting, keep the control bar fully visible (it's hover-only otherwise)
    so the reused transport controls are always available over the backdrop. */
 body.casting .player-controls-overlay { opacity: 1 !important; }
+/* Highlight the cast button while a cast is active. */
+body.casting #player-cast-btn {
+  color: #00f3ff;
+  background: rgba(0, 243, 255, 0.16);
+  border-radius: 8px;
+}
 .cast-overlay-icon { width: 56px; height: 56px; color: #00f3ff; }
 .cast-overlay-title { font-size: 1.4rem; font-weight: 700; color: #fff; }
 .cast-overlay-device { font-size: 1rem; color: var(--text-secondary, #9fb0c8); }

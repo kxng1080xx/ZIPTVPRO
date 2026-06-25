@@ -27,6 +27,17 @@ export function isNativeAvailable() {
   return !!AndroidNative;
 }
 
+// Keep the phone screen on during playback (Android APK only). Activity-level, so
+// it covers both the libVLC surface and the <video> fallback. No-op elsewhere
+// (desktop/web rely on the OS keeping the screen on while media plays).
+export async function setScreenAwake(on) {
+  try {
+    if (!AndroidNative) return;
+    if (on) await AndroidNative.keepAwake();
+    else await AndroidNative.allowSleep();
+  } catch (e) {}
+}
+
 // Normalize the native backend behind one interface. All methods are async and
 // must never throw synchronously (callers race them against a fallback timer).
 function impl() {

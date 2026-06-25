@@ -303,6 +303,16 @@ async function buildCastMedia(ctx, isDlna, isEShare) {
 async function castToDevice(deviceId) {
   if (!castCtx) return;
 
+  // Capture the movie's duration from the local player NOW, before local playback
+  // is torn down. Many DLNA renderers don't report TrackDuration, which would
+  // otherwise leave the seek bar with no scale (seeking disabled). Device-reported
+  // duration still takes over in the poll when available.
+  try {
+    const p = window.playerInstance;
+    const d = p && ((p._totalDuration && p._totalDuration()) || p._nativeDuration || (p.video && p.video.duration));
+    castKnownDuration = (d && isFinite(d) && d > 0) ? d : 0;
+  } catch (e) { castKnownDuration = 0; }
+
   // Request notifications permission on Android 13+ if using native backend
   if (NativeCast && NativeCast.requestNotificationPermission) {
     try {
@@ -388,7 +398,9 @@ async function stopCasting() {
 }
 
 // --- Casting drives the real #player-controls bar ---------------------------
-let castDuration = 0; // last known media duration (s), for seek-fraction → seconds
+let castDuration = 0;      // media duration (s) — device-reported or known fallback
+let castKnownDuration = 0; // VOD duration captured from the local player at cast start
+let castPosition = 0;      // current position (s), device-reported or estimated
 
 // Public API the player's control bar calls while a cast is active. The player
 // checks castControls.isActive() in its own handlers and routes play/pause,
@@ -400,6 +412,7 @@ window.castControls = {
   seekFraction: (frac) => {
     if (!activeDeviceId || !castDuration) return;
     const sec = Math.max(0, Math.min(castDuration, frac * castDuration));
+    castPosition = sec; // reflect immediately; the poll will confirm/correct
     backendControl('seek', sec);
   },
   setVolume: (v) => {
@@ -425,7 +438,10 @@ window.castControls = {
 // and the bar's vod-only seek row is already hidden for live).
 function refreshCastControls() {
   castPaused = false;
-  castDuration = 0;
+  castPosition = 0;
+  // Seed duration from the known local value so seeking works even before/without
+  // a device position report; the poll upgrades it to the device's value if given.
+  castDuration = castKnownDuration || 0;
   try { if (window.playerInstance) window.playerInstance._setPlayPauseIcon(true); } catch (e) {}
   if (castCtx && castCtx.isLive) stopStatusPoll(); else startStatusPoll();
 }
@@ -454,16 +470,23 @@ function startStatusPoll() {
   stopStatusPoll();
   statusPollTimer = setInterval(async () => {
     if (!activeDeviceId) return;
-    if (window.playerInstance && window.playerInstance.isSeeking) return;
     const st = await backendStatus();
-    if (st.duration && isFinite(st.duration)) castDuration = st.duration;
+    if (st.duration && isFinite(st.duration) && st.duration > 0) castDuration = st.duration;
+    // Position: trust the device when it reports one; otherwise estimate by
+    // advancing ~1s per tick while playing (many DLNA apps don't report position).
+    if (st.currentTime != null && isFinite(st.currentTime)) {
+      castPosition = st.currentTime;
+    } else if (!castPaused) {
+      castPosition += 1;
+      if (castDuration) castPosition = Math.min(castPosition, castDuration);
+    }
+    // Don't fight the user while they're dragging the bar.
+    if (window.playerInstance && window.playerInstance.isSeeking) return;
     const bar = document.getElementById('player-seek');
     const curEl = document.getElementById('player-time-current');
     const durEl = document.getElementById('player-time-duration');
-    if (bar && castDuration && st.currentTime != null && isFinite(st.currentTime)) {
-      bar.value = String(Math.min(100, (st.currentTime / castDuration) * 100));
-    }
-    if (curEl && st.currentTime != null) curEl.textContent = fmtTime(st.currentTime);
+    if (bar && castDuration) bar.value = String(Math.min(100, (castPosition / castDuration) * 100));
+    if (curEl) curEl.textContent = fmtTime(castPosition);
     if (durEl && castDuration) durEl.textContent = fmtTime(castDuration);
   }, 1000);
 }
