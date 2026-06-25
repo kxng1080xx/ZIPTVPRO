@@ -27,7 +27,6 @@ let rescanTimer = null;
 let castPaused = false;     // play/pause state of the active cast
 let lastVolume = 1;         // remembered volume for mute toggle (0..1)
 let statusPollTimer = null; // polls receiver position for the VOD seek bar
-let seekDragging = false;   // suppress poll updates while the user scrubs
 
 function getBackend() {
   if (window.electronCast && window.electronCast.available) return 'electron';
