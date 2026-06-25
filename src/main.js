@@ -2348,7 +2348,8 @@ function bindGlobalEvents() {
   });
 
   // --- Tile: Switch Playlist (opens the playlist picker drawer) ---
-  document.getElementById('tile-switch-playlist')?.addEventListener('click', () => {
+  document.getElementById('tile-switch-playlist')?.addEventListener('click', (e) => {
+    e.stopPropagation();
     settingsModal.classList.add('hidden');
     togglePlaylistDropdown();
   });
@@ -2503,10 +2504,11 @@ function bindGlobalEvents() {
 
   // Mobile bottom-tab bar binds (view tabs + Sources/Settings actions)
   document.querySelectorAll('.mobile-tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
       if (btn.dataset.tab) {
         switchTab(btn.dataset.tab);
       } else if (btn.dataset.action === 'playlists') {
+        e.stopPropagation();
         togglePlaylistDropdown();
       } else if (btn.dataset.action === 'settings') {
         document.getElementById('settings-btn')?.click();
@@ -3021,8 +3023,11 @@ async function togglePlaylistDropdown() {
   const dd = document.getElementById('playlist-dropdown');
   if (!dd) return;
   if (dd.classList.contains('hidden')) {
-    await renderPlaylistDropdown();
+    // Show the drawer immediately, THEN populate it. Un-hiding after an awaited
+    // network render means a slow/hanging /api/playlists call leaves the drawer
+    // invisible — which looked like the button "doing nothing" on mobile.
     dd.classList.remove('hidden');
+    renderPlaylistDropdown();
     setTimeout(() => {
       navigation.focusDefault('playlist-dropdown');
     }, 150);
@@ -3062,7 +3067,11 @@ async function autoEnterSinglePlaylist(id, activeId) {
     if (hasCache) {
       state.activeCategory = null;
       await loadTabCategoriesAndContent();   // instant, from cache
-      syncPlaylist().catch(() => {});         // silent background refresh
+      // Silent background refresh — then repaint so the view reflects the freshly
+      // synced catalog instead of leaving the stale cached content on screen.
+      syncPlaylist()
+        .then(() => loadTabCategoriesAndContent())
+        .catch(() => {});
     } else {
       await triggerFullSync();                // first run: nothing cached yet
       state.activeCategory = null;
@@ -3101,7 +3110,11 @@ async function switchToPlaylist(id) {
     state.activeCategory = null;
     if (hasCache) {
       await loadTabCategoriesAndContent();
-      syncPlaylist().catch(() => {});
+      // Background refresh, then repaint so the switched-to playlist shows its
+      // fresh catalog rather than the stale cached one.
+      syncPlaylist()
+        .then(() => loadTabCategoriesAndContent())
+        .catch(() => {});
     } else {
       await triggerFullSync();
       await loadTabCategoriesAndContent();
@@ -3444,11 +3457,13 @@ async function reconcilePlaylists(remote, { allowRemovals } = {}) {
   const remoteKeys = new Set((remote || []).map(key));
 
   let added = false;
+  let addedKey = null;
   for (const r of remote) {
     if (localKeys.has(key(r))) continue;
     try {
       await login(r.server_url, r.username, r.password, r.playlistName || 'Playlist');
       added = true;
+      addedKey = key(r);
     } catch (e) {
       console.warn('Could not add synced playlist:', r.playlistName, e.message);
     }
@@ -3462,15 +3477,25 @@ async function reconcilePlaylists(remote, { allowRemovals } = {}) {
     }
   }
 
-  // First playlist arrived while on the activation screen -> enter the app.
+  // A playlist arrived from the dashboard. Behaviour depends on where the user is:
+  //   - On the activation screen  -> enter the app with it.
+  //   - Already watching          -> switch to the new playlist and sync it now.
   const onLoginScreen = !document.getElementById('app-container') ||
     document.getElementById('app-container').classList.contains('hidden');
-  if (added && onLoginScreen) {
+  if (added) {
     try {
       const { playlists, activeId } = await getPlaylists();
       if (playlists && playlists.length > 0) {
-        showToast('Playlist connected', 'success');
-        await autoEnterSinglePlaylist(playlists[0].id, activeId);
+        if (onLoginScreen) {
+          showToast('Playlist connected', 'success');
+          await autoEnterSinglePlaylist(playlists[0].id, activeId);
+        } else {
+          // Switch to the newly added playlist (fall back to the active one) and
+          // let switchToPlaylist run the full sync + repaint.
+          const target = playlists.find(p => key(p) === addedKey) || playlists[0];
+          showToast('New playlist added — switching…', 'success');
+          await switchToPlaylist(target.id);
+        }
       }
     } catch (e) { console.warn('Auto-enter after sync failed:', e.message); }
   }

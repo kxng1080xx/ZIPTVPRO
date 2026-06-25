@@ -92,9 +92,21 @@ export function openSearchKeyboard({ title = 'Search', initial = '', onChange, o
     r: 1,
     c: 0,
     changeTimer: null,
-    keysHidden: false,
+    // On the PC build a physical keyboard is the norm, so collapse the tap-keys
+    // by default (the toggle still restores them). Touch/D-pad builds keep them.
+    keysHidden: electron,
     input: overlay.querySelector('.tvk-input')
   };
+
+  // Reflect the default-collapsed state on the PC build.
+  if (kb.keysHidden) {
+    overlay.classList.add('tvk-keys-collapsed');
+    const tBtn = overlay.querySelector('.tvk-toggle');
+    if (tBtn) {
+      tBtn.title = 'Show on-screen keyboard';
+      tBtn.innerHTML = '<i data-lucide="keyboard"></i>';
+    }
+  }
 
   // The input is a read-only display of the query (it never receives focus, so
   // it never pops the native Android IME — we want our own on-screen keyboard
