@@ -243,6 +243,9 @@ function kbKeyHandler(e) {
   if (k === 'Escape') { done(); return; }
   if (k === 'Backspace') { pressKey('BACK'); return; } // physical Backspace deletes a character
   if (k === 'Enter') {
+    // No visible grid to "OK" (PC, keys collapsed) → Enter submits the search.
+    // With the grid up (D-pad/TV) Enter still acts as select on the focused key.
+    if (kb.keysHidden) { done(); return; }
     const el = keyAt(kb.r, kb.c);
     if (el) pressKey(el.dataset.key);
     focusCurrent();
