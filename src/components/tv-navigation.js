@@ -1623,4 +1623,15 @@ class TVNavigation {
       // Close dropdown and focus profile button
       const dd = document.getElementById('playlist-dropdown');
       if (dd) dd.classList.add('hidden');
-      const profileBtn = document.getElementById('profile-card-btn');
+      const profileBtn = document.getElementById('profile-card-btn');
+      if (profileBtn) {
+        this.setFocus('tabs', profileBtn);
+      }
+      e.preventDefault();
+    }
+  }
+}
+
+// Export singleton instance
+export const navigation = new TVNavigation();
+export default navigation;

@@ -1888,4 +1888,262 @@ export class VideoPlayer {
     if (this.fullscreenBtn) {
       this.fullscreenBtn.innerHTML = on ? '<i data-lucide="minimize"></i>' : '<i data-lucide="maximize"></i>';
       if (typeof lucide !== 'undefined') {
-        try { lucide.createIcons({ scope: this.
+        try { lucide.createIcons({ scope: this.fullscreenBtn }); } catch (e) {}
+      }
+    }
+  }
+
+  // Rotate the device to drive fullscreen: portrait→landscape enters, landscape→
+  // portrait exits. player-fs itself is applied by _applyFsForOrientation once the
+  // orientation actually changes, so fullscreen never appears in portrait.
+  _rotateForFs(toLandscape) {
+    try {
+      ScreenOrientation.lock({ orientation: toLandscape ? 'landscape' : 'portrait' }).catch(() => {});
+    } catch (e) {}
+    // Re-derive fullscreen after the rotation settles, in case the resize/media
+    // events don't fire (some WebViews) — guarantees the state catches up.
+    [120, 400, 800].forEach(ms => setTimeout(() => this._applyFsForOrientation(), ms));
+  }
+
+  toggleFullscreen() {
+    if (Capacitor.isNativePlatform()) {
+      if (this._isTv()) {
+        // TV (no portrait): pure CSS toggle, stays landscape.
+        this._setFsDirect(!document.body.classList.contains('player-fs'));
+      } else {
+        if (this.isLandscape()) {
+          const nextOn = !document.body.classList.contains('player-fs');
+          this._setFsDirect(nextOn);
+          if (!nextOn) {
+            // Toggled fullscreen OFF in landscape: unlock orientation so they can rotate physically
+            try { ScreenOrientation.unlock().catch(() => {}); } catch (e) {}
+          } else {
+            // Toggled fullscreen ON in landscape: lock orientation to landscape
+            try { ScreenOrientation.lock({ orientation: 'landscape' }).catch(() => {}); } catch (e) {}
+          }
+        } else {
+          // In portrait, toggle enters fullscreen by rotating to landscape
+          this._rotateForFs(true);
+        }
+      }
+      return;
+    }
+    const container = this.video.parentElement;
+    if (!document.fullscreenElement) {
+      container.requestFullscreen().catch(err => {
+        console.error(`Error entering fullscreen: ${err.message}`);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  }
+
+  enterFullscreen() {
+    if (Capacitor.isNativePlatform()) {
+      if (this._isTv()) {
+        this._setFsDirect(true);      // TV: direct, stays landscape
+      } else {
+        if (this.isLandscape()) {
+          this._setFsDirect(true);
+          try { ScreenOrientation.lock({ orientation: 'landscape' }).catch(() => {}); } catch (e) {}
+        } else {
+          this._rotateForFs(true);                   // phone/tablet: rotate→landscape
+        }
+      }
+      return;
+    }
+    const container = this.video.parentElement;
+    if (!document.fullscreenElement) {
+      container.requestFullscreen().catch(err => {
+        console.warn(`Error entering fullscreen: ${err.message}`);
+      });
+    }
+  }
+
+  toggleCaptions() {
+    if (this.hls) {
+      const tracks = this.video.textTracks;
+      if (tracks.length > 0) {
+        // Toggle the first track between showing and disabled
+        const track = tracks[0];
+        track.mode = track.mode === 'showing' ? 'disabled' : 'showing';
+        this.ccBtn.style.color = track.mode === 'showing' ? '#06b6d4' : '#fff';
+      }
+    }
+  }
+
+  // Collect the audio + subtitle tracks available from whichever engine is
+  // active (hls.js, or the native <video> for mpegts/direct play).
+  getTrackMenu() {
+    const audio = [];
+    const subs = [{ id: 'sub:off', label: 'Off', active: false }];
+
+    if (this.hls) {
+      (this.hls.audioTracks || []).forEach((t, i) => {
+        audio.push({ id: 'audio:' + i, label: t.name || t.lang || `Audio ${i + 1}`, active: i === this.hls.audioTrack });
+      });
+      (this.hls.subtitleTracks || []).forEach((t, i) => {
+        subs.push({ id: 'sub:' + i, label: t.name || t.lang || `Subtitle ${i + 1}`, active: i === this.hls.subtitleTrack });
+      });
+      subs[0].active = this.hls.subtitleTrack === -1;
+    } else {
+      const at = this.video.audioTracks;
+      if (at && at.length) {
+        for (let i = 0; i < at.length; i++) {
+          audio.push({ id: 'audio:' + i, label: at[i].label || at[i].language || `Audio ${i + 1}`, active: !!at[i].enabled });
+        }
+      }
+      const tt = this.video.textTracks;
+      let anySub = false;
+      if (tt && tt.length) {
+        for (let i = 0; i < tt.length; i++) {
+          const showing = tt[i].mode === 'showing';
+          if (showing) anySub = true;
+          subs.push({ id: 'sub:' + i, label: tt[i].label || tt[i].language || `Subtitle ${i + 1}`, active: showing });
+        }
+      }
+      subs[0].active = !anySub;
+    }
+
+    return { audio, subs };
+  }
+
+  // Apply a track chosen from the menu: "audio:<i>", "sub:<i>" or "sub:off".
+  applyTrack(id) {
+    const [kind, idxStr] = String(id).split(':');
+    if (kind === 'audio') {
+      const i = parseInt(idxStr, 10);
+      if (this.hls) {
+        this.hls.audioTrack = i;
+      } else if (this.video.audioTracks) {
+        for (let j = 0; j < this.video.audioTracks.length; j++) this.video.audioTracks[j].enabled = (j === i);
+      }
+    } else if (kind === 'sub') {
+      if (idxStr === 'off') {
+        if (this.hls) this.hls.subtitleTrack = -1;
+        const tt = this.video.textTracks;
+        if (tt) for (let j = 0; j < tt.length; j++) tt[j].mode = 'disabled';
+        this.ccBtn.style.color = '#fff';
+      } else {
+        const i = parseInt(idxStr, 10);
+        if (this.hls) { this.hls.subtitleTrack = i; this.hls.subtitleDisplay = true; }
+        const tt = this.video.textTracks;
+        if (tt) for (let j = 0; j < tt.length; j++) tt[j].mode = (j === i) ? 'showing' : 'disabled';
+        this.ccBtn.style.color = '#06b6d4';
+      }
+    }
+  }
+
+  async togglePiP() {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const PipPlugin = registerPlugin('PipPlugin');
+        const res = await PipPlugin.enterPiP();
+        // PiP can't be granted via a runtime dialog. If the OS refused to enter
+        // (the special "Picture-in-picture" access is off for this app), send the
+        // user straight to the settings screen where they can enable it. We don't
+        // use window.confirm() here because it doesn't reliably render in the
+        // Android WebView and would silently dead-end.
+        if (res && res.needsPermission) {
+          await PipPlugin.openPiPSettings();
+        }
+      } catch (err) {
+        console.error('Failed to enter Android PiP:', err);
+      }
+    } else {
+      try {
+        if (document.pictureInPictureElement) {
+          await document.exitPictureInPicture();
+        } else if (this.video.readyState >= 1) {
+          await this.video.requestPictureInPicture();
+        }
+      } catch (err) {
+        console.error('Failed to toggle web PiP:', err);
+      }
+    }
+  }
+
+  showControlsTemporarily() {
+    this.controls.style.opacity = '1';
+    this.watermark.style.opacity = '0';
+    document.body.style.cursor = 'default';
+    
+    clearTimeout(this.controlsTimeout);
+    this.controlsTimeout = setTimeout(() => {
+      this.hideControls();
+    }, 3000);
+  }
+
+  hideControls() {
+    // During native playback the <video> element is always "paused" (libVLC is
+    // the one playing), so the old guard kept controls up forever — treat an
+    // active, non-paused native stream as playing too.
+    const nativePlaying = this._nativeActive && !this._nativePaused;
+    if (!nativePlaying && this.video.paused) return; // Don't hide controls if paused
+    this.controls.style.opacity = '0';
+    this.watermark.style.opacity = '0.4';
+    
+    // Hide cursor in fullscreen when controls hide
+    if (document.fullscreenElement) {
+      document.body.style.cursor = 'none';
+    }
+  }
+
+  showSpinner() {
+    // Restore the loading state (spinner + text) and show it.
+    this.spinner.innerHTML = '<div class="spinner"></div><span>Loading Stream...</span>';
+    this.spinner.classList.remove('video-loader-error');
+    this.spinner.classList.remove('hidden');
+  }
+
+  hideSpinner() {
+    this.spinner.classList.add('hidden');
+  }
+
+  // Build a human-readable explanation from the HTTP status the provider returned.
+  describeStreamError(httpCode) {
+    if (httpCode === 403) {
+      return 'Stream blocked by the provider (HTTP 403). Many IPTV providers only allow playback from home/mobile networks, not from web servers. Try the mobile or desktop app.';
+    }
+    if (httpCode === 401) {
+      return 'Not authorized for this stream (HTTP 401). Your subscription may not include this channel.';
+    }
+    if (httpCode === 404) {
+      return 'Stream not found (HTTP 404). This channel may be offline or unavailable in this format.';
+    }
+    return 'Could not load this stream. The provider may be blocking playback from this network, or the channel is offline.';
+  }
+
+  // Replace the spinner with a non-spinning error message in the player area.
+  showError(message) {
+    this.hideSpinner();
+    this.spinner.innerHTML =
+      `<div class="video-error-icon"><i data-lucide="alert-triangle"></i></div>` +
+      `<span class="video-error-text">${message}</span>`;
+    this.spinner.classList.add('video-loader-error');
+    this.spinner.classList.remove('hidden');
+    try {
+      if (window.lucide) lucide.createIcons({ scope: this.spinner });
+    } catch (e) {}
+  }
+
+  // Release all resources held by this player instance.
+  // Call this if the player element is ever removed from the DOM.
+  destroy() {
+    clearTimeout(this._vodLoadTimeout);
+    if (this._onFullscreenChange) {
+      document.removeEventListener('fullscreenchange', this._onFullscreenChange);
+      this._onFullscreenChange = null;
+    }
+    // Cancel any pending retry timer
+    clearTimeout(this._retryTimer);
+    this._retryTimer = null;
+    this.destroyHls();
+    this.destroyMpegts();
+    if (this.video) {
+      this.video.src = '';
+      this.video.load();
+    }
+  }
+}
+export default VideoPlayer;

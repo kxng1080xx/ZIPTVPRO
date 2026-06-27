@@ -7256,4 +7256,155 @@ body.native-video-active #main-video-player { display: none !important; }
 body.native-video-active .player-controls-overlay { pointer-events: auto; }
 
 /* VOD (series) on native: browse = list only, watch = player. Hide the inline
-   series player box while NOT playing so
+   series player box while NOT playing so the episode list shows alone; once an
+   episode plays it reappears (boxed/YouTube-style in portrait, fullscreen in
+   landscape), and stop() hides it again. Live keeps its box (always watching). */
+body.app-native:not(.player-session) .series-player-wrapper { display: none !important; }
+/* Portrait watch = YouTube layout: video pinned at the top, content scrolls below. */
+@media (orientation: portrait) {
+  body.app-native.player-session:not(.player-fs) .series-top-row { display: block !important; }
+  body.app-native.player-session:not(.player-fs) .series-player-wrapper {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 50 !important;
+    width: 100% !important;
+    aspect-ratio: 16 / 9 !important;
+  }
+}
+
+/* ==========================================================================
+   PERFORMANCE (LITE) MODE  — body.perf-lite
+   --------------------------------------------------------------------------
+   Auto-enabled on low-power targets (Fire TV / Tizen / WebOS / Android
+   projectors / TV mode) and via the Settings "Performance mode" toggle.
+   Strips the GPU-expensive parts of the glass redesign so the UI stays
+   smooth on weak Mali/older GPUs:
+     - ALL backdrop-filter blurs killed (the dominant per-frame cost)
+     - translucent glass surfaces swapped for opaque solids
+     - ambient body glows + fixed background removed
+     - heavy multi-layer shadows flattened
+     - `transition: all` and decorative animations neutralized
+   Desktop keeps the full glass look. No DOM/id changes.
+   ========================================================================== */
+
+/* 1. Opaque tokens (so former-blur surfaces aren't see-through) + no blur. */
+body.perf-lite {
+  --rd-glass-panel: #141821;
+  --rd-glass-header: #0c0f17;
+  --rd-glass-drawer: #0c0f17;
+  --rd-glass-modal:  #0e1119;
+  --rd-blur-header: none;
+  --rd-blur-drawer: none;
+  --rd-card-shadow: 0 6px 16px rgba(0,0,0,0.5);
+  --rd-player-shadow: 0 8px 22px rgba(0,0,0,0.5);
+  --rd-focus-glow: 0 0 0 3px rgba(56,189,248,0.35);
+  /* Drop the ambient radial glows + fixed-attachment repaint. */
+  background-image: none !important;
+  background-attachment: scroll !important;
+}
+
+/* 2. Kill every backdrop-filter in one shot (covers all 44 call sites). */
+body.perf-lite *,
+body.perf-lite *::before,
+body.perf-lite *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* 3. Neutralize `transition: all` (animates layout props) and heavy shadows.
+   Keep only cheap compositor-friendly transitions on common interactive bits. */
+body.perf-lite * {
+  transition-property: opacity, transform, color, background-color, border-color !important;
+  transition-duration: 0.12s !important;
+  animation-duration: 0.001s !important;
+}
+body.perf-lite .player-wrapper,
+body.perf-lite .player-stage {
+  box-shadow: var(--rd-player-shadow) !important;
+}
+
+/* 4. Elements that used their own inline translucent bg behind a blur — give
+   them a solid backing so text stays legible without the blur. */
+body.perf-lite .app-header,
+body.perf-lite .playlist-drawer-panel,
+body.perf-lite .vod-modal,
+body.perf-lite .gsearch-overlay,
+body.perf-lite .settings-modal {
+  /* (native-video compositing fix applied above) */
+  background-color: var(--rd-glass-modal) !important;
+}
+
+/* Flixify tab: no categories sidebar — let the content fill the width. */
+body.flixify-tab .sidebar { display: none !important; }
+body.youtube-tab .sidebar { display: none !important; }
+
+/* YouTube tab: the webview fills the whole content area. */
+#youtube-view.active { display: flex !important; height: 100%; }
+#youtube-frame { flex: 1; width: 100%; height: 100%; border: none; background: #000; }
+
+
+/* Flixify home menu */
+.flx-menu {
+  max-width: 1100px;
+  margin: 10px auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+}
+.flx-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 16px 18px;
+  border-radius: 16px;
+  text-align: left;
+  color: #e8edf4;
+  font-size: 1.04rem;
+  font-weight: 500;
+  cursor: pointer;
+  background: linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.018));
+  border: 1px solid rgba(255,255,255,.08);
+  box-shadow: 0 1px 0 rgba(255,255,255,.03) inset;
+  transition: transform .16s ease, border-color .16s ease, background .16s ease, box-shadow .16s ease;
+}
+.flx-row:hover,
+.flx-row:focus-visible {
+  transform: translateY(-2px);
+  border-color: rgba(124,196,255,.55);
+  background: linear-gradient(180deg, rgba(124,196,255,.12), rgba(255,255,255,.03));
+  box-shadow: 0 8px 24px rgba(0,0,0,.35);
+  outline: none;
+}
+.flx-row-ico {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #7cc4ff;
+  background: rgba(124,196,255,.14);
+}
+.flx-row:hover .flx-row-ico { background: rgba(124,196,255,.22); }
+.flx-row-ico svg { width: 21px; height: 21px; }
+.flx-row-label { flex: 1; }
+.flx-row-chev { color: #5b6675; display: flex; transition: transform .16s ease, color .16s ease; }
+.flx-row-chev svg { width: 20px; height: 20px; }
+.flx-row:hover .flx-row-chev { color: #9fb2c6; transform: translateX(3px); }
+
+/* Flixify poster tiles */
+.flx-tile {
+  cursor: pointer;
+  transition: transform .16s ease;
+}
+.flx-tile:hover { transform: translateY(-4px); }
+.flx-tile > div:first-child {
+  transition: box-shadow .16s ease, outline-color .16s ease;
+  outline: 2px solid transparent;
+}
+.flx-tile:hover > div:first-child {
+  box-shadow: 0 10px 26px rgba(0,0,0,.45);
+  outline-color: rgba(124,196,255,.6);
+}

@@ -134,6 +134,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      webviewTag: true, // enables the in-app YouTube <webview> tab
       preload: path.join(__dirname, 'electron', 'preload.cjs')
     }
   });

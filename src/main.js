@@ -340,9 +340,18 @@ async function switchTab(tabId) {
     panel.classList.toggle('active', panel.id === `${tabId}-view`);
   });
 
-  // Flixify has no category sidebar — hide the left rail on that tab (CSS-driven
-  // so it stays hidden through playback exit too).
+  // Flixify and YouTube have no category sidebar — hide the left rail on those
+  // tabs (CSS-driven so it stays hidden through playback exit too).
   document.body.classList.toggle('flixify-tab', tabId === 'flixify');
+  document.body.classList.toggle('youtube-tab', tabId === 'youtube');
+
+  // YouTube tab: an in-app webview. Load youtube.com on first open (lazy, so it
+  // doesn't run in the background at startup); the panel toggle above shows it.
+  if (tabId === 'youtube') {
+    const yt = document.getElementById('youtube-frame');
+    if (yt && !yt.getAttribute('src')) yt.setAttribute('src', 'https://www.youtube.com');
+    return;
+  }
 
   // Header search placeholder follows the active view
   const headerSearch = document.getElementById('header-search-input');
@@ -3565,4 +3574,257 @@ function updateHeaderTvIpBadge(status) {
   // LAN IPs come from whichever source has them: the status object (populated
   // only in server mode) or `lanInfo`, which loadLanInfo() fetches straight
   // from the local server in any mode. Relying on `status` alone meant the
-  
+  // pill vanished in client mode (getStatus carries no local_ips) and only
+  // reappeared when something flipped the app into server mode.
+  let url = null;
+  let label = null;
+  const lanIps = (status && status.local_ips && status.local_ips.length > 0)
+    ? status.local_ips
+    : (lanInfo.ips && lanInfo.ips.length > 0 ? lanInfo.ips : []);
+  if (lanIps.length > 0) {
+    const ip = lanIps[0];
+    const port = (status && status.server_port) || lanInfo.port || 3000;
+    url = `http://${ip}:${port}/tv`;
+    label = `TV: ${ip}:${port}/tv`;
+  } else {
+    try {
+      const host = window.location.hostname || '';
+      // Only a real hosted domain is useful here — a localhost/file origin (the
+      // desktop app's own window) can't be opened from a separate TV.
+      const isLocal = !host || host === 'localhost' || host === '127.0.0.1' || window.location.protocol === 'file:';
+      if (!isLocal) {
+        url = `${window.location.origin.replace(/\/+$/, '')}/tv`;
+        label = `TV: ${window.location.host}/tv`;
+      }
+    } catch (e) {}
+  }
+
+  if (badge && text && url) {
+    text.textContent = label;
+    badge.title = `Open on your TV's browser · ${url} (click to copy)`;
+    badge.dataset.tvUrl = url;
+    badge.style.display = 'inline-flex';
+
+    // Click to copy the link (bind once).
+    if (!badge.dataset.bound) {
+      badge.dataset.bound = '1';
+      badge.addEventListener('click', () => {
+        const u = badge.dataset.tvUrl || '';
+        if (u && navigator.clipboard) {
+          navigator.clipboard.writeText(u)
+            .then(() => showToast('TV link copied', 'success'))
+            .catch(() => {});
+        }
+      });
+    }
+
+    if (typeof lucide !== 'undefined') {
+      lucide.createIcons({ scope: badge });
+    }
+  } else if (badge) {
+    badge.style.display = 'none';
+  }
+}
+
+// ==========================================================================
+// SUPABASE REMOTE LOGIN SYSTEM
+// ==========================================================================
+
+// ==========================================================================
+// CLOUD SYNC (5.0) — the /connect dashboard is the source of truth. The app
+// heartbeats to /api/device, mirrors the device's playlists, shows the admin's
+// expiration, and wipes everything when the device expires.
+// ==========================================================================
+const CLOUD_SYNC_MS = 5 * 60 * 1000;      // reconcile every 5 min while open
+const DEVICE_EXPIRY_KEY = 'ziptv_device_expiry';
+let cloudSyncBusy = false;
+
+// Back-compat shims: the login/activation screens call these. With 5.0 the sync
+// loop runs continuously for the whole app lifetime, so "start" just guarantees
+// it's running and "stop" is a no-op (we never want to stop mirroring).
+function startRemoteLoginPolling() { startCloudSync(); }
+function stopRemoteLoginPolling() { /* cloud sync runs continuously now */ }
+
+function appVersion() {
+  return (typeof __APP_VERSION__ !== 'undefined') ? __APP_VERSION__ : null;
+}
+
+// Idempotent: starts the persistent heartbeat/reconcile loop + resume triggers.
+function startCloudSync() {
+  runCloudSync();
+  if (cloudSyncInterval) return;
+  cloudSyncInterval = setInterval(runCloudSync, CLOUD_SYNC_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) runCloudSync(); });
+  window.addEventListener('online', runCloudSync);
+}
+
+// One sync cycle. On network failure, fall back to the cached state and only
+// enforce a known expiry locally — never delete playlists over a blip (grace).
+async function runCloudSync() {
+  if (cloudSyncBusy) return;
+  cloudSyncBusy = true;
+  try {
+    let state;
+    try {
+      state = await syncDevice(deviceCode, appVersion());
+    } catch (netErr) {
+      const cached = readCachedState();
+      if (cached && isStateExpired(cached)) await enforceDeviceExpiry(cached);
+      return;
+    }
+    await applyCloudState(state);
+  } catch (err) {
+    console.warn('Cloud sync error:', err);
+  } finally {
+    cloudSyncBusy = false;
+  }
+}
+
+// Apply a fresh state from /api/device.
+async function applyCloudState(state) {
+  if (!state) return;
+
+  // Expired → wipe + notice.
+  if (state.expired || isStateExpired(state)) { await enforceDeviceExpiry(state); return; }
+
+  // Remember the admin-set expiry for the in-app badge (or clear it).
+  if (state.expires_at) localStorage.setItem(DEVICE_EXPIRY_KEY, state.expires_at);
+  else localStorage.removeItem(DEVICE_EXPIRY_KEY);
+
+  // A brand-new ('pending') device that the admin hasn't provisioned yet keeps
+  // whatever the user may already have locally — we only mirror (incl. removals)
+  // once the device is managed. This protects existing users during migration.
+  const managed = state.status && state.status !== 'pending';
+  await reconcilePlaylists(state.playlists || [], { allowRemovals: managed });
+
+  // Managed device whose playlists were ALL removed from the dashboard → treat
+  // like an expired subscription: stop playback, return to the login screen and
+  // show the notice.
+  if (managed) {
+    try {
+      const { playlists } = await getPlaylists();
+      if (!playlists || playlists.length === 0) { await deactivateToLogin(state.notice); return; }
+    } catch (e) {}
+  }
+
+  // Healthy + active: clear any lingering expiry banner.
+  const banner = document.getElementById('expiry-banner');
+  if (banner) banner.remove();
+}
+
+// Make the local playlists match the dashboard's list (match on host+username).
+async function reconcilePlaylists(remote, { allowRemovals } = {}) {
+  const norm = (s) => String(s || '').trim().toLowerCase().replace(/\/+$/, '').replace(/^https?:\/\//, '');
+  const key = (p) => norm(p.server_url) + '|' + String(p.username || '').toLowerCase();
+
+  const { playlists: local } = await getPlaylists();
+  const localKeys = new Set((local || []).map(key));
+  const remoteKeys = new Set((remote || []).map(key));
+
+  let added = false;
+  let addedKey = null;
+  for (const r of remote) {
+    if (localKeys.has(key(r))) continue;
+    try {
+      await login(r.server_url, r.username, r.password, r.playlistName || 'Playlist');
+      added = true;
+      addedKey = key(r);
+    } catch (e) {
+      console.warn('Could not add synced playlist:', r.playlistName, e.message);
+    }
+  }
+
+  if (allowRemovals) {
+    for (const l of (local || [])) {
+      if (!remoteKeys.has(key(l))) {
+        try { await removePlaylist(l.id); } catch (e) { console.warn('Could not remove playlist:', e.message); }
+      }
+    }
+  }
+
+  // A playlist arrived from the dashboard. Behaviour depends on where the user is:
+  //   - On the activation screen  -> enter the app with it.
+  //   - Already watching          -> switch to the new playlist and sync it now.
+  const onLoginScreen = !document.getElementById('app-container') ||
+    document.getElementById('app-container').classList.contains('hidden');
+  if (added) {
+    try {
+      const { playlists, activeId } = await getPlaylists();
+      if (playlists && playlists.length > 0) {
+        if (onLoginScreen) {
+          showToast('Playlist connected', 'success');
+          await autoEnterSinglePlaylist(playlists[0].id, activeId);
+        } else {
+          // Switch to the newly added playlist (fall back to the active one) and
+          // let switchToPlaylist run the full sync + repaint.
+          const target = playlists.find(p => key(p) === addedKey) || playlists[0];
+          showToast('New playlist added — switching…', 'success');
+          await switchToPlaylist(target.id);
+        }
+      }
+    } catch (e) { console.warn('Auto-enter after sync failed:', e.message); }
+  }
+}
+
+// Wipe all local playlists, stop playback and bounce to the login screen.
+async function enforceDeviceExpiry(state) {
+  localStorage.setItem(DEVICE_EXPIRY_KEY, state.expires_at || '');
+  try {
+    const { playlists } = await getPlaylists();
+    for (const p of (playlists || [])) {
+      try { await removePlaylist(p.id); } catch (e) {}
+    }
+  } catch (e) {}
+  await deactivateToLogin(state.notice);
+}
+
+// Log the user out (stop playback, clear session) and show the expired notice on
+// the activation screen. The toast fires only on the active->login transition so
+// it doesn't repeat every sync while parked on the login screen.
+async function deactivateToLogin(noticeText) {
+  const appC = document.getElementById('app-container');
+  const wasActive = appC && !appC.classList.contains('hidden');
+  try { if (playerInstance) playerInstance.stop(); } catch (e) {}
+  state.user = null;
+  localStorage.removeItem('last_playlist_id');
+  showLogin();
+  showExpiryNotice(noticeText, { toast: wasActive });
+}
+
+function showExpiryNotice(text, { toast = true } = {}) {
+  const msg = (text && String(text).trim()) || 'Your subscription has expired. Please contact your provider to renew.';
+  if (toast) { try { showToast(msg, 'error', 8000); } catch (e) {} }
+  const codeEl = document.getElementById('remote-device-code');
+  if (codeEl && codeEl.parentElement) {
+    let banner = document.getElementById('expiry-banner');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'expiry-banner';
+      banner.style.cssText = 'margin:12px 0;padding:12px 14px;border-radius:10px;background:rgba(239,68,68,.12);' +
+        'border:1px solid rgba(239,68,68,.35);color:#fecaca;font-size:.9rem;white-space:pre-wrap;text-align:center;';
+      codeEl.parentElement.insertBefore(banner, codeEl.parentElement.firstChild);
+    }
+    banner.textContent = msg;
+  }
+}
+
+// Lightweight toast notification (auto-dismisses).
+function showToast(message, type = 'success', duration = 3500) {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  const icon = type === 'error' ? 'alert-circle' : (type === 'info' ? 'info' : 'check-circle');
+  toast.innerHTML = `
+    <span class="toast-icon"><i data-lucide="${icon}"></i></span>
+    <span class="toast-message">${message}</span>
+  `;
+  container.appendChild(toast);
+  if (window.lucide) lucide.createIcons({ scope: toast });
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(-20px)';
+    setTimeout(() => toast.remove(), 300);
+  }, duration);
+}
+window.showToast = showToast;

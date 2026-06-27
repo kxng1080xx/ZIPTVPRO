@@ -714,3 +714,37 @@ export class EPGGrid {
       const block = this.createProgramBlock(
         prog.title || 'No Title',
         blockStart,
+        blockEnd,
+        startTime,
+        pxPerMs,
+        prog
+      );
+
+      block.addEventListener('click', () => {
+        if (chanRow) chanRow.click();
+        this.onChannelSelect(channel, prog);
+      });
+
+      progRow.appendChild(block);
+    });
+  }
+
+  // Update favorites highlighting in EPG list
+  updateFavoritesHighlighting() {
+    // Check favorites by requesting from main app favorites list cache
+    // Let's hook into a global favorites checker which will be populated
+    document.querySelectorAll('.epg-channel-row-fav').forEach(btn => {
+      const id = btn.dataset.id;
+      const isFav = window.isChannelFavorite?.('live', id) || false;
+      if (isFav) {
+        btn.classList.add('favorited');
+        btn.innerHTML = '<i class="star-filled" data-lucide="star"></i>';
+      } else {
+        btn.classList.remove('favorited');
+        btn.innerHTML = '<i data-lucide="star"></i>';
+      }
+    });
+    lucide.createIcons({ scope: this.channelsList });
+  }
+}
+export default EPGGrid;

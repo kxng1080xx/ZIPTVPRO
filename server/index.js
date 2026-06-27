@@ -1173,4 +1173,299 @@ function startRecording({ url, name, channel, durationMins, id }) {
   const secs = Math.max(60, Math.round((+durationMins || 120) * 60));
   // ponytail: .ts + stream-copy always works from a live .ts source and the app
   // already plays .ts; remux to .mp4 here if you ever want portable files.
-  const args = ['-user_agent', 'VLC/3.0
+  const args = ['-user_agent', 'VLC/3.0.20', '-i', url, '-c', 'copy', '-t', String(secs), '-f', 'mpegts', file];
+  const proc = trackChild(spawn(findFfmpeg(), args, { windowsHide: true }));
+  recProcs.set(recId, proc);
+  const entry = {
+    id: recId, name: name || channel || 'Recording', channel: channel || '',
+    file, status: 'recording', createdAt: Date.now(), durationMins: +durationMins || 120,
+  };
+  writeJson(REC_INDEX, readJson(REC_INDEX, []).filter(r => r.id !== recId).concat(entry));
+  const done = () => {
+    recProcs.delete(recId);
+    let ok = false; try { ok = fs.statSync(file).size > 0; } catch (e) {}
+    updateRec(recId, { status: ok ? 'done' : 'failed' });
+  };
+  proc.on('exit', done);
+  proc.on('error', done);
+  return entry;
+}
+
+app.post('/api/record', (req, res) => {
+  const { url, name, channel, durationMins } = req.body || {};
+  if (!url || !/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'missing or invalid url' });
+  try { res.json(startRecording({ url, name, channel, durationMins })); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/recordings', (req, res) => {
+  const list = readJson(REC_INDEX, []).map(r => {
+    let size = 0; try { size = fs.statSync(r.file).size; } catch (e) {}
+    return { id: r.id, name: r.name, channel: r.channel, status: r.status,
+             createdAt: r.createdAt, durationMins: r.durationMins, size,
+             playUrl: `/api/recordings/${r.id}/play.ts` };  // .ts → player picks mpegts engine
+  }).sort((a, b) => b.createdAt - a.createdAt);
+  res.json(list);
+});
+
+app.post('/api/recordings/:id/stop', (req, res) => {
+  const proc = recProcs.get(req.params.id);
+  if (proc) { try { proc.kill('SIGKILL'); } catch (e) {} }
+  res.json(updateRec(req.params.id, { status: 'done' }) || { ok: true });
+});
+
+app.delete('/api/recordings/:id', (req, res) => {
+  const list = readJson(REC_INDEX, []);
+  const rec = list.find(r => r.id === req.params.id);
+  const proc = recProcs.get(req.params.id);
+  if (proc) { try { proc.kill('SIGKILL'); } catch (e) {} recProcs.delete(req.params.id); }
+  if (rec) { try { fs.unlinkSync(rec.file); } catch (e) {} }
+  writeJson(REC_INDEX, list.filter(r => r.id !== req.params.id));
+  res.json({ ok: true });
+});
+
+app.get('/api/recordings/:id/play.ts', (req, res) => {
+  const rec = readJson(REC_INDEX, []).find(r => r.id === req.params.id);
+  if (!rec || !fs.existsSync(rec.file)) return res.status(404).send('not found');
+  res.type('video/mp2t');
+  res.sendFile(rec.file); // express sendFile honors Range, so the .ts is seekable
+});
+
+// --- Scheduled recordings -------------------------------------------------
+const schedTimers = new Map();
+
+function armSchedule(job) {
+  const delay = new Date(job.startAt).getTime() - Date.now();
+  if (delay < 0) return false;
+  // ponytail: setTimeout caps at ~24.8 days — past any sane TV scheduling horizon.
+  const t = setTimeout(() => {
+    startRecording({ url: job.url, name: job.name, channel: job.channel, durationMins: job.durationMins, id: job.id });
+    writeJson(SCHED_INDEX, readJson(SCHED_INDEX, []).filter(j => j.id !== job.id));
+    schedTimers.delete(job.id);
+  }, delay);
+  schedTimers.set(job.id, t);
+  return true;
+}
+
+app.post('/api/recordings/schedule', (req, res) => {
+  const { url, name, channel, startAt, durationMins } = req.body || {};
+  if (!url || !/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'missing or invalid url' });
+  if (!startAt || isNaN(new Date(startAt).getTime())) return res.status(400).json({ error: 'missing or invalid startAt' });
+  const job = { id: 'sch_' + Date.now(), url, name: name || channel || 'Recording', channel: channel || '', startAt, durationMins: +durationMins || 120 };
+  writeJson(SCHED_INDEX, readJson(SCHED_INDEX, []).concat(job));
+  if (!armSchedule(job)) return res.status(400).json({ error: 'startAt is in the past' });
+  res.json(job);
+});
+
+app.get('/api/recordings/schedule', (req, res) => res.json(readJson(SCHED_INDEX, [])));
+
+app.delete('/api/recordings/schedule/:id', (req, res) => {
+  const t = schedTimers.get(req.params.id);
+  if (t) { clearTimeout(t); schedTimers.delete(req.params.id); }
+  writeJson(SCHED_INDEX, readJson(SCHED_INDEX, []).filter(j => j.id !== req.params.id));
+  res.json({ ok: true });
+});
+
+// Re-arm future jobs on boot; drop ones whose start time already passed.
+{
+  const jobs = readJson(SCHED_INDEX, []);
+  const future = jobs.filter(j => new Date(j.startAt).getTime() > Date.now());
+  future.forEach(armSchedule);
+  if (future.length !== jobs.length) writeJson(SCHED_INDEX, future);
+}
+
+// --- Timeshift (rolling 30-min HLS buffer) --------------------------------
+let activeTimeshift = null; // { ch, dir, url, proc, stopped, restarts, windowStart }
+
+function stopTimeshift() {
+  if (activeTimeshift) {
+    activeTimeshift.stopped = true;           // tell the exit handler not to restart
+    try { activeTimeshift.proc.kill('SIGKILL'); } catch (e) {}
+    activeTimeshift = null;
+  }
+}
+
+// Spawn (or respawn) the segmenter for `state`. Appends to the same dir so a
+// restart continues the existing playlist instead of resetting it.
+function spawnTimeshiftProc(state) {
+  // ponytail: 2s x 900 = 30-min rolling window; raise hls_list_size for longer.
+  // Video is stream-copied (cheap); audio is transcoded to AAC because live
+  // channels often carry AC3/E-AC3/MP2 that Chromium's MSE can't decode from a
+  // copied TS — that mismatch is what made hls.js throw media errors and flicker.
+  const args = [
+    '-user_agent', 'VLC/3.0.20',
+    // Auto-reconnect to the provider instead of exiting when it drops the
+    // connection or sends EOF — IPTV servers cycle connections periodically, and
+    // each drop was killing the segmenter (= a visible stop). These keep one
+    // ffmpeg alive across drops so the buffer never gaps.
+    '-reconnect', '1',
+    '-reconnect_at_eof', '1',
+    '-reconnect_streamed', '1',
+    '-reconnect_delay_max', '2',
+    // Rebuild timestamps + drop corrupt packets so a raw-TS stream-copy stays
+    // glitch-free without re-encoding video.
+    '-fflags', '+genpts+discardcorrupt',
+    '-i', state.url,
+    '-c:v', 'copy',
+    '-c:a', 'aac', '-ac', '2', '-b:a', '256k',
+    '-avoid_negative_ts', 'make_zero',
+    '-f', 'hls', '-hls_time', '2', '-hls_list_size', '900',
+    '-hls_flags', 'delete_segments+append_list+omit_endlist',
+    '-hls_segment_type', 'mpegts',
+    '-hls_segment_filename', path.join(state.dir, 'seg_%05d.ts'),
+    path.join(state.dir, 'index.m3u8'),
+  ];
+  const proc = trackChild(spawn(findFfmpeg(), args, { windowsHide: true }));
+  state.proc = proc;
+  // Keep the last bit of ffmpeg stderr so an unexpected exit is explainable.
+  let errTail = '';
+  proc.stderr.on('data', (d) => { errTail = (errTail + d).slice(-1500); });
+  proc.on('exit', (code) => {
+    if (!state.stopped && activeTimeshift === state) {
+      console.warn(`[timeshift] ffmpeg exited (code ${code}). Tail:\n${errTail}`);
+    }
+  });
+  proc.on('exit', () => {
+    if (state.stopped || activeTimeshift !== state) return; // deliberate / superseded
+    // The provider dropped the connection — restart so the buffer (and the
+    // viewer's playback) survives instead of freezing. Cap restarts so a dead
+    // source doesn't get hammered: 6 within a rolling 60s window.
+    const now = Date.now();
+    if (now - state.windowStart > 60000) { state.windowStart = now; state.restarts = 0; }
+    if (state.restarts >= 6) { console.warn('[timeshift] too many restarts — giving up'); activeTimeshift = null; return; }
+    state.restarts++;
+    console.warn(`[timeshift] segmenter exited — restarting (${state.restarts})`);
+    setTimeout(() => { if (activeTimeshift === state && !state.stopped) spawnTimeshiftProc(state); }, 1500);
+  });
+  return proc;
+}
+
+const waitForFile = (fp, ms) => new Promise((resolve) => {
+  const deadline = Date.now() + ms;
+  const tick = () => {
+    try { if (fs.statSync(fp).size > 0) return resolve(true); } catch (e) {}
+    if (Date.now() > deadline) return resolve(false);
+    setTimeout(tick, 250);
+  };
+  tick();
+});
+
+app.get('/api/timeshift/start', async (req, res) => {
+  const url = req.query.url;
+  const ch = sanitize(req.query.ch || 'live');
+  if (!url || !/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'missing or invalid url' });
+  // Already buffering this channel → just hand back the playlist.
+  if (activeTimeshift && activeTimeshift.ch === ch && !activeTimeshift.stopped) {
+    return res.json({ playlist: `/api/timeshift/${ch}/index.m3u8` });
+  }
+  stopTimeshift();
+  const dir = path.join(TS_DIR, ch);
+  try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
+  const state = { ch, dir, url, proc: null, stopped: false, restarts: 0, windowStart: Date.now() };
+  activeTimeshift = state;
+  try { spawnTimeshiftProc(state); }
+  catch (e) { activeTimeshift = null; return res.status(500).json({ error: 'ffmpeg spawn failed' }); }
+  // Wait for a few segments (not just the first) so playback starts with a
+  // cushion behind the live edge — starting on the only segment starves the
+  // buffer and freezes once at startup.
+  const ready = await waitForFile(path.join(dir, 'seg_00002.ts'), 20000);
+  if (!ready) { stopTimeshift(); return res.status(504).json({ error: 'timeshift failed to start' }); }
+  res.json({ playlist: `/api/timeshift/${ch}/index.m3u8` });
+});
+
+app.get('/api/timeshift/stop', (req, res) => { stopTimeshift(); res.json({ ok: true }); });
+
+app.get('/api/timeshift/:ch/:file', (req, res) => {
+  const ch = sanitize(req.params.ch);
+  const file = String(req.params.file).replace(/[^a-z0-9_.\-]+/gi, '_');
+  const fp = path.join(TS_DIR, ch, file);
+  if (!fp.startsWith(TS_DIR)) return res.status(403).end();      // path-traversal guard
+  if (!fs.existsSync(fp)) return res.status(404).end();
+  if (file.endsWith('.m3u8')) res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(fp);
+});
+
+// --- Flixify (public-domain VOD source) — PIN/device auth (desktop/server) ---
+app.post('/api/flixify/pin', async (req, res) => {
+  try { res.json(await flixify.generatePin()); }
+  catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+app.get('/api/flixify/pin/status', async (req, res) => {
+  try { res.json(await flixify.checkPin()); }
+  catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+app.get('/api/flixify/status', async (req, res) => {
+  res.json({ loggedIn: await flixify.isLoggedIn() });
+});
+
+app.post('/api/flixify/logout', (req, res) => {
+  res.json(flixify.logout());
+});
+
+app.get('/api/flixify/home', async (req, res) => {
+  try { res.json(await flixify.browse(flixify.homePath(), {})); }
+  catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+app.get('/api/flixify/browse', async (req, res) => {
+  const { path: p, page, q } = req.query;
+  if (!p) return res.status(400).json({ error: 'Missing path' });
+  try { res.json(await flixify.browse(p, { page: parseInt(page, 10) || 1, q: q || '' })); }
+  catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+app.get('/api/flixify/resolve', async (req, res) => {
+  const { path: p, quality } = req.query;
+  if (!p) return res.status(400).json({ error: 'Missing path' });
+  try { res.json(await flixify.resolve(p, quality)); }
+  catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+app.get('/api/flixify/profiles', async (req, res) => {
+  try { res.json(await flixify.profiles()); }
+  catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+app.post('/api/flixify/profiles/select', async (req, res) => {
+  const { id } = req.body;
+  if (!id) return res.status(400).json({ error: 'Missing id' });
+  try { res.json(await flixify.selectProfile(id)); }
+  catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+app.post('/api/flixify/progress', async (req, res) => {
+  const { id, pos, delta, cw, completed } = req.body || {};
+  if (!id) return res.status(400).json({ error: 'Missing id' });
+  try {
+    res.json(await flixify.reportProgress(id, {
+      pos: +pos || 0, delta: +delta || 0, cw: !!cw, completed: !!completed,
+    }));
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+// Serve Vite frontend in production
+const distPath = path.join(__dirname, '../dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+} else {
+  app.get('/', (req, res) => {
+    res.send('IPTV Server is running! Run client dev server with `npm run dev`.');
+  });
+}
+
+app.listen(PORT, () => {
+  console.log(`IPTV Player backend listening on http://localhost:${PORT}`);
+  try {
+    const ips = getLocalIpAddresses();
+    if (ips.length > 0) {
+      console.log('Exposed on your local network at:');
+      ips.forEach(ip => console.log(`  http://${ip}:${PORT}`));
+    }
+  } catch (e) {}
+});
