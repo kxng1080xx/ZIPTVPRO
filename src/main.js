@@ -27,6 +27,7 @@ import { navigation } from './components/tv-navigation.js';
 import { initCastUI, setCastContext } from './components/cast.js';
 import { checkForUpdate, downloadApp, startPeriodicUpdateCheck, initElectronUpdaterUI } from './components/update-check.js';
 import { openSearchKeyboard, openSortDropdown } from './components/tv-search.js';
+import { enterFlixify, flixifySearch, setFlixifyPlayHandler, playFlixifySearchItem } from './components/flixify.js';
 import { openGlobalSearch, setGlobalSearchQuery } from './components/global-search.js';
 import { isNativeAvailable } from './components/native-player.js';
 import { getDeviceCode, syncDevice, readCachedState, clearCachedState, isStateExpired } from './components/cloud-sync.js';
@@ -275,6 +276,53 @@ async function initApp() {
 // ==========================================================================
 // TABS & VIEW ROUTER
 // ==========================================================================
+// Hand a resolved Flixify stream to the app's player. Mirrors playVODStream:
+// the <video> lives inside the (now hidden) Live-TV panel, so we must enter
+// vod-mode to float the player over the catalog — otherwise nothing shows.
+function playFlixify(url, title, poster, opts = {}) {
+  if (!url) return;
+  document.body.classList.add('vod-mode');
+  document.querySelector('.sidebar')?.classList.add('hidden');
+  document.querySelector('.top-header')?.classList.add('hidden');
+  document.querySelector('.epg-section-container')?.classList.add('hidden');
+  document.querySelector('.program-details-panel')?.classList.add('hidden');
+  if (playerInstance.vodTitleTag) playerInstance.vodTitleTag.textContent = title || '';
+  playerInstance.showSpinner();
+  try {
+    playerInstance.setSeriesMode(false);
+    playerInstance.onExitVod = exitFlixifyPlayer;
+    playerInstance.onVideoEnded = () => {
+      // opts.onEnded advances to the next episode and returns true; if it didn't
+      // (movie, or last episode), leave the player instead of stranding on idle.
+      const advanced = opts.onEnded && opts.onEnded();
+      if (!advanced) exitFlixifyPlayer();
+    };
+    playerInstance.onVodProgress = opts.onProgress || null; // resume tracking
+    playerInstance.loadStream(url, title || 'Flixify', poster || '', '', true, opts.resumeTime || 0);
+    // Enable casting: the receiver fetches /cast/flixify/<id>.mp4 from the server.
+    if (opts.castId) setCastContext({ type: 'flixify', streamId: opts.castId, ext: 'mp4', title: title || 'Flixify', isLive: false });
+    playerInstance.autoFullscreen();
+  } catch (e) {
+    console.error('Flixify play failed:', e);
+    playerInstance.hideSpinner();
+    exitFlixifyPlayer();
+  }
+}
+
+// Restore chrome after the Flixify player exits (Flixify tab stays active).
+function exitFlixifyPlayer() {
+  document.body.classList.remove('vod-mode');
+  document.querySelector('.sidebar')?.classList.remove('hidden');
+  document.querySelector('.top-header')?.classList.remove('hidden');
+  document.querySelector('.epg-section-container')?.classList.remove('hidden');
+  document.querySelector('.program-details-panel')?.classList.remove('hidden');
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  try { playerInstance.stop(); } catch (e) {}
+  // Restore the Xtream VOD defaults so normal Movies/Series tracking is unaffected.
+  playerInstance.onVideoEnded = null;
+  playerInstance.onVodProgress = saveCurrentProgress;
+}
+
 async function switchTab(tabId) {
   if (tabId !== 'series' || state.activeTab === 'series') {
     exitSeriesPlaybackDashboard();
@@ -292,12 +340,23 @@ async function switchTab(tabId) {
     panel.classList.toggle('active', panel.id === `${tabId}-view`);
   });
 
+  // Flixify has no category sidebar — hide the left rail on that tab (CSS-driven
+  // so it stays hidden through playback exit too).
+  document.body.classList.toggle('flixify-tab', tabId === 'flixify');
+
   // Header search placeholder follows the active view
   const headerSearch = document.getElementById('header-search-input');
   if (headerSearch) {
     headerSearch.placeholder = tabId === 'movies' ? 'Search movies'
       : tabId === 'series' ? 'Search series'
+      : tabId === 'flixify' ? 'Search Flixify'
       : 'Search live channels';
+  }
+
+  // Flixify is its own source — render its panel instead of the Xtream pipeline.
+  if (tabId === 'flixify') {
+    enterFlixify((url, title, poster, subs, opts) => playFlixify(url, title, poster, opts));
+    return;
   }
 
   // Load left categories and main content area
@@ -753,10 +812,21 @@ window.openChannelPinMenu = function (rowEl) {
   if (!id) return;
   const name = rowEl.querySelector('.epg-channel-name-text')?.textContent?.trim() || 'Channel';
   const pinned = isChannelPinned(id);
+  const options = [{ value: 'toggle', label: pinned ? 'Unpin from top' : 'Pin to top' }];
+  // Desktop: also offer to record the show airing now (D-pad can't focus a future
+  // cell, so the remote records the current programme; mouse can right-click any).
+  const now = (window.appHost || window.electronCast)
+    ? epgGridInstance?.getNowNext(id)?.current : null;
+  if (now) options.push({ value: 'record', label: `Record now: ${now.title || 'current show'}` });
   openSortDropdown({
     title: name,
-    options: [{ value: 'toggle', label: pinned ? 'Unpin from top' : 'Pin to top' }],
-    onSelect: () => {
+    options,
+    onSelect: (value) => {
+      if (value === 'record') {
+        const channel = epgGridInstance?.channels?.find(c => String(c.stream_id) === String(id));
+        if (channel) window.scheduleRecordProgram(channel, now);
+        return;
+      }
       togglePinChannel(id, name);
       const again = document.querySelector(`.epg-channel-row[data-stream-id="${id}"]`);
       if (again) navigation.setFocus('channels', again);
@@ -896,9 +966,28 @@ async function selectAndPlayChannel(channel, programBlock) {
     const epgTitle = programBlock?.title || 'No Information';
     const streamUrl = await getStreamUrl(channel.stream_id, 'live');
 
-    // Load to player
+    // Load to player. On desktop, route live through the 30-min timeshift buffer
+    // so the user can pause/rewind; fall back to direct play if it can't start.
+    // Don't await the buffer spin-up — loadLiveTimeshift paints the player +
+    // spinner immediately, and we run the UI (fullscreen, banners) right away so
+    // the click feels instant instead of waiting on ffmpeg's first segments.
     playerInstance.setSeriesMode(false);
-    playerInstance.loadStream(streamUrl, channel.name, channel.stream_icon, epgTitle);
+    const wantTimeshift = (window.appHost || window.electronCast) && localStorage.getItem('timeshift') !== 'off';
+    if (wantTimeshift) {
+      // Paint the player shell now (synchronously) so autoFullscreen() below has
+      // something to fullscreen and the click is instant.
+      playerInstance._enterLiveUi(channel.name, channel.stream_icon, epgTitle);
+      // Feed the segmenter the continuous .ts (never ends, so ffmpeg keeps
+      // running). An m3u8 source is a finite playlist ffmpeg reads to the end and
+      // exits, which caused a freeze/restart cycle. Decode flicker is handled by
+      // transcoding audio to AAC server-side, not by the input format.
+      getStreamUrl(channel.stream_id, 'live', '', 'ts')
+        .then((tsSource) => playerInstance.loadLiveTimeshift(tsSource, channel.stream_id, channel.name, channel.stream_icon, epgTitle))
+        .then((ok) => { if (!ok) playerInstance.loadStream(streamUrl, channel.name, channel.stream_icon, epgTitle); })
+        .catch(() => playerInstance.loadStream(streamUrl, channel.name, channel.stream_icon, epgTitle));
+    } else {
+      playerInstance.loadStream(streamUrl, channel.name, channel.stream_icon, epgTitle);
+    }
 
     // Remember what's playing so the Cast button can send it to a TV (live → HLS).
     setCastContext({ streamId: channel.stream_id, type: 'live', title: channel.name, isLive: true });
@@ -939,6 +1028,139 @@ async function selectAndPlayChannel(channel, programBlock) {
     console.error('Failed to start channel playback:', err);
     alert(`Could not start stream: ${err.message}`);
   }
+}
+
+// ==========================================================================
+// DVR / RECORDINGS (desktop only — the server records via the bundled ffmpeg)
+// ==========================================================================
+const fmtSize = (b) => b > 1e9 ? (b / 1e9).toFixed(1) + ' GB' : Math.max(0, Math.round(b / 1e6)) + ' MB';
+
+// Record the channel that's playing now. Records the rest of the current EPG
+// programme when its end time is known, otherwise a default 2-hour block.
+async function recordCurrentChannel() {
+  const ch = state.activeChannel;
+  if (!ch) { window.showToast?.('Start a channel first, then record.', 'error', 3000); return; }
+  try {
+    const target = playerInstance._transcodeTarget(await getStreamUrl(ch.stream_id, 'live'));
+    let durationMins = 120;
+    const end = state.activeProgram?.end || state.activeProgram?.stop_timestamp;
+    if (end) {
+      const endMs = String(end).length > 12 ? +end : +end * 1000;
+      const left = Math.round((endMs - Date.now()) / 60000);
+      if (left > 0 && left < 720) durationMins = left + 2; // pad 2 min
+    }
+    const res = await fetch('/api/record', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: target, name: ch.name, channel: ch.name, durationMins }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+    window.showToast?.(`Recording "${ch.name}" for ${durationMins} min`, 'success', 4000);
+  } catch (e) {
+    window.showToast?.(`Could not start recording: ${e.message}`, 'error', 5000);
+  }
+}
+
+// Right-click a programme in the EPG guide → record it. Future show = scheduled
+// recording (server arms a timer); currently-airing = record the rest now.
+// Desktop only (recording needs the bundled ffmpeg).
+window.scheduleRecordProgram = (channel, prog) => {
+  if (!(window.appHost || window.electronCast)) {
+    window.showToast?.('Recording is available on the desktop app.', 'error', 3500);
+    return;
+  }
+  if (!channel || !prog) return;
+  const endMs = parseInt(prog.end_timestamp) * 1000;
+  if (endMs <= Date.now()) { window.showToast?.('That programme has already aired.', 'error', 3000); return; }
+  const live = Date.now() >= parseInt(prog.start_timestamp) * 1000;
+  openSortDropdown({
+    title: prog.title || 'Programme',
+    options: [{ value: 'rec', label: live ? 'Record now (rest of show)' : 'Record this show' }],
+    onSelect: () => doScheduleRecord(channel, prog),
+  });
+};
+
+async function doScheduleRecord(channel, prog) {
+  try {
+    // m3u8 source for the same reason timeshift uses it: cleaner than raw .ts.
+    const target = playerInstance._transcodeTarget(await getStreamUrl(channel.stream_id, 'live', '', 'm3u8'));
+    const startMs = parseInt(prog.start_timestamp) * 1000;
+    const endMs = parseInt(prog.end_timestamp) * 1000;
+    const now = Date.now();
+    const name = `${channel.name} - ${prog.title || 'Recording'}`;
+    const post = (path, body) => fetch(path, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    }).then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText); });
+    if (now < startMs) {
+      const durationMins = Math.max(1, Math.round((endMs - startMs) / 60000)) + 2; // pad 2 min
+      await post('/api/recordings/schedule', { url: target, name, channel: channel.name, startAt: new Date(startMs).toISOString(), durationMins });
+      window.showToast?.(`Scheduled: ${name}`, 'success', 4000);
+    } else {
+      const durationMins = Math.max(1, Math.round((endMs - now) / 60000)) + 2;
+      await post('/api/record', { url: target, name, channel: channel.name, durationMins });
+      window.showToast?.(`Recording now: ${name}`, 'success', 4000);
+    }
+  } catch (e) {
+    window.showToast?.(`Could not record: ${e.message}`, 'error', 5000);
+  }
+}
+
+function openRecordingsModal() {
+  const modal = document.getElementById('recordings-modal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  renderRecordings();
+}
+function closeRecordingsModal() {
+  document.getElementById('recordings-modal')?.classList.add('hidden');
+}
+
+async function renderRecordings() {
+  const list = document.getElementById('recordings-list');
+  if (!list) return;
+  list.innerHTML = '<div class="recordings-empty">Loading…</div>';
+  let recs = [];
+  try { recs = await (await fetch('/api/recordings')).json(); } catch (e) {}
+  if (!Array.isArray(recs) || recs.length === 0) {
+    list.innerHTML = '<div class="recordings-empty">No recordings yet. Hit the ⦿ record button while watching a channel.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  for (const r of recs) {
+    const row = document.createElement('div');
+    row.className = 'recording-row';
+    const when = new Date(r.createdAt).toLocaleString();
+    const recording = r.status === 'recording';
+    const sub = recording ? `● Recording… · ${when}` : `${r.status === 'failed' ? 'Failed' : fmtSize(r.size)} · ${when}`;
+    row.innerHTML = `
+      <i data-lucide="${recording ? 'circle-dot' : 'play'}" class="${recording ? 'rec-dot' : ''}"></i>
+      <div class="rec-meta">
+        <div class="rec-name">${r.name}</div>
+        <div class="rec-sub">${sub}</div>
+      </div>
+      <div class="rec-actions">
+        ${recording ? '<button data-act="stop" title="Stop recording"><i data-lucide="square"></i></button>'
+                    : '<button data-act="delete" title="Delete"><i data-lucide="trash-2"></i></button>'}
+      </div>`;
+    // Play a finished recording by clicking the row (VOD playback of the .ts file).
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('button')) return;
+      if (r.status === 'failed' || recording) return;
+      closeRecordingsModal();
+      document.body.classList.add('vod-mode');
+      playerInstance.setSeriesMode(false);
+      playerInstance.loadStream(r.playUrl, r.name, '', '', true);
+    });
+    row.querySelector('[data-act="stop"]')?.addEventListener('click', async () => {
+      await fetch(`/api/recordings/${r.id}/stop`, { method: 'POST' }).catch(() => {});
+      renderRecordings();
+    });
+    row.querySelector('[data-act="delete"]')?.addEventListener('click', async () => {
+      await fetch(`/api/recordings/${r.id}`, { method: 'DELETE' }).catch(() => {});
+      renderRecordings();
+    });
+    list.appendChild(row);
+  }
+  window.lucide?.createIcons();
 }
 
 function updateDetailsPanel(channel, program) {
@@ -2089,6 +2311,8 @@ async function routeGlobalSearchPick(type, item) {
     } else if (type === 'series') {
       await switchTab('series');
       openSeriesPlaybackDashboard(item);
+    } else if (type === 'flixify') {
+      playFlixifySearchItem(item);
     }
   } catch (err) {
     console.error('Global search routing failed:', err);
@@ -2099,6 +2323,9 @@ async function routeGlobalSearchPick(type, item) {
 // PC/web (physical keyboard), a D-pad button that opens the on-screen keyboard
 // on the APK/TV — matching the per-view search buttons.
 function initGlobalSearch() {
+  // Flixify results can be played straight from the global search, before the
+  // Flixify tab has been opened — register the play handler once here.
+  setFlixifyPlayHandler((url, title, poster, subs, opts) => playFlixify(url, title, poster, opts));
   // Button + on-screen keyboard whenever D-pad is the input model: the native
   // APK/TV build, or the /tv (?tv=true) "10-foot" layout on PC/web.
   const onTv = Capacitor.isNativePlatform() || window.__TV_PREVIEW__;
@@ -2261,6 +2488,8 @@ function bindGlobalEvents() {
           state.series.search = q;
           state.series.page = 1;
           loadSeriesGrid();
+        } else if (state.activeTab === 'flixify') {
+          flixifySearch(q);
         }
       }, state.activeTab === 'live' ? 120 : 350);
     });
@@ -2520,6 +2749,7 @@ function bindGlobalEvents() {
   document.querySelectorAll('.pin-item').forEach(pin => {
     pin.addEventListener('click', () => {
       const cat = pin.dataset.category;
+      if (cat === 'recordings') { openRecordingsModal(); return; }  // DVR list, not a channel category
       selectCategory(cat);
     });
   });
@@ -2537,6 +2767,18 @@ function bindGlobalEvents() {
     if (!el) return;
     e.preventDefault();
     window.openCategoryPinMenu(el);
+  });
+
+  // ---- DVR / timeshift controls (desktop only) ----
+  if (window.appHost || window.electronCast) document.body.classList.add('desktop-dvr');
+  document.getElementById('player-golive-btn')?.addEventListener('click', () => playerInstance.goLive());
+  document.getElementById('player-live-badge')?.addEventListener('click', () => playerInstance.goLive());
+  document.getElementById('player-rewind-10')?.addEventListener('click', () => playerInstance.skipBy(-10));
+  document.getElementById('player-forward-10')?.addEventListener('click', () => playerInstance.skipBy(10));
+  document.getElementById('player-record-btn')?.addEventListener('click', recordCurrentChannel);
+  document.getElementById('recordings-close-btn')?.addEventListener('click', closeRecordingsModal);
+  document.getElementById('recordings-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'recordings-modal') closeRecordingsModal();
   });
 
   // Categories list Search (TV-navigable D-pad keyboard overlay)
@@ -2681,6 +2923,20 @@ function bindGlobalEvents() {
     if (!row) return;
     e.preventDefault();
     window.openChannelPinMenu(row);
+  });
+
+  // Right-click a programme cell in the guide → record that specific show.
+  // Document-level so no intermediate container can swallow it; reads straight
+  // from the block's dataset so there's no lookup to miss. (The hover REC button
+  // on each cell is the primary, mouse-obvious path.)
+  document.addEventListener('contextmenu', (e) => {
+    const block = e.target.closest?.('.epg-program-block');
+    if (!block || !block.dataset.progStart) return;
+    e.preventDefault();
+    window.scheduleRecordProgram(
+      { stream_id: block.dataset.streamId, name: block.dataset.channelName, stream_icon: block.dataset.channelIcon },
+      { start_timestamp: block.dataset.progStart, end_timestamp: block.dataset.progEnd, title: block.dataset.progTitle }
+    );
   });
 
   // Live channel sort button → custom dropdown
@@ -3309,257 +3565,4 @@ function updateHeaderTvIpBadge(status) {
   // LAN IPs come from whichever source has them: the status object (populated
   // only in server mode) or `lanInfo`, which loadLanInfo() fetches straight
   // from the local server in any mode. Relying on `status` alone meant the
-  // pill vanished in client mode (getStatus carries no local_ips) and only
-  // reappeared when something flipped the app into server mode.
-  let url = null;
-  let label = null;
-  const lanIps = (status && status.local_ips && status.local_ips.length > 0)
-    ? status.local_ips
-    : (lanInfo.ips && lanInfo.ips.length > 0 ? lanInfo.ips : []);
-  if (lanIps.length > 0) {
-    const ip = lanIps[0];
-    const port = (status && status.server_port) || lanInfo.port || 3000;
-    url = `http://${ip}:${port}/tv`;
-    label = `TV: ${ip}:${port}/tv`;
-  } else {
-    try {
-      const host = window.location.hostname || '';
-      // Only a real hosted domain is useful here — a localhost/file origin (the
-      // desktop app's own window) can't be opened from a separate TV.
-      const isLocal = !host || host === 'localhost' || host === '127.0.0.1' || window.location.protocol === 'file:';
-      if (!isLocal) {
-        url = `${window.location.origin.replace(/\/+$/, '')}/tv`;
-        label = `TV: ${window.location.host}/tv`;
-      }
-    } catch (e) {}
-  }
-
-  if (badge && text && url) {
-    text.textContent = label;
-    badge.title = `Open on your TV's browser · ${url} (click to copy)`;
-    badge.dataset.tvUrl = url;
-    badge.style.display = 'inline-flex';
-
-    // Click to copy the link (bind once).
-    if (!badge.dataset.bound) {
-      badge.dataset.bound = '1';
-      badge.addEventListener('click', () => {
-        const u = badge.dataset.tvUrl || '';
-        if (u && navigator.clipboard) {
-          navigator.clipboard.writeText(u)
-            .then(() => showToast('TV link copied', 'success'))
-            .catch(() => {});
-        }
-      });
-    }
-
-    if (typeof lucide !== 'undefined') {
-      lucide.createIcons({ scope: badge });
-    }
-  } else if (badge) {
-    badge.style.display = 'none';
-  }
-}
-
-// ==========================================================================
-// SUPABASE REMOTE LOGIN SYSTEM
-// ==========================================================================
-
-// ==========================================================================
-// CLOUD SYNC (5.0) — the /connect dashboard is the source of truth. The app
-// heartbeats to /api/device, mirrors the device's playlists, shows the admin's
-// expiration, and wipes everything when the device expires.
-// ==========================================================================
-const CLOUD_SYNC_MS = 5 * 60 * 1000;      // reconcile every 5 min while open
-const DEVICE_EXPIRY_KEY = 'ziptv_device_expiry';
-let cloudSyncBusy = false;
-
-// Back-compat shims: the login/activation screens call these. With 5.0 the sync
-// loop runs continuously for the whole app lifetime, so "start" just guarantees
-// it's running and "stop" is a no-op (we never want to stop mirroring).
-function startRemoteLoginPolling() { startCloudSync(); }
-function stopRemoteLoginPolling() { /* cloud sync runs continuously now */ }
-
-function appVersion() {
-  return (typeof __APP_VERSION__ !== 'undefined') ? __APP_VERSION__ : null;
-}
-
-// Idempotent: starts the persistent heartbeat/reconcile loop + resume triggers.
-function startCloudSync() {
-  runCloudSync();
-  if (cloudSyncInterval) return;
-  cloudSyncInterval = setInterval(runCloudSync, CLOUD_SYNC_MS);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) runCloudSync(); });
-  window.addEventListener('online', runCloudSync);
-}
-
-// One sync cycle. On network failure, fall back to the cached state and only
-// enforce a known expiry locally — never delete playlists over a blip (grace).
-async function runCloudSync() {
-  if (cloudSyncBusy) return;
-  cloudSyncBusy = true;
-  try {
-    let state;
-    try {
-      state = await syncDevice(deviceCode, appVersion());
-    } catch (netErr) {
-      const cached = readCachedState();
-      if (cached && isStateExpired(cached)) await enforceDeviceExpiry(cached);
-      return;
-    }
-    await applyCloudState(state);
-  } catch (err) {
-    console.warn('Cloud sync error:', err);
-  } finally {
-    cloudSyncBusy = false;
-  }
-}
-
-// Apply a fresh state from /api/device.
-async function applyCloudState(state) {
-  if (!state) return;
-
-  // Expired → wipe + notice.
-  if (state.expired || isStateExpired(state)) { await enforceDeviceExpiry(state); return; }
-
-  // Remember the admin-set expiry for the in-app badge (or clear it).
-  if (state.expires_at) localStorage.setItem(DEVICE_EXPIRY_KEY, state.expires_at);
-  else localStorage.removeItem(DEVICE_EXPIRY_KEY);
-
-  // A brand-new ('pending') device that the admin hasn't provisioned yet keeps
-  // whatever the user may already have locally — we only mirror (incl. removals)
-  // once the device is managed. This protects existing users during migration.
-  const managed = state.status && state.status !== 'pending';
-  await reconcilePlaylists(state.playlists || [], { allowRemovals: managed });
-
-  // Managed device whose playlists were ALL removed from the dashboard → treat
-  // like an expired subscription: stop playback, return to the login screen and
-  // show the notice.
-  if (managed) {
-    try {
-      const { playlists } = await getPlaylists();
-      if (!playlists || playlists.length === 0) { await deactivateToLogin(state.notice); return; }
-    } catch (e) {}
-  }
-
-  // Healthy + active: clear any lingering expiry banner.
-  const banner = document.getElementById('expiry-banner');
-  if (banner) banner.remove();
-}
-
-// Make the local playlists match the dashboard's list (match on host+username).
-async function reconcilePlaylists(remote, { allowRemovals } = {}) {
-  const norm = (s) => String(s || '').trim().toLowerCase().replace(/\/+$/, '').replace(/^https?:\/\//, '');
-  const key = (p) => norm(p.server_url) + '|' + String(p.username || '').toLowerCase();
-
-  const { playlists: local } = await getPlaylists();
-  const localKeys = new Set((local || []).map(key));
-  const remoteKeys = new Set((remote || []).map(key));
-
-  let added = false;
-  let addedKey = null;
-  for (const r of remote) {
-    if (localKeys.has(key(r))) continue;
-    try {
-      await login(r.server_url, r.username, r.password, r.playlistName || 'Playlist');
-      added = true;
-      addedKey = key(r);
-    } catch (e) {
-      console.warn('Could not add synced playlist:', r.playlistName, e.message);
-    }
-  }
-
-  if (allowRemovals) {
-    for (const l of (local || [])) {
-      if (!remoteKeys.has(key(l))) {
-        try { await removePlaylist(l.id); } catch (e) { console.warn('Could not remove playlist:', e.message); }
-      }
-    }
-  }
-
-  // A playlist arrived from the dashboard. Behaviour depends on where the user is:
-  //   - On the activation screen  -> enter the app with it.
-  //   - Already watching          -> switch to the new playlist and sync it now.
-  const onLoginScreen = !document.getElementById('app-container') ||
-    document.getElementById('app-container').classList.contains('hidden');
-  if (added) {
-    try {
-      const { playlists, activeId } = await getPlaylists();
-      if (playlists && playlists.length > 0) {
-        if (onLoginScreen) {
-          showToast('Playlist connected', 'success');
-          await autoEnterSinglePlaylist(playlists[0].id, activeId);
-        } else {
-          // Switch to the newly added playlist (fall back to the active one) and
-          // let switchToPlaylist run the full sync + repaint.
-          const target = playlists.find(p => key(p) === addedKey) || playlists[0];
-          showToast('New playlist added — switching…', 'success');
-          await switchToPlaylist(target.id);
-        }
-      }
-    } catch (e) { console.warn('Auto-enter after sync failed:', e.message); }
-  }
-}
-
-// Wipe all local playlists, stop playback and bounce to the login screen.
-async function enforceDeviceExpiry(state) {
-  localStorage.setItem(DEVICE_EXPIRY_KEY, state.expires_at || '');
-  try {
-    const { playlists } = await getPlaylists();
-    for (const p of (playlists || [])) {
-      try { await removePlaylist(p.id); } catch (e) {}
-    }
-  } catch (e) {}
-  await deactivateToLogin(state.notice);
-}
-
-// Log the user out (stop playback, clear session) and show the expired notice on
-// the activation screen. The toast fires only on the active->login transition so
-// it doesn't repeat every sync while parked on the login screen.
-async function deactivateToLogin(noticeText) {
-  const appC = document.getElementById('app-container');
-  const wasActive = appC && !appC.classList.contains('hidden');
-  try { if (playerInstance) playerInstance.stop(); } catch (e) {}
-  state.user = null;
-  localStorage.removeItem('last_playlist_id');
-  showLogin();
-  showExpiryNotice(noticeText, { toast: wasActive });
-}
-
-function showExpiryNotice(text, { toast = true } = {}) {
-  const msg = (text && String(text).trim()) || 'Your subscription has expired. Please contact your provider to renew.';
-  if (toast) { try { showToast(msg, 'error', 8000); } catch (e) {} }
-  const codeEl = document.getElementById('remote-device-code');
-  if (codeEl && codeEl.parentElement) {
-    let banner = document.getElementById('expiry-banner');
-    if (!banner) {
-      banner = document.createElement('div');
-      banner.id = 'expiry-banner';
-      banner.style.cssText = 'margin:12px 0;padding:12px 14px;border-radius:10px;background:rgba(239,68,68,.12);' +
-        'border:1px solid rgba(239,68,68,.35);color:#fecaca;font-size:.9rem;white-space:pre-wrap;text-align:center;';
-      codeEl.parentElement.insertBefore(banner, codeEl.parentElement.firstChild);
-    }
-    banner.textContent = msg;
-  }
-}
-
-// Lightweight toast notification (auto-dismisses).
-function showToast(message, type = 'success', duration = 3500) {
-  const container = document.getElementById('toast-container');
-  if (!container) return;
-  const toast = document.createElement('div');
-  toast.className = `toast toast-${type}`;
-  const icon = type === 'error' ? 'alert-circle' : (type === 'info' ? 'info' : 'check-circle');
-  toast.innerHTML = `
-    <span class="toast-icon"><i data-lucide="${icon}"></i></span>
-    <span class="toast-message">${message}</span>
-  `;
-  container.appendChild(toast);
-  if (window.lucide) lucide.createIcons({ scope: toast });
-  setTimeout(() => {
-    toast.style.opacity = '0';
-    toast.style.transform = 'translateY(-20px)';
-    setTimeout(() => toast.remove(), 300);
-  }, duration);
-}
-window.showToast = showToast;
+  

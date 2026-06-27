@@ -1,7 +1,7 @@
 {
   "name": "iptv-player-zero",
   "productName": "ZIPTV Pro",
-  "version": "5.0.1",
+  "version": "5.3.2",
   "description": "Premium IPTV Player - ZIPTV Pro",
   "main": "main.electron.cjs",
   "type": "module",
@@ -67,7 +67,8 @@
       "target": "nsis"
     },
     "nsis": {
-      "artifactName": "ZIPTV-Pro-Setup-${version}.${ext}"
+      "artifactName": "ZIPTV-Pro-Setup-${version}.${ext}",
+      "include": "build/installer.nsh"
     },
     "publish": [
       {

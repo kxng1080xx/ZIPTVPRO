@@ -11,6 +11,7 @@
  */
 
 import { getStreams, proxifyImage } from './xtream-api.js';
+import { flixifySearchResults } from './flixify.js';
 import { openSearchKeyboard, closeSearchKeyboard } from './tv-search.js';
 
 const PLACEHOLDER_SVG =
@@ -136,17 +137,18 @@ async function runSearch(q) {
     .then((r) => (r && Array.isArray(r.items) ? r.items : []))
     .catch(() => []);
 
-  const [live, movies, series] = await Promise.all([
+  const [live, movies, series, flixify] = await Promise.all([
     fetchType('live'), fetchType('movies'), fetchType('series'),
+    flixifySearchResults(q).catch(() => []),
   ]);
 
   if (!gs || token !== gs.searchToken) return; // a newer query superseded this one
-  renderResults({ live, movies, series });
+  renderResults({ live, movies, series, flixify });
 }
 
-function renderResults({ live, movies, series }) {
+function renderResults({ live, movies, series, flixify = [] }) {
   if (!gs) return;
-  const total = live.length + movies.length + series.length;
+  const total = live.length + movies.length + series.length + flixify.length;
   if (total === 0) {
     gs.body.innerHTML = `<div class="gsearch-hint">No matches for “${esc(gs.query.trim())}”.</div>`;
     return;
@@ -155,14 +157,14 @@ function renderResults({ live, movies, series }) {
   const group = (title, icon, items, type) => {
     if (!items.length) return '';
     const cards = items.map((it) => {
-      const name = type === 'live' ? (it.name || 'Unknown') : (it.name || it.title || 'Unknown');
-      const img = proxifyImage(it.stream_icon || it.cover || it.cover_big || '');
+      const name = type === 'live' ? (it.name || 'Unknown') : type === 'flixify' ? (it.title || 'Unknown') : (it.name || it.title || 'Unknown');
+      const img = type === 'flixify' ? (it.poster || '') : proxifyImage(it.stream_icon || it.cover || it.cover_big || '');
       const meta = type === 'live' ? '' : esc(it.year || it.releaseDate || '');
       return `
-        <button class="gsearch-item" data-type="${type}" data-id="${esc(it.stream_id || it.series_id || '')}">
+        <button class="gsearch-item" data-type="${type}" data-id="${esc(it.stream_id || it.series_id || it.id || '')}">
           <div class="gsearch-thumb ${type}">
             ${img ? `<img src="${esc(img)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${PLACEHOLDER_SVG}'">`
-                  : `<i data-lucide="${type === 'live' ? 'tv' : type === 'movies' ? 'film' : 'clapperboard'}"></i>`}
+                  : `<i data-lucide="${type === 'live' ? 'tv' : type === 'series' ? 'clapperboard' : 'film'}"></i>`}
           </div>
           <span class="gsearch-item-title">${esc(name)}</span>
           ${meta ? `<span class="gsearch-item-meta">${meta}</span>` : ''}
@@ -178,12 +180,13 @@ function renderResults({ live, movies, series }) {
   gs.body.innerHTML =
     group('Live TV', 'tv', live, 'live') +
     group('Movies', 'film', movies, 'movies') +
-    group('Series', 'clapperboard', series, 'series');
+    group('Series', 'clapperboard', series, 'series') +
+    group('Flixify', 'film', flixify, 'flixify');
 
   // Stash the raw item objects on each button so the click handler can route
   // them without re-querying.
   const items = gs.body.querySelectorAll('.gsearch-item');
-  const all = [...live.map(i => ['live', i]), ...movies.map(i => ['movies', i]), ...series.map(i => ['series', i])];
+  const all = [...live.map(i => ['live', i]), ...movies.map(i => ['movies', i]), ...series.map(i => ['series', i]), ...flixify.map(i => ['flixify', i])];
   items.forEach((btn, idx) => {
     const [type, item] = all[idx];
     btn.addEventListener('click', () => pick(type, item));

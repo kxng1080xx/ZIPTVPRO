@@ -442,6 +442,24 @@ export class EPGGrid {
             this.onChannelSelect(channel, prog); // sends actual clicked program
           });
 
+          // Carry everything a right-click "Record this show" needs, so the
+          // handler in main.js builds the request straight from the block — no
+          // lookup that could silently miss.
+          block.dataset.streamId = streamId;
+          block.dataset.channelName = channel.name || '';
+          block.dataset.channelIcon = channel.stream_icon || '';
+          block.dataset.progStart = prog.start_timestamp;
+          block.dataset.progEnd = prog.end_timestamp;
+          block.dataset.progTitle = prog.title || '';
+
+          // Hover REC button → schedule/record this specific show. stopPropagation
+          // so it doesn't also trigger the block's play-channel click.
+          const recBtn = block.querySelector('.epg-rec-btn');
+          if (recBtn) recBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            window.scheduleRecordProgram?.(channel, prog);
+          });
+
           progRow.appendChild(block);
         });
       }
@@ -479,6 +497,7 @@ export class EPGGrid {
     block.innerHTML = `
       <span class="epg-program-title">${title}</span>
       <span class="epg-program-time">${startStr} - ${endStr}</span>
+      ${progData ? '<button class="epg-rec-btn" title="Record this show">REC</button>' : ''}
     `;
 
     // Tooltip details on hover
@@ -695,37 +714,3 @@ export class EPGGrid {
       const block = this.createProgramBlock(
         prog.title || 'No Title',
         blockStart,
-        blockEnd,
-        startTime,
-        pxPerMs,
-        prog
-      );
-
-      block.addEventListener('click', () => {
-        if (chanRow) chanRow.click();
-        this.onChannelSelect(channel, prog);
-      });
-
-      progRow.appendChild(block);
-    });
-  }
-
-  // Update favorites highlighting in EPG list
-  updateFavoritesHighlighting() {
-    // Check favorites by requesting from main app favorites list cache
-    // Let's hook into a global favorites checker which will be populated
-    document.querySelectorAll('.epg-channel-row-fav').forEach(btn => {
-      const id = btn.dataset.id;
-      const isFav = window.isChannelFavorite?.('live', id) || false;
-      if (isFav) {
-        btn.classList.add('favorited');
-        btn.innerHTML = '<i class="star-filled" data-lucide="star"></i>';
-      } else {
-        btn.classList.remove('favorited');
-        btn.innerHTML = '<i data-lucide="star"></i>';
-      }
-    });
-    lucide.createIcons({ scope: this.channelsList });
-  }
-}
-export default EPGGrid;

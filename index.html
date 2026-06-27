@@ -139,6 +139,9 @@
           <button class="nav-tab" data-tab="series">
             <i data-lucide="clapperboard"></i> Series
           </button>
+          <button class="nav-tab" data-tab="flixify">
+            <i data-lucide="film"></i> Flixify
+          </button>
         </nav>
       </div>
 
@@ -290,7 +293,9 @@
                   <!-- Center play/pause & skip -->
                   <div class="controls-center">
                     <button class="player-skip-btn" id="player-prev-btn"><i data-lucide="chevron-left"></i></button>
+                    <button class="player-seek10-btn seekable-only" id="player-rewind-10" title="Rewind 10 seconds"><i data-lucide="rotate-ccw"></i><span class="seek10-num">10</span></button>
                     <button class="player-play-btn" id="player-play-pause-btn"><i data-lucide="play" class="play-icon"></i></button>
+                    <button class="player-seek10-btn seekable-only" id="player-forward-10" title="Forward 10 seconds"><i data-lucide="rotate-cw"></i><span class="seek10-num">10</span></button>
                     <button class="player-skip-btn" id="player-next-btn"><i data-lucide="chevron-right"></i></button>
                   </div>
                   
@@ -301,6 +306,7 @@
                       <span class="player-seek-time" id="player-time-current">0:00</span>
                       <input type="range" class="player-seek-bar" id="player-seek" min="0" max="100" value="0" step="0.1">
                       <span class="player-seek-time" id="player-time-duration">0:00</span>
+                      <button class="player-live-badge timeshift-only" id="player-live-badge" title="Go to live"><span class="live-dot"></span>LIVE</button>
                     </div>
                     <div class="controls-bottom-row">
                     <div class="control-row-left">
@@ -311,6 +317,8 @@
                     </div>
 
                     <div class="control-row-right">
+                      <button class="player-control-icon timeshift-only" id="player-golive-btn" title="Go to Live"><i data-lucide="radio"></i></button>
+                      <button class="player-control-icon dvr-only" id="player-record-btn" title="Record this channel"><i data-lucide="circle-dot"></i></button>
                       <button class="player-control-icon" id="player-stop-btn" title="Stop"><i data-lucide="square"></i></button>
                       <button class="player-control-icon" id="player-info-btn" title="Channel Info"><i data-lucide="info"></i></button>
                       <button class="player-control-icon" id="player-cc-btn" title="Audio &amp; Subtitles"><i data-lucide="subtitles"></i></button>
@@ -609,6 +617,9 @@
           </div>
         </div>
 
+        <!-- FLIXIFY VIEW (public-domain VOD) -->
+        <div id="flixify-view" class="view-panel"></div>
+
       </main>
     </div>
   </div>
@@ -624,10 +635,26 @@
     <button class="mobile-tab-btn" data-tab="series">
       <i data-lucide="clapperboard"></i><span>Series</span>
     </button>
+    <button class="mobile-tab-btn" data-tab="flixify">
+      <i data-lucide="film"></i><span>Flixify</span>
+    </button>
     <button class="mobile-tab-btn" data-action="settings">
       <i data-lucide="settings"></i><span>Settings</span>
     </button>
   </nav>
+
+  <!-- ==================== RECORDINGS MODAL (DVR) ==================== -->
+  <div id="recordings-modal" class="recordings-modal hidden">
+    <div class="recordings-modal-card">
+      <div class="recordings-modal-header">
+        <h2><i data-lucide="circle-dot"></i> Recordings</h2>
+        <button class="recordings-close-btn" id="recordings-close-btn" title="Close"><i data-lucide="x"></i></button>
+      </div>
+      <div class="recordings-list" id="recordings-list">
+        <!-- Recording rows inserted dynamically -->
+      </div>
+    </div>
+  </div>
 
   <!-- ==================== PLAYLISTS SLIDE-OVER DRAWER ==================== -->
   <div class="playlist-dropdown hidden" id="playlist-dropdown">
@@ -749,37 +776,4 @@
 
           <button class="settings-tile" id="tile-sync" tabindex="0">
             <div class="settings-tile-icon"><i data-lucide="refresh-cw"></i></div>
-            <div class="settings-tile-title">Sync &amp; Cache</div>
-            <div class="settings-tile-sub">Refresh all lists</div>
-          </button>
-
-          <button class="settings-tile" id="tile-update" tabindex="0">
-            <div class="settings-tile-icon"><i data-lucide="arrow-up-circle"></i></div>
-            <div class="settings-tile-title">Updates</div>
-            <div class="settings-tile-sub" id="tile-update-val">v—</div>
-          </button>
-
-          <button class="settings-tile" id="tile-network" tabindex="0" style="display:none;">
-            <div class="settings-tile-icon"><i data-lucide="cast"></i></div>
-            <div class="settings-tile-title">Smart TV Access</div>
-            <div class="settings-tile-sub" id="tile-network-val">Show local URL</div>
-          </button>
-
-          <button class="settings-tile settings-tile-danger" id="tile-logout" tabindex="0">
-            <div class="settings-tile-icon"><i data-lucide="log-out"></i></div>
-            <div class="settings-tile-title">Log Out</div>
-            <div class="settings-tile-sub" id="tile-logout-val">Disconnect</div>
-          </button>
-
-        </div>
-      </div>
-    </div>
-  </div>
-  
-  <!-- Mobile Sidebar Backdrop Overlay -->
-  <div id="sidebar-backdrop" class="sidebar-backdrop hidden"></div>
-
-  <!-- Toast Notification Container -->
-  <div id="toast-container" class="toast-container"></div>
-</body>
-</html>
+            <div class="settin

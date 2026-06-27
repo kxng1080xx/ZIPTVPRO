@@ -1908,6 +1908,95 @@ body.vod-mode .vod-only {
   display: flex !important;
 }
 
+/* -10 / +10 second skip buttons: only meaningful when the stream is seekable
+   (VOD, or live timeshift). Hidden for plain non-seekable live. */
+.seekable-only { display: none !important; }
+body.vod-mode .seekable-only,
+body.timeshift-active .seekable-only { display: inline-flex !important; }
+.player-seek10-btn { position: relative; align-items: center; justify-content: center; }
+.player-seek10-btn .seek10-num {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -45%);
+  font-size: 9px; font-weight: 700; pointer-events: none;
+}
+.player-seek10-btn:disabled { opacity: 0.35; cursor: default; pointer-events: none; }
+
+/* DVR / timeshift control visibility ------------------------------------- */
+/* Record button: live only, desktop only (recording needs the local ffmpeg). */
+.dvr-only { display: none !important; }
+body.desktop-dvr .dvr-only { display: inline-flex !important; }
+body.desktop-dvr.vod-mode .dvr-only { display: none !important; }
+/* Timeshift-only chrome (Go-Live + the seek bar) shows while buffering live. */
+.timeshift-only { display: none !important; }
+body.timeshift-active .timeshift-only { display: inline-flex !important; }
+body.timeshift-active:not(.vod-mode) #player-seek-wrap { display: flex !important; }
+/* The window length on the right is meaningless for live — the LIVE badge sits
+   there instead. */
+body.timeshift-active #player-time-duration { display: none !important; }
+
+/* YouTube-style: while at the live edge the cyan handle is parked at the far
+   right, so just hide it. It reappears the moment the user rewinds, and the gap
+   between it and the right end then shows how far behind live they are. */
+body.ts-at-live #player-seek::-webkit-slider-thumb { opacity: 0; pointer-events: none; }
+body.ts-at-live #player-seek::-moz-range-thumb { opacity: 0; pointer-events: none; }
+
+/* YouTube-style LIVE badge at the right end of the seek bar. Dimmed/grey when
+   watching behind, solid red with a pulsing dot when at the live edge. */
+.player-live-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.5px;
+  color: #9aa0a6; background: none; border: none; cursor: pointer;
+  padding: 2px 6px; border-radius: 4px; white-space: nowrap;
+}
+.player-live-badge:hover { color: #fff; }
+.player-live-badge .live-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: #9aa0a6;
+}
+.player-live-badge.at-live { color: #ff3b30; cursor: default; }
+.player-live-badge.at-live .live-dot {
+  background: #ff3b30; animation: live-pulse 1.6s ease-in-out infinite;
+}
+@keyframes live-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.5); opacity: 1; }
+  50% { box-shadow: 0 0 0 4px rgba(255, 59, 48, 0); opacity: 0.7; }
+}
+
+/* Recordings modal -------------------------------------------------------- */
+.recordings-modal {
+  position: fixed; inset: 0; z-index: 6000;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px);
+}
+.recordings-modal.hidden { display: none; }
+.recordings-modal-card {
+  width: min(760px, 92vw); max-height: 82vh; display: flex; flex-direction: column;
+  background: #15171c; border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5); overflow: hidden;
+}
+.recordings-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.recordings-modal-header h2 { margin: 0; font-size: 18px; display: flex; align-items: center; gap: 8px; }
+.recordings-close-btn { background: none; border: none; color: #aaa; cursor: pointer; padding: 4px; }
+.recordings-close-btn:hover { color: #fff; }
+.recordings-list { padding: 8px 12px; overflow-y: auto; }
+.recording-row {
+  display: flex; align-items: center; gap: 12px; padding: 12px;
+  border-radius: 10px; cursor: pointer;
+}
+.recording-row:hover { background: rgba(255, 255, 255, 0.05); }
+.recording-row .rec-meta { flex: 1; min-width: 0; }
+.recording-row .rec-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recording-row .rec-sub { font-size: 12px; color: #9aa0a6; margin-top: 2px; }
+.recording-row .rec-dot { color: #ff4d4f; }
+.recording-row .rec-actions { display: flex; gap: 6px; }
+.recording-row .rec-actions button {
+  background: rgba(255, 255, 255, 0.08); border: none; color: #ddd;
+  border-radius: 8px; padding: 6px 8px; cursor: pointer;
+}
+.recording-row .rec-actions button:hover { background: rgba(255, 255, 255, 0.16); color: #fff; }
+.recordings-empty { padding: 28px; text-align: center; color: #9aa0a6; }
+
 body.vod-mode #live-view {
   display: flex !important;
   position: fixed;
@@ -3412,6 +3501,37 @@ body.vod-mode .now-next-bar {
 .epg-program-time {
   display: none;
 }
+
+/* "REC" button on each programme cell — appears on hover, click to schedule a
+   recording of that show (cable-box style). */
+.epg-rec-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: none;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #fff;
+  background: rgba(255, 59, 48, 0.9);
+  border: none;
+  border-radius: 4px;
+  padding: 2px 6px;
+  cursor: pointer;
+  z-index: 6;
+}
+.epg-rec-btn::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fff;
+  display: inline-block;
+}
+.epg-program-block:hover .epg-rec-btn { display: inline-flex; }
+.epg-rec-btn:hover { background: #ff3b30; }
 
 /* Subtle alternating row shading across the whole guide */
 .epg-programs-row:nth-child(even),
@@ -7136,82 +7256,4 @@ body.native-video-active #main-video-player { display: none !important; }
 body.native-video-active .player-controls-overlay { pointer-events: auto; }
 
 /* VOD (series) on native: browse = list only, watch = player. Hide the inline
-   series player box while NOT playing so the episode list shows alone; once an
-   episode plays it reappears (boxed/YouTube-style in portrait, fullscreen in
-   landscape), and stop() hides it again. Live keeps its box (always watching). */
-body.app-native:not(.player-session) .series-player-wrapper { display: none !important; }
-/* Portrait watch = YouTube layout: video pinned at the top, content scrolls below. */
-@media (orientation: portrait) {
-  body.app-native.player-session:not(.player-fs) .series-top-row { display: block !important; }
-  body.app-native.player-session:not(.player-fs) .series-player-wrapper {
-    position: sticky !important;
-    top: 0 !important;
-    z-index: 50 !important;
-    width: 100% !important;
-    aspect-ratio: 16 / 9 !important;
-  }
-}
-
-/* ==========================================================================
-   PERFORMANCE (LITE) MODE  — body.perf-lite
-   --------------------------------------------------------------------------
-   Auto-enabled on low-power targets (Fire TV / Tizen / WebOS / Android
-   projectors / TV mode) and via the Settings "Performance mode" toggle.
-   Strips the GPU-expensive parts of the glass redesign so the UI stays
-   smooth on weak Mali/older GPUs:
-     - ALL backdrop-filter blurs killed (the dominant per-frame cost)
-     - translucent glass surfaces swapped for opaque solids
-     - ambient body glows + fixed background removed
-     - heavy multi-layer shadows flattened
-     - `transition: all` and decorative animations neutralized
-   Desktop keeps the full glass look. No DOM/id changes.
-   ========================================================================== */
-
-/* 1. Opaque tokens (so former-blur surfaces aren't see-through) + no blur. */
-body.perf-lite {
-  --rd-glass-panel: #141821;
-  --rd-glass-header: #0c0f17;
-  --rd-glass-drawer: #0c0f17;
-  --rd-glass-modal:  #0e1119;
-  --rd-blur-header: none;
-  --rd-blur-drawer: none;
-  --rd-card-shadow: 0 6px 16px rgba(0,0,0,0.5);
-  --rd-player-shadow: 0 8px 22px rgba(0,0,0,0.5);
-  --rd-focus-glow: 0 0 0 3px rgba(56,189,248,0.35);
-  /* Drop the ambient radial glows + fixed-attachment repaint. */
-  background-image: none !important;
-  background-attachment: scroll !important;
-}
-
-/* 2. Kill every backdrop-filter in one shot (covers all 44 call sites). */
-body.perf-lite *,
-body.perf-lite *::before,
-body.perf-lite *::after {
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-
-/* 3. Neutralize `transition: all` (animates layout props) and heavy shadows.
-   Keep only cheap compositor-friendly transitions on common interactive bits. */
-body.perf-lite * {
-  transition-property: opacity, transform, color, background-color, border-color !important;
-  transition-duration: 0.12s !important;
-  animation-duration: 0.001s !important;
-}
-body.perf-lite .player-wrapper,
-body.perf-lite .player-stage {
-  box-shadow: var(--rd-player-shadow) !important;
-}
-
-/* 4. Elements that used their own inline translucent bg behind a blur — give
-   them a solid backing so text stays legible without the blur. */
-body.perf-lite .app-header,
-body.perf-lite .playlist-drawer-panel,
-body.perf-lite .vod-modal,
-body.perf-lite .gsearch-overlay,
-body.perf-lite .settings-modal {
-  /* (native-video compositing fix applied above) */
-  background-color: var(--rd-glass-modal) !important;
-}
-
-
+   series player box while NOT playing so

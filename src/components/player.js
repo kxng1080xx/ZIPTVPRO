@@ -112,6 +112,9 @@ export class VideoPlayer {
     this.seek = document.getElementById('player-seek');
     this.timeCurrent = document.getElementById('player-time-current');
     this.timeDuration = document.getElementById('player-time-duration');
+    this.liveBadge = document.getElementById('player-live-badge');
+    this.rewind10Btn = document.getElementById('player-rewind-10');
+    this.forward10Btn = document.getElementById('player-forward-10');
     this.vodTitleTag = document.getElementById('player-vod-title');
     this.onExitVod = null;
     this.isSeeking = false;
@@ -211,7 +214,13 @@ export class VideoPlayer {
 
     // Stop playback (tear down the stream entirely).
     if (this.stopBtn) {
-      this.stopBtn.addEventListener('click', () => this.stop());
+      this.stopBtn.addEventListener('click', () => {
+        // For VOD, Stop should leave the player overlay entirely (restore chrome,
+        // exit fullscreen) — otherwise the user is stranded on the idle screen in
+        // browser fullscreen. Live keeps the plain stop() behaviour.
+        if (this.isVodActive && typeof this.onExitVod === 'function') this.onExitVod();
+        else this.stop();
+      });
     }
 
     // Audio & Subtitles menu (falls back to a simple caption toggle).
@@ -246,6 +255,27 @@ export class VideoPlayer {
             this.seek.value = (cur / d) * 100;
             this.timeCurrent.textContent = this.formatTime(cur);
           }
+        }
+        // Timeshift: light the LIVE badge red when we're at the live edge,
+        // dim it when watching behind (YouTube-style). Measure against hls.js's
+        // own live position so it reads "live" right after goLive (which targets
+        // that position, ~18 s back from the true, still-growing edge).
+        if (this._timeshiftActive) {
+          let atLive;
+          if (this.hls && isFinite(this.hls.liveSyncPosition)) {
+            atLive = this.video.currentTime >= this.hls.liveSyncPosition - 8;
+          } else {
+            const w = this._tsWindow();
+            atLive = w ? (w.end - this.video.currentTime) < 20 : false;
+          }
+          if (this.liveBadge) this.liveBadge.classList.toggle('at-live', atLive);
+          // YouTube-style: at the live edge hide the scrubber handle + fill the
+          // bar red; show the handle again once the user rewinds.
+          document.body.classList.toggle('ts-at-live', atLive);
+          // Can't skip forward past live — grey out +10 at the edge.
+          if (this.forward10Btn) this.forward10Btn.disabled = atLive;
+        } else if (this.forward10Btn) {
+          this.forward10Btn.disabled = false; // VOD: forward always allowed
         }
         // Report progress for Continue Watching (VOD / series only)
         if (this.isVodActive && this.onVodProgress) {
@@ -289,6 +319,13 @@ export class VideoPlayer {
           // Piped fMP4 isn't byte-range seekable — re-request the transcode at the
           // new offset (server -ss) and resume from there.
           if (d && isFinite(d)) this._seekTranscode((this.seek.value / 100) * d);
+          this.isSeeking = false;
+          return;
+        }
+        if (this._timeshiftActive) {
+          // Scrub within the DVR window: map 0..100 onto [seekable.start, end].
+          const w = this._tsWindow();
+          if (w) { try { this.video.currentTime = w.start + (this.seek.value / 100) * (w.end - w.start); } catch (e) {} }
           this.isSeeking = false;
           return;
         }
@@ -393,6 +430,11 @@ export class VideoPlayer {
       clearTimeout(this._vodLoadTimeout);
       this.updateQualityIndicator();
       this.startFpsTracker();
+      // Playback is healthy again — clear the retry budget and media-recover
+      // tally so a stream that hiccups occasionally over hours doesn't slowly
+      // exhaust the lifetime retry limit and get killed.
+      this._retryCount = 0;
+      this._hlsMediaRecover = null;
     });
     this.video.addEventListener('pause', () => this.stopFpsTracker());
     this.video.addEventListener('ended', () => {
@@ -538,6 +580,50 @@ export class VideoPlayer {
     }, 15000); // Display for 15 seconds
   }
 
+  // Desktop live: route the channel through the server's rolling 30-min HLS
+  // timeshift buffer so the user can pause and rewind up to half an hour. One
+  // ffmpeg pulls the stream once (no double connection → no provider connection-
+  // limit trip); the player reads the local playlist. Returns false if it can't
+  // start, so the caller can fall back to the normal direct live path.
+  async loadLiveTimeshift(streamUrl, ch, name, logo, currentEpg = 'No schedule available') {
+    if (!this._isElectron()) return false;
+    // Show the player + spinner immediately so the click feels instant; the
+    // buffer takes a few seconds to spin up and we don't want to block on it.
+    this._enterLiveUi(name, logo, currentEpg);
+    const target = this._transcodeTarget(streamUrl);
+    try {
+      const r = await fetch(`/api/timeshift/start?url=${encodeURIComponent(target)}&ch=${encodeURIComponent(ch)}`);
+      if (!r.ok) return false;
+      const { playlist } = await r.json();
+      if (!playlist) return false;
+      this._pendingTimeshift = true;            // read by loadStream → _playAsHls
+      this.loadStream(playlist, name, logo, currentEpg, false);
+      return true;
+    } catch (e) {
+      console.warn('[timeshift] start failed, using direct live:', e && e.message);
+      return false;
+    }
+  }
+
+  // Show the live player shell + spinner right away (before playback is ready),
+  // so fullscreen and the channel name appear the instant the user clicks.
+  _enterLiveUi(name, logo, epg) {
+    this.hasStream = true;
+    document.body.classList.add('player-session');
+    document.body.classList.remove('vod-mode');
+    if (this.idleScreen) this.idleScreen.classList.add('hidden');
+    this.currentChannelName = name || 'Live Channel';
+    if (this.channelNameEl) {
+      this.channelNameEl.innerHTML = `<span class="player-channel-name-text">${this.currentChannelName}</span>`;
+    }
+    if (this.epgTitleEl && epg) this.epgTitleEl.textContent = epg;
+    if (logo && this.watermarkImg && this.watermark) {
+      this.watermarkImg.src = proxifyImage(logo);
+      this.watermark.classList.remove('hidden');
+    }
+    this.showSpinner();
+  }
+
   loadStream(url, name, logo, currentEpg = 'No schedule available', isVod = false, resumeTime = 0) {
     this.isVod = isVod;
     this.isVodActive = isVod;
@@ -594,6 +680,11 @@ export class VideoPlayer {
     this._transcodeOffset = 0;
     this._transcodeDuration = 0;
     this._transcodeMode = null;
+    // Timeshift: true only when this load is the rolling DVR HLS buffer (set by
+    // loadLiveTimeshift just before this call). Default off for VOD/direct/recordings.
+    this._timeshiftActive = !!this._pendingTimeshift;
+    this._pendingTimeshift = false;
+    document.body.classList.toggle('timeshift-active', this._timeshiftActive);
     // Bumped on every new stream so a pending live reconnect for an old
     // channel cancels itself once the user has switched away.
     this._streamGen = (this._streamGen || 0) + 1;
@@ -917,20 +1008,26 @@ export class VideoPlayer {
 
   _playAsHls(url, isVod) {
     if (Hls.isSupported()) {
-      // Live wants a short, low-latency buffer; VOD wants normal buffering so
-      // it can seek and won't stall.
+      // Timeshift = a live DVR window we want to scrub back in, so keep a few
+      // minutes of back buffer (deeper seeks re-fetch from the on-disk playlist)
+      // and don't snap to the live edge. Plain live wants a short low-latency
+      // buffer; VOD wants normal buffering so it can seek and won't stall.
+      const ts = this._timeshiftActive && !isVod;
       this.hls = new Hls({
         // --- Memory limits for low-RAM devices ---
         // Keep the forward buffer short and cap total RAM used by media data.
-        maxBufferLength:    isVod ? 15 : 8,    // seconds to buffer ahead
-        maxMaxBufferLength: isVod ? 30 : 8,    // hard ceiling
-        maxBufferSize:      20 * 1000 * 1000,  // 20 MB cap
-        backBufferLength:   5,                 // free segments >5 s behind playhead
+        maxBufferLength:    ts ? 30 : (isVod ? 15 : 8),  // seconds to buffer ahead
+        maxMaxBufferLength: ts ? 60 : (isVod ? 30 : 8),  // hard ceiling
+        maxBufferSize:      ts ? 60 * 1000 * 1000 : 20 * 1000 * 1000,
+        // ponytail: 120 s of in-memory back buffer; deeper rewinds re-load
+        // segments from disk. Raise toward 1800 to keep the full 30 min in RAM.
+        backBufferLength:   ts ? 120 : 5,
         enableWorker: true,
-        lowLatencyMode: !isVod
+        lowLatencyMode: !isVod && !ts
       });
       this.hls.loadSource(url);
       this.hls.attachMedia(this.video);
+      if (!isVod) this._startHlsStallWatch(); // live/timeshift: recover silent stalls
 
       this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
         this.video.play().catch(err => console.log('Playback auto-play blocked:', err));
@@ -964,17 +1061,40 @@ export class VideoPlayer {
             this.destroyHls();
             this._retryStream();
             break;
-          case Hls.ErrorTypes.MEDIA_ERROR:
-            console.warn('Fatal media error in HLS, attempting recovery...');
-            this.hls.recoverMediaError();
+          case Hls.ErrorTypes.MEDIA_ERROR: {
+            // Throttle recovery. Unthrottled recoverMediaError() on a stream the
+            // browser can't decode loops forever — each call flushes the buffer
+            // (black blip) and pegs the main thread (UI goes unresponsive). Try
+            // recover, then recover+swapAudioCodec, then give up.
+            const t = Date.now();
+            const r = this._hlsMediaRecover || { n: 0, at: 0 };
+            if (t - r.at > 8000) r.n = 0;   // a calm gap = treat the next as fresh
+            r.at = t; r.n++;
+            this._hlsMediaRecover = r;
+            if (r.n === 1) {
+              console.warn('HLS media error — recovering…');
+              this.hls.recoverMediaError();
+            } else if (r.n === 2) {
+              console.warn('HLS media error again — swapping audio codec…');
+              this.hls.swapAudioCodec();
+              this.hls.recoverMediaError();
+            } else {
+              console.error('HLS media-error recovery is thrashing.');
+              this.destroyHls();
+              // Live: reconnect (reload the playlist) rather than killing the
+              // stream — the server keeps the timeshift buffer alive.
+              if (isVod) this._handleVodPlaybackFallback({ code: 3, message: 'HLS media error' });
+              else this._retryStream();
+            }
             break;
+          }
           default:
-            console.error('Fatal HLS error, stopping stream:', data);
+            console.error('Fatal HLS error:', data);
             this.destroyHls();
             if (isVod) {
               this._handleVodPlaybackFallback({ code: 4, message: 'HLS playback error' });
             } else {
-              this.showError('This stream could not be played.');
+              this._retryStream(); // live: reconnect rather than give up
             }
             break;
         }
@@ -1233,6 +1353,9 @@ export class VideoPlayer {
   // else the element's duration.
   _totalDuration() {
     if (this._transcodeActive && this._transcodeDuration > 0) return this._transcodeDuration;
+    // Timeshift: the seek bar spans the DVR window (up to 30 min) hls.js exposes
+    // as the seekable range, not the element's duration (which is Infinity here).
+    if (this._timeshiftActive) { const w = this._tsWindow(); return w ? w.end - w.start : NaN; }
     return this.video.duration;
   }
 
@@ -1240,7 +1363,53 @@ export class VideoPlayer {
   // _transcodeOffset into the title, so add the offset back.
   _currentTime() {
     if (this._transcodeActive) return this._transcodeOffset + (this.video.currentTime || 0);
+    if (this._timeshiftActive) { const w = this._tsWindow(); return w ? (this.video.currentTime || 0) - w.start : 0; }
     return this.video.currentTime;
+  }
+
+  // The current timeshift seekable window {start,end} in element time, or null.
+  _tsWindow() {
+    const s = this.video.seekable;
+    if (s && s.length) return { start: s.start(0), end: s.end(s.length - 1) };
+    return null;
+  }
+
+  // Skip relative seconds (+forward / -back). Clamps to the seekable bounds:
+  // the timeshift DVR window for live, or [0, duration] for VOD. Transcoded VOD
+  // isn't byte-seekable, so it re-requests at the new offset.
+  skipBy(secs) {
+    if (this._transcodeActive) {
+      const d = this._totalDuration();
+      let t = this._currentTime() + secs;
+      if (isFinite(d)) t = Math.min(d, t);
+      this._seekTranscode(Math.max(0, t));
+      return;
+    }
+    let lo = 0, hi = Infinity;
+    if (this._timeshiftActive) {
+      const w = this._tsWindow();
+      if (w) { lo = w.start; hi = w.end; }
+    } else {
+      const d = this._totalDuration();
+      if (isFinite(d)) hi = d;
+    }
+    try { this.video.currentTime = Math.max(lo, Math.min(hi, (this.video.currentTime || 0) + secs)); } catch (e) {}
+  }
+
+  // Jump to the live edge of the timeshift buffer. Don't park on the very edge:
+  // the last segment is still being written, so seeking to seekable.end starves
+  // the forward buffer and freezes. Target hls.js's own liveSyncPosition (a few
+  // seconds back, where it keeps appending) — that's "live" and keeps advancing.
+  goLive() {
+    let target = null;
+    if (this.hls && typeof this.hls.liveSyncPosition === 'number' && isFinite(this.hls.liveSyncPosition)) {
+      target = this.hls.liveSyncPosition;
+    } else {
+      const w = this._tsWindow();
+      if (w) target = Math.max(w.start, w.end - 10); // ~1.5 segments behind the edge
+    }
+    if (target == null) return;
+    try { this.video.currentTime = target; this.video.play(); } catch (e) {}
   }
 
   // Scrub on a transcoded stream: re-request the transcode starting at `target`
@@ -1462,6 +1631,11 @@ export class VideoPlayer {
     this._transcodeOffset = 0;
     this._transcodeDuration = 0;
     this._transcodeMode = null;
+    if (this._timeshiftActive) {
+      this._timeshiftActive = false;
+      document.body.classList.remove('timeshift-active', 'ts-at-live');
+      try { fetch('/api/timeshift/stop'); } catch (e) {}   // free the ffmpeg buffer
+    }
     document.body.classList.remove('player-session');
     // Release any fullscreen orientation lock so the app returns to free rotation.
     if (Capacitor.isNativePlatform()) { try { ScreenOrientation.unlock().catch(() => {}); } catch (e) {} }
@@ -1577,10 +1751,35 @@ export class VideoPlayer {
   }
 
   destroyHls() {
+    this._stopHlsStallWatch();
     if (this.hls) {
       this.hls.destroy();
       this.hls = null;
     }
+  }
+
+  // Watchdog for live HLS (incl. timeshift): if currentTime stops advancing for
+  // >12 s while we're meant to be playing, the buffer ran dry without hls.js
+  // declaring a fatal error (e.g. the segmenter blipped). Reconnect once; the
+  // server keeps the timeshift buffer alive so the reload picks straight back up.
+  _startHlsStallWatch() {
+    this._stopHlsStallWatch();
+    let last = -1;
+    let lastChange = Date.now();
+    this._hlsStallTimer = setInterval(() => {
+      if (!this.hasStream || this.video.paused || this._castMode) { lastChange = Date.now(); last = this.video.currentTime; return; }
+      const t = this.video.currentTime;
+      if (Math.abs(t - last) > 0.25) { last = t; lastChange = Date.now(); return; }
+      if (Date.now() - lastChange > 12000) {
+        console.warn('Live HLS stalled >12s — reconnecting…');
+        lastChange = Date.now();
+        this._retryStream();
+      }
+    }, 3000);
+  }
+
+  _stopHlsStallWatch() {
+    if (this._hlsStallTimer) { clearInterval(this._hlsStallTimer); this._hlsStallTimer = null; }
   }
 
   destroyMpegts() {
@@ -1689,262 +1888,4 @@ export class VideoPlayer {
     if (this.fullscreenBtn) {
       this.fullscreenBtn.innerHTML = on ? '<i data-lucide="minimize"></i>' : '<i data-lucide="maximize"></i>';
       if (typeof lucide !== 'undefined') {
-        try { lucide.createIcons({ scope: this.fullscreenBtn }); } catch (e) {}
-      }
-    }
-  }
-
-  // Rotate the device to drive fullscreen: portrait→landscape enters, landscape→
-  // portrait exits. player-fs itself is applied by _applyFsForOrientation once the
-  // orientation actually changes, so fullscreen never appears in portrait.
-  _rotateForFs(toLandscape) {
-    try {
-      ScreenOrientation.lock({ orientation: toLandscape ? 'landscape' : 'portrait' }).catch(() => {});
-    } catch (e) {}
-    // Re-derive fullscreen after the rotation settles, in case the resize/media
-    // events don't fire (some WebViews) — guarantees the state catches up.
-    [120, 400, 800].forEach(ms => setTimeout(() => this._applyFsForOrientation(), ms));
-  }
-
-  toggleFullscreen() {
-    if (Capacitor.isNativePlatform()) {
-      if (this._isTv()) {
-        // TV (no portrait): pure CSS toggle, stays landscape.
-        this._setFsDirect(!document.body.classList.contains('player-fs'));
-      } else {
-        if (this.isLandscape()) {
-          const nextOn = !document.body.classList.contains('player-fs');
-          this._setFsDirect(nextOn);
-          if (!nextOn) {
-            // Toggled fullscreen OFF in landscape: unlock orientation so they can rotate physically
-            try { ScreenOrientation.unlock().catch(() => {}); } catch (e) {}
-          } else {
-            // Toggled fullscreen ON in landscape: lock orientation to landscape
-            try { ScreenOrientation.lock({ orientation: 'landscape' }).catch(() => {}); } catch (e) {}
-          }
-        } else {
-          // In portrait, toggle enters fullscreen by rotating to landscape
-          this._rotateForFs(true);
-        }
-      }
-      return;
-    }
-    const container = this.video.parentElement;
-    if (!document.fullscreenElement) {
-      container.requestFullscreen().catch(err => {
-        console.error(`Error entering fullscreen: ${err.message}`);
-      });
-    } else {
-      document.exitFullscreen();
-    }
-  }
-
-  enterFullscreen() {
-    if (Capacitor.isNativePlatform()) {
-      if (this._isTv()) {
-        this._setFsDirect(true);      // TV: direct, stays landscape
-      } else {
-        if (this.isLandscape()) {
-          this._setFsDirect(true);
-          try { ScreenOrientation.lock({ orientation: 'landscape' }).catch(() => {}); } catch (e) {}
-        } else {
-          this._rotateForFs(true);                   // phone/tablet: rotate→landscape
-        }
-      }
-      return;
-    }
-    const container = this.video.parentElement;
-    if (!document.fullscreenElement) {
-      container.requestFullscreen().catch(err => {
-        console.warn(`Error entering fullscreen: ${err.message}`);
-      });
-    }
-  }
-
-  toggleCaptions() {
-    if (this.hls) {
-      const tracks = this.video.textTracks;
-      if (tracks.length > 0) {
-        // Toggle the first track between showing and disabled
-        const track = tracks[0];
-        track.mode = track.mode === 'showing' ? 'disabled' : 'showing';
-        this.ccBtn.style.color = track.mode === 'showing' ? '#06b6d4' : '#fff';
-      }
-    }
-  }
-
-  // Collect the audio + subtitle tracks available from whichever engine is
-  // active (hls.js, or the native <video> for mpegts/direct play).
-  getTrackMenu() {
-    const audio = [];
-    const subs = [{ id: 'sub:off', label: 'Off', active: false }];
-
-    if (this.hls) {
-      (this.hls.audioTracks || []).forEach((t, i) => {
-        audio.push({ id: 'audio:' + i, label: t.name || t.lang || `Audio ${i + 1}`, active: i === this.hls.audioTrack });
-      });
-      (this.hls.subtitleTracks || []).forEach((t, i) => {
-        subs.push({ id: 'sub:' + i, label: t.name || t.lang || `Subtitle ${i + 1}`, active: i === this.hls.subtitleTrack });
-      });
-      subs[0].active = this.hls.subtitleTrack === -1;
-    } else {
-      const at = this.video.audioTracks;
-      if (at && at.length) {
-        for (let i = 0; i < at.length; i++) {
-          audio.push({ id: 'audio:' + i, label: at[i].label || at[i].language || `Audio ${i + 1}`, active: !!at[i].enabled });
-        }
-      }
-      const tt = this.video.textTracks;
-      let anySub = false;
-      if (tt && tt.length) {
-        for (let i = 0; i < tt.length; i++) {
-          const showing = tt[i].mode === 'showing';
-          if (showing) anySub = true;
-          subs.push({ id: 'sub:' + i, label: tt[i].label || tt[i].language || `Subtitle ${i + 1}`, active: showing });
-        }
-      }
-      subs[0].active = !anySub;
-    }
-
-    return { audio, subs };
-  }
-
-  // Apply a track chosen from the menu: "audio:<i>", "sub:<i>" or "sub:off".
-  applyTrack(id) {
-    const [kind, idxStr] = String(id).split(':');
-    if (kind === 'audio') {
-      const i = parseInt(idxStr, 10);
-      if (this.hls) {
-        this.hls.audioTrack = i;
-      } else if (this.video.audioTracks) {
-        for (let j = 0; j < this.video.audioTracks.length; j++) this.video.audioTracks[j].enabled = (j === i);
-      }
-    } else if (kind === 'sub') {
-      if (idxStr === 'off') {
-        if (this.hls) this.hls.subtitleTrack = -1;
-        const tt = this.video.textTracks;
-        if (tt) for (let j = 0; j < tt.length; j++) tt[j].mode = 'disabled';
-        this.ccBtn.style.color = '#fff';
-      } else {
-        const i = parseInt(idxStr, 10);
-        if (this.hls) { this.hls.subtitleTrack = i; this.hls.subtitleDisplay = true; }
-        const tt = this.video.textTracks;
-        if (tt) for (let j = 0; j < tt.length; j++) tt[j].mode = (j === i) ? 'showing' : 'disabled';
-        this.ccBtn.style.color = '#06b6d4';
-      }
-    }
-  }
-
-  async togglePiP() {
-    if (Capacitor.isNativePlatform()) {
-      try {
-        const PipPlugin = registerPlugin('PipPlugin');
-        const res = await PipPlugin.enterPiP();
-        // PiP can't be granted via a runtime dialog. If the OS refused to enter
-        // (the special "Picture-in-picture" access is off for this app), send the
-        // user straight to the settings screen where they can enable it. We don't
-        // use window.confirm() here because it doesn't reliably render in the
-        // Android WebView and would silently dead-end.
-        if (res && res.needsPermission) {
-          await PipPlugin.openPiPSettings();
-        }
-      } catch (err) {
-        console.error('Failed to enter Android PiP:', err);
-      }
-    } else {
-      try {
-        if (document.pictureInPictureElement) {
-          await document.exitPictureInPicture();
-        } else if (this.video.readyState >= 1) {
-          await this.video.requestPictureInPicture();
-        }
-      } catch (err) {
-        console.error('Failed to toggle web PiP:', err);
-      }
-    }
-  }
-
-  showControlsTemporarily() {
-    this.controls.style.opacity = '1';
-    this.watermark.style.opacity = '0';
-    document.body.style.cursor = 'default';
-    
-    clearTimeout(this.controlsTimeout);
-    this.controlsTimeout = setTimeout(() => {
-      this.hideControls();
-    }, 3000);
-  }
-
-  hideControls() {
-    // During native playback the <video> element is always "paused" (libVLC is
-    // the one playing), so the old guard kept controls up forever — treat an
-    // active, non-paused native stream as playing too.
-    const nativePlaying = this._nativeActive && !this._nativePaused;
-    if (!nativePlaying && this.video.paused) return; // Don't hide controls if paused
-    this.controls.style.opacity = '0';
-    this.watermark.style.opacity = '0.4';
-    
-    // Hide cursor in fullscreen when controls hide
-    if (document.fullscreenElement) {
-      document.body.style.cursor = 'none';
-    }
-  }
-
-  showSpinner() {
-    // Restore the loading state (spinner + text) and show it.
-    this.spinner.innerHTML = '<div class="spinner"></div><span>Loading Stream...</span>';
-    this.spinner.classList.remove('video-loader-error');
-    this.spinner.classList.remove('hidden');
-  }
-
-  hideSpinner() {
-    this.spinner.classList.add('hidden');
-  }
-
-  // Build a human-readable explanation from the HTTP status the provider returned.
-  describeStreamError(httpCode) {
-    if (httpCode === 403) {
-      return 'Stream blocked by the provider (HTTP 403). Many IPTV providers only allow playback from home/mobile networks, not from web servers. Try the mobile or desktop app.';
-    }
-    if (httpCode === 401) {
-      return 'Not authorized for this stream (HTTP 401). Your subscription may not include this channel.';
-    }
-    if (httpCode === 404) {
-      return 'Stream not found (HTTP 404). This channel may be offline or unavailable in this format.';
-    }
-    return 'Could not load this stream. The provider may be blocking playback from this network, or the channel is offline.';
-  }
-
-  // Replace the spinner with a non-spinning error message in the player area.
-  showError(message) {
-    this.hideSpinner();
-    this.spinner.innerHTML =
-      `<div class="video-error-icon"><i data-lucide="alert-triangle"></i></div>` +
-      `<span class="video-error-text">${message}</span>`;
-    this.spinner.classList.add('video-loader-error');
-    this.spinner.classList.remove('hidden');
-    try {
-      if (window.lucide) lucide.createIcons({ scope: this.spinner });
-    } catch (e) {}
-  }
-
-  // Release all resources held by this player instance.
-  // Call this if the player element is ever removed from the DOM.
-  destroy() {
-    clearTimeout(this._vodLoadTimeout);
-    if (this._onFullscreenChange) {
-      document.removeEventListener('fullscreenchange', this._onFullscreenChange);
-      this._onFullscreenChange = null;
-    }
-    // Cancel any pending retry timer
-    clearTimeout(this._retryTimer);
-    this._retryTimer = null;
-    this.destroyHls();
-    this.destroyMpegts();
-    if (this.video) {
-      this.video.src = '';
-      this.video.load();
-    }
-  }
-}
-export default VideoPlayer;
+        try { lucide.createIcons({ scope: this.

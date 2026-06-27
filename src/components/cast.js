@@ -281,7 +281,7 @@ async function buildCastMedia(ctx, isDlna, isEShare) {
 
   // Electron (PC): short /cast/<kind>/<id>.<ext> path served by the local proxy
   // (clean, extension-bearing URL). Chromecast → HLS for live; DLNA → MPEG-TS.
-  const kind = ctx.type === 'movie' ? 'movie' : ctx.type === 'series' ? 'series' : 'live';
+  const kind = ctx.type === 'movie' ? 'movie' : ctx.type === 'series' ? 'series' : ctx.type === 'flixify' ? 'flixify' : 'live';
   let ext;
   let contentType;
   if (ctx.isLive) {

@@ -107,6 +107,7 @@ import {
   removePlaylist,
   deactivateActivePlaylist
 } from './cache.js';
+import * as flixify from './flixify.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -572,7 +573,32 @@ const CAST_MIME = {
   avi: 'video/avi', mov: 'video/quicktime', ts: 'video/mpeg', m3u8: 'application/x-mpegurl'
 };
 
-app.get('/cast/:kind/:file', (req, res) => {
+app.get('/cast/:kind/:file', async (req, res) => {
+  // Flixify casts a resolved third-party URL, not an Xtream stream — handle it
+  // first (no Xtream creds needed) and proxy with an MP4 DLNA profile.
+  if (req.params.kind === 'flixify') {
+    const f = req.params.file;
+    const d = f.lastIndexOf('.');
+    const id = d >= 0 ? f.slice(0, d) : f;
+    const ext = (d >= 0 ? f.slice(d + 1) : 'mp4').toLowerCase();
+    let target;
+    try { target = await flixify.castUrl(id); } catch (e) { target = null; }
+    if (!target) return res.status(404).send('Flixify stream not found');
+    const { mime, features } = dlnaProfile(false, ext);
+    if (req.method === 'HEAD') {
+      res.setHeader('Content-Type', mime);
+      res.setHeader('transferMode.dlna.org', 'Streaming');
+      res.setHeader('contentFeatures.dlna.org', features);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      return fetchUpstreamLength(target, (len) => {
+        res.setHeader('Accept-Ranges', 'bytes');
+        if (len) res.setHeader('Content-Length', String(len));
+        res.status(200).end();
+      });
+    }
+    return proxyStream(target, req, res, { contentType: mime, dlnaContentFeatures: features });
+  }
+
   const creds = getCredentials();
   if (!creds) return res.status(401).send('Not logged in');
 
@@ -762,8 +788,13 @@ function proxyStream(decodedUrl, req, res, opts = {}) {
     }
 
     const protocol = currentUrl.startsWith('https') ? https : http;
-    
-    const clientReq = protocol.get(currentUrl, { headers: fetchHeaders }, (clientRes) => {
+
+    // ponytail: accept expired / self-signed certs. IPTV providers and logo
+    // hosts routinely run broken cert chains; without this every such asset
+    // 500s with CERT_HAS_EXPIRED. Tradeoff: no TLS verification on proxied
+    // fetches (MITM risk) — acceptable for a media proxy, revisit if it ever
+    // carries anything sensitive. Ignored for http://.
+    const clientReq = protocol.get(currentUrl, { headers: fetchHeaders, rejectUnauthorized: false }, (clientRes) => {
       // Handle HTTP redirects (301, 302, 307, 308)
       if ([301, 302, 307, 308].includes(clientRes.statusCode)) {
         let location = clientRes.headers.location;
@@ -856,9 +887,11 @@ function proxyStream(decodedUrl, req, res, opts = {}) {
     });
 
     clientReq.on('error', (err) => {
-      console.error('Proxy request failed:', err);
+      // Dead logo domains / unreachable hosts are expected — log one line, not a
+      // stack trace, so real problems aren't buried.
+      console.warn(`Proxy request failed (${err.code || 'ERR'}): ${currentUrl}`);
       if (!res.headersSent) {
-        res.status(500).send(`Proxy error: ${err.message}`);
+        res.status(502).send(`Proxy error: ${err.message}`);
       }
     });
 
@@ -1099,26 +1132,45 @@ app.get('/api/probe', (req, res) => {
   req.on('close', () => { try { proc.kill('SIGKILL'); } catch (e) {} });
 });
 
-// Serve Vite frontend in production
-const distPath = path.join(__dirname, '../dist');
-if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(distPath, 'index.html'));
-  });
-} else {
-  app.get('/', (req, res) => {
-    res.send('IPTV Server is running! Run client dev server with `npm run dev`.');
-  });
+// ==========================================================================
+// DVR (record) + TIMESHIFT (pause/rewind live up to 30 min) — desktop only.
+// Both need the bundled ffmpeg + local disk, so they're only ever exercised by
+// the Electron app. Reuse findFfmpeg()/trackChild() from the transcode section
+// above so recordings/timeshift children die with the app like every other one.
+//   Record:    ffmpeg -c copy <live> -> a single .ts file on disk.
+//   Timeshift: ffmpeg segments <live> into a rolling 30-min HLS playlist the
+//              player reads via hls.js, so currentTime can scrub back 30 min.
+// ==========================================================================
+const DVR_DATA_DIR = process.env.ELECTRON_RUNNING === 'true'
+  ? path.join(os.homedir(), '.ziptv_pro_data')   // same root cache.js uses
+  : path.join(__dirname, 'data');
+const REC_DIR = path.join(DVR_DATA_DIR, 'recordings');
+const TS_DIR = path.join(DVR_DATA_DIR, 'timeshift');
+const REC_INDEX = path.join(DVR_DATA_DIR, 'recordings.json');
+const SCHED_INDEX = path.join(DVR_DATA_DIR, 'schedule.json');
+try { fs.mkdirSync(REC_DIR, { recursive: true }); } catch (e) {}
+try { fs.mkdirSync(TS_DIR, { recursive: true }); } catch (e) {}
+
+const readJson = (f, fallback) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { return fallback; } };
+const writeJson = (f, v) => { try { fs.writeFileSync(f, JSON.stringify(v, null, 2)); } catch (e) {} };
+const sanitize = (s) => String(s || '').replace(/[^a-z0-9_\-]+/gi, '_').slice(0, 80) || 'rec';
+
+function updateRec(id, patch) {
+  const list = readJson(REC_INDEX, []);
+  const i = list.findIndex(r => r.id === id);
+  if (i < 0) return null;
+  list[i] = { ...list[i], ...patch };
+  writeJson(REC_INDEX, list);
+  return list[i];
 }
 
-app.listen(PORT, () => {
-  console.log(`IPTV Player backend listening on http://localhost:${PORT}`);
-  try {
-    const ips = getLocalIpAddresses();
-    if (ips.length > 0) {
-      console.log('Exposed on your local network at:');
-      ips.forEach(ip => console.log(`  http://${ip}:${PORT}`));
-    }
-  } catch (e) {}
-});
+const recProcs = new Map(); // id -> live ffmpeg recording process
+
+// Spawn one stream-copy recording. id lets a scheduled job reuse its own id.
+function startRecording({ url, name, channel, durationMins, id }) {
+  const recId = id || ('rec_' + Date.now());
+  const file = path.join(REC_DIR, `${recId}__${sanitize(name || channel)}.ts`);
+  const secs = Math.max(60, Math.round((+durationMins || 120) * 60));
+  // ponytail: .ts + stream-copy always works from a live .ts source and the app
+  // already plays .ts; remux to .mp4 here if you ever want portable files.
+  const args = ['-user_agent', 'VLC/3.0

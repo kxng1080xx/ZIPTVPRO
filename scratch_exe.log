@@ -1,0 +1,59 @@
+
+> iptv-player-zero@5.3.2 electron:dist
+> npm run fetch:ffmpeg && npm run bump -- --no-bump && npm run build && electron-builder && node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('./package.json')); fs.copyFileSync('dist-electron/ZIPTV-Pro-Setup-' + pkg.version + '.exe', 'latest.exe');"
+
+
+> iptv-player-zero@5.3.2 fetch:ffmpeg
+> node scripts/fetch-ffmpeg.mjs
+
+[fetch-ffmpeg] ffmpeg.exe already present — skipping.
+
+> iptv-player-zero@5.3.2 bump
+> node scripts/bump-version.mjs --no-bump
+
+NO_BUMP active: Synchronizing version fields to 5.3.2 without bumping...
+Version synchronized -> 5.3.2 (android versionName "5.3.2")
+
+> iptv-player-zero@5.3.2 build
+> node scripts/gen-version.mjs && vite build
+
+version.json -> 5.3.2
+[36mvite v6.4.3 [32mbuilding for production...[36m[39m
+transforming...
+[32m✓[39m 35 modules transformed.
+rendering chunks...
+computing gzip size...
+[2mdist/[22m[32mconnect.html              [39m[1m[2m   21.76 kB[22m[1m[22m[2m │ gzip:   6.68 kB[22m
+[2mdist/[22m[32mindex.html                [39m[1m[2m   40.13 kB[22m[1m[22m[2m │ gzip:   8.33 kB[22m
+[2mdist/[22m[32massets/logo-BZUWDWM2.png  [39m[1m[2m  414.79 kB[22m[1m[22m
+[2mdist/[22m[35massets/main-CJM9Nihe.css  [39m[1m[2m  119.33 kB[22m[1m[22m[2m │ gzip:  21.33 kB[22m
+[2mdist/[22m[36massets/web--d95sPS3.js    [39m[1m[2m    0.84 kB[22m[1m[22m[2m │ gzip:   0.40 kB[22m
+[2mdist/[22m[36massets/web-B2Kp9nVf.js    [39m[1m[2m    1.06 kB[22m[1m[22m[2m │ gzip:   0.34 kB[22m
+[2mdist/[22m[36massets/main-BT1Bl7Zl.js   [39m[1m[33m1,146.40 kB[39m[22m[2m │ gzip: 325.43 kB[22m
+[33m
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+[32m✓ built in 5.32s[39m
+  • electron-builder  version=26.15.3 os=10.0.26200
+  • loaded configuration  file=package.json ("build" field)
+  • author is missed in the package.json  appPackageFile=D:\Vs Code Projects\IPTV Player\package.json
+  • executing @electron/rebuild  electronVersion=42.4.0 arch=x64 buildFromSource=false workspaceRoot=D:\Vs Code Projects\IPTV Player projectDir=./ appDir=./
+  • installing native dependencies  arch=x64
+  • completed installing native dependencies
+  • packaging       platform=win32 arch=x64 electron=42.4.0 appOutDir=dist-electron\win-unpacked
+  • downloaded      label=electron progress=100%
+  • downloaded electron zip extracted successfully  output=D:\Vs Code Projects\IPTV Player\dist-electron\win-unpacked
+  • asar usage is disabled — this is strongly not recommended  solution=enable asar and use asarUnpack to unpack files that must be externally available
+  • searching for node modules  pm=npm searchDir=D:\Vs Code Projects\IPTV Player
+  • duplicate dependency references  dependencies=["@capacitor/core@8.4.0","debug@2.6.9","debug@2.6.9","debug@2.6.9","node-ssdp@2.9.1","simple-get@2.8.2","debug@2.6.9","debug@2.6.9","elementtree@0.1.7","debug@2.6.9","http-errors@2.0.1","on-finished@2.4.1","qs@6.15.2","http-errors@2.0.1","iconv-lite@0.4.24","type-is@1.6.18","debug@2.6.9","debug@2.6.9","on-finished@2.4.1","get-intrinsic@1.3.0","call-bind-apply-helpers@1.0.2","call-bind-apply-helpers@1.0.2","es-object-atoms@1.1.2","call-bound@1.0.4","get-intrinsic@1.3.0","side-channel-map@1.0.1","debug@2.6.9","http-errors@2.0.1","on-finished@2.4.1","send@0.19.2","mime-types@2.1.35"]
+  • signing with signtool.exe  path=dist-electron\win-unpacked\resources\bin\ffmpeg.exe
+  • asar usage is disabled — this is strongly not recommended  solution=enable asar and use asarUnpack to unpack files that must be externally available
+  • default Electron icon is used  reason=application icon is not set
+  • signing with signtool.exe  path=dist-electron\win-unpacked\ZIPTV Pro.exe
+  • building        target=nsis file=dist-electron\ZIPTV-Pro-Setup-5.3.2.exe archs=x64 oneClick=true perMachine=false
+  • signing with signtool.exe  path=dist-electron\win-unpacked\resources\elevate.exe
+  • signing with signtool.exe  path=dist-electron\ZIPTV-Pro-Setup-5.3.2.__uninstaller.exe
+  • signing with signtool.exe  path=dist-electron\ZIPTV-Pro-Setup-5.3.2.exe
+  • building block map  blockMapFile=dist-electron\ZIPTV-Pro-Setup-5.3.2.exe.blockmap

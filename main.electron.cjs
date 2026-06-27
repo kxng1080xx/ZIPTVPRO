@@ -179,26 +179,14 @@ function createWindow() {
   // Closing the window asks whether to quit or keep running in the tray. The app
   // only truly exits via this dialog's "Quit" (or the tray's "Quit"), which sets
   // isQuitting.
-  mainWindow.on('close', (e) => {
-    if (isQuitting) return;
-    e.preventDefault();
-    const choice = dialog.showMessageBoxSync(mainWindow, {
-      type: 'question',
-      buttons: ['Minimize to tray', 'Quit', 'Cancel'],
-      defaultId: 0,
-      cancelId: 2,
-      noLink: true,
-      title: 'Close ZIPTV Pro',
-      message: 'Close ZIPTV Pro?',
-      detail: 'Keep it running in the system tray, or quit completely.'
-    });
-    if (choice === 0) {
-      mainWindow.hide();
-    } else if (choice === 1) {
-      isQuitting = true;
-      app.quit();
-    }
-    // choice === 2 (Cancel): leave the window open.
+  // The window's X quits the app outright — no "minimize to tray?" prompt — so it
+  // never lingers as a background process (which blocked installer upgrades). The
+  // tray is still reachable via the minimize button (Minimize to tray option) and
+  // the tray menu, so close-to-tray fans haven't lost it entirely.
+  mainWindow.on('close', () => {
+    isQuitting = true;
+    try { if (globalThis.__ziptvKillChildren) globalThis.__ziptvKillChildren(); } catch (e) {}
+    app.quit();
   });
 
   loadWhenServerReady();

@@ -1284,9 +1284,11 @@ class TVNavigation {
     if (back && back.offsetParent !== null) row0.push(back);
     if (row0.length > 0) rows.push(row0);
     
-    // Row 1: Center controls
+    // Row 1: Center controls. The -10/+10 buttons sit either side of play and
+    // are hidden (offsetParent null) when the stream isn't seekable, so they
+    // drop out of D-pad nav automatically on plain live.
     const row1 = [];
-    ['player-prev-btn', 'player-play-pause-btn', 'player-next-btn'].forEach(id => {
+    ['player-prev-btn', 'player-rewind-10', 'player-play-pause-btn', 'player-forward-10', 'player-next-btn'].forEach(id => {
       const el = document.getElementById(id);
       if (el && el.offsetParent !== null) row1.push(el);
     });
@@ -1621,15 +1623,4 @@ class TVNavigation {
       // Close dropdown and focus profile button
       const dd = document.getElementById('playlist-dropdown');
       if (dd) dd.classList.add('hidden');
-      const profileBtn = document.getElementById('profile-card-btn');
-      if (profileBtn) {
-        this.setFocus('tabs', profileBtn);
-      }
-      e.preventDefault();
-    }
-  }
-}
-
-// Export singleton instance
-export const navigation = new TVNavigation();
-export default navigation;
+      const profileBtn = document.getElementById('profile-card-btn');
