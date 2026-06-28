@@ -7336,11 +7336,6 @@ body.perf-lite .settings-modal {
 
 /* Flixify tab: no categories sidebar — let the content fill the width. */
 body.flixify-tab .sidebar { display: none !important; }
-body.youtube-tab .sidebar { display: none !important; }
-
-/* YouTube tab: the webview fills the whole content area. */
-#youtube-view.active { display: flex !important; height: 100%; }
-#youtube-frame { flex: 1; width: 100%; height: 100%; border: none; background: #000; }
 
 
 /* Flixify home menu */

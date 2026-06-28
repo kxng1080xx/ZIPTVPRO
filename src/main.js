@@ -340,18 +340,9 @@ async function switchTab(tabId) {
     panel.classList.toggle('active', panel.id === `${tabId}-view`);
   });
 
-  // Flixify and YouTube have no category sidebar — hide the left rail on those
-  // tabs (CSS-driven so it stays hidden through playback exit too).
+  // Flixify has no category sidebar — hide the left rail on that tab (CSS-driven
+  // so it stays hidden through playback exit too).
   document.body.classList.toggle('flixify-tab', tabId === 'flixify');
-  document.body.classList.toggle('youtube-tab', tabId === 'youtube');
-
-  // YouTube tab: an in-app webview. Load youtube.com on first open (lazy, so it
-  // doesn't run in the background at startup); the panel toggle above shows it.
-  if (tabId === 'youtube') {
-    const yt = document.getElementById('youtube-frame');
-    if (yt && !yt.getAttribute('src')) yt.setAttribute('src', 'https://www.youtube.com');
-    return;
-  }
 
   // Header search placeholder follows the active view
   const headerSearch = document.getElementById('header-search-input');
