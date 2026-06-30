@@ -1008,6 +1008,7 @@ function trackChild(proc) {
 }
 
 function killAllChildren() {
+  try { stopTimeshift(); } catch (e) {}   // stop the live buffer + wipe its folder on exit
   for (const proc of activeChildren) {
     try {
       if (process.platform === 'win32' && proc.pid) {
@@ -1282,6 +1283,9 @@ function stopTimeshift() {
     activeTimeshift.stopped = true;           // tell the exit handler not to restart
     try { activeTimeshift.proc.kill('SIGKILL'); } catch (e) {}
     activeTimeshift = null;
+    // The buffer only makes sense while you're on the stream. Once you switch
+    // away (or stop), wipe the whole timeshift folder so segments never pile up.
+    try { fs.rmSync(TS_DIR, { recursive: true, force: true }); } catch (e) {}
   }
 }
 
@@ -1358,8 +1362,8 @@ app.get('/api/timeshift/start', async (req, res) => {
   if (activeTimeshift && activeTimeshift.ch === ch && !activeTimeshift.stopped) {
     return res.json({ playlist: `/api/timeshift/${ch}/index.m3u8` });
   }
-  stopTimeshift();
-  const dir = path.join(TS_DIR, ch);
+  stopTimeshift();   // also wipes TS_DIR if a previous stream left segments
+  const dir = TS_DIR;
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
   try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
   const state = { ch, dir, url, proc: null, stopped: false, restarts: 0, windowStart: Date.now() };
@@ -1377,9 +1381,9 @@ app.get('/api/timeshift/start', async (req, res) => {
 app.get('/api/timeshift/stop', (req, res) => { stopTimeshift(); res.json({ ok: true }); });
 
 app.get('/api/timeshift/:ch/:file', (req, res) => {
-  const ch = sanitize(req.params.ch);
+  // All streams share TS_DIR; :ch is kept only so playlist URLs stay stable.
   const file = String(req.params.file).replace(/[^a-z0-9_.\-]+/gi, '_');
-  const fp = path.join(TS_DIR, ch, file);
+  const fp = path.join(TS_DIR, file);
   if (!fp.startsWith(TS_DIR)) return res.status(403).end();      // path-traversal guard
   if (!fs.existsSync(fp)) return res.status(404).end();
   if (file.endsWith('.m3u8')) res.setHeader('Cache-Control', 'no-store');

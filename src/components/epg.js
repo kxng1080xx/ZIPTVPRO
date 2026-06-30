@@ -90,7 +90,7 @@ export class EPGGrid {
 
     // Hours range change
     this.hoursSelect.addEventListener('change', () => {
-      this.render();
+      this.render(false);
     });
 
     // Navigation buttons
@@ -98,7 +98,7 @@ export class EPGGrid {
       this.timeOffsetMs = 0;
       this.selectedDate = new Date();
       this.navNow.classList.add('active');
-      this.render();
+      this.render(false);
       this.scrollToCurrentTime();
     });
 
@@ -106,14 +106,14 @@ export class EPGGrid {
       const hours = parseInt(this.hoursSelect.value);
       this.timeOffsetMs -= (hours - 1) * 60 * 60 * 1000;
       this.navNow.classList.remove('active');
-      this.render();
+      this.render(false);
     });
 
     this.navNext.addEventListener('click', () => {
       const hours = parseInt(this.hoursSelect.value);
       this.timeOffsetMs += (hours - 1) * 60 * 60 * 1000;
       this.navNow.classList.remove('active');
-      this.render();
+      this.render(false);
     });
 
     // Channel filtering is driven by the TV on-screen keyboard now (no input
@@ -125,7 +125,7 @@ export class EPGGrid {
       this.channelsFilter.addEventListener('input', (e) => {
         clearTimeout(filterTimeout);
         filterTimeout = setTimeout(() => {
-          this.renderChannelsAndGrid(e.target.value);
+          this.renderChannelsAndGrid(e.target.value, true);
         }, 300);
       });
     }
@@ -134,7 +134,7 @@ export class EPGGrid {
     // re-observes the on-screen rows and re-fetches their guide.
     this.refreshBtn.addEventListener('click', () => {
       this.epgData = {};
-      this.render();
+      this.render(false);
     });
 
     // "Show Guide" opens the full-screen timeline guide directly — the inline
@@ -164,7 +164,7 @@ export class EPGGrid {
     }
 
     // Re-layout for the new viewport size.
-    this.render();
+    this.render(false);
     this.scrollToCurrentTime();
 
     if (on) {
@@ -211,7 +211,7 @@ export class EPGGrid {
     return { startTime, endTime, hoursToShow };
   }
 
-  render() {
+  render(resetPagination = true) {
     if (!this.channels || this.channels.length === 0) {
       this.channelsList.innerHTML = '<div class="epg-no-channels">No channels</div>';
       this.programsRows.innerHTML = '';
@@ -230,7 +230,7 @@ export class EPGGrid {
     this.renderTimelineHeader(startTime, hoursToShow);
 
     // 2. Render channels list and corresponding guide rows
-    this.renderChannelsAndGrid(this.channelsFilter?.value || this.channelFilterQuery || '');
+    this.renderChannelsAndGrid(this.channelsFilter?.value || this.channelFilterQuery || '', resetPagination);
 
     // 3. Update current time red line indicator
     this.updateCurrentTimeIndicator(startTime, endTime);
@@ -288,7 +288,7 @@ export class EPGGrid {
     this.renderChannelsAndGrid();
   }
 
-  renderChannelsAndGrid(filterKeyword = this.channelFilterQuery || '') {
+  renderChannelsAndGrid(filterKeyword = this.channelFilterQuery || '', resetPagination = true) {
     const { startTime, endTime } = this.getGuideTimeWindow();
     const pxPerMs = this.pxPerHour / (60 * 60 * 1000);
 
@@ -315,10 +315,88 @@ export class EPGGrid {
 
     this.visibleCount.textContent = `(${filtered.length})`;
 
-    this.channelsList.innerHTML = '';
-    this.programsRows.innerHTML = '';
+    // Remember focus state to prevent jumping / scrolling to top on hour shifts
+    const activeStreamId = this.channelsList.querySelector('.epg-channel-row.active')?.dataset.streamId;
+    const focusedStreamId = document.activeElement?.closest('.epg-channel-row')?.dataset.streamId;
 
-    filtered.forEach((channel) => {
+    if (resetPagination) {
+      this.renderedCount = 0;
+      this.channelsList.innerHTML = '';
+      this.programsRows.innerHTML = '';
+      this.channelsList.scrollTop = 0;
+      this.gridViewport.scrollTop = 0;
+    } else {
+      this.channelsList.innerHTML = '';
+      this.programsRows.innerHTML = '';
+    }
+
+    this.filteredChannels = filtered;
+    
+    // We want to load at least 20 channels, or up to the currently loaded count
+    const targetCount = resetPagination ? 20 : Math.max(20, this.renderedCount);
+    this.renderedCount = 0; // reset for rendering chunk-by-chunk in renderNextChunk
+
+    // Load up to the targetCount
+    while (this.renderedCount < targetCount && this.renderedCount < this.filteredChannels.length) {
+      this.renderNextChunk();
+    }
+
+    // Restore active states and D-pad focus
+    if (activeStreamId) {
+      const activeRow = this.channelsList.querySelector(`.epg-channel-row[data-stream-id="${activeStreamId}"]`);
+      if (activeRow) activeRow.classList.add('active');
+    }
+    if (focusedStreamId) {
+      const focusedRow = this.channelsList.querySelector(`.epg-channel-row[data-stream-id="${focusedStreamId}"]`);
+      if (focusedRow) {
+        focusedRow.focus();
+        if (navigation && navigation.currentZone === 'channels') {
+          navigation.focusedElement = focusedRow;
+        }
+      }
+    }
+
+    this.setupInfiniteScroll();
+  }
+
+  setupInfiniteScroll() {
+    if (this.hasInfiniteScrollHooked) return;
+    this.hasInfiniteScrollHooked = true;
+
+    // Load next chunk when scroll is near bottom
+    this.channelsList.addEventListener('scroll', () => {
+      const threshold = 250;
+      if (this.channelsList.scrollHeight - this.channelsList.scrollTop - this.channelsList.clientHeight < threshold) {
+        this.renderNextChunk();
+      }
+    });
+
+    // Load next chunk when D-pad focus navigates near the end
+    this.channelsList.addEventListener('focusin', (e) => {
+      const focusedRow = e.target.closest('.epg-channel-row');
+      if (!focusedRow) return;
+      const rows = Array.from(this.channelsList.querySelectorAll('.epg-channel-row'));
+      const index = rows.indexOf(focusedRow);
+      if (index >= 0 && index >= this.renderedCount - 8) {
+        this.renderNextChunk();
+      }
+    });
+  }
+
+  renderNextChunk() {
+    if (!this.filteredChannels || this.renderedCount >= this.filteredChannels.length) return;
+
+    const { startTime, endTime } = this.getGuideTimeWindow();
+    const pxPerMs = this.pxPerHour / (60 * 60 * 1000);
+    const pinned = new Set(((window.getPinnedChannels && window.getPinnedChannels()) || []).map(String));
+
+    const CHUNK_SIZE = 20;
+    const nextChunk = this.filteredChannels.slice(this.renderedCount, this.renderedCount + CHUNK_SIZE);
+
+    const chanFragment = document.createDocumentFragment();
+    const progFragment = document.createDocumentFragment();
+
+    nextChunk.forEach((channel) => {
       const streamId = String(channel.stream_id);
 
       // --- 1. Channel Left Item ---
@@ -326,6 +404,7 @@ export class EPGGrid {
       const isPinned = pinned.has(streamId);
       chanRow.className = 'epg-channel-row' + (isPinned ? ' pinned' : '');
       chanRow.dataset.streamId = streamId;
+      chanRow.tabIndex = -1; // make D-pad focusable
 
       const logo = proxifyImage(channel.stream_icon || '');
       const guideHtml = this.buildInlineGuide(this.getNowNext(streamId));
@@ -342,7 +421,7 @@ export class EPGGrid {
           </div>
           <div class="epg-channel-row-now" data-now-for="${streamId}">${guideHtml}</div>
         </div>
-        <button class="epg-channel-row-fav" data-id="${streamId}">
+        <button class="epg-channel-row-fav" data-id="${streamId}" tabindex="-1">
           <i data-lucide="star"></i>
         </button>
       `;
@@ -361,10 +440,6 @@ export class EPGGrid {
         const activeBlock = this.getCurrentProgramBlock(streamId, startTime, endTime);
         this.onChannelSelect(channel, activeBlock);
 
-        // A real pointer click while in the full-screen guide means "watch this"
-        // — leave full screen so the now-playing video is visible. (Synthetic
-        // clicks from keyboard/remote navigation have isTrusted === false and are
-        // ignored here; that exit is handled in the navigation layer instead.)
         if (e.isTrusted && document.body.classList.contains('epg-fullscreen-active')) {
           this.setFullscreen(false);
         }
@@ -390,20 +465,18 @@ export class EPGGrid {
         }
       });
 
-      this.channelsList.appendChild(chanRow);
+      chanFragment.appendChild(chanRow);
 
       // --- 2. Programs Right Row ---
       const progRow = document.createElement('div');
       progRow.className = 'epg-programs-row';
       progRow.dataset.streamId = streamId;
 
-      // Check if we have listings cached
       const listings = this.epgData[streamId] || [];
       const windowStart = startTime.getTime();
       const windowEnd = endTime.getTime();
 
       if (listings.length === 0) {
-        // Draw standard "No information available" block spanning whole timeline
         const placeholderBlock = this.createProgramBlock(
           'No information available',
           windowStart,
@@ -416,12 +489,10 @@ export class EPGGrid {
         });
         progRow.appendChild(placeholderBlock);
       } else {
-        // Draw actual blocks
         listings.forEach(prog => {
           const startMs = parseInt(prog.start_timestamp) * 1000;
           const endMs = parseInt(prog.end_timestamp) * 1000;
 
-          // Out of window check
           if (endMs <= windowStart || startMs >= windowEnd) return;
 
           const blockStart = Math.max(startMs, windowStart);
@@ -436,15 +507,11 @@ export class EPGGrid {
             prog
           );
 
-          // Click handler
           block.addEventListener('click', () => {
-            chanRow.click(); // clicks channel row
-            this.onChannelSelect(channel, prog); // sends actual clicked program
+            chanRow.click();
+            this.onChannelSelect(channel, prog);
           });
 
-          // Carry everything a right-click "Record this show" needs, so the
-          // handler in main.js builds the request straight from the block — no
-          // lookup that could silently miss.
           block.dataset.streamId = streamId;
           block.dataset.channelName = channel.name || '';
           block.dataset.channelIcon = channel.stream_icon || '';
@@ -452,8 +519,6 @@ export class EPGGrid {
           block.dataset.progEnd = prog.end_timestamp;
           block.dataset.progTitle = prog.title || '';
 
-          // Hover REC button → schedule/record this specific show. stopPropagation
-          // so it doesn't also trigger the block's play-channel click.
           const recBtn = block.querySelector('.epg-rec-btn');
           if (recBtn) recBtn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -464,15 +529,18 @@ export class EPGGrid {
         });
       }
 
-      this.programsRows.appendChild(progRow);
+      progFragment.appendChild(progRow);
     });
 
-    // Re-trigger icon updates (specifically stars on favorite icons)
+    this.channelsList.appendChild(chanFragment);
+    this.programsRows.appendChild(progFragment);
+
+    this.renderedCount += nextChunk.length;
+
     lucide.createIcons({ scope: this.channelsList });
     this.updateFavoritesHighlighting();
 
     // Lazily fetch EPG only for channel rows that are actually on screen
-    // (fetching every channel at once gets the provider to throttle/drop requests).
     this.observeVisibleChannels();
   }
 

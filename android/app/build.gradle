@@ -7,8 +7,8 @@ android {
         applicationId "com.iptv.player.zero"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 139
-        versionName "5.3.5"
+        versionCode 141
+        versionName "5.3.7"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         // libVLC ships native libs per-ABI; limit to the two that cover ~all
         // real Android phones / TV boxes / Fire TV to keep the APK size down.

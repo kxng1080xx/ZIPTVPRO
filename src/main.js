@@ -123,17 +123,15 @@ async function initApp() {
   // 1. Initialize time clock
   startClock();
 
-  // TV preview mode on desktop: visit /tv (e.g. http://localhost:5675/tv) to
-  // force the Android-TV "10-foot" layout/focus on PC for previewing. The legacy
-  // ?tv=true / ?tv=1 query is still accepted. (D-pad nav via arrow keys works
-  // regardless; this also adds the body.tv-layout hook and drops initial focus
-  // into the categories column so it's keyboard-ready.)
   try {
     const path = (window.location.pathname || '').replace(/\/+$/, '');
     const isTvPath = /(^|\/)tv$/i.test(path);
     const tvParam = new URLSearchParams(window.location.search).get('tv');
-    if (isTvPath || tvParam === 'true' || tvParam === '1') {
+    const ua = (navigator.userAgent || '').toLowerCase();
+    const isTV = /aft|tizen|web0s|webos|smart-?tv|googletv|android tv|bravia|netcast/.test(ua);
+    if (isTvPath || tvParam === 'true' || tvParam === '1' || isTV) {
       document.body.classList.add('tv-layout');
+      document.documentElement.classList.add('tv-layout');
       window.__TV_PREVIEW__ = true;
     }
   } catch (e) {}
@@ -802,7 +800,7 @@ function togglePinChannel(id, name) {
   }
   store[pid] = list;
   localStorage.setItem('pinned_channels', JSON.stringify(store));
-  if (epgGridInstance) epgGridInstance.render();
+  if (epgGridInstance) epgGridInstance.render(false);
 }
 
 // Pin/unpin menu for a focused/right-clicked channel row in the live guide.
