@@ -11,6 +11,7 @@
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="stylesheet" href="/src/style.css">
+  <link rel="stylesheet" href="/src/redesign.css">
   <script type="module" src="/src/main.js"></script>
 </head>
 <body class="dark-mode">
@@ -111,15 +112,70 @@
 
   <!-- ==================== MAIN APPLICATION ==================== -->
   <div id="app-container" class="app-layout hidden">
-    
-    <!-- ==================== TOP NAVIGATION HEADER ==================== -->
+
+    <!-- ==================== SIDE RAIL (primary navigation) ====================
+         Netflix-style leanback rail: collapsed icon bar that expands with labels
+         on hover (desktop) or D-pad focus (TV). Hidden on phone portrait, where
+         the bottom tab bar takes over. -->
+    <nav class="side-rail" id="side-rail" aria-label="Primary navigation">
+      <div class="rail-logo">
+        <img src="/src/assets/logo.png" alt="ZIPTV Pro" class="rail-logo-img animate-glow">
+        <span class="rail-label rail-wordmark">ZIPTV&nbsp;<em>PRO</em></span>
+      </div>
+
+      <div class="rail-group rail-group-main">
+        <button class="rail-item" id="rail-search-btn" title="Search">
+          <i data-lucide="search"></i><span class="rail-label">Search</span>
+        </button>
+        <button class="nav-tab rail-item active" data-tab="live">
+          <i data-lucide="tv"></i><span class="rail-label">Live TV</span>
+        </button>
+        <button class="nav-tab rail-item" data-tab="movies">
+          <i data-lucide="film"></i><span class="rail-label">Movies</span>
+        </button>
+        <button class="nav-tab rail-item" data-tab="series">
+          <i data-lucide="clapperboard"></i><span class="rail-label">Series</span>
+        </button>
+        <button class="nav-tab rail-item" data-tab="flixify">
+          <i data-lucide="popcorn"></i><span class="rail-label">Flixify</span>
+        </button>
+      </div>
+
+      <div class="rail-group rail-group-bottom">
+        <button class="rail-item" id="sync-btn" title="Refresh Playlist Data" style="display: none;">
+          <i data-lucide="refresh-cw"></i><span class="rail-label">Refresh</span>
+        </button>
+        <button class="rail-item" id="settings-btn" title="Settings">
+          <i data-lucide="settings"></i><span class="rail-label">Settings</span>
+        </button>
+        <div class="profile-wrap">
+          <div class="profile-card rail-item" id="profile-card-btn" title="Switch playlist">
+            <span class="profile-avatar" id="profile-avatar">ZP</span>
+            <div class="profile-info rail-label">
+              <span class="profile-name" id="nav-playlist-name">Xtream Codes</span>
+              <span class="profile-status">
+                <span class="status-dot"></span>
+                <span id="expiry-text">Active</span>
+              </span>
+            </div>
+          </div>
+          <!-- Playlist drawer markup lives at body level (see #playlist-dropdown
+               near the modals) so position:fixed isn't trapped by the header's
+               backdrop-filter containing block. -->
+        </div>
+      </div>
+    </nav>
+
+    <div class="app-main">
+
+    <!-- ==================== TOP HEADER (contextual bar) ==================== -->
     <header class="top-header">
       <!-- Hamburger Menu Button (Mobile Only) -->
       <button id="mobile-menu-btn" class="header-icon-btn mobile-only" title="Toggle Categories">
         <i data-lucide="menu"></i>
       </button>
 
-      <!-- Left: Logo + segmented nav pill -->
+      <!-- Left: Logo (phone/desktop branding) -->
       <div class="header-left">
         <div class="logo-container">
           <img src="/src/assets/logo.png" alt="ZIPTV Pro Logo" class="logo-img header-logo animate-glow">
@@ -129,23 +185,9 @@
             <span id="header-tv-ip-text">TV Link: Loading...</span>
           </span>
         </div>
-        <nav class="navigation-tabs">
-          <button class="nav-tab active" data-tab="live">
-            <i data-lucide="tv"></i> Live TV
-          </button>
-          <button class="nav-tab" data-tab="movies">
-            <i data-lucide="film"></i> Movies
-          </button>
-          <button class="nav-tab" data-tab="series">
-            <i data-lucide="clapperboard"></i> Series
-          </button>
-          <button class="nav-tab" data-tab="flixify">
-            <i data-lucide="film"></i> Flixify
-          </button>
-        </nav>
       </div>
 
-      <!-- Right: global search · account chip · clock · settings -->
+      <!-- Right: global search · clock -->
       <div class="header-right">
         <!-- Global search: a real field on PC, a D-pad button on the APK/TV.
              main.js shows exactly one of these based on the platform. -->
@@ -157,31 +199,10 @@
         <button class="header-icon-btn" id="global-search-btn" title="Search" style="display: none;">
           <i data-lucide="search"></i>
         </button>
-        <div class="profile-wrap">
-          <div class="profile-card" id="profile-card-btn" title="Switch playlist">
-            <div class="profile-info">
-              <span class="profile-name" id="nav-playlist-name">Xtream Codes</span>
-              <span class="profile-status">
-                <span class="status-dot"></span>
-                <span id="expiry-text">Active</span>
-              </span>
-            </div>
-            <span class="profile-avatar" id="profile-avatar">ZP</span>
-          </div>
-          <!-- Playlist drawer markup lives at body level (see #playlist-dropdown
-               near the modals) so position:fixed isn't trapped by the header's
-               backdrop-filter containing block. -->
-        </div>
         <div class="header-clock">
           <span id="current-time">12:19 PM</span>
           <span id="current-date">June 15, 2026</span>
         </div>
-        <button class="header-icon-btn" id="sync-btn" title="Refresh Playlist Data" style="display: none;">
-          <i data-lucide="refresh-cw"></i>
-        </button>
-        <button class="header-icon-btn" id="settings-btn" title="Settings">
-          <i data-lucide="settings"></i>
-        </button>
       </div>
     </header>
 
@@ -622,6 +643,7 @@
 
       </main>
     </div>
+    </div><!-- /.app-main -->
   </div>
 
   <!-- ==================== MOBILE BOTTOM TAB BAR (phone only) ==================== -->
@@ -802,7 +824,7 @@
       </div>
     </div>
   </div>
-  
+
   <!-- Mobile Sidebar Backdrop Overlay -->
   <div id="sidebar-backdrop" class="sidebar-backdrop hidden"></div>
 

@@ -133,6 +133,20 @@ async function initApp() {
       document.body.classList.add('tv-layout');
       document.documentElement.classList.add('tv-layout');
       window.__TV_PREVIEW__ = true;
+
+      // Resolution-proof 10-foot rendering: pin the layout viewport to 1920
+      // CSS px. TV webviews at 720p (1280×720) or with DPR-scaled CSS
+      // viewports (e.g. 960×540) then scale the whole UI uniformly instead
+      // of rendering it oversized and cropped off-screen. Desktop browsers
+      // ignore the viewport meta; redesign.css's vw-based root font-size
+      // covers scaling there.
+      let vp = document.querySelector('meta[name="viewport"]');
+      if (!vp) {
+        vp = document.createElement('meta');
+        vp.name = 'viewport';
+        document.head.appendChild(vp);
+      }
+      vp.setAttribute('content', 'width=1920, user-scalable=no');
     }
   } catch (e) {}
 
@@ -2329,12 +2343,15 @@ function initGlobalSearch() {
   const onTv = Capacitor.isNativePlatform() || window.__TV_PREVIEW__;
   const field = document.getElementById('global-search-field');
   const btn = document.getElementById('global-search-btn');
+  const railBtn = document.getElementById('rail-search-btn');
 
   if (onTv) {
     if (btn) {
       btn.style.display = 'inline-flex';
       btn.addEventListener('click', () => openGlobalSearch({ tvInput: true, onPick: routeGlobalSearchPick }));
     }
+    // Side-rail Search item (TV D-pad / phone landscape): same overlay.
+    railBtn?.addEventListener('click', () => openGlobalSearch({ tvInput: true, onPick: routeGlobalSearchPick }));
   } else {
     if (field) field.style.display = 'flex';
     const input = document.getElementById('global-search-input');
@@ -2346,6 +2363,8 @@ function initGlobalSearch() {
         debounce = setTimeout(() => setGlobalSearchQuery(q, routeGlobalSearchPick), 250);
       });
     }
+    // On desktop the rail Search item drops the cursor into the header field.
+    railBtn?.addEventListener('click', () => input?.focus());
   }
 }
 

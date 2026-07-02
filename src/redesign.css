@@ -1,0 +1,768 @@
+/* ==========================================================================
+   ZIPTV PRO — UI REDESIGN LAYER (v2)
+   Loaded AFTER style.css. This layer owns:
+     · The app shell: left side-rail navigation (Netflix-style leanback),
+       slim contextual header, content viewport.
+     · Per-device layouts:
+         - TV (body.tv-layout)  → 10-foot leanback UI, viewport-scaled so
+           720p/1080p/4K all render proportionally (no oversized cropping).
+         - Phone portrait       → bottom tab bar, drawer categories, 3-col grid.
+         - Phone landscape      → player-forward, compact icon rail.
+         - Desktop              → hover-expanding rail, cinematic grids.
+   Legacy rules in style.css that clash with the new shell are overridden here.
+   ========================================================================== */
+
+/* ==========================================================================
+   1. DESIGN TOKENS (refresh)
+   ========================================================================== */
+:root {
+  /* Deeper, more cinematic base */
+  --bg-darkest: #04060b;
+  --bg-base: #070a12;
+  --bg-panel: #0d1220;
+  --bg-surface: #161d2f;
+  --bg-surface-hover: #1f2940;
+  --border-color: #24304a;
+
+  --rd-bg-darkest: #04060b;
+  --rd-bg-base: #060911;
+
+  /* Ambient glows — subtler, pushed to corners */
+  --rd-glow-a: radial-gradient(1400px 800px at 90% -20%, rgba(37, 99, 235, 0.12), transparent 60%);
+  --rd-glow-b: radial-gradient(1100px 800px at -15% 115%, rgba(6, 182, 212, 0.09), transparent 60%);
+
+  /* Rail geometry */
+  --rail-w: 78px;
+  --rail-w-expanded: 252px;
+
+  /* Focus (TV D-pad) — high-contrast white ring, Netflix-style */
+  --rd-focus: #ffffff;
+  --rd-focus-ring: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 6px rgba(56, 189, 248, 0.45);
+  --rd-focus-glow: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 6px rgba(56, 189, 248, 0.45), 0 18px 44px rgba(0, 0, 0, 0.6);
+
+  --rd-card-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
+}
+
+/* Slimmer, less intrusive scrollbars everywhere */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.14); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.25); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ==========================================================================
+   2. APP SHELL — rail + main column
+   ========================================================================== */
+.app-layout {
+  flex-direction: row; /* was column (header on top) — now rail | main */
+}
+
+.app-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  margin-left: var(--rail-w); /* rail is fixed-position */
+}
+
+/* Hide the rail (and reclaim its gutter) while a VOD plays full-window —
+   main.js already hides .top-header/.sidebar in vod-mode. */
+body.vod-mode .side-rail { display: none !important; }
+body.vod-mode .app-main { margin-left: 0; }
+
+/* ==========================================================================
+   3. SIDE RAIL — collapsed icon bar, expands on hover/focus
+   ========================================================================== */
+.side-rail {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 900;
+  width: var(--rail-w);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 18px 0 14px;
+  background: linear-gradient(180deg, rgba(10, 14, 24, 0.92), rgba(6, 9, 17, 0.96));
+  border-right: 1px solid var(--rd-hairline);
+  overflow: hidden;
+  transition: width 0.22s cubic-bezier(0.33, 1, 0.68, 1), background 0.22s ease;
+}
+
+/* Expanded state: desktop hover, keyboard focus-within, or JS-driven class
+   (tv-navigation adds .rail-expanded while the 'tabs' zone is active). */
+.side-rail:hover,
+.side-rail:focus-within,
+.side-rail.rail-expanded {
+  width: var(--rail-w-expanded);
+  background: linear-gradient(90deg, rgba(7, 10, 18, 0.99) 60%, rgba(7, 10, 18, 0.94));
+  box-shadow: 40px 0 90px rgba(0, 0, 0, 0.55);
+}
+
+/* Labels: hidden while collapsed, fade/slide in when expanded */
+.side-rail .rail-label {
+  opacity: 0;
+  transform: translateX(-6px);
+  transition: opacity 0.18s ease 0.04s, transform 0.22s ease 0.04s;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.side-rail:hover .rail-label,
+.side-rail:focus-within .rail-label,
+.side-rail.rail-expanded .rail-label {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Logo block */
+.rail-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 19px 14px;
+  flex-shrink: 0;
+}
+.rail-logo-img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.rail-wordmark {
+  font-family: var(--font-title);
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #fff;
+}
+.rail-wordmark em {
+  font-style: normal;
+  background: var(--rd-accent-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Groups */
+.rail-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 12px;
+}
+.rail-group-main { flex: 1 1 auto; }
+.rail-group-bottom {
+  flex-shrink: 0;
+  padding-bottom: 4px;
+}
+
+/* Rail items — neutralize legacy .nav-tab / .header-icon-btn styling first */
+.side-rail .rail-item,
+.side-rail .nav-tab,
+.side-rail .nav-tab.active {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 48px;
+  padding: 0 15px;
+  border-radius: 12px;
+  color: var(--text-secondary);
+  font-family: var(--font-title);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  overflow: hidden;
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.side-rail .rail-item i,
+.side-rail .rail-item svg {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  stroke-width: 2;
+}
+.side-rail .rail-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-primary);
+}
+.side-rail .nav-tab.active {
+  color: #fff;
+  background: var(--rd-active-tint);
+  border: 1px solid var(--rd-active-border);
+}
+.side-rail .nav-tab.active i { color: #38bdf8; }
+
+/* D-pad / keyboard focus on rail items */
+.side-rail .rail-item.tv-focused,
+.side-rail .rail-item:focus-visible {
+  background: #fff;
+  color: #0b0f19;
+}
+.side-rail .rail-item.tv-focused i,
+.side-rail .rail-item:focus-visible i { color: #0b0f19; }
+
+/* Profile card at the rail bottom — compact avatar, details when expanded */
+.side-rail .profile-wrap { padding: 6px 0 0; }
+.side-rail .profile-card {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  padding: 0 9px;
+  border-radius: 14px;
+  cursor: pointer;
+  overflow: hidden;
+  border: 1px solid var(--rd-hairline-soft);
+  background: rgba(255, 255, 255, 0.03);
+  transition: background 0.15s ease;
+}
+.side-rail .profile-card:hover { background: rgba(255, 255, 255, 0.08); }
+.side-rail .profile-card.tv-focused {
+  background: #fff;
+  box-shadow: none;
+}
+.side-rail .profile-card.tv-focused .profile-name { color: #0b0f19; }
+.side-rail .profile-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-title);
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #fff;
+  background: var(--rd-accent-gradient);
+  flex-shrink: 0;
+}
+.side-rail .profile-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.side-rail .profile-name {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.side-rail .profile-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* ==========================================================================
+   4. TOP HEADER — slim contextual bar (branding gone to the rail on TV)
+   ========================================================================== */
+.top-header {
+  height: 58px;
+  padding: 0 20px;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-bottom: 1px solid var(--rd-hairline-soft);
+}
+
+/* Header logo is redundant next to the rail on desktop — rail owns branding */
+.top-header .logo-container .header-logo { width: 30px; height: 30px; }
+.top-header .logo-wordmark { font-size: 0.95rem; }
+
+.header-clock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.15;
+}
+.header-clock #current-time {
+  font-family: var(--font-title);
+  font-weight: 700;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+.header-clock #current-date {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* ==========================================================================
+   5. COMPONENT RESKIN — shared across devices
+   ========================================================================== */
+
+/* ---- Categories sidebar: flatter, calmer ---- */
+.sidebar {
+  background: transparent;
+  border-right: 1px solid var(--rd-hairline-soft);
+}
+.category-item {
+  border-radius: 10px;
+}
+.category-item.active {
+  background: var(--rd-active-tint);
+  border-color: var(--rd-active-border);
+}
+
+/* ---- VOD poster cards: pure poster, info on hover (Netflix-style) ---- */
+.vod-card {
+  border-radius: 12px;
+  overflow: visible;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  transition: transform 0.18s cubic-bezier(0.33, 1, 0.68, 1);
+}
+.vod-card .vod-poster-wrapper {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.vod-card:hover { transform: translateY(-4px) scale(1.03); }
+.vod-card:hover .vod-poster-wrapper {
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: var(--rd-card-shadow);
+}
+.vod-card .vod-card-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.vod-card:hover .vod-card-title { color: var(--text-primary); }
+
+/* Continue-watching cards get the same lift */
+.continue-card { transition: transform 0.18s cubic-bezier(0.33, 1, 0.68, 1); }
+.continue-card:hover { transform: translateY(-3px) scale(1.02); }
+
+/* ---- View headers ---- */
+.vod-view-header h2 {
+  font-family: var(--font-title);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+/* ---- Modals: deeper glass, tighter radius ---- */
+.vod-modal-content,
+.settings-card,
+.recordings-modal-card {
+  border-radius: 20px;
+  border: 1px solid var(--rd-hairline-strong);
+  box-shadow: 0 40px 120px rgba(0, 0, 0, 0.7);
+}
+
+/* ---- Settings tiles ---- */
+.settings-tile {
+  border-radius: 16px;
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+.settings-tile:hover { transform: translateY(-2px); }
+
+/* ---- Login screen: cinematic backdrop ---- */
+.login-container {
+  background:
+    radial-gradient(1200px 700px at 80% -10%, rgba(37, 99, 235, 0.18), transparent 55%),
+    radial-gradient(900px 600px at -10% 110%, rgba(6, 182, 212, 0.12), transparent 55%),
+    linear-gradient(180deg, #05070d, #04060b);
+}
+.login-card {
+  border-radius: 22px;
+  border: 1px solid var(--rd-hairline-strong);
+}
+
+/* ==========================================================================
+   6. GLOBAL D-PAD FOCUS LANGUAGE (all platforms, amplified on TV)
+   Netflix-style: white ring + lift. tv-navigation.js applies .tv-focused.
+   ========================================================================== */
+.tv-focused {
+  outline: none !important;
+}
+.vod-card.tv-focused {
+  transform: scale(1.08);
+  z-index: 5;
+}
+.vod-card.tv-focused .vod-poster-wrapper {
+  box-shadow: var(--rd-focus-glow);
+  border-color: transparent;
+}
+.vod-card.tv-focused .vod-card-title { color: #fff; }
+
+.continue-card.tv-focused {
+  transform: scale(1.06);
+  box-shadow: var(--rd-focus-ring);
+  border-radius: 12px;
+  z-index: 5;
+}
+
+.category-item.tv-focused,
+.pin-item.tv-focused,
+.epg-channel-row.tv-focused,
+.episode-list-row.tv-focused,
+.playlist-row.tv-focused,
+.settings-tile.tv-focused,
+.page-btn.tv-focused,
+.vod-filter-btn.tv-focused,
+.epg-ctrl-btn.tv-focused,
+.epg-nav-btn.tv-focused {
+  box-shadow: var(--rd-focus-ring);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.player-control-icon.tv-focused,
+.player-play-btn.tv-focused,
+.player-skip-btn.tv-focused,
+.player-seek10-btn.tv-focused,
+.player-back-btn.tv-focused {
+  box-shadow: var(--rd-focus-ring);
+  border-radius: 50%;
+}
+
+/* ==========================================================================
+   7. TV LEANBACK LAYER (body.tv-layout)
+   RESOLUTION-PROOF SIZING: the root font-size tracks viewport width
+   (16px @ 1920, ~10.7px @ 1280×720, capped @ 4K), and every TV override
+   below is authored in rem. main.js additionally forces a width=1920
+   viewport on native TV webviews so legacy px rules scale uniformly too —
+   no more oversized, cropped UI on 720p panels.
+   ========================================================================== */
+html.tv-layout { font-size: clamp(9px, 0.8333vw, 32px); }
+
+body.tv-layout {
+  --rail-w: 5rem;
+  --rail-w-expanded: 17rem;
+}
+
+/* ---- Header becomes a floating clock (top-right); rail owns nav ---- */
+body.tv-layout .top-header {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: auto;
+  width: auto;
+  height: auto;
+  padding: 1.1rem 2rem 0 0;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none;
+  pointer-events: none;
+  z-index: 500;
+}
+body.tv-layout .top-header .header-left,
+body.tv-layout .top-header #mobile-menu-btn,
+body.tv-layout .top-header #global-search-btn,
+body.tv-layout .top-header #global-search-field {
+  display: none !important;
+}
+body.tv-layout .header-clock {
+  align-items: flex-end;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+}
+body.tv-layout .header-clock #current-time { font-size: 1.35rem; }
+body.tv-layout .header-clock #current-date { font-size: 0.85rem; }
+
+/* Content column starts at the very top now (header floats) */
+body.tv-layout .app-main { margin-left: var(--rail-w); }
+
+/* ---- Rail: leanback sizing + expand on D-pad focus ---- */
+body.tv-layout .side-rail {
+  padding: 1.5rem 0 1.2rem;
+  gap: 0.4rem;
+}
+body.tv-layout .rail-logo { padding: 0 1.15rem 1rem; }
+body.tv-layout .rail-logo-img { width: 2.6rem; height: 2.6rem; }
+body.tv-layout .rail-wordmark { font-size: 1.25rem; }
+body.tv-layout .rail-group { padding: 0 0.8rem; gap: 0.35rem; }
+body.tv-layout .side-rail .rail-item,
+body.tv-layout .side-rail .nav-tab,
+body.tv-layout .side-rail .nav-tab.active {
+  height: 3.4rem;
+  padding: 0 1rem;
+  border-radius: 0.8rem;
+  font-size: 1.1rem;
+  gap: 1rem;
+}
+body.tv-layout .side-rail .rail-item i,
+body.tv-layout .side-rail .rail-item svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+body.tv-layout .side-rail .profile-card { height: 3.8rem; padding: 0 0.55rem; border-radius: 0.9rem; }
+body.tv-layout .side-rail .profile-avatar { width: 2.4rem; height: 2.4rem; font-size: 0.85rem; border-radius: 0.65rem; }
+body.tv-layout .side-rail .profile-name { font-size: 0.95rem; max-width: 10rem; }
+body.tv-layout .side-rail .profile-status { font-size: 0.8rem; }
+
+/* No hover on TV: rail expands only while the D-pad is inside it
+   (tv-navigation.js toggles .rail-expanded when the 'tabs' zone is active). */
+body.tv-layout .side-rail:hover { width: var(--rail-w); }
+body.tv-layout .side-rail:hover .rail-label { opacity: 0; }
+body.tv-layout .side-rail.rail-expanded { width: var(--rail-w-expanded); }
+body.tv-layout .side-rail.rail-expanded .rail-label { opacity: 1; transform: translateX(0); }
+
+/* ---- Categories column: rem-scaled (overrides legacy px) ---- */
+body.tv-layout .sidebar {
+  width: 20rem;
+  padding: 1.2rem 1rem;
+  gap: 1rem;
+}
+body.tv-layout .pin-item { padding: 0.7rem 0.75rem; font-size: 1.05rem; border-radius: 0.7rem; }
+body.tv-layout .pin-label i { width: 1.15rem; height: 1.15rem; }
+body.tv-layout .pin-count { font-size: 0.85rem; }
+body.tv-layout .category-item {
+  padding: 0.9rem 0.9rem;
+  font-size: 1.1rem;
+  border-radius: 0.8rem;
+}
+body.tv-layout .cat-cc { min-width: 2.4rem; height: 1.75rem; font-size: 0.72rem; }
+body.tv-layout .cat-count { font-size: 0.9rem; }
+
+/* ---- Player stage & controls: rem-scaled ---- */
+body.tv-layout .live-top-row { padding: 1.4rem 1.75rem 0.5rem; }
+body.tv-layout .player-wrapper {
+  height: 46vh;
+  min-height: 0;
+  border-radius: 1.1rem;
+  overflow: hidden;
+}
+body.tv-layout .player-controls-overlay { padding: 1.4rem 1.75rem; }
+body.tv-layout .player-playing-title { font-size: 1.5rem; }
+body.tv-layout .player-playing-epg { font-size: 1.05rem; }
+body.tv-layout .live-tag { font-size: 0.85rem; padding: 0.35rem 0.85rem 0.35rem 0.7rem; }
+body.tv-layout .player-control-icon { width: 3rem; height: 3rem; }
+body.tv-layout .player-control-icon i { width: 1.4rem; height: 1.4rem; }
+body.tv-layout .player-play-btn { width: 4rem; height: 4rem; }
+body.tv-layout .player-skip-btn { width: 3rem; height: 3rem; }
+body.tv-layout .player-volume-slider { display: none; } /* D-pad uses TV volume */
+
+/* ---- Channel cards under the player: rem-scaled 4-up grid ---- */
+body.tv-layout .epg-controls-header { height: 3.75rem; padding: 0 1.75rem; }
+body.tv-layout .epg-ctrl-btn { font-size: 0.95rem; padding: 0.5rem 0.9rem; border-radius: 0.6rem; }
+body.tv-layout .epg-section-container.timeline-hidden .epg-channels-column {
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.1rem;
+  padding: 1.1rem 1.75rem 1.75rem;
+}
+body.tv-layout .epg-section-container.timeline-hidden .epg-channel-row {
+  padding: 0.9rem;
+  border-radius: 0.9rem;
+}
+body.tv-layout .epg-section-container.timeline-hidden .epg-channel-row-logo {
+  width: 3.1rem;
+  height: 3.1rem;
+}
+body.tv-layout .epg-channel-row-name { font-size: 1.05rem; }
+body.tv-layout .now-seg-time,
+body.tv-layout .now-seg-title { font-size: 0.9rem; }
+
+/* ---- VOD catalogs: big posters, breathing room ---- */
+body.tv-layout .vod-view-header h2 { font-size: 1.7rem; }
+body.tv-layout .vod-filter-btn { font-size: 1rem; padding: 0.6rem 1.1rem; border-radius: 0.7rem; }
+body.tv-layout .vod-grid {
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)) !important;
+  gap: 1.5rem 1.15rem;
+  padding: 0.8rem 1.75rem 2rem;
+}
+body.tv-layout .vod-card .vod-card-title { font-size: 0.95rem; }
+body.tv-layout .vod-card.tv-focused { transform: scale(1.1); }
+body.tv-layout .page-btn { font-size: 1rem; min-width: 2.6rem; height: 2.6rem; border-radius: 0.65rem; }
+
+/* ---- Series playback dashboard ---- */
+body.tv-layout .series-back-btn { font-size: 1.05rem; padding: 0.6rem 1.1rem; }
+body.tv-layout .episode-list-row { padding: 0.9rem 1rem; border-radius: 0.8rem; }
+
+/* ---- Modals & settings: rem-scaled, centered stage ---- */
+body.tv-layout .settings-card { max-width: 62rem; border-radius: 1.4rem; }
+body.tv-layout .settings-tile { padding: 1.4rem; border-radius: 1.1rem; }
+body.tv-layout .settings-tile-title { font-size: 1.1rem; }
+body.tv-layout .settings-tile-sub { font-size: 0.9rem; }
+body.tv-layout .vod-modal-content { max-width: 70rem; border-radius: 1.4rem; }
+
+/* ---- Login on TV: big, centered, D-pad friendly ---- */
+body.tv-layout .login-card {
+  max-width: 34rem;
+  padding: 2.2rem 2.4rem;
+  border-radius: 1.5rem;
+}
+body.tv-layout .login-card h2 { font-size: 1.6rem; }
+body.tv-layout .remote-login-code { font-size: 2.2rem; letter-spacing: 0.35em; }
+
+/* ---- Focus ring thickness rides the scale too ---- */
+body.tv-layout {
+  --rd-focus-ring: 0 0 0 0.2rem rgba(255, 255, 255, 0.95), 0 0 0 0.4rem rgba(56, 189, 248, 0.45);
+  --rd-focus-glow: 0 0 0 0.2rem rgba(255, 255, 255, 0.95), 0 0 0 0.4rem rgba(56, 189, 248, 0.45), 0 1.1rem 2.75rem rgba(0, 0, 0, 0.6);
+}
+body.tv-layout .tv-focused { scroll-margin: 6rem; }
+
+/* ==========================================================================
+   8. PHONE — PORTRAIT
+   Bottom tab bar owns navigation; the rail is hidden. Categories live in the
+   existing slide-over drawer (hamburger). Poster grid tightens to 3-up.
+   ========================================================================== */
+@media (max-width: 900px) and (orientation: portrait) {
+  .side-rail { display: none !important; }
+  .app-main { margin-left: 0; }
+
+  .top-header {
+    height: 56px;
+    padding: 0 10px;
+    background: transparent;
+    border-bottom: 1px solid var(--rd-hairline-soft);
+  }
+  .top-header .header-logo { width: 28px; height: 28px; }
+  .top-header .logo-wordmark { font-size: 0.95rem; }
+
+  /* Floating pill tab bar (over the existing fixed-bar rules in style.css) */
+  .mobile-tab-bar {
+    left: 10px;
+    right: 10px;
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    padding: 6px;
+    border-radius: 22px;
+    border: 1px solid var(--rd-hairline-strong);
+    background: rgba(10, 14, 24, 0.82);
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  }
+  .mobile-tab-btn {
+    min-height: 50px;
+    border-radius: 16px;
+    gap: 2px;
+  }
+  .mobile-tab-btn.active {
+    color: #fff;
+    background: var(--rd-active-tint);
+    border: 1px solid var(--rd-active-border);
+  }
+  .mobile-tab-btn.active i { color: #38bdf8; }
+
+  /* Content clears the floating bar */
+  .content-viewport,
+  .vod-scroll-container { padding-bottom: 84px; }
+
+  /* Poster grid: tight 3-up like mobile Netflix */
+  .vod-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 14px 10px;
+    padding: 10px 12px 90px;
+  }
+  .vod-card .vod-card-title { font-size: 0.72rem; }
+  .vod-card:hover { transform: none; } /* no hover-lift on touch */
+
+  /* Categories drawer: glassier panel, rounded leading edge */
+  .sidebar {
+    width: min(320px, 86vw);
+    left: calc(-1 * min(320px, 86vw));
+    border-radius: 0 22px 22px 0;
+    background: rgba(10, 14, 24, 0.94);
+    -webkit-backdrop-filter: blur(28px);
+    backdrop-filter: blur(28px);
+    border-right: 1px solid var(--rd-hairline-strong);
+  }
+
+  /* Modals become bottom sheets */
+  #settings-modal.modal-overlay { align-items: flex-end; padding: 0; }
+  #settings-modal .settings-card {
+    width: 100%;
+    max-width: 100%;
+    max-height: 86vh;
+    border-radius: 24px 24px 0 0;
+    border-bottom: none;
+  }
+  #vod-modal .vod-modal-content {
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 0;
+  }
+}
+
+/* ==========================================================================
+   9. PHONE — LANDSCAPE
+   Player-forward: compact icon rail (nav stays reachable), no header, full
+   vertical space for video + lists. Guarded against TV webviews that report
+   small CSS viewports.
+   ========================================================================== */
+@media (max-width: 1024px) and (orientation: landscape) {
+  body:not(.tv-layout) {
+    --rail-w: 58px;
+  }
+
+  /* Rail: always-collapsed icon strip — no hover/focus expansion on touch */
+  body:not(.tv-layout) .side-rail,
+  body:not(.tv-layout) .side-rail:hover,
+  body:not(.tv-layout) .side-rail:focus-within,
+  body:not(.tv-layout) .side-rail.rail-expanded {
+    width: var(--rail-w);
+    padding: 10px 0 8px;
+    box-shadow: none;
+  }
+  body:not(.tv-layout) .side-rail .rail-label { opacity: 0 !important; }
+  body:not(.tv-layout) .rail-logo { padding: 0 14px 8px; }
+  body:not(.tv-layout) .rail-logo-img { width: 30px; height: 30px; }
+  body:not(.tv-layout) .rail-group { padding: 0 9px; }
+  body:not(.tv-layout) .side-rail .rail-item,
+  body:not(.tv-layout) .side-rail .nav-tab,
+  body:not(.tv-layout) .side-rail .nav-tab.active {
+    height: 40px;
+    padding: 0 9px;
+    border-radius: 10px;
+  }
+  body:not(.tv-layout) .side-rail .rail-item i { width: 20px; height: 20px; }
+  body:not(.tv-layout) .side-rail .profile-card { height: 44px; padding: 0 4px; border-radius: 10px; }
+  body:not(.tv-layout) .side-rail .profile-avatar { width: 30px; height: 30px; font-size: 0.7rem; }
+
+  /* Header gone — every vertical pixel goes to content */
+  body:not(.tv-layout) .top-header { display: none !important; }
+  body:not(.tv-layout) .main-body-container { height: 100%; }
+
+  /* No bottom bar in landscape (portrait-only pattern) */
+  body:not(.tv-layout) .mobile-tab-bar { display: none !important; }
+
+  /* Live TV: video dominates, program details panel yields */
+  body:not(.tv-layout) #live-view .program-details-panel { display: none; }
+}
+
+/* Ultra-short landscape (typical phones ~360-460px tall): maximize the stage */
+@media (max-height: 520px) and (orientation: landscape) {
+  body:not(.tv-layout) .sidebar { width: 200px; }
+  body:not(.tv-layout) .vod-grid {
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)) !important;
+    gap: 12px 10px;
+    padding: 8px 14px 20px;
+  }
+  body:not(.tv-layout) .vod-card .vod-card-title { font-size: 0.68rem; }
+}
+
+/* ==========================================================================
+   10. LEGACY NEUTRALIZERS
+   Rules in style.css that styled the old header-tab shell and now mis-target
+   the moved elements.
+   ========================================================================== */
+/* Old portrait rule hid .profile-card in the header — it lives in the rail
+   now (rail itself is hidden in portrait, so nothing else needed here). */
+
+/* Old landscape rules forced header nav-tab sizing; rail overrides win via
+   the #side-rail-scoped rules above (higher specificity + later cascade). */
+
+/* Touch devices: no hover/focus expansion — the rail stays a stable icon
+   strip (expansion is a pointer/D-pad affordance, not a touch one). */
+@media (hover: none) {
+  body:not(.tv-layout) .side-rail:hover,
+  body:not(.tv-layout) .side-rail:focus-within { width: var(--rail-w); }
+  body:not(.tv-layout) .side-rail:hover .rail-label,
+  body:not(.tv-layout) .side-rail:focus-within .rail-label { opacity: 0; }
+}
