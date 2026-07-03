@@ -1506,11 +1506,18 @@ export class VideoPlayer {
           row.className = 'cib-row' + (offset === 0 ? ' current' : '');
           const chLogo = proxifyImage(ch.stream_icon || '');
           const qBadgeLineup = getQualityBadgeHtml(ch.name);
+          // What's airing on this channel right now (cached EPG, best-effort).
+          let nowTitle = '—';
+          try {
+            const nn = window.epgGridInstance?.getNowNext?.(ch.stream_id);
+            if (nn && nn.current && nn.current.title) nowTitle = nn.current.title;
+          } catch (e) { /* no EPG — keep the dash */ }
           row.innerHTML = `
             <span class="cib-row-logo">${chLogo ? `<img src="${chLogo}" alt="">` : '<i data-lucide="tv"></i>'}</span>
             <span class="cib-row-name" style="display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 8px;">
               <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1;">${ch.name || 'Channel'}</span>
               ${qBadgeLineup}
+              <span class="cib-row-now">${nowTitle}</span>
             </span>
           `;
           this.cibList.appendChild(row);

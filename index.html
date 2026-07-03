@@ -11,6 +11,7 @@
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="stylesheet" href="/src/style.css">
+  <link rel="stylesheet" href="/src/redesign.css">
   <script type="module" src="/src/main.js"></script>
 </head>
 <body class="dark-mode">
@@ -111,15 +112,70 @@
 
   <!-- ==================== MAIN APPLICATION ==================== -->
   <div id="app-container" class="app-layout hidden">
-    
-    <!-- ==================== TOP NAVIGATION HEADER ==================== -->
+
+    <!-- ==================== SIDE RAIL (primary navigation) ====================
+         Netflix-style leanback rail: collapsed icon bar that expands with labels
+         on hover (desktop) or D-pad focus (TV). Hidden on phone portrait, where
+         the bottom tab bar takes over. -->
+    <nav class="side-rail" id="side-rail" aria-label="Primary navigation">
+      <div class="rail-logo">
+        <img src="/src/assets/logo.png" alt="ZIPTV Pro" class="rail-logo-img animate-glow">
+        <span class="rail-label rail-wordmark">ZIPTV&nbsp;<em>PRO</em></span>
+      </div>
+
+      <div class="rail-group rail-group-main">
+        <button class="rail-item" id="rail-search-btn" title="Search">
+          <i data-lucide="search"></i><span class="rail-label">Search</span>
+        </button>
+        <button class="nav-tab rail-item active" data-tab="live">
+          <i data-lucide="tv"></i><span class="rail-label">Live TV</span>
+        </button>
+        <button class="nav-tab rail-item" data-tab="movies">
+          <i data-lucide="film"></i><span class="rail-label">Movies</span>
+        </button>
+        <button class="nav-tab rail-item" data-tab="series">
+          <i data-lucide="clapperboard"></i><span class="rail-label">Series</span>
+        </button>
+        <button class="nav-tab rail-item" data-tab="flixify">
+          <i data-lucide="popcorn"></i><span class="rail-label">Flixify</span>
+        </button>
+      </div>
+
+      <div class="rail-group rail-group-bottom">
+        <button class="rail-item" id="sync-btn" title="Refresh Playlist Data" style="display: none;">
+          <i data-lucide="refresh-cw"></i><span class="rail-label">Refresh</span>
+        </button>
+        <button class="rail-item" id="settings-btn" title="Settings">
+          <i data-lucide="settings"></i><span class="rail-label">Settings</span>
+        </button>
+        <div class="profile-wrap">
+          <div class="profile-card rail-item" id="profile-card-btn" title="Switch playlist">
+            <span class="profile-avatar" id="profile-avatar">ZP</span>
+            <div class="profile-info rail-label">
+              <span class="profile-name" id="nav-playlist-name">Xtream Codes</span>
+              <span class="profile-status">
+                <span class="status-dot"></span>
+                <span id="expiry-text">Active</span>
+              </span>
+            </div>
+          </div>
+          <!-- Playlist drawer markup lives at body level (see #playlist-dropdown
+               near the modals) so position:fixed isn't trapped by the header's
+               backdrop-filter containing block. -->
+        </div>
+      </div>
+    </nav>
+
+    <div class="app-main">
+
+    <!-- ==================== TOP HEADER (contextual bar) ==================== -->
     <header class="top-header">
       <!-- Hamburger Menu Button (Mobile Only) -->
       <button id="mobile-menu-btn" class="header-icon-btn mobile-only" title="Toggle Categories">
         <i data-lucide="menu"></i>
       </button>
 
-      <!-- Left: Logo + segmented nav pill -->
+      <!-- Left: Logo (phone/desktop branding) -->
       <div class="header-left">
         <div class="logo-container">
           <img src="/src/assets/logo.png" alt="ZIPTV Pro Logo" class="logo-img header-logo animate-glow">
@@ -129,26 +185,9 @@
             <span id="header-tv-ip-text">TV Link: Loading...</span>
           </span>
         </div>
-        <nav class="navigation-tabs">
-          <button class="nav-tab active" data-tab="live">
-            <i data-lucide="tv"></i> Live TV
-          </button>
-          <button class="nav-tab" data-tab="movies">
-            <i data-lucide="film"></i> Movies
-          </button>
-          <button class="nav-tab" data-tab="series">
-            <i data-lucide="clapperboard"></i> Series
-          </button>
-          <button class="nav-tab" data-tab="flixify">
-            <i data-lucide="film"></i> Flixify
-          </button>
-          <button class="nav-tab" data-tab="youtube">
-            <i data-lucide="youtube"></i> YouTube
-          </button>
-        </nav>
       </div>
 
-      <!-- Right: global search · account chip · clock · settings -->
+      <!-- Right: global search · clock -->
       <div class="header-right">
         <!-- Global search: a real field on PC, a D-pad button on the APK/TV.
              main.js shows exactly one of these based on the platform. -->
@@ -160,31 +199,10 @@
         <button class="header-icon-btn" id="global-search-btn" title="Search" style="display: none;">
           <i data-lucide="search"></i>
         </button>
-        <div class="profile-wrap">
-          <div class="profile-card" id="profile-card-btn" title="Switch playlist">
-            <div class="profile-info">
-              <span class="profile-name" id="nav-playlist-name">Xtream Codes</span>
-              <span class="profile-status">
-                <span class="status-dot"></span>
-                <span id="expiry-text">Active</span>
-              </span>
-            </div>
-            <span class="profile-avatar" id="profile-avatar">ZP</span>
-          </div>
-          <!-- Playlist drawer markup lives at body level (see #playlist-dropdown
-               near the modals) so position:fixed isn't trapped by the header's
-               backdrop-filter containing block. -->
-        </div>
         <div class="header-clock">
           <span id="current-time">12:19 PM</span>
           <span id="current-date">June 15, 2026</span>
         </div>
-        <button class="header-icon-btn" id="sync-btn" title="Refresh Playlist Data" style="display: none;">
-          <i data-lucide="refresh-cw"></i>
-        </button>
-        <button class="header-icon-btn" id="settings-btn" title="Settings">
-          <i data-lucide="settings"></i>
-        </button>
       </div>
     </header>
 
@@ -192,30 +210,8 @@
       
       <!-- ==================== SIDEBAR ==================== -->
       <aside class="sidebar">
-        <!-- Pins and Filters Section -->
-        <div class="sidebar-top-pins" id="pin-top-section">
-          <div class="pin-title-row" id="pin-section-toggle" role="button" tabindex="0" aria-expanded="true" aria-controls="sidebar-pin-list" title="Show/hide pinned items">
-            <span><i data-lucide="pin" class="pin-icon"></i> Pin top section</span>
-            <button class="icon-btn-small pin-collapse-chevron" tabindex="-1" aria-hidden="true"><i data-lucide="chevron-down"></i></button>
-          </div>
-
-          <ul class="sidebar-pin-list" id="sidebar-pin-list">
-            <li class="pin-item" data-category="favorites">
-              <span class="pin-label"><i data-lucide="star" class="star-filled"></i> Favorites</span>
-              <span class="pin-count" id="count-favorites">0</span>
-            </li>
-            <li class="pin-item" data-category="recordings">
-              <span class="pin-label"><i data-lucide="circle-dot"></i> Recordings</span>
-              <span class="pin-count">0</span>
-            </li>
-            <li class="pin-item" data-category="recently_viewed">
-              <span class="pin-label"><i data-lucide="history"></i> Recently Viewed</span>
-              <span class="pin-count" id="count-recently-viewed">0</span>
-            </li>
-          </ul>
-        </div>
-
-        <!-- Categories glass card (header/toolbar + scrolling list) -->
+        <!-- Unified panel: toolbar (title + search + sort) pinned on top;
+             pinned items and categories scroll together as one list below. -->
         <div class="categories-card">
           <div class="categories-search-section">
             <div class="categories-header-row">
@@ -232,14 +228,40 @@
             </div>
           </div>
 
-          <!-- Scrollable Category List -->
-          <div class="categories-list-container" id="categories-list">
-            <div class="category-item active" data-category="all">
-              <span class="cat-cc">ALL</span>
-              <span class="cat-label">All channels</span>
-              <span class="cat-count" id="count-all-channels">0</span>
+          <!-- Shared scroll area: pins on top, categories below -->
+          <div class="categories-scroll" id="categories-scroll">
+            <!-- Pins Section (collapsible) -->
+            <div class="sidebar-top-pins" id="pin-top-section">
+              <div class="pin-title-row" id="pin-section-toggle" role="button" tabindex="0" aria-expanded="true" aria-controls="sidebar-pin-list" title="Show/hide pinned items">
+                <span><i data-lucide="pin" class="pin-icon"></i> Pinned</span>
+                <button class="icon-btn-small pin-collapse-chevron" tabindex="-1" aria-hidden="true"><i data-lucide="chevron-down"></i></button>
+              </div>
+
+              <ul class="sidebar-pin-list" id="sidebar-pin-list">
+                <li class="pin-item" data-category="favorites">
+                  <span class="pin-label"><i data-lucide="star" class="star-filled"></i> Favorites</span>
+                  <span class="pin-count" id="count-favorites">0</span>
+                </li>
+                <li class="pin-item" data-category="recordings">
+                  <span class="pin-label"><i data-lucide="circle-dot"></i> Recordings</span>
+                  <span class="pin-count">0</span>
+                </li>
+                <li class="pin-item" data-category="recently_viewed">
+                  <span class="pin-label"><i data-lucide="history"></i> Recently Viewed</span>
+                  <span class="pin-count" id="count-recently-viewed">0</span>
+                </li>
+              </ul>
             </div>
-            <!-- Categories dynamic list will insert here -->
+
+            <!-- Category List (dynamic) -->
+            <div class="categories-list-container" id="categories-list">
+              <div class="category-item active" data-category="all">
+                <span class="cat-cc">ALL</span>
+                <span class="cat-label">All channels</span>
+                <span class="cat-count" id="count-all-channels">0</span>
+              </div>
+              <!-- Categories dynamic list will insert here -->
+            </div>
           </div>
         </div>
 
@@ -433,17 +455,23 @@
                 <button class="epg-ctrl-btn" id="epg-refresh-btn" title="Refresh EPG Data">
                   <i data-lucide="refresh-cw"></i>
                 </button>
-                <button class="epg-ctrl-btn epg-ctrl-btn-icon" id="epg-channels-filter-btn" tabindex="0" title="Filter channels" aria-label="Filter channels">
-                  <i data-lucide="search"></i>
-                </button>
+                <div class="epg-search-field" id="epg-search-field">
+                  <button class="epg-ctrl-btn epg-ctrl-btn-icon" id="epg-channels-filter-btn" tabindex="0" title="Filter channels" aria-label="Filter channels">
+                    <i data-lucide="search"></i>
+                  </button>
+                  <input type="text" id="epg-channels-search-input" placeholder="Search channels…" autocomplete="off" spellcheck="false" />
+                </div>
                 <button class="epg-ctrl-btn" id="epg-channels-sort-btn" tabindex="0">
-                  <i data-lucide="arrow-up-down"></i> <span id="epg-channels-sort-label">—</span>
+                  <i data-lucide="arrow-up-down"></i> <span id="epg-channels-sort-label">Sort</span>
+                </button>
+                <button class="epg-ctrl-btn epg-ctrl-btn-icon" id="epg-view-toggle-btn" tabindex="0" title="Switch to list view" aria-label="Switch to list view">
+                  <i data-lucide="list"></i>
                 </button>
               </div>
               
               <div class="epg-controls-right">
                 <button class="epg-ctrl-btn" id="epg-full-btn">
-                  <i data-lucide="expand"></i> <span class="epg-full-btn-label">Guide</span>
+                  <i data-lucide="expand"></i> <span class="epg-full-btn-label">Show Full Guide</span>
                 </button>
                 <div class="epg-hours-select">
                   <span>Hours</span>
@@ -623,13 +651,9 @@
         <!-- FLIXIFY VIEW (public-domain VOD) -->
         <div id="flixify-view" class="view-panel"></div>
 
-        <!-- YOUTUBE VIEW (in-app browser via Electron webview; src set lazily) -->
-        <div id="youtube-view" class="view-panel">
-          <webview id="youtube-frame" src="" allowpopups></webview>
-        </div>
-
       </main>
     </div>
+    </div><!-- /.app-main -->
   </div>
 
   <!-- ==================== MOBILE BOTTOM TAB BAR (phone only) ==================== -->
@@ -645,9 +669,6 @@
     </button>
     <button class="mobile-tab-btn" data-tab="flixify">
       <i data-lucide="film"></i><span>Flixify</span>
-    </button>
-    <button class="mobile-tab-btn" data-tab="youtube">
-      <i data-lucide="youtube"></i><span>YouTube</span>
     </button>
     <button class="mobile-tab-btn" data-action="settings">
       <i data-lucide="settings"></i><span>Settings</span>
@@ -813,7 +834,7 @@
       </div>
     </div>
   </div>
-  
+
   <!-- Mobile Sidebar Backdrop Overlay -->
   <div id="sidebar-backdrop" class="sidebar-backdrop hidden"></div>
 

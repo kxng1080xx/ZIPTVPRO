@@ -3,122 +3,436 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ZIPTV Pro — Control</title>
+  <title>ZIPTV Pro — Admin</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://unpkg.com/lucide@latest"></script>
   <style>
     :root {
-      --bg-base:#030712; --bg-panel:#0b0f19; --bg-surface:#111827; --bg-surface-2:#1f2937;
-      --accent-cyan:#00f3ff; --accent-blue:#2563eb; --green:#22c55e; --amber:#f59e0b; --red:#ef4444;
-      --text:#f3f4f6; --text-2:#9ca3af; --text-3:#6b7280; --border:rgba(255,255,255,.08);
-      --r-lg:16px; --r-md:12px; --r-sm:8px;
+      --bg: #04060b;
+      --bg-2: #070a12;
+      --panel: #0d1220;
+      --surface: #161d2f;
+      --surface-2: #1f2940;
+      --hairline: rgba(255,255,255,0.07);
+      --accent: #3b82f6;
+      --accent-soft: rgba(59,130,246,0.16);
+      --cyan: #00f3ff;
+      --green: #22c55e; --amber: #f59e0b; --red: #ef4444;
+      --text: #f1f5f9; --text-2: #8b96a9; --text-3: #5b6577;
     }
-    * { box-sizing:border-box; margin:0; padding:0; }
-    body { background:var(--bg-base); color:var(--text); font-family:'Plus Jakarta Sans',sans-serif; min-height:100vh; padding:20px; }
-    a { color:var(--accent-cyan); }
-    .wrap { max-width:1100px; margin:0 auto; }
-    h1 { font-family:'Outfit',sans-serif; font-weight:800; font-size:1.6rem; background:linear-gradient(135deg,#fff,var(--accent-cyan)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
-    .muted { color:var(--text-2); font-size:.85rem; }
-    label { display:block; font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-2); margin-bottom:6px; }
-    input, select, textarea { width:100%; background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--r-sm); color:var(--text); padding:11px 12px; font-size:.92rem; font-family:inherit; }
-    input:focus, select:focus, textarea:focus { outline:none; border-color:var(--accent-cyan); }
-    button { cursor:pointer; font-family:inherit; border:none; border-radius:var(--r-sm); font-weight:700; }
-    .btn { padding:10px 16px; background:linear-gradient(135deg,var(--accent-blue),var(--accent-cyan)); color:#001018; }
-    .btn-ghost { padding:8px 12px; background:var(--bg-surface-2); color:var(--text); border:1px solid var(--border); }
-    .btn-sm { padding:6px 10px; font-size:.8rem; }
-    .btn-danger { background:rgba(239,68,68,.15); color:#fecaca; border:1px solid rgba(239,68,68,.35); }
-    .btn-chip { padding:6px 11px; background:var(--bg-surface); border:1px solid var(--border); color:var(--text-2); font-size:.8rem; }
-    .btn-chip:hover { color:var(--text); border-color:var(--accent-cyan); }
-    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-    .panel { background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--r-lg); padding:20px; }
-    .hidden { display:none !important; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
+    }
+    button { cursor: pointer; font-family: inherit; border: none; background: none; color: inherit; }
+    input, select, textarea {
+      width: 100%; background: var(--surface); border: 1px solid var(--hairline);
+      border-radius: 8px; color: var(--text); padding: 10px 12px; font-size: 0.92rem; font-family: inherit;
+    }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+    input::placeholder, textarea::placeholder { color: var(--text-3); }
+    .hidden { display: none !important; }
+    a { color: var(--accent); }
 
-    #login-view { max-width:380px; margin:12vh auto 0; }
-    #login-view .panel { padding:28px 24px; }
-    .err { background:rgba(239,68,68,.12); border:1px solid rgba(239,68,68,.3); color:#fecaca; padding:10px 12px; border-radius:var(--r-sm); font-size:.85rem; margin-top:12px; }
+    /* ---- shared bits ---- */
+    .btn {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 9px 16px; border-radius: 999px; font-weight: 700; font-size: 0.86rem;
+      background: var(--accent); color: #fff; transition: background .15s, opacity .15s;
+    }
+    .btn:hover { background: #2f6fd6; }
+    .btn:disabled { opacity: 0.5; cursor: default; }
+    .btn-ghost {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 8px 14px; border-radius: 999px; font-weight: 600; font-size: 0.84rem;
+      color: var(--text-2); transition: background .15s, color .15s;
+    }
+    .btn-ghost:hover { background: rgba(255,255,255,0.08); color: #fff; }
+    .btn-icon {
+      width: 34px; height: 34px; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      color: var(--text-2); transition: background .15s, color .15s; flex-shrink: 0;
+    }
+    .btn-icon:hover { background: rgba(255,255,255,0.08); color: #fff; }
+    .btn-danger { color: #fca5a5; }
+    .btn-danger:hover { background: rgba(239,68,68,0.14); color: #fecaca; }
+    .btn-confirm { background: var(--red) !important; color: #fff !important; }
+    i[data-lucide] { width: 16px; height: 16px; }
 
-    .topbar { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:18px; flex-wrap:wrap; }
-    .toolbar { display:flex; gap:10px; align-items:center; margin-bottom:16px; flex-wrap:wrap; }
-    .toolbar input[type=text] { flex:1; min-width:200px; }
-    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:14px; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 0.72rem; font-weight: 700; padding: 3px 10px; border-radius: 999px;
+      white-space: nowrap;
+    }
+    .pill .d { width: 7px; height: 7px; border-radius: 50%; }
+    .pill-online  { background: rgba(34,197,94,0.13);  color: #86efac; } .pill-online .d { background: var(--green); }
+    .pill-offline { background: rgba(255,255,255,0.06); color: var(--text-2); } .pill-offline .d { background: var(--text-3); }
+    .pill-pending { background: rgba(0,243,255,0.1);   color: #7df9ff; } .pill-pending .d { background: var(--cyan); }
+    .pill-expsoon { background: rgba(245,158,11,0.13); color: #fcd34d; } .pill-expsoon .d { background: var(--amber); }
+    .pill-expired { background: rgba(239,68,68,0.13);  color: #fca5a5; } .pill-expired .d { background: var(--red); }
+    .pill-archived{ background: rgba(255,255,255,0.06); color: var(--text-3); } .pill-archived .d { background: var(--text-3); }
 
-    .card { background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--r-md); padding:16px; }
-    .card.pending { border-color:rgba(0,243,255,.4); }
-    .card.expired { border-color:rgba(239,68,68,.35); }
-    .card-head { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
-    .label-edit { font-weight:700; font-size:1.02rem; background:transparent; border:1px solid transparent; padding:4px 6px; margin:-4px -6px; border-radius:6px; }
-    .label-edit:hover { border-color:var(--border); }
-    .code { font-family:'Outfit',monospace; letter-spacing:2px; color:var(--accent-cyan); font-size:.9rem; margin-top:6px; }
-    .meta { display:flex; gap:8px; flex-wrap:wrap; margin:10px 0; }
-    .tag { font-size:.72rem; padding:3px 8px; border-radius:99px; background:var(--bg-surface-2); color:var(--text-2); display:inline-flex; align-items:center; gap:5px; }
-    .dot { width:8px; height:8px; border-radius:99px; background:var(--text-3); }
-    .dot.on { background:var(--green); box-shadow:0 0 8px var(--green); }
-    .exp-good { color:var(--green); } .exp-soon { color:var(--amber); } .exp-bad { color:var(--red); }
-    .sec-title { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--text-3); margin:14px 0 8px; }
-    .pl { display:flex; justify-content:space-between; align-items:center; gap:8px; background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--r-sm); padding:8px 10px; margin-bottom:6px; }
-    .pl small { color:var(--text-3); }
-    .expiry-row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:6px; }
-    details > summary { cursor:pointer; color:var(--accent-cyan); font-size:.82rem; font-weight:600; list-style:none; margin-top:10px; }
-    details > summary::-webkit-details-marker { display:none; }
-    .addform { margin-top:10px; display:flex; flex-direction:column; gap:8px; }
-    #toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(10px); background:var(--bg-surface-2); border:1px solid var(--border); padding:12px 18px; border-radius:var(--r-md); font-size:.88rem; opacity:0; transition:opacity .2s, transform .2s; pointer-events:none; z-index:50; }
-    #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
-    #toast.err { border-color:rgba(239,68,68,.4); color:#fecaca; }
-    .modal-scrim { position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; padding:20px; z-index:40; }
-    .modal { width:100%; max-width:460px; }
+    .exp-good { color: #86efac; } .exp-soon { color: #fcd34d; } .exp-bad { color: #fca5a5; } .exp-none { color: var(--text-3); }
+
+    .chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 600;
+      background: var(--surface); color: var(--text-2); border: 1px solid var(--hairline);
+      transition: color .15s, border-color .15s, background .15s;
+    }
+    .chip:hover { color: #fff; border-color: rgba(255,255,255,0.25); }
+
+    /* =============== LOGIN =============== */
+    #login-view {
+      min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px;
+      background:
+        radial-gradient(1200px 700px at 80% -10%, rgba(37,99,235,0.15), transparent 55%),
+        radial-gradient(900px 600px at -10% 110%, rgba(6,182,212,0.1), transparent 55%),
+        var(--bg);
+    }
+    .login-card { width: 100%; max-width: 380px; background: var(--panel); border: 1px solid var(--hairline); border-radius: 20px; padding: 34px 30px; }
+    .brand { font-family: 'Outfit', sans-serif; font-weight: 800; font-size: 1.5rem; letter-spacing: -0.01em; }
+    .brand em { font-style: normal; color: var(--accent); }
+    .login-sub { color: var(--text-3); font-size: 0.85rem; margin: 4px 0 24px; }
+    .field-label { display: block; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-2); margin-bottom: 7px; }
+    .err {
+      background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #fecaca;
+      padding: 10px 12px; border-radius: 8px; font-size: 0.84rem; margin-top: 14px;
+    }
+
+    /* =============== SHELL =============== */
+    #dash-view { min-height: 100vh; display: flex; flex-direction: column; }
+    .topbar {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 24px; border-bottom: 1px solid var(--hairline);
+      position: sticky; top: 0; background: rgba(4,6,11,0.92); backdrop-filter: blur(10px); z-index: 20;
+    }
+    .topbar .brand { font-size: 1.1rem; }
+    .topbar-note { font-size: 0.75rem; color: var(--text-3); }
+    .topbar-spacer { flex: 1; }
+    .main { flex: 1; width: 100%; max-width: 1240px; margin: 0 auto; padding: 22px 24px 90px; }
+
+    /* stats */
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .stat {
+      background: var(--panel); border-radius: 14px; padding: 14px 16px; cursor: pointer;
+      border: 1px solid transparent; transition: border-color .15s, background .15s;
+    }
+    .stat:hover { background: var(--surface); }
+    .stat.on { border-color: var(--accent); }
+    .stat .n { font-family: 'Outfit', sans-serif; font-size: 1.5rem; font-weight: 700; }
+    .stat .l { font-size: 0.75rem; color: var(--text-2); margin-top: 2px; display: flex; align-items: center; gap: 6px; }
+    .stat .l .d { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+    /* controls */
+    .controls { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+    .search-wrap {
+      display: flex; align-items: center; flex: 1; min-width: 220px; max-width: 380px;
+      background: var(--surface); border-radius: 999px; height: 38px; padding: 0 6px 0 14px;
+      border: 1px solid transparent;
+    }
+    .search-wrap:focus-within { border-color: var(--accent); }
+    .search-wrap i { width: 15px; height: 15px; color: var(--text-3); flex-shrink: 0; }
+    .search-wrap input { background: none; border: none; height: 100%; padding: 0 10px; }
+    .search-wrap input:focus { border: none; }
+    .search-kbd { font-size: 0.68rem; color: var(--text-3); border: 1px solid var(--hairline); border-radius: 5px; padding: 1px 6px; margin-right: 6px; }
+
+    /* table */
+    .table-wrap { background: var(--panel); border-radius: 16px; overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      text-align: left; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--text-3); padding: 12px 14px; border-bottom: 1px solid var(--hairline);
+      user-select: none; white-space: nowrap;
+    }
+    thead th.sortable { cursor: pointer; }
+    thead th.sortable:hover { color: var(--text); }
+    thead th .arrow { font-size: 0.65rem; margin-left: 4px; }
+    tbody td { padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: middle; }
+    tbody tr { cursor: pointer; transition: background .12s; }
+    tbody tr:hover { background: rgba(255,255,255,0.03); }
+    tbody tr.sel { background: var(--accent-soft); }
+    tbody tr:last-child td { border-bottom: none; }
+    .cb { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+    td.cb-cell, th.cb-cell { width: 38px; padding-right: 0; }
+    .dev-name { font-weight: 700; font-size: 0.92rem; }
+    .dev-name.unnamed { color: var(--text-3); font-weight: 500; font-style: italic; }
+    .dev-code { font-family: 'Outfit', monospace; font-size: 0.76rem; letter-spacing: 1.5px; color: var(--text-2); margin-top: 2px; }
+    .col-dim { color: var(--text-2); font-size: 0.84rem; white-space: nowrap; }
+    .pl-count { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 0.84rem; }
+    .pl-count i { width: 14px; height: 14px; }
+    .pl-count.zero { color: var(--text-3); }
+
+    .empty { text-align: center; padding: 60px 20px; color: var(--text-3); }
+    .empty i { width: 34px; height: 34px; margin-bottom: 10px; color: var(--text-3); }
+    .empty .t { font-weight: 700; color: var(--text-2); margin-bottom: 4px; }
+
+    /* bulk bar */
+    .bulkbar {
+      position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(8px);
+      display: flex; align-items: center; gap: 8px;
+      background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 999px;
+      padding: 8px 10px 8px 18px; z-index: 30; box-shadow: 0 18px 50px rgba(0,0,0,0.55);
+      opacity: 0; pointer-events: none; transition: opacity .18s, transform .18s;
+    }
+    .bulkbar.show { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0); }
+    .bulkbar .n { font-weight: 700; font-size: 0.85rem; margin-right: 4px; white-space: nowrap; }
+
+    /* =============== DRAWER =============== */
+    .scrim {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 40;
+      opacity: 0; pointer-events: none; transition: opacity .2s;
+    }
+    .scrim.show { opacity: 1; pointer-events: auto; }
+    .drawer {
+      position: fixed; top: 0; right: 0; bottom: 0; width: min(460px, 100vw); z-index: 41;
+      background: var(--bg-2); border-left: 1px solid var(--hairline);
+      transform: translateX(102%); transition: transform .22s cubic-bezier(0.33,1,0.68,1);
+      display: flex; flex-direction: column;
+    }
+    .drawer.show { transform: translateX(0); }
+    .drawer-head { display: flex; align-items: flex-start; gap: 10px; padding: 18px 18px 0; }
+    .drawer-body { flex: 1; overflow-y: auto; padding: 0 18px 24px; }
+    .drawer::-webkit-scrollbar, .drawer-body::-webkit-scrollbar { width: 8px; }
+    .drawer-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 99px; }
+
+    .label-input {
+      width: 100%; background: transparent; border: none; padding: 2px 0;
+      font-family: 'Outfit', sans-serif; font-size: 1.25rem; font-weight: 700; color: var(--text);
+    }
+    .label-input:focus { border: none; outline: none; }
+    .label-input::placeholder { color: var(--text-3); font-weight: 500; }
+    .code-row { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+    .code-big { font-family: 'Outfit', monospace; letter-spacing: 2.5px; color: var(--text-2); font-size: 0.9rem; }
+
+    .sec { margin-top: 22px; }
+    .sec-h { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-3); margin-bottom: 10px; }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .meta-cell { background: var(--panel); border-radius: 10px; padding: 10px 12px; }
+    .meta-cell .k { font-size: 0.68rem; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; }
+    .meta-cell .v { font-size: 0.85rem; font-weight: 600; margin-top: 3px; color: var(--text-2); }
+
+    .exp-current { font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; }
+    .exp-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .exp-chips input[type=date] { width: auto; padding: 6px 9px; font-size: 0.8rem; border-radius: 999px; background: var(--surface); }
+
+    .pl-row {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--panel); border-radius: 10px; padding: 10px 12px; margin-bottom: 6px;
+    }
+    .pl-row .pi { flex: 1; min-width: 0; }
+    .pl-row .pn { font-weight: 600; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pl-row .pm { font-size: 0.75rem; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+    .addform { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+    .addform .split { display: flex; gap: 8px; }
+
+    .danger-zone { display: flex; gap: 8px; margin-top: 10px; }
+
+    /* settings drawer reuses .drawer */
+    textarea { resize: vertical; min-height: 74px; }
+
+    /* toast */
+    #toast {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(10px);
+      background: var(--surface-2); border: 1px solid var(--hairline);
+      padding: 11px 18px; border-radius: 12px; font-size: 0.86rem; font-weight: 600;
+      opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; z-index: 60;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    #toast.err { border-color: rgba(239,68,68,0.4); color: #fecaca; }
+
+    /* responsive */
+    @media (max-width: 900px) {
+      .main { padding: 16px 12px 90px; }
+      .hide-md { display: none; }
+      thead th, tbody td { padding: 10px 8px; }
+    }
+    @media (max-width: 620px) {
+      .hide-sm { display: none; }
+      .topbar { padding: 12px 14px; }
+      .topbar-note { display: none; }
+    }
   </style>
 </head>
 <body>
-  <div id="login-view" class="wrap hidden">
-    <div class="panel">
-      <h1 style="margin-bottom:4px;">ZIPTV Pro</h1>
-      <p class="muted" style="margin-bottom:20px;">Control Panel</p>
+
+  <!-- =============== LOGIN =============== -->
+  <div id="login-view" class="hidden">
+    <div class="login-card">
+      <div class="brand">ZIPTV <em>Pro</em></div>
+      <p class="login-sub">Admin panel — sign in to manage devices</p>
       <form id="login-form">
-        <label for="pw">Admin Password</label>
+        <label class="field-label" for="pw">Admin password</label>
         <input id="pw" type="password" autocomplete="current-password" required />
-        <button class="btn" id="login-btn" type="submit" style="width:100%; margin-top:16px;">Sign in</button>
+        <button class="btn" id="login-btn" type="submit" style="width:100%; justify-content:center; margin-top:16px;">Sign in</button>
       </form>
       <div id="login-err" class="err hidden"></div>
     </div>
   </div>
 
-  <div id="dash-view" class="wrap hidden">
+  <!-- =============== DASHBOARD =============== -->
+  <div id="dash-view" class="hidden">
     <div class="topbar">
-      <div>
-        <h1>Devices</h1>
-        <p class="muted" id="summary">—</p>
+      <div class="brand">ZIPTV <em>Pro</em></div>
+      <span class="topbar-note" id="refresh-note">—</span>
+      <div class="topbar-spacer"></div>
+      <button class="btn-ghost" id="btn-export"><i data-lucide="download"></i><span class="hide-sm">Export CSV</span></button>
+      <button class="btn-icon" id="btn-refresh" title="Refresh now"><i data-lucide="refresh-cw"></i></button>
+      <button class="btn-icon" id="btn-config" title="Settings"><i data-lucide="settings"></i></button>
+      <button class="btn-ghost" id="btn-logout">Sign out</button>
+    </div>
+
+    <div class="main">
+      <div class="stats" id="stats"></div>
+
+      <div class="controls">
+        <div class="search-wrap">
+          <i data-lucide="search"></i>
+          <input type="text" id="search" placeholder="Search name, code, platform…" />
+          <span class="search-kbd">/</span>
+        </div>
+        <div style="flex:1;"></div>
+        <span class="topbar-note" id="count-note"></span>
       </div>
-      <div class="row">
-        <button class="btn-ghost btn-sm" id="btn-config"><i data-lucide="settings"></i></button>
-        <button class="btn-ghost btn-sm" id="btn-refresh"><i data-lucide="refresh-cw"></i> Refresh</button>
-        <button class="btn-ghost btn-sm" id="btn-logout">Sign out</button>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="cb-cell"><input type="checkbox" class="cb" id="cb-all" title="Select all" /></th>
+              <th class="sortable" data-sort="label">Customer<span class="arrow" data-arrow="label"></span></th>
+              <th>Status</th>
+              <th class="hide-md sortable" data-sort="platform">Platform<span class="arrow" data-arrow="platform"></span></th>
+              <th class="hide-md sortable" data-sort="playlists">Playlists<span class="arrow" data-arrow="playlists"></span></th>
+              <th class="hide-sm sortable" data-sort="last_seen">Last seen<span class="arrow" data-arrow="last_seen"></span></th>
+              <th class="sortable" data-sort="expires_at">Expires<span class="arrow" data-arrow="expires_at"></span></th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div id="empty" class="empty hidden"></div>
       </div>
     </div>
 
-    <div class="toolbar">
-      <input type="text" id="search" placeholder="Search by name or code…" />
-      <label class="row" style="margin:0; color:var(--text-2); text-transform:none; font-weight:500; letter-spacing:0; font-size:.85rem;">
-        <input type="checkbox" id="show-archived" style="width:auto;" /> Show archived
-      </label>
+    <div class="bulkbar" id="bulkbar">
+      <span class="n" id="bulk-n">0 selected</span>
+      <button class="chip" data-bulk="30">+30d</button>
+      <button class="chip" data-bulk="90">+90d</button>
+      <button class="chip" data-bulk="365">+365d</button>
+      <button class="chip" id="bulk-archive"></button>
+      <button class="btn-icon" id="bulk-clear" title="Clear selection"><i data-lucide="x"></i></button>
     </div>
+  </div>
 
-    <div id="device-grid" class="grid"></div>
-    <div id="empty" class="muted hidden" style="text-align:center; padding:40px;">No devices yet. When a customer opens the app, their code appears here.</div>
+  <!-- =============== DEVICE DRAWER =============== -->
+  <div class="scrim" id="scrim"></div>
+  <div class="drawer" id="drawer" role="dialog" aria-modal="true">
+    <div class="drawer-head">
+      <div style="flex:1; min-width:0;">
+        <input class="label-input" id="d-label" placeholder="Add customer name…" />
+        <div class="code-row">
+          <span class="code-big" id="d-code"></span>
+          <button class="btn-icon" id="d-copy" title="Copy code" style="width:28px;height:28px;"><i data-lucide="copy" style="width:14px;height:14px;"></i></button>
+          <span id="d-pill"></span>
+        </div>
+      </div>
+      <button class="btn-icon" id="d-close" title="Close"><i data-lucide="x"></i></button>
+    </div>
+    <div class="drawer-body">
+      <div class="sec">
+        <div class="meta-grid" id="d-meta"></div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-h">Subscription expiry</div>
+        <div class="exp-current" id="d-exp"></div>
+        <div class="exp-chips">
+          <button class="chip" data-days="30">+30d</button>
+          <button class="chip" data-days="90">+90d</button>
+          <button class="chip" data-days="365">+365d</button>
+          <input type="date" id="d-date" />
+          <button class="chip" id="d-setdate">Set</button>
+          <button class="chip btn-danger" id="d-clearexp">Clear</button>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-h" id="d-pl-h">Playlists</div>
+        <div id="d-pls"></div>
+        <div class="addform">
+          <input type="text" id="f-m3u" placeholder="Paste M3U URL — auto-fills the fields below" />
+          <input type="text" id="f-name" placeholder="Playlist name (optional)" />
+          <input type="text" id="f-server" placeholder="Server URL (http://host:port)" />
+          <div class="split">
+            <input type="text" id="f-user" placeholder="Username" />
+            <input type="text" id="f-pass" placeholder="Password" />
+          </div>
+          <button class="btn" id="f-save" style="justify-content:center;">Add playlist</button>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-h">Danger zone</div>
+        <div class="danger-zone">
+          <button class="btn-ghost" id="d-archive"></button>
+          <button class="btn-ghost btn-danger" id="d-delete"><i data-lucide="trash-2"></i>Delete device</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =============== SETTINGS DRAWER =============== -->
+  <div class="drawer" id="cfg-drawer" role="dialog" aria-modal="true">
+    <div class="drawer-head">
+      <div style="flex:1;">
+        <div class="brand" style="font-size:1.15rem;">Settings</div>
+        <div class="topbar-note" style="margin-top:2px;">Shown to customers in the app</div>
+      </div>
+      <button class="btn-icon" id="cfg-close" title="Close"><i data-lucide="x"></i></button>
+    </div>
+    <div class="drawer-body">
+      <div class="sec">
+        <div class="sec-h">Expiry notice</div>
+        <textarea id="cfg-notice" rows="3" placeholder="Message shown in-app when a device expires…"></textarea>
+      </div>
+      <div class="sec">
+        <div class="sec-h">Contact info</div>
+        <input id="cfg-contact" type="text" placeholder="WhatsApp / Telegram / email" />
+      </div>
+      <div class="sec">
+        <button class="btn" id="cfg-save" style="justify-content:center; width:100%;">Save settings</button>
+      </div>
+    </div>
   </div>
 
   <div id="toast"></div>
 
   <script>
+    // ======================================================================
+    // ZIPTV Pro admin panel — master/detail rebuild.
+    // Same API + auth as before: /api/admin?action=… with a Bearer token.
+    // ======================================================================
     const API = '/api/admin';
     const TOKEN_KEY = 'ziptv_admin_token';
     const ONLINE_MS = 10 * 60 * 1000;
     const AUTO_REFRESH_MS = 30 * 1000;
 
     let token = sessionStorage.getItem(TOKEN_KEY) || '';
-    let devices = [];
+    let devices = [];            // current dataset (active OR archived, per tab)
     let refreshTimer = null;
+    let lastLoaded = 0;
+    let filter = 'all';          // all | online | pending | expsoon | expired | archived
+    let sortKey = null;          // label | platform | playlists | last_seen | expires_at
+    let sortDir = 1;
+    let selected = new Set();    // device_ids
+    let openId = null;           // device open in the drawer
 
     const $ = (id) => document.getElementById(id);
     const icons = () => { try { lucide.createIcons(); } catch (e) {} };
@@ -139,6 +453,7 @@
       return data;
     }
 
+    // ---------------------------- auth ----------------------------
     $('login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = $('login-btn'); const err = $('login-err');
@@ -157,6 +472,7 @@
     function logout() {
       token = ''; sessionStorage.removeItem(TOKEN_KEY);
       clearInterval(refreshTimer);
+      closeDrawer(); closeCfg();
       $('dash-view').classList.add('hidden'); $('login-view').classList.remove('hidden');
     }
     $('btn-logout').addEventListener('click', logout);
@@ -166,29 +482,57 @@
       load();
       clearInterval(refreshTimer);
       refreshTimer = setInterval(() => load(true), AUTO_REFRESH_MS);
+      setInterval(tickNote, 5000);
     }
 
-    $('btn-refresh').addEventListener('click', () => load());
-    $('show-archived').addEventListener('change', () => load());
-    $('search').addEventListener('input', render);
-
+    // ---------------------------- data ----------------------------
     async function load(silent) {
       try {
-        const archived = $('show-archived').checked ? '1' : '0';
+        const archived = filter === 'archived' ? '1' : '0';
         const { devices: rows } = await api(`devices&archived=${archived}`);
         devices = rows || [];
+        lastLoaded = Date.now();
+        // Drop selections that vanished
+        const ids = new Set(devices.map(d => d.device_id));
+        selected.forEach(id => { if (!ids.has(id)) selected.delete(id); });
         render();
+        if (openId) fillDrawer(byId(openId)); // keep the open drawer fresh
       } catch (ex) { if (!silent) toast(ex.message, true); }
+    }
+    $('btn-refresh').addEventListener('click', () => load());
+
+    function tickNote() {
+      if (!lastLoaded) return;
+      const s = Math.round((Date.now() - lastLoaded) / 1000);
+      $('refresh-note').textContent = s < 5 ? 'Updated just now' : `Updated ${s}s ago`;
+    }
+
+    const byId = (id) => devices.find(d => d.device_id === id);
+    const isOnline  = (d) => d.last_seen && (Date.now() - new Date(d.last_seen) < ONLINE_MS);
+    const isPending = (d) => d.status === 'pending' && (!d.playlists || d.playlists.length === 0);
+    const isExpired = (d) => d.expires_at && new Date(d.expires_at) < new Date();
+    const isExpSoon = (d) => {
+      if (!d.expires_at || isExpired(d)) return false;
+      return (new Date(d.expires_at) - Date.now()) / 86400000 <= 7;
+    };
+
+    function statusOf(d) {
+      if (filter === 'archived' || d.archived) return { cls: 'pill-archived', label: 'Archived' };
+      if (isExpired(d)) return { cls: 'pill-expired', label: 'Expired' };
+      if (isPending(d)) return { cls: 'pill-pending', label: 'Awaiting setup' };
+      if (isExpSoon(d)) return { cls: 'pill-expsoon', label: 'Expiring soon' };
+      if (isOnline(d))  return { cls: 'pill-online',  label: 'Online' };
+      return { cls: 'pill-offline', label: 'Offline' };
     }
 
     function fmtExpiry(iso) {
-      if (!iso) return { text: 'No expiry set', cls: '' };
+      if (!iso) return { text: 'No expiry', cls: 'exp-none', days: Infinity };
       const ms = new Date(iso) - Date.now();
       const days = Math.ceil(ms / 86400000);
       const dateStr = new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-      if (ms <= 0) return { text: `Expired ${dateStr}`, cls: 'exp-bad' };
-      if (days <= 7) return { text: `${days}d left · ${dateStr}`, cls: 'exp-soon' };
-      return { text: `${days}d left · ${dateStr}`, cls: 'exp-good' };
+      if (ms <= 0) return { text: `Expired · ${dateStr}`, cls: 'exp-bad', days };
+      if (days <= 7) return { text: `${days}d · ${dateStr}`, cls: 'exp-soon', days };
+      return { text: `${days}d · ${dateStr}`, cls: 'exp-good', days };
     }
 
     function relTime(iso) {
@@ -200,176 +544,383 @@
       return Math.floor(s / 86400) + 'd ago';
     }
 
-    function render() {
-      const q = $('search').value.trim().toLowerCase();
-      const list = devices.filter(d =>
-        !q || (d.label || '').toLowerCase().includes(q) || d.device_id.toLowerCase().includes(q)
-      );
-      const online = devices.filter(d => d.last_seen && (Date.now() - new Date(d.last_seen) < ONLINE_MS)).length;
-      $('summary').textContent = `${devices.length} device${devices.length !== 1 ? 's' : ''} · ${online} online`;
-      $('empty').classList.toggle('hidden', list.length !== 0);
-      $('device-grid').innerHTML = list.map(cardHTML).join('');
-      icons();
-      list.forEach(wireCard);
+    // ---------------------------- stats + filters ----------------------------
+    function statDefs(counts) {
+      return [
+        { key: 'all',      n: counts.all,      label: 'Devices',        dot: null },
+        { key: 'online',   n: counts.online,   label: 'Online now',     dot: 'var(--green)' },
+        { key: 'pending',  n: counts.pending,  label: 'Awaiting setup', dot: 'var(--cyan)' },
+        { key: 'expsoon',  n: counts.expsoon,  label: 'Expiring ≤ 7d',  dot: 'var(--amber)' },
+        { key: 'expired',  n: counts.expired,  label: 'Expired',        dot: 'var(--red)' },
+        { key: 'archived', n: counts.archived, label: 'Archived',       dot: 'var(--text-3)' }
+      ];
     }
 
-    function cardHTML(d) {
-      const isOnline = d.last_seen && (Date.now() - new Date(d.last_seen) < ONLINE_MS);
-      const exp = fmtExpiry(d.expires_at);
-      const pending = d.status === 'pending' && (!d.playlists || d.playlists.length === 0);
-      const expired = d.expires_at && new Date(d.expires_at) < new Date();
-      const cls = expired ? 'expired' : (pending ? 'pending' : '');
-      const pls = (d.playlists || []).map(p => `
-        <div class="pl">
-          <div><div>${esc(p.name)}</div><small>${esc(p.username)} · ${esc(p.type)}</small></div>
-          <button class="btn-chip btn-danger" data-rmpl="${p.id}"><i data-lucide="trash-2"></i></button>
-        </div>`).join('') || '<div class="muted" style="font-size:.82rem;">No playlists.</div>';
-
-      return `
-      <div class="card ${cls}" data-card="${d.device_id}">
-        <div class="card-head">
-          <div style="flex:1;">
-            <input class="label-edit" data-label value="${esc(d.label || '')}" placeholder="Add customer name…" />
-            <div class="code">${d.device_id}</div>
-          </div>
-          <button class="btn-chip" data-menu><i data-lucide="more-vertical"></i></button>
-        </div>
-        <div class="meta">
-          <span class="tag"><span class="dot ${isOnline ? 'on' : ''}"></span>${isOnline ? 'Online' : 'Seen ' + relTime(d.last_seen)}</span>
-          ${d.platform && d.platform !== 'unknown' ? `<span class="tag">${esc(d.platform.toUpperCase())}${d.app_version ? ' v' + esc(d.app_version) : ''}</span>` : ''}
-          ${pending ? '<span class="tag" style="color:var(--accent-cyan)">Awaiting setup</span>' : ''}
-        </div>
-        <div class="sec-title">Expiry</div>
-        <div class="${exp.cls}" style="font-weight:600; font-size:.9rem;">${exp.text}</div>
-        <div class="expiry-row">
-          <button class="btn-chip" data-add-days="30">+30d</button>
-          <button class="btn-chip" data-add-days="90">+90d</button>
-          <button class="btn-chip" data-add-days="365">+365d</button>
-          <input type="date" style="width:auto; padding:6px 8px; font-size:.8rem;" data-date />
-          <button class="btn-chip" data-set-date>Set</button>
-          ${d.expires_at ? `<button class="btn-chip btn-danger" data-clear-exp>Clear</button>` : ''}
-        </div>
-        <div class="sec-title">Playlists (${(d.playlists || []).length})</div>
-        ${pls}
-        <details>
-          <summary>+ Add playlist</summary>
-          <div class="addform" data-addform>
-            <input type="text" data-f="name" placeholder="Playlist name (optional)" />
-            <input type="text" data-f="m3u" placeholder="Paste M3U URL (auto-fills below)…" />
-            <input type="text" data-f="server" placeholder="Server URL (http://host:port)" />
-            <div class="row">
-              <input type="text" data-f="user" placeholder="Username" style="flex:1;" />
-              <input type="text" data-f="pass" placeholder="Password" style="flex:1;" />
-            </div>
-            <button class="btn btn-sm" data-savepl>Add playlist</button>
-          </div>
-        </details>
-      </div>`;
-    }
-
-    function wireCard(d) {
-      const id = d.device_id;
-      const card = document.querySelector(`[data-card="${cssq(id)}"]`);
-      if (!card) return;
-
-      const lbl = card.querySelector('[data-label]');
-      const saveLabel = async () => {
-        if (lbl.value === (d.label || '')) return;
-        try { await api('update-device', { method: 'POST', body: { device_id: id, label: lbl.value } }); d.label = lbl.value; toast('Saved'); }
-        catch (e) { toast(e.message, true); }
+    function renderStats() {
+      const base = filter === 'archived' ? [] : devices;
+      const counts = {
+        all: filter === 'archived' ? '·' : base.length,
+        online: filter === 'archived' ? '·' : base.filter(isOnline).length,
+        pending: filter === 'archived' ? '·' : base.filter(isPending).length,
+        expsoon: filter === 'archived' ? '·' : base.filter(isExpSoon).length,
+        expired: filter === 'archived' ? '·' : base.filter(isExpired).length,
+        archived: filter === 'archived' ? devices.length : '→'
       };
-      lbl.addEventListener('blur', saveLabel);
-      lbl.addEventListener('keydown', (e) => { if (e.key === 'Enter') lbl.blur(); });
-
-      card.querySelectorAll('[data-add-days]').forEach(b => b.addEventListener('click', async () => {
-        const days = parseInt(b.getAttribute('data-add-days'), 10);
-        const base = d.expires_at && new Date(d.expires_at) > new Date() ? new Date(d.expires_at) : new Date();
-        base.setDate(base.getDate() + days);
-        await setExpiry(id, base.toISOString());
-      }));
-      const setBtn = card.querySelector('[data-set-date]');
-      if (setBtn) setBtn.addEventListener('click', async () => {
-        const v = card.querySelector('[data-date]').value;
-        if (!v) return toast('Pick a date', true);
-        await setExpiry(id, new Date(v + 'T23:59:59').toISOString());
-      });
-      const clr = card.querySelector('[data-clear-exp]');
-      if (clr) clr.addEventListener('click', () => setExpiry(id, null));
-
-      card.querySelectorAll('[data-rmpl]').forEach(b => b.addEventListener('click', async () => {
-        if (!confirm('Remove this playlist? It will disappear from the device on its next sync.')) return;
-        try { await api('remove-playlist', { method: 'POST', body: { id: b.getAttribute('data-rmpl') } }); toast('Removed'); load(); }
-        catch (e) { toast(e.message, true); }
-      }));
-
-      const form = card.querySelector('[data-addform]');
-      const m3u = form.querySelector('[data-f=m3u]');
-      m3u.addEventListener('input', () => {
-        const p = parseM3u(m3u.value);
-        if (p) { form.querySelector('[data-f=server]').value = p.host; form.querySelector('[data-f=user]').value = p.user; form.querySelector('[data-f=pass]').value = p.pass; }
-      });
-      card.querySelector('[data-savepl]').addEventListener('click', async () => {
-        const server = form.querySelector('[data-f=server]').value.trim();
-        const user = form.querySelector('[data-f=user]').value.trim();
-        const pass = form.querySelector('[data-f=pass]').value.trim();
-        if (!server || !user || !pass) return toast('Need server, username & password (or an M3U URL).', true);
-        try {
-          await api('add-playlist', { method: 'POST', body: {
-            device_id: id, name: form.querySelector('[data-f=name]').value.trim() || hostName(server),
-            type: 'xtream', server_url: server, username: user, password: pass
-          }});
-          toast('Playlist added'); load();
-        } catch (e) { toast(e.message, true); }
-      });
-
-      card.querySelector('[data-menu]').addEventListener('click', async () => {
-        const choice = prompt(`Device ${id}\nType:  A = ${d.archived ? 'unarchive' : 'archive'},  D = delete permanently`, '');
-        if (!choice) return;
-        const c = choice.trim().toUpperCase();
-        try {
-          if (c === 'A') { await api('update-device', { method: 'POST', body: { device_id: id, archived: !d.archived } }); toast(d.archived ? 'Unarchived' : 'Archived'); load(); }
-          else if (c === 'D') { if (confirm('Delete this device and all its playlists permanently?')) { await api('delete-device', { method: 'POST', body: { device_id: id } }); toast('Deleted'); load(); } }
-        } catch (e) { toast(e.message, true); }
+      $('stats').innerHTML = statDefs(counts).map(s => `
+        <div class="stat ${filter === s.key ? 'on' : ''}" data-filter="${s.key}" role="button" tabindex="0">
+          <div class="n">${s.n}</div>
+          <div class="l">${s.dot ? `<span class="d" style="background:${s.dot}"></span>` : ''}${s.label}</div>
+        </div>`).join('');
+      $('stats').querySelectorAll('[data-filter]').forEach(el => {
+        const go = () => {
+          const next = el.getAttribute('data-filter');
+          const wasArchived = filter === 'archived';
+          filter = (filter === next && next !== 'all') ? 'all' : next;
+          selected.clear();
+          if ((filter === 'archived') !== wasArchived) { load(); } else { render(); }
+        };
+        el.addEventListener('click', go);
+        el.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
       });
     }
 
-    async function setExpiry(device_id, iso) {
-      try { await api('update-device', { method: 'POST', body: { device_id, expires_at: iso } }); toast(iso ? 'Expiry updated' : 'Expiry cleared'); load(); }
-      catch (e) { toast(e.message, true); }
+    // ---------------------------- table ----------------------------
+    function visibleList() {
+      const q = $('search').value.trim().toLowerCase();
+      let list = devices.filter(d =>
+        !q ||
+        (d.label || '').toLowerCase().includes(q) ||
+        d.device_id.toLowerCase().includes(q) ||
+        (d.platform || '').toLowerCase().includes(q)
+      );
+      if (filter === 'online')  list = list.filter(isOnline);
+      if (filter === 'pending') list = list.filter(isPending);
+      if (filter === 'expsoon') list = list.filter(isExpSoon);
+      if (filter === 'expired') list = list.filter(isExpired);
+      if (sortKey) {
+        const get = {
+          label: d => (d.label || '').toLowerCase(),
+          platform: d => (d.platform || '').toLowerCase(),
+          playlists: d => (d.playlists || []).length,
+          last_seen: d => d.last_seen ? new Date(d.last_seen).getTime() : 0,
+          expires_at: d => d.expires_at ? new Date(d.expires_at).getTime() : Infinity
+        }[sortKey];
+        list = [...list].sort((a, b) => {
+          const va = get(a), vb = get(b);
+          return (va < vb ? -1 : va > vb ? 1 : 0) * sortDir;
+        });
+      }
+      return list;
     }
 
-    $('btn-config').addEventListener('click', async () => {
-      let cfg = {};
-      try { ({ config: cfg } = await api('config')); } catch (e) { return toast(e.message, true); }
-      const scrim = document.createElement('div');
-      scrim.className = 'modal-scrim';
-      scrim.innerHTML = `
-        <div class="panel modal">
-          <h1 style="font-size:1.2rem; margin-bottom:14px;">Expiry notice</h1>
-          <label>Message shown in-app when a device expires</label>
-          <textarea id="cfg-notice" rows="3">${esc(cfg.expiry_notice || '')}</textarea>
-          <div style="height:12px;"></div>
-          <label>Contact info (WhatsApp / Telegram / email)</label>
-          <input id="cfg-contact" type="text" value="${esc(cfg.contact_info || '')}" />
-          <div class="row" style="justify-content:flex-end; margin-top:16px;">
-            <button class="btn-ghost" id="cfg-cancel">Cancel</button>
-            <button class="btn" id="cfg-save">Save</button>
+    function render() {
+      renderStats();
+      const list = visibleList();
+      $('count-note').textContent = `${list.length} shown`;
+
+      document.querySelectorAll('.arrow').forEach(a => a.textContent = '');
+      if (sortKey) {
+        const a = document.querySelector(`[data-arrow="${sortKey}"]`);
+        if (a) a.textContent = sortDir === 1 ? '▲' : '▼';
+      }
+
+      $('rows').innerHTML = list.map(d => {
+        const st = statusOf(d);
+        const exp = fmtExpiry(d.expires_at);
+        const nPl = (d.playlists || []).length;
+        return `
+        <tr data-id="${esc(d.device_id)}" class="${selected.has(d.device_id) ? 'sel' : ''}">
+          <td class="cb-cell"><input type="checkbox" class="cb row-cb" ${selected.has(d.device_id) ? 'checked' : ''} /></td>
+          <td>
+            <div class="dev-name ${d.label ? '' : 'unnamed'}">${d.label ? esc(d.label) : 'Unnamed device'}</div>
+            <div class="dev-code">${esc(d.device_id)}</div>
+          </td>
+          <td><span class="pill ${st.cls}"><span class="d"></span>${st.label}</span></td>
+          <td class="hide-md col-dim">${d.platform && d.platform !== 'unknown' ? esc(d.platform.toUpperCase()) + (d.app_version ? ' · v' + esc(d.app_version) : '') : '—'}</td>
+          <td class="hide-md"><span class="pl-count ${nPl ? '' : 'zero'}"><i data-lucide="list-video"></i>${nPl}</span></td>
+          <td class="hide-sm col-dim">${relTime(d.last_seen)}</td>
+          <td class="${exp.cls}" style="font-weight:600; font-size:0.84rem; white-space:nowrap;">${exp.text}</td>
+        </tr>`;
+      }).join('');
+      icons();
+
+      const empty = $('empty');
+      if (!list.length) {
+        empty.classList.remove('hidden');
+        const msgs = {
+          all: ['No devices yet', 'When a customer opens the app, their pairing code appears here.'],
+          online: ['Nobody online', 'No devices have checked in within the last 10 minutes.'],
+          pending: ['No pending devices', 'New devices waiting for their first playlist show up here.'],
+          expsoon: ['Nothing expiring soon', 'No subscriptions end within the next 7 days.'],
+          expired: ['No expired devices', 'All subscriptions are current.'],
+          archived: ['No archived devices', 'Archived devices are hidden from the main list.']
+        };
+        const [t, s] = msgs[filter] || msgs.all;
+        empty.innerHTML = `<i data-lucide="inbox"></i><div class="t">${t}</div><div>${$('search').value ? 'No matches for your search.' : s}</div>`;
+        icons();
+      } else empty.classList.add('hidden');
+
+      // row wiring
+      $('rows').querySelectorAll('tr').forEach(tr => {
+        const id = tr.getAttribute('data-id');
+        tr.addEventListener('click', (e) => {
+          if (e.target.closest('.row-cb')) return;
+          openDrawer(id);
+        });
+        tr.querySelector('.row-cb').addEventListener('change', (e) => {
+          e.target.checked ? selected.add(id) : selected.delete(id);
+          tr.classList.toggle('sel', e.target.checked);
+          syncBulk();
+        });
+      });
+      const all = $('cb-all');
+      const vis = list.map(d => d.device_id);
+      all.checked = vis.length > 0 && vis.every(id => selected.has(id));
+      syncBulk();
+    }
+
+    $('cb-all').addEventListener('change', (e) => {
+      const vis = visibleList().map(d => d.device_id);
+      if (e.target.checked) vis.forEach(id => selected.add(id));
+      else vis.forEach(id => selected.delete(id));
+      render();
+    });
+
+    document.querySelectorAll('th.sortable').forEach(th => th.addEventListener('click', () => {
+      const k = th.getAttribute('data-sort');
+      if (sortKey === k) { sortDir === 1 ? sortDir = -1 : (sortKey = null, sortDir = 1); }
+      else { sortKey = k; sortDir = 1; }
+      render();
+    }));
+
+    $('search').addEventListener('input', render);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === '/' && !e.target.closest('input, textarea') && !$('dash-view').classList.contains('hidden')) {
+        e.preventDefault(); $('search').focus();
+      }
+      if (e.key === 'Escape') { closeDrawer(); closeCfg(); }
+    });
+
+    // ---------------------------- bulk actions ----------------------------
+    function syncBulk() {
+      const n = selected.size;
+      $('bulkbar').classList.toggle('show', n > 0);
+      $('bulk-n').textContent = `${n} selected`;
+      $('bulk-archive').textContent = filter === 'archived' ? 'Unarchive' : 'Archive';
+    }
+    $('bulk-clear').addEventListener('click', () => { selected.clear(); render(); });
+
+    document.querySelectorAll('[data-bulk]').forEach(b => b.addEventListener('click', async () => {
+      const days = parseInt(b.getAttribute('data-bulk'), 10);
+      const ids = [...selected];
+      try {
+        await Promise.all(ids.map(id => {
+          const d = byId(id); if (!d) return null;
+          const base = d.expires_at && new Date(d.expires_at) > new Date() ? new Date(d.expires_at) : new Date();
+          base.setDate(base.getDate() + days);
+          return api('update-device', { method: 'POST', body: { device_id: id, expires_at: base.toISOString() } });
+        }));
+        toast(`Extended ${ids.length} device${ids.length !== 1 ? 's' : ''} by ${days}d`);
+        load();
+      } catch (e) { toast(e.message, true); load(); }
+    }));
+
+    $('bulk-archive').addEventListener('click', async () => {
+      const toArchived = filter !== 'archived';
+      const ids = [...selected];
+      try {
+        await Promise.all(ids.map(id => api('update-device', { method: 'POST', body: { device_id: id, archived: toArchived } })));
+        toast(`${toArchived ? 'Archived' : 'Unarchived'} ${ids.length}`);
+        selected.clear(); load();
+      } catch (e) { toast(e.message, true); load(); }
+    });
+
+    // ---------------------------- CSV export ----------------------------
+    $('btn-export').addEventListener('click', () => {
+      const rows = [['Label', 'Code', 'Status', 'Platform', 'Version', 'Last seen', 'Expires', 'Playlists']];
+      visibleList().forEach(d => rows.push([
+        d.label || '', d.device_id, statusOf(d).label, d.platform || '', d.app_version || '',
+        d.last_seen || '', d.expires_at || '', (d.playlists || []).length
+      ]));
+      const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+      a.download = `ziptv-devices-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+
+    // ---------------------------- device drawer ----------------------------
+    let confirmTimer = null;
+    function armConfirm(btn, label, action) {
+      // Two-click confirm: first click arms the button, second executes.
+      if (btn.dataset.armed) {
+        delete btn.dataset.armed;
+        btn.classList.remove('btn-confirm');
+        action();
+        return;
+      }
+      btn.dataset.armed = '1';
+      const prev = btn.innerHTML;
+      btn.classList.add('btn-confirm');
+      btn.innerHTML = label;
+      clearTimeout(confirmTimer);
+      confirmTimer = setTimeout(() => {
+        delete btn.dataset.armed;
+        btn.classList.remove('btn-confirm');
+        btn.innerHTML = prev;
+        icons();
+      }, 3000);
+    }
+
+    function openDrawer(id) {
+      openId = id;
+      const d = byId(id);
+      if (!d) return;
+      fillDrawer(d);
+      $('scrim').classList.add('show');
+      $('drawer').classList.add('show');
+    }
+    function closeDrawer() {
+      openId = null;
+      $('scrim').classList.remove('show');
+      $('drawer').classList.remove('show');
+    }
+    $('d-close').addEventListener('click', closeDrawer);
+    $('scrim').addEventListener('click', () => { closeDrawer(); closeCfg(); });
+
+    function fillDrawer(d) {
+      if (!d) { closeDrawer(); return; }
+      const st = statusOf(d);
+      const exp = fmtExpiry(d.expires_at);
+      $('d-label').value = d.label || '';
+      $('d-code').textContent = d.device_id;
+      $('d-pill').innerHTML = `<span class="pill ${st.cls}"><span class="d"></span>${st.label}</span>`;
+      $('d-meta').innerHTML = `
+        <div class="meta-cell"><div class="k">Platform</div><div class="v">${d.platform && d.platform !== 'unknown' ? esc(d.platform.toUpperCase()) : 'Unknown'}</div></div>
+        <div class="meta-cell"><div class="k">App version</div><div class="v">${d.app_version ? 'v' + esc(d.app_version) : '—'}</div></div>
+        <div class="meta-cell"><div class="k">Last seen</div><div class="v">${relTime(d.last_seen)}</div></div>
+        <div class="meta-cell"><div class="k">First seen</div><div class="v">${d.created_at ? new Date(d.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</div></div>`;
+      $('d-exp').innerHTML = `<span class="${exp.cls}">${exp.text}</span>`;
+      $('d-clearexp').style.display = d.expires_at ? '' : 'none';
+
+      const pls = d.playlists || [];
+      $('d-pl-h').textContent = `Playlists (${pls.length})`;
+      $('d-pls').innerHTML = pls.map(p => `
+        <div class="pl-row">
+          <div class="pi">
+            <div class="pn">${esc(p.name)}</div>
+            <div class="pm">${esc(p.username)} · ${esc(p.type)}${p.server_url ? ' · ' + esc(hostName(p.server_url)) : ''}</div>
           </div>
-        </div>`;
-      document.body.appendChild(scrim);
-      scrim.addEventListener('click', (e) => { if (e.target === scrim) scrim.remove(); });
-      scrim.querySelector('#cfg-cancel').addEventListener('click', () => scrim.remove());
-      scrim.querySelector('#cfg-save').addEventListener('click', async () => {
+          <button class="btn-icon btn-danger" data-rmpl="${esc(p.id)}" title="Remove playlist"><i data-lucide="trash-2"></i></button>
+        </div>`).join('') || '<div class="topbar-note" style="padding:4px 0 2px;">No playlists yet — add one below.</div>';
+
+      $('d-archive').innerHTML = `<i data-lucide="${d.archived ? 'archive-restore' : 'archive'}"></i>${d.archived ? 'Unarchive' : 'Archive'}`;
+      icons();
+
+      $('d-pls').querySelectorAll('[data-rmpl]').forEach(b => b.addEventListener('click', () => {
+        armConfirm(b, 'Sure?', async () => {
+          try { await api('remove-playlist', { method: 'POST', body: { id: b.getAttribute('data-rmpl') } }); toast('Playlist removed'); load(); }
+          catch (e) { toast(e.message, true); }
+        });
+      }));
+    }
+
+    $('d-copy').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText($('d-code').textContent); toast('Code copied'); }
+      catch { toast('Could not copy', true); }
+    });
+
+    $('d-label').addEventListener('keydown', (e) => { if (e.key === 'Enter') e.target.blur(); });
+    $('d-label').addEventListener('blur', async () => {
+      const d = byId(openId); if (!d) return;
+      const v = $('d-label').value;
+      if (v === (d.label || '')) return;
+      try { await api('update-device', { method: 'POST', body: { device_id: d.device_id, label: v } }); d.label = v; toast('Name saved'); render(); }
+      catch (e) { toast(e.message, true); }
+    });
+
+    async function setExpiry(iso) {
+      const d = byId(openId); if (!d) return;
+      try {
+        await api('update-device', { method: 'POST', body: { device_id: d.device_id, expires_at: iso } });
+        toast(iso ? 'Expiry updated' : 'Expiry cleared');
+        await load();
+      } catch (e) { toast(e.message, true); }
+    }
+    document.querySelectorAll('#drawer [data-days]').forEach(b => b.addEventListener('click', () => {
+      const d = byId(openId); if (!d) return;
+      const days = parseInt(b.getAttribute('data-days'), 10);
+      const base = d.expires_at && new Date(d.expires_at) > new Date() ? new Date(d.expires_at) : new Date();
+      base.setDate(base.getDate() + days);
+      setExpiry(base.toISOString());
+    }));
+    $('d-setdate').addEventListener('click', () => {
+      const v = $('d-date').value;
+      if (!v) return toast('Pick a date first', true);
+      setExpiry(new Date(v + 'T23:59:59').toISOString());
+    });
+    $('d-clearexp').addEventListener('click', () => setExpiry(null));
+
+    $('f-m3u').addEventListener('input', () => {
+      const p = parseM3u($('f-m3u').value);
+      if (p) { $('f-server').value = p.host; $('f-user').value = p.user; $('f-pass').value = p.pass; }
+    });
+    $('f-save').addEventListener('click', async () => {
+      const d = byId(openId); if (!d) return;
+      const server = $('f-server').value.trim(), user = $('f-user').value.trim(), pass = $('f-pass').value.trim();
+      if (!server || !user || !pass) return toast('Need server, username & password (or paste an M3U URL).', true);
+      try {
+        await api('add-playlist', { method: 'POST', body: {
+          device_id: d.device_id, name: $('f-name').value.trim() || hostName(server),
+          type: 'xtream', server_url: server, username: user, password: pass
+        }});
+        ['f-m3u', 'f-name', 'f-server', 'f-user', 'f-pass'].forEach(id => $(id).value = '');
+        toast('Playlist added'); load();
+      } catch (e) { toast(e.message, true); }
+    });
+
+    $('d-archive').addEventListener('click', async () => {
+      const d = byId(openId); if (!d) return;
+      try {
+        await api('update-device', { method: 'POST', body: { device_id: d.device_id, archived: !d.archived } });
+        toast(d.archived ? 'Unarchived' : 'Archived');
+        closeDrawer(); load();
+      } catch (e) { toast(e.message, true); }
+    });
+    $('d-delete').addEventListener('click', () => {
+      const d = byId(openId); if (!d) return;
+      armConfirm($('d-delete'), 'Delete permanently?', async () => {
         try {
-          await api('config', { method: 'POST', body: {
-            expiry_notice: scrim.querySelector('#cfg-notice').value,
-            contact_info: scrim.querySelector('#cfg-contact').value
-          }});
-          toast('Saved'); scrim.remove();
+          await api('delete-device', { method: 'POST', body: { device_id: d.device_id } });
+          toast('Device deleted'); closeDrawer(); load();
         } catch (e) { toast(e.message, true); }
       });
     });
 
+    // ---------------------------- settings drawer ----------------------------
+    function closeCfg() { $('cfg-drawer').classList.remove('show'); if (!openId) $('scrim').classList.remove('show'); }
+    $('cfg-close').addEventListener('click', closeCfg);
+    $('btn-config').addEventListener('click', async () => {
+      let cfg = {};
+      try { ({ config: cfg } = await api('config')); } catch (e) { return toast(e.message, true); }
+      $('cfg-notice').value = cfg.expiry_notice || '';
+      $('cfg-contact').value = cfg.contact_info || '';
+      closeDrawer();
+      $('scrim').classList.add('show');
+      $('cfg-drawer').classList.add('show');
+    });
+    $('cfg-save').addEventListener('click', async () => {
+      try {
+        await api('config', { method: 'POST', body: {
+          expiry_notice: $('cfg-notice').value,
+          contact_info: $('cfg-contact').value
+        }});
+        toast('Settings saved'); closeCfg();
+      } catch (e) { toast(e.message, true); }
+    });
+
+    // ---------------------------- helpers ----------------------------
     function parseM3u(str) {
       try {
         const u = new URL(str.trim());
@@ -381,8 +932,8 @@
     }
     function hostName(s) { try { return new URL(/^https?:/i.test(s) ? s : 'http://' + s).hostname; } catch { return 'Playlist'; } }
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-    function cssq(s) { return (window.CSS && CSS.escape) ? CSS.escape(s) : s.replace(/"/g, '\\"'); }
 
+    // ---------------------------- boot ----------------------------
     if (token) showDash(); else $('login-view').classList.remove('hidden');
     icons();
   </script>

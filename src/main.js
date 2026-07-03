@@ -18,7 +18,9 @@ import {
   removeWatchProgress,
   getIsServerMode,
   getStreamUrlSync,
-  proxifyImage
+  proxifyImage,
+  getLastSyncAge,
+  hasCachedData
 } from './components/xtream-api.js';
 import { Capacitor } from '@capacitor/core';
 import { VideoPlayer } from './components/player.js';
@@ -123,18 +125,30 @@ async function initApp() {
   // 1. Initialize time clock
   startClock();
 
-  // TV preview mode on desktop: visit /tv (e.g. http://localhost:5675/tv) to
-  // force the Android-TV "10-foot" layout/focus on PC for previewing. The legacy
-  // ?tv=true / ?tv=1 query is still accepted. (D-pad nav via arrow keys works
-  // regardless; this also adds the body.tv-layout hook and drops initial focus
-  // into the categories column so it's keyboard-ready.)
   try {
     const path = (window.location.pathname || '').replace(/\/+$/, '');
     const isTvPath = /(^|\/)tv$/i.test(path);
     const tvParam = new URLSearchParams(window.location.search).get('tv');
-    if (isTvPath || tvParam === 'true' || tvParam === '1') {
+    const ua = (navigator.userAgent || '').toLowerCase();
+    const isTV = /aft|tizen|web0s|webos|smart-?tv|googletv|android tv|bravia|netcast/.test(ua);
+    if (isTvPath || tvParam === 'true' || tvParam === '1' || isTV) {
       document.body.classList.add('tv-layout');
+      document.documentElement.classList.add('tv-layout');
       window.__TV_PREVIEW__ = true;
+
+      // Resolution-proof 10-foot rendering: pin the layout viewport to 1920
+      // CSS px. TV webviews at 720p (1280×720) or with DPR-scaled CSS
+      // viewports (e.g. 960×540) then scale the whole UI uniformly instead
+      // of rendering it oversized and cropped off-screen. Desktop browsers
+      // ignore the viewport meta; redesign.css's vw-based root font-size
+      // covers scaling there.
+      let vp = document.querySelector('meta[name="viewport"]');
+      if (!vp) {
+        vp = document.createElement('meta');
+        vp.name = 'viewport';
+        document.head.appendChild(vp);
+      }
+      vp.setAttribute('content', 'width=1920, user-scalable=no');
     }
   } catch (e) {}
 
@@ -212,6 +226,8 @@ async function initApp() {
       updateDetailsPanel(channel, program);
     }
   );
+  // Exposed for the player's zap OSD (per-row now-playing lookup via getNowNext).
+  window.epgGridInstance = epgGridInstance;
 
   // Provide global function for EPG stars updates
   window.isChannelFavorite = (type, id) => {
@@ -340,18 +356,9 @@ async function switchTab(tabId) {
     panel.classList.toggle('active', panel.id === `${tabId}-view`);
   });
 
-  // Flixify and YouTube have no category sidebar — hide the left rail on those
-  // tabs (CSS-driven so it stays hidden through playback exit too).
+  // Flixify has no category sidebar — hide the left rail on that tab (CSS-driven
+  // so it stays hidden through playback exit too).
   document.body.classList.toggle('flixify-tab', tabId === 'flixify');
-  document.body.classList.toggle('youtube-tab', tabId === 'youtube');
-
-  // YouTube tab: an in-app webview. Load youtube.com on first open (lazy, so it
-  // doesn't run in the background at startup); the panel toggle above shows it.
-  if (tabId === 'youtube') {
-    const yt = document.getElementById('youtube-frame');
-    if (yt && !yt.getAttribute('src')) yt.setAttribute('src', 'https://www.youtube.com');
-    return;
-  }
 
   // Header search placeholder follows the active view
   const headerSearch = document.getElementById('header-search-input');
@@ -811,7 +818,7 @@ function togglePinChannel(id, name) {
   }
   store[pid] = list;
   localStorage.setItem('pinned_channels', JSON.stringify(store));
-  if (epgGridInstance) epgGridInstance.render();
+  if (epgGridInstance) epgGridInstance.render(false);
 }
 
 // Pin/unpin menu for a focused/right-clicked channel row in the live guide.
@@ -1366,7 +1373,7 @@ function renderMoviesCatalog(movies) {
 
     card.innerHTML = `
       <div class="vod-poster-wrapper">
-        ${logo ? `<img src="${logo}" alt="" loading="lazy" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22150%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%234b5563%22 stroke-width=%221%22><rect x=%222%22 y=%222%22 width=%2220%22 height=%2220%22 rx=%222%22/></svg>'">` : '<div class="poster-placeholder"><i data-lucide="film"></i></div>'}
+        ${logo ? `<img src="${logo}" alt="" loading="lazy" decoding="async" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22150%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%234b5563%22 stroke-width=%221%22><rect x=%222%22 y=%222%22 width=%2220%22 height=%2220%22 rx=%222%22/></svg>'">` : '<div class="poster-placeholder"><i data-lucide="film"></i></div>'}
         <div class="vod-card-overlay">
           <span class="vod-card-year">${year}</span>
           ${rating > 0 ? `<span class="vod-rating-badge"><i data-lucide="star"></i>${rating.toFixed(1)}</span>` : ''}
@@ -1433,7 +1440,7 @@ function renderSeriesCatalog(seriesList) {
 
     card.innerHTML = `
       <div class="vod-poster-wrapper">
-        ${logo ? `<img src="${logo}" alt="" loading="lazy" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22150%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%234b5563%22 stroke-width=%221%22><rect x=%222%22 y=%222%22 width=%2220%22 height=%2220%22 rx=%222%22/></svg>'">` : '<div class="poster-placeholder"><i data-lucide="tv"></i></div>'}
+        ${logo ? `<img src="${logo}" alt="" loading="lazy" decoding="async" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22150%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%234b5563%22 stroke-width=%221%22><rect x=%222%22 y=%222%22 width=%2220%22 height=%2220%22 rx=%222%22/></svg>'">` : '<div class="poster-placeholder"><i data-lucide="tv"></i></div>'}
         <div class="vod-card-overlay">
           <span class="vod-card-year">${year}</span>
           ${rating > 0 ? `<span class="vod-rating-badge"><i data-lucide="star"></i>${rating.toFixed(1)}</span>` : ''}
@@ -2340,12 +2347,15 @@ function initGlobalSearch() {
   const onTv = Capacitor.isNativePlatform() || window.__TV_PREVIEW__;
   const field = document.getElementById('global-search-field');
   const btn = document.getElementById('global-search-btn');
+  const railBtn = document.getElementById('rail-search-btn');
 
   if (onTv) {
     if (btn) {
       btn.style.display = 'inline-flex';
       btn.addEventListener('click', () => openGlobalSearch({ tvInput: true, onPick: routeGlobalSearchPick }));
     }
+    // Side-rail Search item (TV D-pad / phone landscape): same overlay.
+    railBtn?.addEventListener('click', () => openGlobalSearch({ tvInput: true, onPick: routeGlobalSearchPick }));
   } else {
     if (field) field.style.display = 'flex';
     const input = document.getElementById('global-search-input');
@@ -2357,6 +2367,8 @@ function initGlobalSearch() {
         debounce = setTimeout(() => setGlobalSearchQuery(q, routeGlobalSearchPick), 250);
       });
     }
+    // On desktop the rail Search item drops the cursor into the header field.
+    railBtn?.addEventListener('click', () => input?.focus());
   }
 }
 
@@ -2451,10 +2463,14 @@ function bindGlobalEvents() {
           state.favorites = status.favorites;
         }
         showDashboard();
-        
-        // Trigger initial sync
-        await triggerFullSync();
-        await loadTabCategoriesAndContent();
+
+        // Initial sync: Live TV paints as soon as its data is cached; movies
+        // and series finish downloading behind the live UI.
+        state.activeCategory = null;
+        await triggerFullSync({
+          onLiveReady: async () => { await loadTabCategoriesAndContent(); }
+        });
+        if (!state.activeCategory) await loadTabCategoriesAndContent();
       }
     } catch (err) {
       errorMsg.textContent = err.message || 'Login connection failed.';
@@ -2908,17 +2924,44 @@ function bindGlobalEvents() {
   wireVodFilters('movies', loadMoviesGrid);
   wireVodFilters('series', loadSeriesGrid);
 
-  // Live channel filter button (icon-only) → on-screen keyboard
+  // Live channel filter — inline search field on desktop/mobile; on TV the
+  // icon button opens the on-screen keyboard (real inputs don't D-pad well).
   const liveFilterBtn = document.getElementById('epg-channels-filter-btn');
+  const liveSearchInput = document.getElementById('epg-channels-search-input');
+  const syncLiveFilterUi = (q) => {
+    liveFilterBtn?.classList.toggle('filter-active', !!(q && q.trim()));
+  };
+  if (liveSearchInput) {
+    liveSearchInput.addEventListener('input', () => {
+      const q = liveSearchInput.value;
+      if (epgGridInstance) epgGridInstance.setChannelFilter(q);
+      syncLiveFilterUi(q);
+    });
+    liveSearchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && liveSearchInput.value) {
+        liveSearchInput.value = '';
+        if (epgGridInstance) epgGridInstance.setChannelFilter('');
+        syncLiveFilterUi('');
+      }
+      if (e.key === 'Enter' || e.key === 'Escape') liveSearchInput.blur();
+    });
+  }
   if (liveFilterBtn) {
     liveFilterBtn.addEventListener('click', () => {
+      // Desktop/touch: the field is right there — just focus it.
+      if (!document.body.classList.contains('tv-layout') && liveSearchInput) {
+        liveSearchInput.focus();
+        return;
+      }
       openSearchKeyboard({
         title: 'Filter Channels',
         initial: (epgGridInstance && epgGridInstance.channelFilterQuery) || '',
-        onChange: (q) => { if (epgGridInstance) epgGridInstance.setChannelFilter(q); },
+        onChange: (q) => {
+          if (epgGridInstance) epgGridInstance.setChannelFilter(q);
+          if (liveSearchInput) liveSearchInput.value = q; // keep in sync
+        },
         onClose: (q) => {
-          // No label on the icon button — highlight it when a filter is active.
-          liveFilterBtn.classList.toggle('filter-active', !!(q && q.trim()));
+          syncLiveFilterUi(q);
           navigation.setFocus('channels', liveFilterBtn);
         }
       });
@@ -2959,10 +3002,10 @@ function bindGlobalEvents() {
       { value: 'most_viewed', label: 'Most Viewed' }
     ];
     const getLiveSortSymbol = (v) => {
-      if (v === 'name') return 'A-Z';
-      if (v === 'name_desc') return 'Z-A';
-      if (v === 'most_viewed') return '★';
-      return '—';
+      if (v === 'name') return 'Sort: A-Z';
+      if (v === 'name_desc') return 'Sort: Z-A';
+      if (v === 'most_viewed') return 'Sort: Most Viewed';
+      return 'Sort';
     };
     // Initialize label
     if (liveSortLabel && epgGridInstance) {
@@ -2979,6 +3022,30 @@ function bindGlobalEvents() {
           navigation.setFocus('channels', liveSortBtn);
         }
       });
+    });
+  }
+
+  // Channel cards: grid ⇄ list view toggle (persisted). Pure CSS re-layout —
+  // .epg-list-view on the section flips the card grid into slim rows.
+  const viewToggleBtn = document.getElementById('epg-view-toggle-btn');
+  if (viewToggleBtn) {
+    const epgSection = document.querySelector('.epg-section-container');
+    const applyChannelsView = (mode) => {
+      epgSection?.classList.toggle('epg-list-view', mode === 'list');
+      // Icon shows the view you'd switch TO.
+      viewToggleBtn.innerHTML = mode === 'list'
+        ? '<i data-lucide="layout-grid"></i>'
+        : '<i data-lucide="list"></i>';
+      const label = mode === 'list' ? 'Switch to grid view' : 'Switch to list view';
+      viewToggleBtn.title = label;
+      viewToggleBtn.setAttribute('aria-label', label);
+      if (window.lucide) lucide.createIcons({ scope: viewToggleBtn });
+    };
+    applyChannelsView(localStorage.getItem('live_channels_view') || 'grid');
+    viewToggleBtn.addEventListener('click', () => {
+      const next = epgSection?.classList.contains('epg-list-view') ? 'grid' : 'list';
+      localStorage.setItem('live_channels_view', next);
+      applyChannelsView(next);
     });
   }
 
@@ -3000,7 +3067,7 @@ async function updatePreferences(prefs) {
 }
 
 // Show a full-screen loading blocker during Xtream playlist sync
-async function triggerFullSync() {
+async function triggerFullSync({ onLiveReady = null } = {}) {
   const syncBlocker = document.createElement('div');
   syncBlocker.className = 'modal-overlay';
   syncBlocker.style.zIndex = '10000';
@@ -3021,14 +3088,36 @@ async function triggerFullSync() {
       if (progressEl) {
         progressEl.textContent = statusText;
       }
+    }, {
+      // As soon as live channels are cached, drop the blocker and let the
+      // caller paint Live TV — movies/series keep downloading behind the UI.
+      // Cuts perceived first-run load to roughly a third on big playlists.
+      onLiveReady: onLiveReady ? async (info) => {
+        syncBlocker.remove();
+        try { await onLiveReady(info); } catch (e) { console.warn(e); }
+        showToast('Live TV ready — movies & series still loading…', 'info', 4000);
+      } : null
     });
     console.log('Sync completed! Channels cached:', res.counts);
+    if (onLiveReady) showToast('Movies & series updated', 'success', 3000);
   } catch (err) {
     console.error('Playlist sync failed:', err);
     alert(`Sync Warning: Could not download latest channels list. Using previously cached data if available. (${err.message})`);
   } finally {
     syncBlocker.remove();
   }
+}
+
+// Background refresh gate: skip the automatic full re-download when the cache
+// is fresh. On Fire TV / smart TVs the every-boot background sync (huge JSON
+// downloads + parsing) competed with the UI right at startup and made the
+// whole app feel slow even though content was already cached.
+const BG_SYNC_TTL_MS = 12 * 60 * 60 * 1000; // 12h; manual Refresh always syncs
+function maybeBackgroundSync() {
+  if (getLastSyncAge() < BG_SYNC_TTL_MS) return;
+  syncPlaylist()
+    .then(() => loadTabCategoriesAndContent())
+    .catch(() => {});
 }
 
 // ==========================================================================
@@ -3322,25 +3411,24 @@ async function autoEnterSinglePlaylist(id, activeId) {
     if (status.favorites) state.favorites = status.favorites;
     showDashboard();
 
-    // Detect an existing cache cheaply via the (small) live category list.
-    let hasCache = false;
-    try {
-      const cats = await getCategories('live');
-      hasCache = !!(cats && Array.isArray(cats.categories) && cats.categories.length > 0);
-    } catch (e) {}
+    // Detect an existing cache cheaply (index count — no table scan).
+    const hasCache = await hasCachedData();
 
     if (hasCache) {
       state.activeCategory = null;
       await loadTabCategoriesAndContent();   // instant, from cache
-      // Silent background refresh — then repaint so the view reflects the freshly
-      // synced catalog instead of leaving the stale cached content on screen.
-      syncPlaylist()
-        .then(() => loadTabCategoriesAndContent())
-        .catch(() => {});
+      // Silent background refresh only when the cache is stale (12h TTL) —
+      // re-downloading everything on every boot crushed weak devices.
+      maybeBackgroundSync();
     } else {
-      await triggerFullSync();                // first run: nothing cached yet
+      // First run: paint Live TV the moment its data lands; movies/series
+      // finish syncing behind the live UI.
       state.activeCategory = null;
-      await loadTabCategoriesAndContent();
+      await triggerFullSync({
+        onLiveReady: async () => { await loadTabCategoriesAndContent(); }
+      });
+      // Repaint only if the user hasn't started browsing meanwhile.
+      if (!state.activeCategory) await loadTabCategoriesAndContent();
     }
   } catch (err) {
     console.error('Auto-enter single playlist failed:', err);
@@ -3366,23 +3454,19 @@ async function switchToPlaylist(id) {
     // Load instantly from cache when this playlist already has one (e.g. the
     // last-used playlist), and refresh in the background. Only do a blocking
     // full sync on first use when nothing is cached yet.
-    let hasCache = false;
-    try {
-      const cats = await getCategories('live');
-      hasCache = !!(cats && Array.isArray(cats.categories) && cats.categories.length > 0);
-    } catch (e) {}
+    const hasCache = await hasCachedData();
 
     state.activeCategory = null;
     if (hasCache) {
       await loadTabCategoriesAndContent();
-      // Background refresh, then repaint so the switched-to playlist shows its
-      // fresh catalog rather than the stale cached one.
-      syncPlaylist()
-        .then(() => loadTabCategoriesAndContent())
-        .catch(() => {});
+      // Background refresh only when stale (12h TTL) — full re-downloads on
+      // every switch made weak devices crawl.
+      maybeBackgroundSync();
     } else {
-      await triggerFullSync();
-      await loadTabCategoriesAndContent();
+      await triggerFullSync({
+        onLiveReady: async () => { await loadTabCategoriesAndContent(); }
+      });
+      if (!state.activeCategory) await loadTabCategoriesAndContent();
     }
   } catch (err) {
     console.error('Failed to switch playlist:', err);

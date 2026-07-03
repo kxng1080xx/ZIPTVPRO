@@ -1008,6 +1008,7 @@ function trackChild(proc) {
 }
 
 function killAllChildren() {
+  try { stopTimeshift(); } catch (e) {}   // stop the live buffer + wipe its folder on exit
   for (const proc of activeChildren) {
     try {
       if (process.platform === 'win32' && proc.pid) {
@@ -1282,13 +1283,23 @@ function stopTimeshift() {
     activeTimeshift.stopped = true;           // tell the exit handler not to restart
     try { activeTimeshift.proc.kill('SIGKILL'); } catch (e) {}
     activeTimeshift = null;
+    // The buffer only makes sense while you're on the stream. Once you switch
+    // away (or stop), wipe the whole timeshift folder so segments never pile up.
+    try { fs.rmSync(TS_DIR, { recursive: true, force: true }); } catch (e) {}
   }
 }
 
 // Spawn (or respawn) the segmenter for `state`. Appends to the same dir so a
 // restart continues the existing playlist instead of resetting it.
 function spawnTimeshiftProc(state) {
-  // ponytail: 2s x 900 = 30-min rolling window; raise hls_list_size for longer.
+  // 4s x 450 = 30-min rolling window; raise hls_list_size for longer.
+  // Segment sizing: video is stream-copied, so ffmpeg can only cut on the
+  // provider's keyframes — hls_time is a floor, not exact. Sources with ~1s
+  // GOPs were producing ~1s files (1800 per window = heavy disk churn); a 4s
+  // target cuts that to ~450 without touching quality. hls_init_time keeps
+  // the first segments short so startup stays fast. (single_file byte-range
+  // HLS was considered and rejected: delete_segments can't reclaim its space,
+  // so the file grows unbounded on live TV.)
   // Video is stream-copied (cheap); audio is transcoded to AAC because live
   // channels often carry AC3/E-AC3/MP2 that Chromium's MSE can't decode from a
   // copied TS — that mismatch is what made hls.js throw media errors and flicker.
@@ -1309,7 +1320,10 @@ function spawnTimeshiftProc(state) {
     '-c:v', 'copy',
     '-c:a', 'aac', '-ac', '2', '-b:a', '256k',
     '-avoid_negative_ts', 'make_zero',
-    '-f', 'hls', '-hls_time', '2', '-hls_list_size', '900',
+    '-f', 'hls', '-hls_time', '4', '-hls_init_time', '1', '-hls_list_size', '450',
+    // Keep a couple of just-expired segments on disk before deleting, so a
+    // player that's lagging the playlist edge never 404s mid-fetch.
+    '-hls_delete_threshold', '2',
     '-hls_flags', 'delete_segments+append_list+omit_endlist',
     '-hls_segment_type', 'mpegts',
     '-hls_segment_filename', path.join(state.dir, 'seg_%05d.ts'),
@@ -1358,8 +1372,8 @@ app.get('/api/timeshift/start', async (req, res) => {
   if (activeTimeshift && activeTimeshift.ch === ch && !activeTimeshift.stopped) {
     return res.json({ playlist: `/api/timeshift/${ch}/index.m3u8` });
   }
-  stopTimeshift();
-  const dir = path.join(TS_DIR, ch);
+  stopTimeshift();   // also wipes TS_DIR if a previous stream left segments
+  const dir = TS_DIR;
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
   try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
   const state = { ch, dir, url, proc: null, stopped: false, restarts: 0, windowStart: Date.now() };
@@ -1377,9 +1391,9 @@ app.get('/api/timeshift/start', async (req, res) => {
 app.get('/api/timeshift/stop', (req, res) => { stopTimeshift(); res.json({ ok: true }); });
 
 app.get('/api/timeshift/:ch/:file', (req, res) => {
-  const ch = sanitize(req.params.ch);
+  // All streams share TS_DIR; :ch is kept only so playlist URLs stay stable.
   const file = String(req.params.file).replace(/[^a-z0-9_.\-]+/gi, '_');
-  const fp = path.join(TS_DIR, ch, file);
+  const fp = path.join(TS_DIR, file);
   if (!fp.startsWith(TS_DIR)) return res.status(403).end();      // path-traversal guard
   if (!fs.existsSync(fp)) return res.status(404).end();
   if (file.endsWith('.m3u8')) res.setHeader('Cache-Control', 'no-store');

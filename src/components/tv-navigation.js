@@ -209,7 +209,10 @@ class TVNavigation {
     this.currentZone = zone;
     this.focusedElement = element;
     this.focusedElement.classList.add('tv-focused');
-    
+
+    // Side rail expands (labels visible) only while the D-pad is inside it.
+    document.getElementById('side-rail')?.classList.toggle('rail-expanded', zone === 'tabs');
+
     // Clear pending focus/zone on successful focus
     this.pendingFocus = null;
     this.pendingZone = null;
@@ -548,44 +551,55 @@ class TVNavigation {
     }
   }
 
-  // 1. TABS HEADER NAVIGATION
+  // 1. SIDE-RAIL NAVIGATION (vertical: Search · Live · Movies · Series ·
+  //    Flixify · Refresh · Settings · Profile). UP/DOWN moves the highlight,
+  //    ENTER selects, RIGHT leaves the rail into the content area.
   handleTabsNavigation(e) {
-    const tabs = Array.from(document.querySelectorAll('.nav-tab'));
-    const searchBtn = document.getElementById('global-search-btn');
-    const profileBtn = document.getElementById('profile-card-btn');
-    const syncBtn = document.getElementById('sync-btn');
-    const settingsBtn = document.getElementById('settings-btn');
+    // Everything focusable in the rail, top-to-bottom (DOM order), visible only.
+    const railItems = Array.from(document.querySelectorAll('#side-rail .rail-item'))
+      .filter(el => el.offsetParent !== null);
 
-    const headerItems = [...tabs];
-    if (searchBtn && searchBtn.offsetParent !== null) headerItems.push(searchBtn);
-    if (profileBtn && profileBtn.offsetParent !== null) headerItems.push(profileBtn);
-    if (syncBtn && syncBtn.offsetParent !== null) headerItems.push(syncBtn);
-    if (settingsBtn && settingsBtn.offsetParent !== null) headerItems.push(settingsBtn);
-
-    const index = headerItems.indexOf(this.focusedElement);
+    const index = railItems.indexOf(this.focusedElement);
     if (index === -1) return;
 
-    if (e.key === this.KEYS.LEFT) {
-      // Only move the focus highlight between header items. Do NOT switch/load
+    if (e.key === this.KEYS.UP) {
+      // Only move the focus highlight between rail items. Do NOT switch/load
       // the tab on pass-through — the user must press Enter to select it.
-      // Otherwise scrolling past Movies/Series (e.g. on the way to Settings)
-      // would load those tabs and reset navigation.
       if (index > 0) {
-        this.setFocus('tabs', headerItems[index - 1]);
-      }
-      e.preventDefault();
-    } else if (e.key === this.KEYS.RIGHT) {
-      if (index < headerItems.length - 1) {
-        this.setFocus('tabs', headerItems[index + 1]);
+        this.setFocus('tabs', railItems[index - 1]);
       }
       e.preventDefault();
     } else if (e.key === this.KEYS.DOWN) {
-      // Move down to category sidebar
-      this.focusDefault('categories');
+      if (index < railItems.length - 1) {
+        this.setFocus('tabs', railItems[index + 1]);
+      }
+      e.preventDefault();
+    } else if (e.key === this.KEYS.RIGHT) {
+      // Leave the rail into the content area for the active tab.
+      this.exitRailIntoContent();
+      e.preventDefault();
+    } else if (e.key === this.KEYS.LEFT) {
+      // Nothing to the left of the rail — swallow so focus can't get lost.
       e.preventDefault();
     } else if (e.key === this.KEYS.ENTER) {
       this.focusedElement.click();
       e.preventDefault();
+    }
+  }
+
+  // RIGHT from the rail lands in the most useful zone for the current tab.
+  exitRailIntoContent() {
+    const activeTab = document.querySelector('.nav-tab.active')?.dataset.tab;
+    const playbackOpen = !document.getElementById('series-playback-container')?.classList.contains('hidden');
+
+    if (activeTab === 'live') {
+      this.focusDefault('categories');
+    } else if (activeTab === 'series' && playbackOpen) {
+      this.focusDefault('series-episodes');
+    } else if (activeTab === 'movies' || activeTab === 'series') {
+      this.focusDefault('categories');
+    } else {
+      this.focusDefault('grid');
     }
   }
 
@@ -602,13 +616,14 @@ class TVNavigation {
     // D-pad doesn't scroll through hidden pins.
     const pinCollapsed = !!document.getElementById('pin-top-section')?.classList.contains('collapsed');
 
-    // Top-to-bottom focus order: the "Pin top section" header, the pinned items
-    // (only when the section is expanded/visible), the search button, then categories.
+    // Top-to-bottom focus order matches the unified panel: the Search/Sort
+    // toolbar first, then the "Pinned" header, the pinned items (when the
+    // section is expanded/visible), then the categories.
     const allItems = [];
-    if (pinToggle) allItems.push(pinToggle);
-    if (!pinCollapsed) pinItems.forEach(p => { if (p.offsetParent !== null) allItems.push(p); });
     if (searchBtn && searchBtn.offsetParent !== null) allItems.push(searchBtn);
     if (sortBtn && sortBtn.offsetParent !== null) allItems.push(sortBtn);
+    if (pinToggle) allItems.push(pinToggle);
+    if (!pinCollapsed) pinItems.forEach(p => { if (p.offsetParent !== null) allItems.push(p); });
     allItems.push(...items);
 
     const index = allItems.indexOf(this.focusedElement);
@@ -678,7 +693,7 @@ class TVNavigation {
       } else {
         // Select category and jump
         this.focusedElement.click();
-        
+
         if (activeTab === 'live') {
           this.focusDefault('channels');
         } else if (activeTab === 'series' && playbackOpen) {
@@ -687,6 +702,10 @@ class TVNavigation {
           this.focusDefault('grid');
         }
       }
+      e.preventDefault();
+    } else if (e.key === this.KEYS.LEFT) {
+      // The side rail sits to the left of the categories column.
+      this.focusDefault('tabs');
       e.preventDefault();
     }
   }

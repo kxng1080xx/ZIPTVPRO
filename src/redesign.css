@@ -1,0 +1,1562 @@
+/* ==========================================================================
+   ZIPTV PRO — UI REDESIGN LAYER (v2)
+   Loaded AFTER style.css. This layer owns:
+     · The app shell: left side-rail navigation (Netflix-style leanback),
+       slim contextual header, content viewport.
+     · Per-device layouts:
+         - TV (body.tv-layout)  → 10-foot leanback UI, viewport-scaled so
+           720p/1080p/4K all render proportionally (no oversized cropping).
+         - Phone portrait       → bottom tab bar, drawer categories, 3-col grid.
+         - Phone landscape      → player-forward, compact icon rail.
+         - Desktop              → hover-expanding rail, cinematic grids.
+   Legacy rules in style.css that clash with the new shell are overridden here.
+   ========================================================================== */
+
+/* ==========================================================================
+   1. DESIGN TOKENS (refresh)
+   ========================================================================== */
+:root {
+  /* Deeper, more cinematic base */
+  --bg-darkest: #04060b;
+  --bg-base: #070a12;
+  --bg-panel: #0d1220;
+  --bg-surface: #161d2f;
+  --bg-surface-hover: #1f2940;
+  --border-color: #24304a;
+
+  --rd-bg-darkest: #04060b;
+  --rd-bg-base: #060911;
+
+  /* Ambient glows — subtler, pushed to corners */
+  --rd-glow-a: radial-gradient(1400px 800px at 90% -20%, rgba(37, 99, 235, 0.12), transparent 60%);
+  --rd-glow-b: radial-gradient(1100px 800px at -15% 115%, rgba(6, 182, 212, 0.09), transparent 60%);
+
+  /* Rail geometry */
+  --rail-w: 78px;
+  --rail-w-expanded: 252px;
+
+  /* Focus (TV D-pad) — high-contrast white ring, Netflix-style */
+  --rd-focus: #ffffff;
+  --rd-focus-ring: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 6px rgba(56, 189, 248, 0.45);
+  --rd-focus-glow: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 6px rgba(56, 189, 248, 0.45), 0 18px 44px rgba(0, 0, 0, 0.6);
+
+  --rd-card-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
+}
+
+/* Slimmer, less intrusive scrollbars everywhere */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.14); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.25); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ==========================================================================
+   2. APP SHELL — rail + main column
+   ========================================================================== */
+.app-layout {
+  flex-direction: row; /* was column (header on top) — now rail | main */
+}
+
+.app-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  margin-left: var(--rail-w); /* rail is fixed-position */
+}
+
+/* Hide the rail (and reclaim its gutter) while a VOD plays full-window —
+   main.js already hides .top-header/.sidebar in vod-mode. */
+body.vod-mode .side-rail { display: none !important; }
+body.vod-mode .app-main { margin-left: 0; }
+
+/* ==========================================================================
+   3. SIDE RAIL — collapsed icon bar, expands on hover/focus
+   ========================================================================== */
+.side-rail {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 900;
+  width: var(--rail-w);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 18px 0 14px;
+  background: linear-gradient(180deg, rgba(10, 14, 24, 0.92), rgba(6, 9, 17, 0.96));
+  border-right: 1px solid var(--rd-hairline);
+  overflow: hidden;
+  transition: width 0.22s cubic-bezier(0.33, 1, 0.68, 1), background 0.22s ease;
+}
+
+/* Expanded state: desktop hover, keyboard focus-within, or JS-driven class
+   (tv-navigation adds .rail-expanded while the 'tabs' zone is active). */
+.side-rail:hover,
+.side-rail:focus-within,
+.side-rail.rail-expanded {
+  width: var(--rail-w-expanded);
+  background: linear-gradient(90deg, rgba(7, 10, 18, 0.99) 60%, rgba(7, 10, 18, 0.94));
+  box-shadow: 40px 0 90px rgba(0, 0, 0, 0.55);
+}
+
+/* Labels: hidden while collapsed, fade/slide in when expanded */
+.side-rail .rail-label {
+  opacity: 0;
+  transform: translateX(-6px);
+  transition: opacity 0.18s ease 0.04s, transform 0.22s ease 0.04s;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.side-rail:hover .rail-label,
+.side-rail:focus-within .rail-label,
+.side-rail.rail-expanded .rail-label {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Logo block */
+.rail-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 19px 14px;
+  flex-shrink: 0;
+}
+.rail-logo-img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.rail-wordmark {
+  font-family: var(--font-title);
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #fff;
+}
+.rail-wordmark em {
+  font-style: normal;
+  background: var(--rd-accent-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Groups */
+.rail-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 12px;
+}
+.rail-group-main { flex: 1 1 auto; }
+.rail-group-bottom {
+  flex-shrink: 0;
+  padding-bottom: 4px;
+}
+
+/* Rail items — neutralize legacy .nav-tab / .header-icon-btn styling first */
+.side-rail .rail-item,
+.side-rail .nav-tab,
+.side-rail .nav-tab.active {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 48px;
+  padding: 0 15px;
+  border-radius: 12px;
+  color: var(--text-secondary);
+  font-family: var(--font-title);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  overflow: hidden;
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.side-rail .rail-item i,
+.side-rail .rail-item svg {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  stroke-width: 2;
+}
+.side-rail .rail-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-primary);
+}
+.side-rail .nav-tab.active {
+  color: #fff;
+  background: var(--rd-active-tint);
+  border: 1px solid var(--rd-active-border);
+}
+.side-rail .nav-tab.active i { color: #38bdf8; }
+
+/* D-pad / keyboard focus on rail items */
+.side-rail .rail-item.tv-focused,
+.side-rail .rail-item:focus-visible {
+  background: #fff;
+  color: #0b0f19;
+}
+.side-rail .rail-item.tv-focused i,
+.side-rail .rail-item:focus-visible i { color: #0b0f19; }
+
+/* Profile card at the rail bottom — compact avatar, details when expanded */
+.side-rail .profile-wrap { padding: 6px 0 0; }
+.side-rail .profile-card {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  padding: 0 9px;
+  border-radius: 14px;
+  cursor: pointer;
+  overflow: hidden;
+  border: 1px solid var(--rd-hairline-soft);
+  background: rgba(255, 255, 255, 0.03);
+  transition: background 0.15s ease;
+}
+.side-rail .profile-card:hover { background: rgba(255, 255, 255, 0.08); }
+.side-rail .profile-card.tv-focused {
+  background: #fff;
+  box-shadow: none;
+}
+.side-rail .profile-card.tv-focused .profile-name { color: #0b0f19; }
+.side-rail .profile-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-title);
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #fff;
+  background: var(--rd-accent-gradient);
+  flex-shrink: 0;
+}
+.side-rail .profile-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.side-rail .profile-name {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.side-rail .profile-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* ==========================================================================
+   4. TOP HEADER — slim contextual bar (branding gone to the rail on TV)
+   ========================================================================== */
+.top-header {
+  height: 58px;
+  padding: 0 20px;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-bottom: 1px solid var(--rd-hairline-soft);
+}
+
+/* Header logo is redundant next to the rail on desktop — rail owns branding */
+.top-header .logo-container .header-logo { width: 30px; height: 30px; }
+.top-header .logo-wordmark { font-size: 0.95rem; }
+
+.header-clock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.15;
+}
+.header-clock #current-time {
+  font-family: var(--font-title);
+  font-weight: 700;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+.header-clock #current-date {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* ==========================================================================
+   5. COMPONENT RESKIN — shared across devices
+   ========================================================================== */
+
+/* ---- Categories sidebar: Netflix-style, melts into the background ----
+   No glass card, no borders, no pill badges. Title + two ghost icon buttons
+   on top; pins and categories read as ONE continuous list. Counts are plain
+   numbers that fade in on hover / D-pad focus / active row. */
+.sidebar {
+  background: transparent;
+  border-right: none;
+  padding: 10px 8px 10px 14px;
+  gap: 0;
+}
+
+/* Strip the glass card entirely */
+.categories-card {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* Header: bold title left, ghost icon actions right, no divider */
+.categories-search-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 8px 12px 12px;
+  border-bottom: none;
+}
+.categories-header-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+}
+.categories-title {
+  font-family: var(--font-title);
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  color: var(--text-primary);
+}
+.categories-count-total {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* Search + sort: round ghost icon buttons (icon-only) */
+.categories-actions {
+  margin-top: 0;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.categories-actions .category-search-btn,
+.categories-actions .category-sort-btn {
+  flex: 0 0 auto;
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+}
+.categories-actions .category-search-btn:hover,
+.categories-actions .category-sort-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.categories-actions button i { width: 16px; height: 16px; }
+/* Icon-only sort — the dropdown itself shows the current choice */
+#categories-sort-label { display: none; }
+.category-search-btn.filter-active {
+  border: none;
+  color: #00f3ff;
+  background: rgba(0, 243, 255, 0.1);
+}
+
+/* Shared scroll area owns the scrolling… */
+.categories-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 0 6px 12px 0;
+}
+/* …so the inner list must stop scrolling on its own. */
+.categories-scroll .categories-list-container {
+  flex: none;
+  min-height: auto;
+  overflow: visible;
+  padding: 4px 4px 0;
+  gap: 1px;
+}
+
+/* Pins: plain rows, no card, no "PINNED" header chrome — a faint hairline
+   is the only separation from the category list below. */
+.categories-scroll .sidebar-top-pins {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  padding: 2px 4px 8px;
+  margin: 0 0 6px;
+  border-bottom: 1px solid var(--rd-hairline-soft);
+  flex-shrink: 0;
+}
+.sidebar-top-pins .pin-title-row { display: none; }
+.sidebar-top-pins .sidebar-pin-list {
+  max-height: none !important;
+  opacity: 1 !important;
+  gap: 1px;
+}
+
+/* Unified row language: pins and categories look identical */
+.pin-item,
+.category-item {
+  padding: 9px 12px;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+.pin-item .pin-label { color: inherit; }
+.pin-item:hover,
+.category-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  transform: translateX(3px);
+}
+
+/* Counts: plain numbers, revealed on hover / focus / active */
+.pin-count,
+.cat-count {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.pin-item:hover .pin-count,
+.pin-item.tv-focused .pin-count,
+.pin-item.active .pin-count,
+.category-item:hover .cat-count,
+.category-item.tv-focused .cat-count,
+.category-item.active .cat-count {
+  opacity: 1;
+}
+
+/* Active row: solid accent fill, white text */
+.pin-item.active,
+.category-item.active {
+  background: var(--rd-accent-solid);
+  border: none;
+  color: #fff;
+  font-weight: 700;
+}
+.category-item.active::before { display: none; }
+.category-item.active .cat-count,
+.pin-item.active .pin-count { color: rgba(255, 255, 255, 0.85); }
+.pin-item.active .pin-label i { color: #fff; }
+
+/* Legacy country-code chip: gone */
+.cat-cc { display: none; }
+
+/* Hover-indent is a transform — skip it on weak GPUs */
+body.perf-lite .pin-item:hover,
+body.perf-lite .category-item:hover { transform: none; }
+
+/* D-pad focus: clean ring + soft fill — kill the legacy !important
+   left-border/tint from style.css so borderless rows stay clean. */
+.category-item.tv-focused {
+  border: none !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+.pin-item.active.tv-focused,
+.category-item.active.tv-focused {
+  background: var(--rd-accent-solid) !important;
+}
+
+/* Phone-portrait drawer: keep its opaque panel (the transparent .sidebar
+   above would otherwise make the slide-in drawer see-through). */
+@media (max-width: 900px) and (orientation: portrait) {
+  .sidebar {
+    background: var(--bg-panel);
+    border-right: 1px solid var(--border-color);
+  }
+}
+
+/* ---- Live channels section: Netflix-style (matches the sidebar) ----
+   Ghost controls row, bold "Channels" title, flat solid cards with no
+   borders; the favourite star fades in on hover/focus/favourited; the
+   playing card gets the solid accent fill. Card-grid (.timeline-hidden)
+   only — the full EPG guide keeps its dense list styling. */
+
+/* Controls row: no divider, ghost buttons */
+.epg-controls-header {
+  border-bottom: none;
+  padding: 0 14px;
+}
+.epg-ctrl-btn {
+  border: none;
+  background: transparent;
+  border-radius: 999px;
+  height: 36px;
+  padding: 0 14px;
+  color: var(--text-secondary);
+}
+.epg-ctrl-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border-color: transparent;
+}
+.epg-ctrl-btn.active {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+/* Icon-only circles: refresh + the search-field icon */
+#epg-refresh-btn,
+.epg-ctrl-btn-icon {
+  width: 36px;
+  min-width: 36px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 50%;
+}
+.epg-ctrl-btn i { width: 16px; height: 16px; }
+
+/* Inline channel search field: icon button + a real input in one pill */
+.epg-search-field {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  min-width: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  transition: background 0.15s ease;
+}
+.epg-search-field:focus-within { background: rgba(255, 255, 255, 0.1); }
+.epg-search-field #epg-channels-filter-btn:hover { background: transparent; }
+#epg-channels-search-input {
+  width: clamp(140px, 22vw, 260px);
+  height: 100%;
+  padding: 0 16px 0 0;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  outline: none;
+}
+#epg-channels-search-input::placeholder { color: var(--text-muted); }
+
+/* TV: collapse the field back to the icon-only button — it opens the
+   on-screen keyboard there (real inputs don't D-pad well). */
+body.tv-layout #epg-channels-search-input { display: none; }
+body.tv-layout .epg-search-field { background: transparent; }
+
+/* Narrow screens: shorter field, Guide collapses to its icon */
+@media (max-width: 760px) {
+  #epg-channels-search-input { width: 120px; }
+  #epg-full-btn .epg-full-btn-label { display: none; }
+  #epg-full-btn {
+    width: 36px;
+    min-width: 36px;
+    padding: 0;
+    justify-content: center;
+    border-radius: 50%;
+  }
+}
+.epg-ctrl-btn.filter-active {
+  border: none;
+  color: #00f3ff;
+  background: rgba(0, 243, 255, 0.1);
+}
+/* "Guide" stays the one labelled action — quiet accent pill */
+#epg-full-btn {
+  background: rgba(59, 130, 246, 0.16);
+  border: none;
+  color: #dbe9ff;
+}
+#epg-full-btn:hover {
+  background: rgba(59, 130, 246, 0.3);
+  color: #fff;
+}
+
+/* "Channels (N)" reads like the sidebar's "Categories" title */
+.epg-section-container.timeline-hidden .epg-timeline-header-row {
+  border-bottom: none;
+}
+.epg-section-container.timeline-hidden .epg-channel-header-cell {
+  font-family: var(--font-title);
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  color: var(--text-primary);
+  padding: 4px 18px 0;
+}
+.epg-section-container.timeline-hidden .epg-channel-header-cell #epg-visible-count {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+
+/* Cards: flat solid tiles — no border, no glass */
+.epg-section-container.timeline-hidden .epg-channel-row {
+  border: none;
+  border-radius: 12px;
+  background: var(--bg-panel);
+  padding: 14px 16px;
+}
+.epg-section-container.timeline-hidden .epg-channel-row:hover {
+  background: var(--bg-surface);
+  border-color: transparent;
+  transform: translateY(-3px);
+}
+.epg-section-container.timeline-hidden .epg-channel-row-logo {
+  width: 56px;
+  height: 56px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.epg-section-container.timeline-hidden .epg-channel-row-name {
+  font-size: 0.92rem;
+}
+
+/* Favourite star: hidden until hover / D-pad focus / already favourited */
+.epg-section-container.timeline-hidden .epg-channel-row-fav {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.epg-section-container.timeline-hidden .epg-channel-row:hover .epg-channel-row-fav,
+.epg-section-container.timeline-hidden .epg-channel-row.tv-focused .epg-channel-row-fav,
+.epg-section-container.timeline-hidden .epg-channel-row.active .epg-channel-row-fav,
+.epg-section-container.timeline-hidden .epg-channel-row-fav.favorited {
+  opacity: 1;
+}
+
+/* Playing card: solid accent fill, white text (same as the sidebar) */
+.epg-section-container.timeline-hidden .epg-channel-row.active {
+  background: var(--rd-accent-solid);
+  border-color: transparent;
+}
+.epg-section-container.timeline-hidden .epg-channel-row.active .epg-channel-row-logo {
+  background: rgba(255, 255, 255, 0.16);
+}
+.epg-section-container.timeline-hidden .epg-channel-row.active .now-seg-time,
+.epg-section-container.timeline-hidden .epg-channel-row.active .now-seg-title {
+  color: rgba(255, 255, 255, 0.88);
+}
+.epg-section-container.timeline-hidden .epg-channel-row.active .epg-channel-row-fav {
+  color: #fff;
+}
+
+/* D-pad focus in card mode: ring + lift. Fully neutralizes the legacy
+   style.css rule (cyan !important border, scale(1.04), glow) — the scale
+   blew a full-width list row past its container and clipped the ring. */
+.epg-section-container.timeline-hidden .epg-channel-row.tv-focused {
+  border: none !important;
+  border-radius: 12px;
+  background: var(--bg-surface) !important;
+  transform: translateY(-3px);
+  box-shadow: var(--rd-focus-ring) !important;
+}
+.epg-section-container.timeline-hidden .epg-channel-row.active.tv-focused {
+  background: var(--rd-accent-solid) !important;
+}
+/* Containment (content-visibility) clips box-shadows at the card box —
+   lift it while a row is hovered/focused/active so the ring renders. */
+.epg-section-container.timeline-hidden .epg-channel-row:hover,
+.epg-section-container.timeline-hidden .epg-channel-row.tv-focused,
+.epg-section-container.timeline-hidden .epg-channel-row.active {
+  content-visibility: visible;
+}
+body.perf-lite .epg-section-container.timeline-hidden .epg-channel-row.tv-focused {
+  transform: none;
+}
+
+/* Card lift is a transform — skip it on weak GPUs */
+body.perf-lite .epg-section-container.timeline-hidden .epg-channel-row:hover {
+  transform: none;
+}
+
+/* ---- List view (#epg-view-toggle-btn): cards flatten into slim rows ----
+   Same Netflix row language as the sidebar; the toggle is hidden while the
+   full guide is open (that layout is already a list). */
+.epg-section-container:not(.timeline-hidden) #epg-view-toggle-btn { display: none; }
+
+.epg-section-container.timeline-hidden.epg-list-view .epg-channels-column {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* 8px top so the first row's 6px focus ring isn't clipped by the
+     scroll container */
+  padding: 8px 16px 16px;
+}
+.epg-section-container.timeline-hidden.epg-list-view .epg-channel-row {
+  min-height: 48px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: transparent;
+  contain-intrinsic-size: auto 48px;
+}
+.epg-section-container.timeline-hidden.epg-list-view .epg-channel-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+  transform: none;
+}
+.epg-section-container.timeline-hidden.epg-list-view .epg-channel-row-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+}
+/* Name + now-playing sit inline again */
+.epg-section-container.timeline-hidden.epg-list-view .epg-channel-row-meta {
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  padding-right: 0;
+}
+.epg-section-container.timeline-hidden.epg-list-view .epg-channel-row-name {
+  flex: 0 0 220px;
+  width: 220px;
+}
+.epg-section-container.timeline-hidden.epg-list-view .epg-channel-name-text {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  -webkit-line-clamp: unset;
+}
+/* Room for NOW + NEXT in a full-width row */
+.epg-section-container.timeline-hidden.epg-list-view .now-seg.is-next {
+  display: inline-flex;
+}
+/* Star flows at the row's end instead of floating over the card */
+.epg-section-container.timeline-hidden.epg-list-view .epg-channel-row-fav {
+  position: static;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* Solid accent + focus behaviour is inherited from the card rules above
+   (selectors still match) — but full-width rows must never scale or lift:
+   any transform grows them past the container and clips the focus ring. */
+.epg-section-container.timeline-hidden.epg-list-view .epg-channel-row.active:hover,
+.epg-section-container.timeline-hidden.epg-list-view .epg-channel-row.tv-focused {
+  transform: none;
+}
+.epg-section-container.timeline-hidden.epg-list-view .epg-channel-row.tv-focused {
+  border-radius: 8px;
+}
+
+/* TV: roomier rows */
+body.tv-layout .epg-section-container.timeline-hidden.epg-list-view .epg-channel-row {
+  min-height: 3.4rem;
+  padding: 0.5rem 0.9rem;
+}
+body.tv-layout .epg-section-container.timeline-hidden.epg-list-view .epg-channel-row-name {
+  flex-basis: 16rem;
+  width: 16rem;
+}
+
+/* Narrow screens: the fixed name column would starve the now-line */
+@media (max-width: 760px) {
+  .epg-section-container.timeline-hidden.epg-list-view .epg-channel-row-name {
+    flex: 0 0 140px;
+    width: 140px;
+  }
+  .epg-section-container.timeline-hidden.epg-list-view .now-seg.is-next {
+    display: none;
+  }
+}
+
+/* ---- Player overlay: Netflix-style scrim + ghost controls ----
+   Center play / prev / next cluster stays (Leon's call); everything else
+   loses its boxes — ghost utility icons, slim progress bar that grows under
+   the pointer, quiet corner pills. */
+
+/* Scrim: lighter up top, deeper where the controls sit */
+.player-controls-overlay {
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.55) 0%,
+    rgba(0, 0, 0, 0) 22%,
+    rgba(0, 0, 0, 0) 55%,
+    rgba(0, 0, 0, 0.92) 100%
+  );
+  padding: 16px 18px 12px;
+}
+
+/* Corner pills: quiet, borderless */
+.live-tag {
+  background: rgba(0, 0, 0, 0.45);
+  border: none;
+  color: #fff;
+  letter-spacing: 0.06em;
+}
+.fps-indicator,
+.player-quality-badge {
+  background: rgba(0, 0, 0, 0.45);
+  border: none;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.75);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Center cluster: play keeps its accent circle; chevrons + ±10s go frosted */
+.player-play-btn {
+  background: var(--rd-accent-solid);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+.player-play-btn:hover {
+  transform: scale(1.06);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55);
+}
+.player-skip-btn,
+.player-seek10-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast), transform var(--transition-fast);
+}
+.player-skip-btn:hover,
+.player-seek10-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  transform: scale(1.05);
+}
+
+/* Utility row: ghost icons — no circles, no borders, no blur */
+.player-control-icon {
+  background: transparent;
+  border: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  color: rgba(255, 255, 255, 0.78);
+  border-radius: 50%;
+}
+.player-control-icon:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  transform: none;
+}
+.control-row-right { gap: 4px; }
+
+/* Title block */
+.player-playing-title { font-size: 0.95rem; }
+.player-playing-epg { color: rgba(255, 255, 255, 0.6); }
+
+/* Progress: slim track that grows on hover; white thumb */
+.player-seek { gap: 10px; }
+.player-seek-time {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  font-variant-numeric: tabular-nums;
+  min-width: 40px;
+  text-shadow: none;
+}
+.player-seek-bar {
+  height: 4px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.22);
+  transition: height 0.12s ease;
+}
+.player-seek:hover .player-seek-bar { height: 6px; }
+.player-seek-bar::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+.player-seek-bar::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  background: #fff;
+}
+/* At the live edge the whole track fills accent (thumb is hidden there) */
+body.ts-at-live #player-seek { background: var(--rd-accent-solid); }
+
+/* LIVE badge on the bar becomes a pill; red-tinted when at the edge */
+.player-live-badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.player-live-badge.at-live { background: rgba(239, 68, 68, 0.14); }
+
+/* Volume: slimmer */
+.player-volume-slider {
+  width: 72px;
+  height: 3px;
+  border-radius: 99px;
+}
+.player-volume-slider::-webkit-slider-thumb { width: 10px; height: 10px; }
+
+/* Hover transforms on the transport cluster — off on weak GPUs */
+body.perf-lite .player-play-btn:hover,
+body.perf-lite .player-skip-btn:hover,
+body.perf-lite .player-seek10-btn:hover { transform: none; }
+
+/* ---- Channel-switch OSD (zap panel) ----
+   Same row language as the rest of the app: dim neighbour rows, solid
+   accent current row. Background stays blur-free on purpose — see the
+   GPU note in style.css (.channel-info-banner). */
+.channel-info-banner {
+  border-radius: 16px;
+  padding: 14px;
+  background: rgba(10, 14, 24, 0.94);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+}
+.channel-info-banner .cib-datetime {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.channel-info-banner .cib-list {
+  border-top-color: rgba(255, 255, 255, 0.07);
+  gap: 1px;
+}
+.channel-info-banner .cib-row {
+  padding: 7px 10px;
+  border-radius: 8px;
+  opacity: 0.62;
+}
+.channel-info-banner .cib-row.current {
+  background: var(--rd-accent-solid);
+  border-left: none;
+  padding-left: 10px;
+  opacity: 1;
+}
+.channel-info-banner .cib-row.current .cib-row-logo { color: #fff; }
+.channel-info-banner .cib-row.current .cib-row-name { font-weight: 600; }
+/* Per-row now-playing (right-aligned, muted; readable on the accent row) */
+.channel-info-banner .cib-row-now {
+  flex-shrink: 0;
+  max-width: 130px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.channel-info-banner .cib-row.current .cib-row-now {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* ---- VOD poster cards: pure poster, info on hover (Netflix-style) ---- */
+.vod-card {
+  border-radius: 12px;
+  overflow: visible;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  transition: transform 0.18s cubic-bezier(0.33, 1, 0.68, 1);
+}
+.vod-card .vod-poster-wrapper {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.vod-card:hover { transform: translateY(-4px) scale(1.03); }
+.vod-card:hover .vod-poster-wrapper {
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: var(--rd-card-shadow);
+}
+.vod-card .vod-card-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.vod-card:hover .vod-card-title { color: var(--text-primary); }
+
+/* Continue-watching cards get the same lift */
+.continue-card { transition: transform 0.18s cubic-bezier(0.33, 1, 0.68, 1); }
+.continue-card:hover { transform: translateY(-3px) scale(1.02); }
+
+/* ---- View headers ---- */
+.vod-view-header h2 {
+  font-family: var(--font-title);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+/* ---- Modals: deeper glass, tighter radius ---- */
+.vod-modal-content,
+.settings-card,
+.recordings-modal-card {
+  border-radius: 20px;
+  border: 1px solid var(--rd-hairline-strong);
+  box-shadow: 0 40px 120px rgba(0, 0, 0, 0.7);
+}
+
+/* ---- Settings tiles ---- */
+.settings-tile {
+  border-radius: 16px;
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+.settings-tile:hover { transform: translateY(-2px); }
+
+/* ---- Login screen: cinematic backdrop ---- */
+.login-container {
+  background:
+    radial-gradient(1200px 700px at 80% -10%, rgba(37, 99, 235, 0.18), transparent 55%),
+    radial-gradient(900px 600px at -10% 110%, rgba(6, 182, 212, 0.12), transparent 55%),
+    linear-gradient(180deg, #05070d, #04060b);
+}
+.login-card {
+  border-radius: 22px;
+  border: 1px solid var(--rd-hairline-strong);
+}
+
+/* ==========================================================================
+   6. GLOBAL D-PAD FOCUS LANGUAGE (all platforms, amplified on TV)
+   Netflix-style: white ring + lift. tv-navigation.js applies .tv-focused.
+   ========================================================================== */
+.tv-focused {
+  outline: none !important;
+}
+.vod-card.tv-focused {
+  transform: scale(1.08);
+  z-index: 5;
+}
+.vod-card.tv-focused .vod-poster-wrapper {
+  box-shadow: var(--rd-focus-glow);
+  border-color: transparent;
+}
+.vod-card.tv-focused .vod-card-title { color: #fff; }
+
+.continue-card.tv-focused {
+  transform: scale(1.06);
+  box-shadow: var(--rd-focus-ring);
+  border-radius: 12px;
+  z-index: 5;
+}
+
+.category-item.tv-focused,
+.pin-item.tv-focused,
+.epg-channel-row.tv-focused,
+.episode-list-row.tv-focused,
+.playlist-row.tv-focused,
+.settings-tile.tv-focused,
+.page-btn.tv-focused,
+.vod-filter-btn.tv-focused,
+.epg-ctrl-btn.tv-focused,
+.epg-nav-btn.tv-focused {
+  box-shadow: var(--rd-focus-ring);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.player-control-icon.tv-focused,
+.player-play-btn.tv-focused,
+.player-skip-btn.tv-focused,
+.player-seek10-btn.tv-focused,
+.player-back-btn.tv-focused {
+  box-shadow: var(--rd-focus-ring);
+  border-radius: 50%;
+}
+
+/* ==========================================================================
+   7. TV LEANBACK LAYER (body.tv-layout)
+   RESOLUTION-PROOF SIZING: the root font-size tracks viewport width
+   (16px @ 1920, ~10.7px @ 1280×720, capped @ 4K), and every TV override
+   below is authored in rem. main.js additionally forces a width=1920
+   viewport on native TV webviews so legacy px rules scale uniformly too —
+   no more oversized, cropped UI on 720p panels.
+   ========================================================================== */
+html.tv-layout { font-size: clamp(9px, 0.8333vw, 32px); }
+
+body.tv-layout {
+  --rail-w: 5rem;
+  --rail-w-expanded: 17rem;
+}
+
+/* ---- Header becomes a floating clock (top-right); rail owns nav ---- */
+body.tv-layout .top-header {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: auto;
+  width: auto;
+  height: auto;
+  padding: 1.1rem 2rem 0 0;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none;
+  pointer-events: none;
+  z-index: 500;
+}
+body.tv-layout .top-header .header-left,
+body.tv-layout .top-header #mobile-menu-btn,
+body.tv-layout .top-header #global-search-btn,
+body.tv-layout .top-header #global-search-field {
+  display: none !important;
+}
+body.tv-layout .header-clock {
+  align-items: flex-end;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+}
+body.tv-layout .header-clock #current-time { font-size: 1.35rem; }
+body.tv-layout .header-clock #current-date { font-size: 0.85rem; }
+
+/* Content column starts at the very top now (header floats) */
+body.tv-layout .app-main { margin-left: var(--rail-w); }
+
+/* ---- Rail: leanback sizing + expand on D-pad focus ---- */
+body.tv-layout .side-rail {
+  padding: 1.5rem 0 1.2rem;
+  gap: 0.4rem;
+}
+body.tv-layout .rail-logo { padding: 0 1.15rem 1rem; }
+body.tv-layout .rail-logo-img { width: 2.6rem; height: 2.6rem; }
+body.tv-layout .rail-wordmark { font-size: 1.25rem; }
+body.tv-layout .rail-group { padding: 0 0.8rem; gap: 0.35rem; }
+body.tv-layout .side-rail .rail-item,
+body.tv-layout .side-rail .nav-tab,
+body.tv-layout .side-rail .nav-tab.active {
+  height: 3.4rem;
+  padding: 0 1rem;
+  border-radius: 0.8rem;
+  font-size: 1.1rem;
+  gap: 1rem;
+}
+body.tv-layout .side-rail .rail-item i,
+body.tv-layout .side-rail .rail-item svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+body.tv-layout .side-rail .profile-card { height: 3.8rem; padding: 0 0.55rem; border-radius: 0.9rem; }
+body.tv-layout .side-rail .profile-avatar { width: 2.4rem; height: 2.4rem; font-size: 0.85rem; border-radius: 0.65rem; }
+body.tv-layout .side-rail .profile-name { font-size: 0.95rem; max-width: 10rem; }
+body.tv-layout .side-rail .profile-status { font-size: 0.8rem; }
+
+/* No hover on TV: rail expands only while the D-pad is inside it
+   (tv-navigation.js toggles .rail-expanded when the 'tabs' zone is active). */
+body.tv-layout .side-rail:hover { width: var(--rail-w); }
+body.tv-layout .side-rail:hover .rail-label { opacity: 0; }
+body.tv-layout .side-rail.rail-expanded { width: var(--rail-w-expanded); }
+body.tv-layout .side-rail.rail-expanded .rail-label { opacity: 1; transform: translateX(0); }
+
+/* ---- Categories column: rem-scaled (overrides legacy px) ---- */
+body.tv-layout .sidebar {
+  width: 20rem;
+  padding: 1.2rem 1rem;
+  gap: 1rem;
+}
+body.tv-layout .pin-item,
+body.tv-layout .category-item {
+  padding: 0.8rem 0.9rem;
+  font-size: 1.05rem;
+  border-radius: 0.6rem;
+}
+body.tv-layout .pin-label i { width: 1.15rem; height: 1.15rem; }
+body.tv-layout .pin-count,
+body.tv-layout .cat-count { font-size: 0.85rem; }
+body.tv-layout .categories-title { font-size: 1.2rem; }
+body.tv-layout .categories-actions .category-search-btn,
+body.tv-layout .categories-actions .category-sort-btn {
+  width: 2.4rem;
+  min-width: 2.4rem;
+  height: 2.4rem;
+}
+body.tv-layout .categories-actions button i { width: 1.1rem; height: 1.1rem; }
+
+/* ---- Player stage & controls: rem-scaled ---- */
+body.tv-layout .live-top-row { padding: 1.4rem 1.75rem 0.5rem; }
+body.tv-layout .player-wrapper {
+  height: 46vh;
+  min-height: 0;
+  border-radius: 1.1rem;
+  overflow: hidden;
+}
+body.tv-layout .player-controls-overlay { padding: 1.4rem 1.75rem; }
+body.tv-layout .player-playing-title { font-size: 1.5rem; }
+body.tv-layout .player-playing-epg { font-size: 1.05rem; }
+body.tv-layout .live-tag { font-size: 0.85rem; padding: 0.35rem 0.85rem 0.35rem 0.7rem; }
+body.tv-layout .player-control-icon { width: 3rem; height: 3rem; }
+body.tv-layout .player-control-icon i { width: 1.4rem; height: 1.4rem; }
+body.tv-layout .player-play-btn { width: 4rem; height: 4rem; }
+body.tv-layout .player-skip-btn { width: 3rem; height: 3rem; }
+body.tv-layout .player-volume-slider { display: none; } /* D-pad uses TV volume */
+
+/* ---- Channel cards under the player: rem-scaled 4-up grid ---- */
+body.tv-layout .epg-controls-header { height: 3.75rem; padding: 0 1.25rem; }
+body.tv-layout .epg-ctrl-btn {
+  font-size: 0.95rem;
+  height: 2.6rem;
+  padding: 0 1rem;
+  border-radius: 999px;
+}
+body.tv-layout #epg-refresh-btn,
+body.tv-layout .epg-ctrl-btn-icon {
+  width: 2.6rem;
+  min-width: 2.6rem;
+  padding: 0;
+  border-radius: 50%;
+}
+body.tv-layout .epg-ctrl-btn i { width: 1.1rem; height: 1.1rem; }
+body.tv-layout .epg-section-container.timeline-hidden .epg-channels-column {
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.1rem;
+  padding: 1.1rem 1.75rem 1.75rem;
+}
+body.tv-layout .epg-section-container.timeline-hidden .epg-channel-row {
+  padding: 0.9rem;
+  border-radius: 0.9rem;
+}
+body.tv-layout .epg-section-container.timeline-hidden .epg-channel-row-logo {
+  width: 3.1rem;
+  height: 3.1rem;
+}
+body.tv-layout .epg-channel-row-name { font-size: 1.05rem; }
+body.tv-layout .now-seg-time,
+body.tv-layout .now-seg-title { font-size: 0.9rem; }
+
+/* ---- VOD catalogs: big posters, breathing room ---- */
+body.tv-layout .vod-view-header h2 { font-size: 1.7rem; }
+body.tv-layout .vod-filter-btn { font-size: 1rem; padding: 0.6rem 1.1rem; border-radius: 0.7rem; }
+body.tv-layout .vod-grid {
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)) !important;
+  gap: 1.5rem 1.15rem;
+  padding: 0.8rem 1.75rem 2rem;
+}
+body.tv-layout .vod-card .vod-card-title { font-size: 0.95rem; }
+body.tv-layout .vod-card.tv-focused { transform: scale(1.1); }
+body.tv-layout .page-btn { font-size: 1rem; min-width: 2.6rem; height: 2.6rem; border-radius: 0.65rem; }
+
+/* ---- Series playback dashboard ---- */
+body.tv-layout .series-back-btn { font-size: 1.05rem; padding: 0.6rem 1.1rem; }
+body.tv-layout .episode-list-row { padding: 0.9rem 1rem; border-radius: 0.8rem; }
+
+/* ---- Modals & settings: rem-scaled, centered stage ---- */
+body.tv-layout .settings-card { max-width: 62rem; border-radius: 1.4rem; }
+body.tv-layout .settings-tile { padding: 1.4rem; border-radius: 1.1rem; }
+body.tv-layout .settings-tile-title { font-size: 1.1rem; }
+body.tv-layout .settings-tile-sub { font-size: 0.9rem; }
+body.tv-layout .vod-modal-content { max-width: 70rem; border-radius: 1.4rem; }
+
+/* ---- Login on TV: big, centered, D-pad friendly ---- */
+body.tv-layout .login-card {
+  max-width: 34rem;
+  padding: 2.2rem 2.4rem;
+  border-radius: 1.5rem;
+}
+body.tv-layout .login-card h2 { font-size: 1.6rem; }
+body.tv-layout .remote-login-code { font-size: 2.2rem; letter-spacing: 0.35em; }
+
+/* ---- Focus ring thickness rides the scale too ---- */
+body.tv-layout {
+  --rd-focus-ring: 0 0 0 0.2rem rgba(255, 255, 255, 0.95), 0 0 0 0.4rem rgba(56, 189, 248, 0.45);
+  --rd-focus-glow: 0 0 0 0.2rem rgba(255, 255, 255, 0.95), 0 0 0 0.4rem rgba(56, 189, 248, 0.45), 0 1.1rem 2.75rem rgba(0, 0, 0, 0.6);
+}
+body.tv-layout .tv-focused { scroll-margin: 6rem; }
+
+/* ==========================================================================
+   8. PHONE — PORTRAIT
+   Bottom tab bar owns navigation; the rail is hidden. Categories live in the
+   existing slide-over drawer (hamburger). Poster grid tightens to 3-up.
+   ========================================================================== */
+@media (max-width: 900px) and (orientation: portrait) {
+  .side-rail { display: none !important; }
+  .app-main { margin-left: 0; }
+
+  .top-header {
+    height: 56px;
+    padding: 0 10px;
+    background: transparent;
+    border-bottom: 1px solid var(--rd-hairline-soft);
+  }
+  .top-header .header-logo { width: 28px; height: 28px; }
+  .top-header .logo-wordmark { font-size: 0.95rem; }
+
+  /* Floating pill tab bar (over the existing fixed-bar rules in style.css) */
+  .mobile-tab-bar {
+    left: 10px;
+    right: 10px;
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    padding: 6px;
+    border-radius: 22px;
+    border: 1px solid var(--rd-hairline-strong);
+    background: rgba(10, 14, 24, 0.82);
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  }
+  .mobile-tab-btn {
+    min-height: 50px;
+    border-radius: 16px;
+    gap: 2px;
+  }
+  .mobile-tab-btn.active {
+    color: #fff;
+    background: var(--rd-active-tint);
+    border: 1px solid var(--rd-active-border);
+  }
+  .mobile-tab-btn.active i { color: #38bdf8; }
+
+  /* Content clears the floating bar */
+  .content-viewport,
+  .vod-scroll-container { padding-bottom: 84px; }
+
+  /* Poster grid: tight 3-up like mobile Netflix */
+  .vod-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 14px 10px;
+    padding: 10px 12px 90px;
+  }
+  .vod-card .vod-card-title { font-size: 0.72rem; }
+  .vod-card:hover { transform: none; } /* no hover-lift on touch */
+
+  /* Categories drawer: glassier panel, rounded leading edge */
+  .sidebar {
+    width: min(320px, 86vw);
+    left: calc(-1 * min(320px, 86vw));
+    border-radius: 0 22px 22px 0;
+    background: rgba(10, 14, 24, 0.94);
+    -webkit-backdrop-filter: blur(28px);
+    backdrop-filter: blur(28px);
+    border-right: 1px solid var(--rd-hairline-strong);
+  }
+
+  /* Modals become bottom sheets */
+  #settings-modal.modal-overlay { align-items: flex-end; padding: 0; }
+  #settings-modal .settings-card {
+    width: 100%;
+    max-width: 100%;
+    max-height: 86vh;
+    border-radius: 24px 24px 0 0;
+    border-bottom: none;
+  }
+  #vod-modal .vod-modal-content {
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 0;
+  }
+}
+
+/* ==========================================================================
+   9. PHONE — LANDSCAPE
+   Player-forward: compact icon rail (nav stays reachable), no header, full
+   vertical space for video + lists. Guarded against TV webviews that report
+   small CSS viewports.
+
+   Triggered by HEIGHT, not width: phones in landscape report anywhere from
+   360 CSS px (DPR 3) to ~540 CSS px (DPR 2) tall — width-based breakpoints
+   (max-width: 1024) missed DPR-2 phones (~1170 px wide), which then got the
+   full desktop layout squeezed into a 540px strip.
+   ========================================================================== */
+@media (max-height: 620px) and (orientation: landscape) {
+  body:not(.tv-layout) {
+    --rail-w: 58px;
+  }
+
+  /* Rail: always-collapsed icon strip — no hover/focus expansion on touch */
+  body:not(.tv-layout) .side-rail,
+  body:not(.tv-layout) .side-rail:hover,
+  body:not(.tv-layout) .side-rail:focus-within,
+  body:not(.tv-layout) .side-rail.rail-expanded {
+    width: var(--rail-w);
+    padding: 10px 0 8px;
+    box-shadow: none;
+  }
+  body:not(.tv-layout) .side-rail .rail-label { opacity: 0 !important; }
+  body:not(.tv-layout) .rail-logo { padding: 0 14px 8px; }
+  body:not(.tv-layout) .rail-logo-img { width: 30px; height: 30px; }
+  body:not(.tv-layout) .rail-group { padding: 0 9px; }
+  body:not(.tv-layout) .side-rail .rail-item,
+  body:not(.tv-layout) .side-rail .nav-tab,
+  body:not(.tv-layout) .side-rail .nav-tab.active {
+    height: 40px;
+    padding: 0 9px;
+    border-radius: 10px;
+  }
+  body:not(.tv-layout) .side-rail .rail-item i { width: 20px; height: 20px; }
+  body:not(.tv-layout) .side-rail .profile-card { height: 44px; padding: 0 4px; border-radius: 10px; }
+  body:not(.tv-layout) .side-rail .profile-avatar { width: 30px; height: 30px; font-size: 0.7rem; }
+
+  /* Header gone — every vertical pixel goes to content */
+  body:not(.tv-layout) .top-header { display: none !important; }
+  body:not(.tv-layout) .main-body-container { height: 100%; }
+
+  /* No bottom bar in landscape (portrait-only pattern) */
+  body:not(.tv-layout) .mobile-tab-bar { display: none !important; }
+
+  /* Live TV: video dominates, program details panel yields */
+  body:not(.tv-layout) #live-view .program-details-panel { display: none; }
+}
+
+/* Compact everything for the short landscape strip. The legacy compaction in
+   style.css only fired below 500px tall, so DPR-2 phones (~540px) rendered
+   desktop-sized pins/categories/buttons — the "cramped" look. These rules own
+   the whole 620px-and-under landscape band. */
+@media (max-height: 620px) and (orientation: landscape) {
+  /* --- Categories sidebar: narrow column, dense rows --- */
+  body:not(.tv-layout) .sidebar {
+    width: 212px;
+    min-width: 212px;
+    padding: 8px;
+    gap: 8px;
+  }
+  body:not(.tv-layout) .sidebar-top-pins { padding: 6px 8px; }
+  body:not(.tv-layout) .pin-title-row { font-size: 0.6rem; padding: 3px 6px; }
+  body:not(.tv-layout) .pin-item {
+    padding: 5px 8px;
+    font-size: 0.74rem;
+    border-radius: 8px;
+  }
+  body:not(.tv-layout) .pin-label { gap: 6px; }
+  body:not(.tv-layout) .pin-label i { width: 13px; height: 13px; }
+  body:not(.tv-layout) .pin-count { font-size: 0.62rem; padding: 1px 6px; }
+
+  body:not(.tv-layout) .categories-search-section { padding: 6px 8px; }
+  body:not(.tv-layout) .categories-title { font-size: 0.62rem; }
+  body:not(.tv-layout) .categories-count-total { font-size: 0.62rem; }
+  body:not(.tv-layout) .category-search-btn,
+  body:not(.tv-layout) .categories-actions button {
+    padding: 5px 8px;
+    font-size: 0.7rem;
+    border-radius: 8px;
+  }
+  body:not(.tv-layout) .categories-actions button i { width: 13px; height: 13px; }
+  body:not(.tv-layout) .categories-list-container { padding: 4px; }
+  body:not(.tv-layout) .category-item {
+    padding: 5px 8px;
+    font-size: 0.74rem;
+    border-radius: 8px;
+  }
+  body:not(.tv-layout) .cat-cc { min-width: 26px; height: 18px; font-size: 0.56rem; }
+  body:not(.tv-layout) .cat-count { font-size: 0.62rem; }
+
+  /* --- Live view: tighter chrome around the video + channel cards --- */
+  body:not(.tv-layout) .live-top-row { padding: 8px 10px 4px; }
+  body:not(.tv-layout) .epg-controls-header { height: 42px; padding: 0 10px; }
+  body:not(.tv-layout) .epg-ctrl-btn {
+    padding: 5px 9px;
+    font-size: 0.72rem;
+    border-radius: 8px;
+  }
+  body:not(.tv-layout) .epg-ctrl-btn i { width: 14px; height: 14px; }
+  body:not(.tv-layout) .epg-nav-btn { padding: 5px 9px; font-size: 0.72rem; }
+  body:not(.tv-layout) .epg-channel-header-cell { font-size: 0.7rem; }
+  body:not(.tv-layout) .epg-section-container.timeline-hidden .epg-channel-row {
+    min-height: 52px;
+    padding: 7px 9px;
+    gap: 8px;
+  }
+  body:not(.tv-layout) .epg-section-container.timeline-hidden .epg-channel-row-logo {
+    width: 30px;
+    height: 30px;
+  }
+  body:not(.tv-layout) .epg-channel-row-name { font-size: 0.72rem; }
+  body:not(.tv-layout) .now-seg-time,
+  body:not(.tv-layout) .now-seg-title { font-size: 0.64rem; }
+
+  /* --- VOD grids: small posters, dense --- */
+  body:not(.tv-layout) .vod-view-header h2 { font-size: 1rem; }
+  body:not(.tv-layout) .vod-filter-btn { padding: 5px 10px; font-size: 0.72rem; }
+  body:not(.tv-layout) .vod-grid {
+    grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)) !important;
+    gap: 12px 10px;
+    padding: 8px 14px 20px;
+  }
+  body:not(.tv-layout) .vod-card .vod-card-title { font-size: 0.66rem; }
+}
+
+/* ==========================================================================
+   10. LEGACY NEUTRALIZERS
+   Rules in style.css that styled the old header-tab shell and now mis-target
+   the moved elements.
+   ========================================================================== */
+/* Old portrait rule hid .profile-card in the header — it lives in the rail
+   now (rail itself is hidden in portrait, so nothing else needed here). */
+
+/* Old landscape rules forced header nav-tab sizing; rail overrides win via
+   the #side-rail-scoped rules above (higher specificity + later cascade). */
+
+/* Touch devices: no hover/focus expansion — the rail stays a stable icon
+   strip (expansion is a pointer/D-pad affordance, not a touch one). */
+@media (hover: none) {
+  body:not(.tv-layout) .side-rail:hover,
+  body:not(.tv-layout) .side-rail:focus-within { width: var(--rail-w); }
+  body:not(.tv-layout) .side-rail:hover .rail-label,
+  body:not(.tv-layout) .side-rail:focus-within .rail-label { opacity: 0; }
+}
+
+/* ==========================================================================
+   11. RENDERING PERFORMANCE (all devices, most impactful on weak GPUs)
+   ========================================================================== */
+/* Let the browser skip layout + paint for off-screen cards entirely.
+   contain-intrinsic-size keeps the scrollbar stable while skipped. */
+.vod-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 240px;
+}
+.episode-list-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 64px;
+}
+.category-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 44px;
+}
+/* Containment clips shadows/focus rings at the element box — lift it while
+   an element is hovered or D-pad focused so rings and lift-shadows render. */
+.vod-card:hover,
+.vod-card.tv-focused,
+.episode-list-row:hover,
+.episode-list-row.tv-focused,
+.category-item:hover,
+.category-item.tv-focused {
+  content-visibility: visible;
+}
+
+/* Perf-lite (auto-on for Fire TV / smart TVs): the global blur-kill in
+   style.css already strips the rail/tab-bar backdrop blurs — these give the
+   translucent shell surfaces an opaque backing so they stay legible, and
+   drop the expensive expanded-rail drop shadow. */
+body.perf-lite .side-rail {
+  background: #0a0e18;
+}
+body.perf-lite .side-rail:hover,
+body.perf-lite .side-rail:focus-within,
+body.perf-lite .side-rail.rail-expanded {
+  background: #0a0e18;
+  box-shadow: none;
+}
+body.perf-lite .mobile-tab-bar {
+  background: #0a0e18;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+/* Hover-lift transforms trigger re-raster on weak GPUs — focus ring only. */
+body.perf-lite .vod-card:hover { transform: none; }
+body.perf-lite .continue-card:hover { transform: none; }

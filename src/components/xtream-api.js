@@ -526,7 +526,7 @@ export async function updateSettings(settings) {
   }
 }
 
-export async function syncPlaylist(progressCallback = null) {
+export async function syncPlaylist(progressCallback = null, { onLiveReady = null } = {}) {
   if (isServerMode) {
     const response = await fetch('/api/sync', { method: 'POST' });
     if (!response.ok) {
@@ -598,29 +598,41 @@ export async function syncPlaylist(progressCallback = null) {
 
     const baseApiUrl = `${creds.server_url}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}`;
 
-    if (progressCallback) progressCallback('Downloading playlist data…');
-    // Fetch every catalog concurrently. The network round-trips (not the DB
-    // writes) dominate sync time, and a large playlist has six big ones; doing
-    // them in parallel instead of one-after-another roughly halves the wait.
     const jget = (action) =>
       fetch(proxify(`${baseApiUrl}&action=${action}`)).then((r) => r.json()).catch(() => []);
-    const [
-      liveCategories, vodCategories, seriesCategories,
-      liveStreams, vodStreams, seriesStreams
-    ] = await Promise.all([
+
+    // Per-category counts are computed here (while the stream arrays are in
+    // memory anyway) and stored ON the category records, so getCategories()
+    // never has to materialize a whole stream table again — that full-table
+    // scan was one of the big startup costs on Fire TV / low-power devices.
+    const countByCategory = (rows) => {
+      const map = {};
+      for (const s of rows) {
+        map[s.category_id] = (map[s.category_id] || 0) + 1;
+      }
+      return map;
+    };
+    const embedCounts = (cats, counts) =>
+      (Array.isArray(cats) ? cats : []).map((c) => ({
+        ...c,
+        count: counts[String(c.category_id)] || 0
+      }));
+
+    // The sync now runs in three sequential stages (live → movies → series)
+    // instead of six concurrent downloads. Rationale for weak devices:
+    //   1. Live TV becomes usable as soon as stage 1 lands (onLiveReady) —
+    //      the user isn't stuck staring at a blocker while 30MB of VOD JSON
+    //      downloads and parses.
+    //   2. Peak memory is one catalog at a time instead of all six raw JSON
+    //      arrays + mapped copies held simultaneously (GC pressure was a big
+    //      part of the "very slow" feel on Fire Sticks).
+
+    // ---- Stage 1: LIVE (the critical path) ----
+    if (progressCallback) progressCallback('Downloading live channels…');
+    let [liveCategories, liveStreams] = await Promise.all([
       jget('get_live_categories'),
-      jget('get_vod_categories'),
-      jget('get_series_categories'),
-      jget('get_live_streams'),
-      jget('get_vod_streams'),
-      jget('get_series')
+      jget('get_live_streams')
     ]);
-
-    // Prepare mapped arrays beforehand (CPU work outside transaction)
-    const liveCatsMapped = Array.isArray(liveCategories) ? liveCategories : [];
-    const vodCatsMapped = Array.isArray(vodCategories) ? vodCategories : [];
-    const seriesCatsMapped = Array.isArray(seriesCategories) ? seriesCategories : [];
-
     const liveStreamsMapped = Array.isArray(liveStreams) ? liveStreams.map(s => ({
       stream_id: String(s.stream_id),
       category_id: String(s.category_id),
@@ -629,7 +641,29 @@ export async function syncPlaylist(progressCallback = null) {
       epg_channel_id: s.epg_channel_id || '',
       tv_archive: s.tv_archive || 0
     })) : [];
+    liveStreams = null; // release the raw payload before the next download
+    const liveCatsMapped = embedCounts(liveCategories, countByCategory(liveStreamsMapped));
+    liveCategories = null;
 
+    await db.transaction('rw', [db.live_categories, db.live_streams], async () => {
+      await db.live_categories.clear();
+      if (liveCatsMapped.length > 0) await db.live_categories.bulkAdd(liveCatsMapped);
+      await db.live_streams.clear();
+      if (liveStreamsMapped.length > 0) await db.live_streams.bulkAdd(liveStreamsMapped);
+    });
+    const liveCount = liveStreamsMapped.length;
+
+    // Live TV is browsable NOW — let the app paint while movies/series load.
+    if (onLiveReady) {
+      try { await onLiveReady({ live: liveCount }); } catch (e) { console.warn('onLiveReady failed:', e); }
+    }
+
+    // ---- Stage 2: MOVIES ----
+    if (progressCallback) progressCallback('Downloading movies…');
+    let [vodCategories, vodStreams] = await Promise.all([
+      jget('get_vod_categories'),
+      jget('get_vod_streams')
+    ]);
     const vodStreamsMapped = Array.isArray(vodStreams) ? vodStreams.map(s => ({
       stream_id: String(s.stream_id),
       category_id: String(s.category_id),
@@ -638,7 +672,24 @@ export async function syncPlaylist(progressCallback = null) {
       rating: parseFloat(s.rating) || 0,
       year: s.year || s.releaseDate || 'N/A'
     })) : [];
+    vodStreams = null;
+    const vodCatsMapped = embedCounts(vodCategories, countByCategory(vodStreamsMapped));
+    vodCategories = null;
 
+    await db.transaction('rw', [db.vod_categories, db.vod_streams], async () => {
+      await db.vod_categories.clear();
+      if (vodCatsMapped.length > 0) await db.vod_categories.bulkAdd(vodCatsMapped);
+      await db.vod_streams.clear();
+      if (vodStreamsMapped.length > 0) await db.vod_streams.bulkAdd(vodStreamsMapped);
+    });
+    const vodCount = vodStreamsMapped.length;
+
+    // ---- Stage 3: SERIES ----
+    if (progressCallback) progressCallback('Downloading series…');
+    let [seriesCategories, seriesStreams] = await Promise.all([
+      jget('get_series_categories'),
+      jget('get_series')
+    ]);
     const seriesStreamsMapped = Array.isArray(seriesStreams) ? seriesStreams.map(s => ({
       series_id: String(s.series_id || s.stream_id),
       category_id: String(s.category_id),
@@ -647,42 +698,59 @@ export async function syncPlaylist(progressCallback = null) {
       rating: parseFloat(s.rating) || 0,
       releaseDate: s.releaseDate || s.year || 'N/A'
     })) : [];
+    seriesStreams = null;
+    const seriesCatsMapped = embedCounts(seriesCategories, countByCategory(seriesStreamsMapped));
+    seriesCategories = null;
 
-    if (progressCallback) progressCallback('Saving playlist data…');
-
-    // Run clears and adds inside a single Dexie transaction for 5x-10x speedup
-    await db.transaction('rw', [
-      db.live_categories, db.vod_categories, db.series_categories,
-      db.live_streams, db.vod_streams, db.series_streams
-    ], async () => {
-      await db.live_categories.clear();
-      if (liveCatsMapped.length > 0) await db.live_categories.bulkAdd(liveCatsMapped);
-
-      await db.vod_categories.clear();
-      if (vodCatsMapped.length > 0) await db.vod_categories.bulkAdd(vodCatsMapped);
-
+    await db.transaction('rw', [db.series_categories, db.series_streams], async () => {
       await db.series_categories.clear();
       if (seriesCatsMapped.length > 0) await db.series_categories.bulkAdd(seriesCatsMapped);
-
-      await db.live_streams.clear();
-      if (liveStreamsMapped.length > 0) await db.live_streams.bulkAdd(liveStreamsMapped);
-
-      await db.vod_streams.clear();
-      if (vodStreamsMapped.length > 0) await db.vod_streams.bulkAdd(vodStreamsMapped);
-
       await db.series_streams.clear();
       if (seriesStreamsMapped.length > 0) await db.series_streams.bulkAdd(seriesStreamsMapped);
     });
 
+    stampLastSync();
+
     return {
       success: true,
       counts: {
-        live: liveStreams.length,
-        movies: vodStreams.length,
-        series: seriesStreams.length
+        live: liveCount,
+        movies: vodCount,
+        series: seriesStreamsMapped.length
       }
     };
   }
+}
+
+// ---- Sync freshness ------------------------------------------------------
+// Used to skip the automatic full re-download on every boot: on weak devices
+// (Fire TV, smart TVs) that background sync saturated CPU + network right at
+// startup and made the cached UI feel sluggish. Manual Refresh always syncs.
+function lastSyncKey() {
+  return `zp_last_sync_${getActiveIdLocal() || 'default'}`;
+}
+function stampLastSync() {
+  try { localStorage.setItem(lastSyncKey(), String(Date.now())); } catch (e) {}
+}
+export function getLastSyncAge() {
+  try {
+    const t = parseInt(localStorage.getItem(lastSyncKey()) || '0', 10);
+    if (!t) return Infinity;
+    return Date.now() - t;
+  } catch (e) { return Infinity; }
+}
+
+// Cheap "is there anything cached for this playlist?" check for the boot path.
+// (The old check ran getCategories(), which used to scan a full stream table.)
+export async function hasCachedData() {
+  await ensureServerMode();
+  if (isServerMode) {
+    try {
+      const res = await getCategories('live');
+      return !!(res && Array.isArray(res.categories) && res.categories.length > 0);
+    } catch (e) { return false; }
+  }
+  try { return (await db.live_categories.count()) > 0; } catch (e) { return false; }
 }
 
 export async function getCategories(type) {
@@ -718,18 +786,34 @@ export async function getCategories(type) {
     const favCount = await db.favorites.where('type').equals(normType).count();
     const recentCount = normType === 'live' ? await db.recently_viewed.count() : 0;
 
-    // Fast category count mapping
-    const allStreams = await streamsTable.toArray();
-    const countMap = {};
-    allStreams.forEach(s => {
-      const catId = String(s.category_id);
-      countMap[catId] = (countMap[catId] || 0) + 1;
-    });
+    // Fast path: category counts are embedded on the records at sync time, so
+    // no stream-table scan is needed. Legacy caches (synced before counts were
+    // stored) fall back to one full scan and persist the counts so every
+    // subsequent call — and every future boot — takes the fast path.
+    let mappedCategories;
+    const hasStoredCounts = categories.length > 0 && categories.every(c => typeof c.count === 'number');
+    if (hasStoredCounts) {
+      mappedCategories = categories.filter(cat => cat.count > 0 || cat.category_id === 'all');
+    } else {
+      const countMap = {};
+      await streamsTable.toCollection().each(s => {
+        const catId = String(s.category_id);
+        countMap[catId] = (countMap[catId] || 0) + 1;
+      });
 
-    const mappedCategories = categories.map(cat => ({
-      ...cat,
-      count: countMap[String(cat.category_id)] || 0
-    })).filter(cat => cat.count > 0 || cat.category_id === 'all');
+      mappedCategories = categories.map(cat => ({
+        ...cat,
+        count: countMap[String(cat.category_id)] || 0
+      })).filter(cat => cat.count > 0 || cat.category_id === 'all');
+
+      // Persist so the scan never runs again for this cache (fire-and-forget).
+      const catTable = normType === 'live' ? db.live_categories
+        : (normType === 'movie' ? db.vod_categories : db.series_categories);
+      catTable.bulkPut(categories.map(cat => ({
+        ...cat,
+        count: countMap[String(cat.category_id)] || 0
+      }))).catch(() => {});
+    }
 
     return {
       categories: mappedCategories,
@@ -786,6 +870,20 @@ export async function getStreams({ type, categoryId, page = 1, limit = 50, searc
       collection = table.where('category_id').equals(String(categoryId));
     } else {
       collection = table.toCollection();
+    }
+
+    // FAST PATH (default view): no search, provider order. Page straight off
+    // the index with offset/limit instead of materializing the entire table
+    // (which on big playlists meant deserializing 20k-100k records just to
+    // show 50). Ordering is identical to the slow path (primary-key order).
+    if (!search && sort === 'added' && categoryId !== 'favorites' && categoryId !== 'recently_viewed') {
+      const total = await collection.count();
+      const startIndex = (page - 1) * limit;
+      const paginatedItems = await collection.offset(startIndex).limit(limit).toArray();
+      return {
+        items: paginatedItems,
+        pagination: { total, page, limit, pages: Math.ceil(total / limit) }
+      };
     }
 
     let items = await collection.toArray();
