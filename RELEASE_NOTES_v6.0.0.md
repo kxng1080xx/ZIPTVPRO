@@ -12,6 +12,8 @@ Major version bump reflecting the scope of UI and admin-dashboard work landing i
 - **TV navigation (`src/components/tv-navigation.js`)**: D-pad/remote navigation refinements.
 - **Player**: minor playback tweaks (`src/components/player.js`).
 - **Server**: small adjustments to `server/index.js`.
+- **EPG grid**: chunked/infinite-scroll rendering for smoother large-guide performance.
+- **TV layout**: scaling and compaction adjustments across the rem-scaled TV UI.
 
 ## Upgrade notes
 
