@@ -188,14 +188,14 @@ function persistAccountInfo(id, exp_date, account_status) {
   }
 }
 
-export async function login(hostUrl, username, password, playlistName) {
+export async function login(hostUrl, username, password, playlistName, { skipAccountCheck = false } = {}) {
   await checkServerMode();
-  
+
   if (isServerMode) {
     const response = await fetch('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hostUrl, username, password, playlistName })
+      body: JSON.stringify({ hostUrl, username, password, playlistName, skipAccountCheck })
     });
     if (!response.ok) {
       const err = await response.json();
@@ -245,10 +245,15 @@ export async function login(hostUrl, username, password, playlistName) {
       throw new Error('Incorrect username or password.');
     }
 
-    // 3. Subscription: expired or otherwise inactive account.
-    const accountError = describeAccountState(info);
-    if (accountError) {
-      throw new Error(accountError);
+    // 3. Subscription: expired or otherwise inactive account. Skipped when syncing
+    // playlists from the ZIPTV admin dashboard — there, ZIPTV's own admin-set
+    // expiry (Supabase devices.expires_at) is the sole authority, not the
+    // underlying provider's own exp_date/status (which can differ or be stale).
+    if (!skipAccountCheck) {
+      const accountError = describeAccountState(info);
+      if (accountError) {
+        throw new Error(accountError);
+      }
     }
 
     const credentials = {

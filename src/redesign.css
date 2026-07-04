@@ -1365,6 +1365,124 @@ body.tv-layout .tv-focused { scroll-margin: 6rem; }
 }
 
 /* ==========================================================================
+   8b. PORTRAIT — DEVICE-PROOF LAYER (any non-TV portrait viewport)
+   Section 8 gates on max-width:900, which some Android webviews miss (DPR
+   quirks report wide CSS viewports in portrait). These rules key on
+   orientation alone (TV excluded), so they hold on every phone/tablet:
+     · Poster grids scale to the viewport — always ~3-up, sized in vw.
+     · Settings becomes a full-width bottom sheet with compact LIST ROWS
+       (icon | title/sub | chevron) instead of the big square tiles.
+   ========================================================================== */
+@media (orientation: portrait) {
+  /* ---- Poster grids (Movies / Series / Flixify): viewport-scaled 3-up.
+     27vw min-column ⇒ exactly 3 columns on any portrait width; posters keep
+     their 2/3 aspect-ratio so height follows automatically. Beats the legacy
+     !important minmax(100px) in style.css (later in cascade). ---- */
+  body:not(.tv-layout) .vod-grid {
+    grid-template-columns: repeat(auto-fill, minmax(clamp(92px, 27vw, 190px), 1fr)) !important;
+    gap: clamp(10px, 3vw, 16px) clamp(6px, 2vw, 12px);
+    padding: 10px clamp(10px, 3vw, 16px) 96px;
+  }
+  body:not(.tv-layout) .vod-card .vod-card-title {
+    font-size: clamp(0.68rem, 2.6vw, 0.85rem);
+  }
+  /* Continue Watching cards ride the same scale */
+  body:not(.tv-layout) .continue-card {
+    flex: 0 0 clamp(92px, 27vw, 190px) !important;
+    width: clamp(92px, 27vw, 190px) !important;
+  }
+
+  /* ---- Settings: full-width bottom sheet ---- */
+  body:not(.tv-layout) #settings-modal.modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+  body:not(.tv-layout) #settings-modal .settings-card {
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(100dvh - 40px);
+    display: flex;
+    flex-direction: column;
+    border-radius: 24px 24px 0 0;
+    border-bottom: none;
+    animation: rd-sheet-up 0.28s cubic-bezier(0.33, 1, 0.68, 1);
+  }
+  body:not(.tv-layout) #settings-modal .settings-header {
+    flex-shrink: 0;
+    padding: 16px 20px 12px;
+  }
+  body:not(.tv-layout) #settings-modal .settings-header h2 { font-size: 1.2rem; }
+  body:not(.tv-layout) #settings-modal .settings-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 8px 12px calc(20px + env(safe-area-inset-bottom, 0px));
+    gap: 14px;
+  }
+
+  /* ---- Settings tiles → compact list rows (uniform height, one per line):
+     [ icon ]  Title              >
+               subtitle             */
+  body:not(.tv-layout) .settings-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  body:not(.tv-layout) .settings-tile {
+    position: relative;
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-items: center;
+    column-gap: 14px;
+    row-gap: 1px;
+    justify-items: start;
+    text-align: left;
+    min-height: 68px;
+    padding: 12px 40px 12px 14px; /* right space for the chevron */
+    border-radius: 16px;
+  }
+  body:not(.tv-layout) .settings-tile:hover,
+  body:not(.tv-layout) .settings-tile.tv-focused {
+    transform: none; /* no hover-lift on touch */
+  }
+  body:not(.tv-layout) .settings-tile-icon {
+    grid-row: 1 / span 2;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    margin-bottom: 0;
+  }
+  body:not(.tv-layout) .settings-tile-icon i { width: 22px; height: 22px; }
+  body:not(.tv-layout) .settings-tile-title {
+    font-size: 0.95rem;
+    align-self: end;
+  }
+  body:not(.tv-layout) .settings-tile-sub {
+    font-size: 0.78rem;
+    align-self: start;
+  }
+  /* Trailing chevron affordance (pure CSS — no markup change) */
+  body:not(.tv-layout) .settings-tile::after {
+    content: "";
+    position: absolute;
+    right: 18px;
+    top: 50%;
+    width: 8px;
+    height: 8px;
+    border-top: 2px solid rgba(255, 255, 255, 0.28);
+    border-right: 2px solid rgba(255, 255, 255, 0.28);
+    transform: translateY(-50%) rotate(45deg);
+  }
+}
+
+@keyframes rd-sheet-up {
+  from { transform: translateY(48px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* ==========================================================================
    9. PHONE — LANDSCAPE
    Player-forward: compact icon rail (nav stays reachable), no header, full
    vertical space for video + lists. Guarded against TV webviews that report

@@ -7253,6 +7253,26 @@ body.native-video-active #main-video-player { display: none !important; }
     background: transparent !important;
   }
 }
+/* Same immersive fullscreen, but for the plain HTML5 <video> path (native
+   playback unavailable/disabled/fell back). No libVLC surface behind the
+   WebView here, so a plain display:none on the app shell is enough — none of
+   the visibility/transparency punch-through tricks above are needed. */
+@media (orientation: landscape) {
+  body.app-native.player-fs:not(.native-video-active) #app-container { display: none !important; }
+  body.app-native.player-fs:not(.native-video-active) #video-container {
+    position: fixed !important;
+    inset: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    z-index: 9000 !important;
+    background: #000 !important;
+  }
+}
 /* Controls reachable on touch (no hover) in both states. */
 body.native-video-active .player-controls-overlay { pointer-events: auto; }
 

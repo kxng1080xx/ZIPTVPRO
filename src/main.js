@@ -3783,8 +3783,11 @@ async function applyCloudState(state) {
 
   // Managed device whose playlists were ALL removed from the dashboard → treat
   // like an expired subscription: stop playback, return to the login screen and
-  // show the notice.
-  if (managed) {
+  // show the notice. Gated on the REMOTE list being empty (the admin's actual
+  // intent), not on the local reconcile result — a transient add failure (e.g.
+  // the provider briefly unreachable) must never be mistaken for a deliberate
+  // removal and log the user out.
+  if (managed && (!state.playlists || state.playlists.length === 0)) {
     try {
       const { playlists } = await getPlaylists();
       if (!playlists || playlists.length === 0) { await deactivateToLogin(state.notice); return; }
@@ -3810,7 +3813,7 @@ async function reconcilePlaylists(remote, { allowRemovals } = {}) {
   for (const r of remote) {
     if (localKeys.has(key(r))) continue;
     try {
-      await login(r.server_url, r.username, r.password, r.playlistName || 'Playlist');
+      await login(r.server_url, r.username, r.password, r.playlistName || 'Playlist', { skipAccountCheck: true });
       added = true;
       addedKey = key(r);
     } catch (e) {

@@ -142,7 +142,7 @@ async function fetchXtream(url, timeoutMs = 15000) {
 
 // 1. API: Login & Test Credentials
 app.post('/api/login', async (req, res) => {
-  const { hostUrl, username, password, playlistName } = req.body;
+  const { hostUrl, username, password, playlistName, skipAccountCheck } = req.body;
 
   if (!hostUrl || !username || !password) {
     return res.status(400).json({ error: 'Missing Host URL, Username or Password' });
@@ -192,14 +192,19 @@ app.post('/api/login', async (req, res) => {
   }
 
   // Expired / inactive subscription (Xtream returns auth:1 with status "Expired").
-  const status = String(info.status || '').toLowerCase();
-  const exp = parseInt(info.exp_date, 10);
-  const isExpired = status === 'expired' || (exp && !isNaN(exp) && exp * 1000 < Date.now());
-  if (isExpired) {
-    return res.status(403).json({ error: 'Your subscription has expired.' });
-  }
-  if (status && status !== 'active') {
-    return res.status(403).json({ error: `Your account is not active (${info.status}).` });
+  // Skipped when syncing playlists from the ZIPTV admin dashboard — there,
+  // ZIPTV's own admin-set expiry (Supabase devices.expires_at) is the sole
+  // authority, not the underlying provider's own exp_date/status.
+  if (!skipAccountCheck) {
+    const status = String(info.status || '').toLowerCase();
+    const exp = parseInt(info.exp_date, 10);
+    const isExpired = status === 'expired' || (exp && !isNaN(exp) && exp * 1000 < Date.now());
+    if (isExpired) {
+      return res.status(403).json({ error: 'Your subscription has expired.' });
+    }
+    if (status && status !== 'active') {
+      return res.status(403).json({ error: `Your account is not active (${info.status}).` });
+    }
   }
 
   // Save credentials
