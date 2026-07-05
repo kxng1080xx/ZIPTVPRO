@@ -2191,10 +2191,18 @@ export class VideoPlayer {
   }
 
   showControlsTemporarily() {
+    clearTimeout(this._controlsVisHideTimer);
+    this.controls.style.visibility = 'visible';
     this.controls.style.opacity = '1';
     this.watermark.style.opacity = '0';
+    // The always-on quality/FPS badge also overlaps the video and blocks the
+    // hardware overlay, so it fades out with the controls (restored here).
+    if (this.qualityBadgeEl) {
+      this.qualityBadgeEl.style.visibility = 'visible';
+      this.qualityBadgeEl.style.opacity = '1';
+    }
     document.body.style.cursor = 'default';
-    
+
     clearTimeout(this.controlsTimeout);
     this.controlsTimeout = setTimeout(() => {
       this.hideControls();
@@ -2208,8 +2216,24 @@ export class VideoPlayer {
     const nativePlaying = this._nativeActive && !this._nativePaused;
     if (!nativePlaying && this.video.paused) return; // Don't hide controls if paused
     this.controls.style.opacity = '0';
-    this.watermark.style.opacity = '0.4';
-    
+    // Watermark used to fade IN when controls hid; it overlaps the video and
+    // would block the hardware overlay, so keep it hidden during playback too.
+    this.watermark.style.opacity = '0';
+    if (this.qualityBadgeEl) this.qualityBadgeEl.style.opacity = '0';
+
+    // After the fade, drop the overlay, quality badge and watermark out of
+    // compositing entirely so nothing covers the <video>. A layer over the video
+    // (even at opacity:0) keeps Chromium from promoting the video to a hardware
+    // overlay, which disables driver Video Super Resolution (VSR).
+    // visibility:hidden removes it as a paint/compositing layer;
+    // showControlsTemporarily() restores the controls + badge.
+    clearTimeout(this._controlsVisHideTimer);
+    this._controlsVisHideTimer = setTimeout(() => {
+      this.controls.style.visibility = 'hidden';
+      if (this.qualityBadgeEl) this.qualityBadgeEl.style.visibility = 'hidden';
+      this.watermark.style.visibility = 'hidden';
+    }, 350);
+
     // Hide cursor in fullscreen when controls hide
     if (document.fullscreenElement) {
       document.body.style.cursor = 'none';
