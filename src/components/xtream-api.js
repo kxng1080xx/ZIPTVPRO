@@ -513,6 +513,17 @@ export function removeWatchProgress(id) {
   } catch (e) {}
 }
 
+// Remove every Continue Watching entry belonging to a series (all episodes).
+// seriesKey matches the collapse key used by the CW rows: seriesId || seriesName || id.
+export function removeSeriesWatchProgress(seriesKey) {
+  const list = getContinueWatching().filter(
+    i => String(i.seriesId || i.seriesName || i.id) !== String(seriesKey)
+  );
+  try {
+    localStorage.setItem(cwKey(), JSON.stringify(list));
+  } catch (e) {}
+}
+
 export async function updateSettings(settings) {
   if (isServerMode) {
     const response = await fetch('/api/settings', {

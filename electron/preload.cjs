@@ -26,7 +26,16 @@ contextBridge.exposeInMainWorld('electronCast', {
 // Host helpers for the renderer (e.g. open a download link in the system browser
 // rather than a child Electron window).
 contextBridge.exposeInMainWorld('appHost', {
+  // Lets the renderer feature-detect the Electron build (custom web tabs +
+  // the built-in ad blocker are desktop-only).
+  isElectron: true,
+
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
+
+  // Built-in ad blocker (uBlock-style filter lists) for custom web tabs.
+  // set → { ok, enabled, error? }; get → { enabled }.
+  setAdblock: (enabled) => ipcRenderer.invoke('adblock:set', enabled),
+  getAdblock: () => ipcRenderer.invoke('adblock:get'),
 
   // Auto-updater (electron-updater) → in-app UI. Subscribe to update lifecycle
   // events; cb receives { type: 'available'|'progress'|'downloaded'|'error', ... }.

@@ -1139,23 +1139,23 @@ app.get('/api/probe', (req, res) => {
 });
 
 // ==========================================================================
-// DVR (record) + TIMESHIFT (pause/rewind live up to 30 min) — desktop only.
-// Both need the bundled ffmpeg + local disk, so they're only ever exercised by
-// the Electron app. Reuse findFfmpeg()/trackChild() from the transcode section
+// DVR (record) + TIMESHIFT (pause/rewind live ~30 s) — desktop only.
+// Both need the bundled ffmpeg, so they're only ever exercised by the
+// Electron app. Reuse findFfmpeg()/trackChild() from the transcode section
 // above so recordings/timeshift children die with the app like every other one.
 //   Record:    ffmpeg -c copy <live> -> a single .ts file on disk.
-//   Timeshift: ffmpeg segments <live> into a rolling 30-min HLS playlist the
-//              player reads via hls.js, so currentTime can scrub back 30 min.
+//   Timeshift: ffmpeg segments <live> into a rolling ~30-sec HLS playlist held
+//              entirely in RAM (no disk files); player reads it via hls.js.
 // ==========================================================================
 const DVR_DATA_DIR = process.env.ELECTRON_RUNNING === 'true'
   ? path.join(os.homedir(), '.ziptv_pro_data')   // same root cache.js uses
   : path.join(__dirname, 'data');
 const REC_DIR = path.join(DVR_DATA_DIR, 'recordings');
-const TS_DIR = path.join(DVR_DATA_DIR, 'timeshift');
 const REC_INDEX = path.join(DVR_DATA_DIR, 'recordings.json');
 const SCHED_INDEX = path.join(DVR_DATA_DIR, 'schedule.json');
 try { fs.mkdirSync(REC_DIR, { recursive: true }); } catch (e) {}
-try { fs.mkdirSync(TS_DIR, { recursive: true }); } catch (e) {}
+// Timeshift is in-memory now — clean up any segment folder an older build left.
+try { fs.rmSync(path.join(DVR_DATA_DIR, 'timeshift'), { recursive: true, force: true }); } catch (e) {}
 
 const readJson = (f, fallback) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { return fallback; } };
 const writeJson = (f, v) => { try { fs.writeFileSync(f, JSON.stringify(v, null, 2)); } catch (e) {} };
@@ -1280,34 +1280,32 @@ app.delete('/api/recordings/schedule/:id', (req, res) => {
   if (future.length !== jobs.length) writeJson(SCHED_INDEX, future);
 }
 
-// --- Timeshift (rolling 30-min HLS buffer) --------------------------------
-let activeTimeshift = null; // { ch, dir, url, proc, stopped, restarts, windowStart }
+// --- Timeshift (rolling 30-sec in-memory HLS buffer) -----------------------
+// Segments + playlist live in a RAM map (tsMem) — nothing is written to disk.
+// ffmpeg PUTs each file to the local ingest route below; the player reads the
+// same bytes back out of memory. ~8 x 4s segments ≈ 30 s of rewind, a few MB.
+let activeTimeshift = null; // { ch, url, proc, stopped, restarts, windowStart, lastSeq }
+const tsMem = new Map();    // filename -> Buffer
 
 function stopTimeshift() {
   if (activeTimeshift) {
     activeTimeshift.stopped = true;           // tell the exit handler not to restart
     try { activeTimeshift.proc.kill('SIGKILL'); } catch (e) {}
     activeTimeshift = null;
-    // The buffer only makes sense while you're on the stream. Once you switch
-    // away (or stop), wipe the whole timeshift folder so segments never pile up.
-    try { fs.rmSync(TS_DIR, { recursive: true, force: true }); } catch (e) {}
   }
+  tsMem.clear();
 }
 
-// Spawn (or respawn) the segmenter for `state`. Appends to the same dir so a
-// restart continues the existing playlist instead of resetting it.
+// Spawn (or respawn) the segmenter for `state`. On respawn, segment numbering
+// continues from lastSeq and the playlist is tagged with a DISCONTINUITY
+// (discont_start) — a respawned ffmpeg restarts timestamps at zero, and an
+// unmarked timestamp reset is what made hls.js lurch playback backwards.
 function spawnTimeshiftProc(state) {
-  // 4s x 450 = 30-min rolling window; raise hls_list_size for longer.
-  // Segment sizing: video is stream-copied, so ffmpeg can only cut on the
-  // provider's keyframes — hls_time is a floor, not exact. Sources with ~1s
-  // GOPs were producing ~1s files (1800 per window = heavy disk churn); a 4s
-  // target cuts that to ~450 without touching quality. hls_init_time keeps
-  // the first segments short so startup stays fast. (single_file byte-range
-  // HLS was considered and rejected: delete_segments can't reclaim its space,
-  // so the file grows unbounded on live TV.)
   // Video is stream-copied (cheap); audio is transcoded to AAC because live
   // channels often carry AC3/E-AC3/MP2 that Chromium's MSE can't decode from a
   // copied TS — that mismatch is what made hls.js throw media errors and flicker.
+  const ingest = `http://127.0.0.1:${PORT}/api/timeshift/ingest`;
+  const respawn = state.lastSeq >= 0;
   const args = [
     '-user_agent', 'VLC/3.0.20',
     // Auto-reconnect to the provider instead of exiting when it drops the
@@ -1325,14 +1323,17 @@ function spawnTimeshiftProc(state) {
     '-c:v', 'copy',
     '-c:a', 'aac', '-ac', '2', '-b:a', '256k',
     '-avoid_negative_ts', 'make_zero',
-    '-f', 'hls', '-hls_time', '4', '-hls_init_time', '1', '-hls_list_size', '450',
-    // Keep a couple of just-expired segments on disk before deleting, so a
-    // player that's lagging the playlist edge never 404s mid-fetch.
-    '-hls_delete_threshold', '2',
-    '-hls_flags', 'delete_segments+append_list+omit_endlist',
+    // 10-sec chunks. 6 in the playlist = ~60s in RAM: ~30s of usable rewind
+    // plus the cushion hls.js needs to keep live playback smooth (it parks
+    // playback a couple of segments behind the newest one).
+    '-f', 'hls', '-hls_time', '10', '-hls_init_time', '1', '-hls_list_size', '6',
+    '-start_number', String(state.lastSeq + 1),
+    '-hls_flags', 'omit_endlist' + (respawn ? '+discont_start' : ''),
     '-hls_segment_type', 'mpegts',
-    '-hls_segment_filename', path.join(state.dir, 'seg_%05d.ts'),
-    path.join(state.dir, 'index.m3u8'),
+    // Everything goes over HTTP into tsMem — no files on disk.
+    '-method', 'PUT',
+    '-hls_segment_filename', `${ingest}/seg_%05d.ts`,
+    `${ingest}/index.m3u8`,
   ];
   const proc = trackChild(spawn(findFfmpeg(), args, { windowsHide: true }));
   state.proc = proc;
@@ -1359,10 +1360,41 @@ function spawnTimeshiftProc(state) {
   return proc;
 }
 
-const waitForFile = (fp, ms) => new Promise((resolve) => {
+// ffmpeg PUTs playlist + segments here → straight into RAM.
+app.put('/api/timeshift/ingest/:file', (req, res) => {
+  const file = String(req.params.file).replace(/[^a-z0-9_.\-]+/gi, '_');
+  const chunks = [];
+  req.on('data', (c) => chunks.push(c));
+  req.on('end', () => {
+    tsMem.set(file, Buffer.concat(chunks));
+    const m = file.match(/^seg_(\d+)\.ts$/);
+    if (m && activeTimeshift) {
+      activeTimeshift.lastSeq = Math.max(activeTimeshift.lastSeq, parseInt(m[1], 10));
+    }
+    // On each playlist update, prune segments that fell out of the window
+    // (keep 2 just-expired ones so a lagging player never 404s mid-fetch).
+    if (file.endsWith('.m3u8')) {
+      const nums = [...tsMem.get(file).toString('utf8').matchAll(/seg_(\d+)\.ts/g)]
+        .map((x) => parseInt(x[1], 10));
+      if (nums.length) {
+        const min = Math.min(...nums) - 2;
+        for (const k of tsMem.keys()) {
+          const km = k.match(/^seg_(\d+)\.ts$/);
+          if (km && parseInt(km[1], 10) < min) tsMem.delete(k);
+        }
+      }
+    }
+    res.status(200).end();
+  });
+  req.on('error', () => res.status(500).end());
+});
+
+const waitForSegments = (n, ms) => new Promise((resolve) => {
   const deadline = Date.now() + ms;
   const tick = () => {
-    try { if (fs.statSync(fp).size > 0) return resolve(true); } catch (e) {}
+    let count = 0;
+    for (const k of tsMem.keys()) if (k.endsWith('.ts')) count++;
+    if (count >= n) return resolve(true);
     if (Date.now() > deadline) return resolve(false);
     setTimeout(tick, 250);
   };
@@ -1377,33 +1409,38 @@ app.get('/api/timeshift/start', async (req, res) => {
   if (activeTimeshift && activeTimeshift.ch === ch && !activeTimeshift.stopped) {
     return res.json({ playlist: `/api/timeshift/${ch}/index.m3u8` });
   }
-  stopTimeshift();   // also wipes TS_DIR if a previous stream left segments
-  const dir = TS_DIR;
-  try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
-  try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
-  const state = { ch, dir, url, proc: null, stopped: false, restarts: 0, windowStart: Date.now() };
+  stopTimeshift();   // also clears tsMem from any previous stream
+  const state = { ch, url, proc: null, stopped: false, restarts: 0, windowStart: Date.now(), lastSeq: -1 };
   activeTimeshift = state;
   try { spawnTimeshiftProc(state); }
   catch (e) { activeTimeshift = null; return res.status(500).json({ error: 'ffmpeg spawn failed' }); }
   // Wait for a few segments (not just the first) so playback starts with a
   // cushion behind the live edge — starting on the only segment starves the
   // buffer and freezes once at startup.
-  const ready = await waitForFile(path.join(dir, 'seg_00002.ts'), 20000);
+  const ready = await waitForSegments(3, 20000);
   if (!ready) { stopTimeshift(); return res.status(504).json({ error: 'timeshift failed to start' }); }
   res.json({ playlist: `/api/timeshift/${ch}/index.m3u8` });
 });
 
 app.get('/api/timeshift/stop', (req, res) => { stopTimeshift(); res.json({ ok: true }); });
 
-app.get('/api/timeshift/:ch/:file', (req, res) => {
-  // All streams share TS_DIR; :ch is kept only so playlist URLs stay stable.
+// Serve playlist + segments from RAM. The playlist may reference segments by
+// their full ingest URL (ffmpeg writes the segment target as-is), so accept
+// GETs on both the /:ch/ and /ingest/ shapes — same bytes either way.
+const serveTsMem = (req, res) => {
   const file = String(req.params.file).replace(/[^a-z0-9_.\-]+/gi, '_');
-  const fp = path.join(TS_DIR, file);
-  if (!fp.startsWith(TS_DIR)) return res.status(403).end();      // path-traversal guard
-  if (!fs.existsSync(fp)) return res.status(404).end();
-  if (file.endsWith('.m3u8')) res.setHeader('Cache-Control', 'no-store');
-  res.sendFile(fp);
-});
+  const buf = tsMem.get(file);
+  if (!buf) return res.status(404).end();
+  if (file.endsWith('.m3u8')) {
+    res.setHeader('Cache-Control', 'no-store');
+    res.type('application/vnd.apple.mpegurl');
+  } else {
+    res.type('video/mp2t');
+  }
+  res.send(buf);
+};
+app.get('/api/timeshift/ingest/:file', serveTsMem);
+app.get('/api/timeshift/:ch/:file', serveTsMem);
 
 // --- Flixify (public-domain VOD source) — PIN/device auth (desktop/server) ---
 app.post('/api/flixify/pin', async (req, res) => {

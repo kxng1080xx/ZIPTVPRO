@@ -313,6 +313,14 @@ class TVNavigation {
         this.setFocus('tabs', activeTab);
         return;
       }
+    } else if (zone === 'home') {
+      // Home dashboard: hero button first, else the first row tile.
+      const first = document.querySelector('#home-view .home-hero-btn')
+                 || document.querySelector('#home-view .home-card');
+      if (first) {
+        this.setFocus('home', first);
+        return;
+      }
     } else if (zone === 'grid') {
       // VOD Grid: query only active grid to avoid selecting hidden card elements
       const firstCard = document.querySelector('.view-panel.active .vod-grid .vod-card');
@@ -529,6 +537,9 @@ class TVNavigation {
       case 'channels':
         this.handleChannelsNavigation(e);
         break;
+      case 'home':
+        this.handleHomeNavigation(e);
+        break;
       case 'grid':
         this.handleGridNavigation(e);
         break;
@@ -592,7 +603,9 @@ class TVNavigation {
     const activeTab = document.querySelector('.nav-tab.active')?.dataset.tab;
     const playbackOpen = !document.getElementById('series-playback-container')?.classList.contains('hidden');
 
-    if (activeTab === 'live') {
+    if (activeTab === 'home') {
+      this.focusDefault('home');
+    } else if (activeTab === 'live') {
       this.focusDefault('categories');
     } else if (activeTab === 'series' && playbackOpen) {
       this.focusDefault('series-episodes');
@@ -820,6 +833,47 @@ class TVNavigation {
     }
   }
 
+  // HOME DASHBOARD NAVIGATION — rows of tiles ([data-hrow] containers built by
+  // home.js). LEFT/RIGHT walks a row, UP/DOWN jumps rows (keeping the column
+  // position), LEFT at a row's start / UP at the hero returns to the rail.
+  handleHomeNavigation(e) {
+    const rows = Array.from(document.querySelectorAll('#home-view [data-hrow]'))
+      .map((r) => Array.from(r.querySelectorAll('.home-card')).filter((c) => c.offsetParent !== null))
+      .filter((cards) => cards.length);
+    if (!rows.length) { this.focusDefault('tabs'); return; }
+
+    let ri = rows.findIndex((cards) => cards.includes(this.focusedElement));
+    if (ri === -1) { this.setFocus('home', rows[0][0]); e.preventDefault(); return; }
+    const cards = rows[ri];
+    const ci = cards.indexOf(this.focusedElement);
+
+    if (e.key === this.KEYS.LEFT) {
+      if (ci > 0) this.setFocus('home', cards[ci - 1]);
+      else this.focusDefault('tabs');
+      e.preventDefault();
+    } else if (e.key === this.KEYS.RIGHT) {
+      if (ci < cards.length - 1) this.setFocus('home', cards[ci + 1]);
+      e.preventDefault();
+    } else if (e.key === this.KEYS.UP) {
+      if (ri > 0) {
+        const prev = rows[ri - 1];
+        this.setFocus('home', prev[Math.min(ci, prev.length - 1)]);
+      } else {
+        this.focusDefault('tabs');
+      }
+      e.preventDefault();
+    } else if (e.key === this.KEYS.DOWN) {
+      if (ri < rows.length - 1) {
+        const next = rows[ri + 1];
+        this.setFocus('home', next[Math.min(ci, next.length - 1)]);
+      }
+      e.preventDefault();
+    } else if (e.key === this.KEYS.ENTER) {
+      this.focusedElement.click();
+      e.preventDefault();
+    }
+  }
+
   handleGridNavigation(e) {
     // Search / Sort buttons in the catalog header (same 'grid' zone).
     if (this.focusedElement.classList.contains('vod-filter-btn')) {
@@ -970,7 +1024,9 @@ class TVNavigation {
     const player = window.playerInstance;
     
     if (!isFullscreen || !player) {
-      // NON-FULLSCREEN behavior: keep current zapping and LEFT-arrow exit
+      // NON-FULLSCREEN behavior: keep current zapping and LEFT-arrow exit.
+      // Wake the (auto-hiding) overlay so zaps/pauses give visible feedback.
+      if (player) player.showControlsTemporarily();
       if (e.key === this.KEYS.LEFT) {
         this.focusDefault('channels');
         e.preventDefault();

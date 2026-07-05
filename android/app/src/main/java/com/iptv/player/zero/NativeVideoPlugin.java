@@ -87,7 +87,11 @@ public class NativeVideoPlugin extends Plugin {
 
         ArrayList<String> opts = new ArrayList<>();
         opts.add("--http-user-agent=" + UA);
-        opts.add("--network-caching=1500");
+        // Playback buffer before video starts. 1500ms was safe but adds 1.5s of
+        // live latency; 800ms keeps live noticeably closer to the edge while
+        // still absorbing normal network jitter. Raise back toward 1500 if flaky
+        // connections start buffering.
+        opts.add("--network-caching=800");
         opts.add("--no-drop-late-frames");
         opts.add("--no-skip-frames");
         libVLC = new LibVLC(getContext(), opts);

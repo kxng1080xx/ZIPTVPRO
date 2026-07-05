@@ -16,6 +16,7 @@ import {
   getContinueWatching,
   saveWatchProgress,
   removeWatchProgress,
+  removeSeriesWatchProgress,
   getIsServerMode,
   getStreamUrlSync,
   proxifyImage,
@@ -33,6 +34,8 @@ import { enterFlixify, flixifySearch, setFlixifyPlayHandler, playFlixifySearchIt
 import { openGlobalSearch, setGlobalSearchQuery } from './components/global-search.js';
 import { isNativeAvailable } from './components/native-player.js';
 import { getDeviceCode, syncDevice, readCachedState, clearCachedState, isStateExpired } from './components/cloud-sync.js';
+import { initWebTabs, openWebTab, openManageTabs, toggleAdblock, isAdblockOn } from './components/web-tabs.js';
+import { renderHome } from './components/home.js';
 
 // Cloud sync (ZIPTV Pro 5.0): device + playlist state lives in Supabase, managed
 // from the /connect dashboard and pulled via the serverless /api/device endpoint.
@@ -72,6 +75,7 @@ const state = {
     sort: 'added'
   }
 };
+window.state = state;
 
 // Global Components instances
 let playerInstance = null;
@@ -211,7 +215,8 @@ async function initApp() {
   // 2. Initialize Core Components
   playerInstance = new VideoPlayer();
   window.playerInstance = playerInstance;
-  
+  try { playerInstance.restoreUpscalerPref(); } catch (e) {}
+
   // Set player skip handlers
   playerInstance.setOnPrevChannel(() => playPreviousChannel());
   playerInstance.setOnNextChannel(() => playNextChannel());
@@ -238,6 +243,9 @@ async function initApp() {
   // 3. Bind Global UI Events (Tabs, Logins, Settings, Modal Closers)
   bindGlobalEvents();
   initGlobalSearch();
+
+  // Custom web tabs (Electron in-app browser) + tab visibility + ad blocker.
+  initWebTabs({ onSwitchTab: switchTab, onRefreshTiles: refreshSettingsTiles });
 
   // Grab LAN IP(s) from the local server (if any) for the Smart TV Access link.
   loadLanInfo();
@@ -351,14 +359,33 @@ async function switchTab(tabId) {
     btn.classList.toggle('active', btn.dataset.tab === tabId);
   });
 
+  // Custom web tabs ("web:<id>") render into the shared #webtab-view panel.
+  const isWebTab = tabId.startsWith('web:');
+
   // Toggle visible panels
   document.querySelectorAll('.view-panel').forEach(panel => {
-    panel.classList.toggle('active', panel.id === `${tabId}-view`);
+    panel.classList.toggle('active', panel.id === (isWebTab ? 'webtab-view' : `${tabId}-view`));
   });
 
   // Flixify has no category sidebar — hide the left rail on that tab (CSS-driven
   // so it stays hidden through playback exit too).
   document.body.classList.toggle('flixify-tab', tabId === 'flixify');
+  // Web tabs are a full-bleed browser: no category sidebar either.
+  document.body.classList.toggle('webtab-tab', isWebTab);
+  // Home dashboard: full-bleed rows, no category sidebar.
+  document.body.classList.toggle('home-tab', tabId === 'home');
+
+  if (isWebTab) {
+    openWebTab(tabId.slice(4));
+    return;
+  }
+
+  // Home dashboard — rendered fresh on every visit so rows track activity.
+  if (tabId === 'home') {
+    await renderHome(homeHandlers);
+    navigation.focusDefault('home');
+    return;
+  }
 
   // Header search placeholder follows the active view
   const headerSearch = document.getElementById('header-search-input');
@@ -371,6 +398,10 @@ async function switchTab(tabId) {
 
   // Flixify is its own source — render its panel instead of the Xtream pipeline.
   if (tabId === 'flixify') {
+    if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+      switchTab('home');
+      return;
+    }
     enterFlixify((url, title, poster, subs, opts) => playFlixify(url, title, poster, opts));
     return;
   }
@@ -409,6 +440,7 @@ async function loadTabCategoriesAndContent() {
     console.error('Failed to load categories/content:', err);
   }
 }
+window.switchTab = switchTab;
 
 // ---- Performance (lite) mode -------------------------------------------
 // Returns true if this device should default to lite mode (weak GPU).
@@ -749,6 +781,37 @@ function refreshSettingsTiles() {
     const on = document.body.classList.contains('perf-lite');
     perfEl.textContent = perfSaved === null ? `Auto (${on ? 'On' : 'Off'})` : (perfSaved === 'on' ? 'On' : 'Off');
     perfEl.classList.toggle('tile-badge-off', !on);
+  }
+
+  // Upscaler tile: works on the Chromium <video> path (Electron/web). Hidden on
+  // Android native, where libVLC renders the picture behind the WebView and a
+  // canvas overlay can't touch it (and would cover the video).
+  const upscalerTile = document.getElementById('tile-upscaler');
+  if (upscalerTile) {
+    let isNative = false;
+    try { isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); } catch (e) {}
+    upscalerTile.style.display = isNative ? 'none' : '';
+    const upEl = document.getElementById('tile-upscaler-val');
+    if (upEl) {
+      let on = false;
+      try { on = localStorage.getItem('upscaler_enabled') === '1'; } catch (e) {}
+      upEl.textContent = on ? 'On' : 'Off';
+      upEl.classList.toggle('tile-badge-off', !on);
+    }
+  }
+
+  // Ad Blocker tile: Electron-only (webview traffic is filtered in the main
+  // process; the web/Android builds have nothing to hook it into).
+  const adblockTile = document.getElementById('tile-adblock');
+  if (adblockTile) {
+    const electron = !!(window.appHost && window.appHost.isElectron);
+    adblockTile.style.display = electron ? '' : 'none';
+    const adEl = document.getElementById('tile-adblock-val');
+    if (adEl) {
+      const on = isAdblockOn();
+      adEl.textContent = on ? 'On' : 'Off';
+      adEl.classList.toggle('tile-badge-off', !on);
+    }
   }
 
   const verEl = document.getElementById('tile-update-val');
@@ -1523,6 +1586,19 @@ async function openSeriesPlaybackDashboard(series, resumeOpts = null) {
     const info = await getStreamInfo(series.series_id, 'series');
     const infoMeta = info.info || {};
     
+    // Save backdrop image to currentSeriesMeta
+    let backdrop = '';
+    if (infoMeta.backdrop_path) {
+      if (Array.isArray(infoMeta.backdrop_path) && infoMeta.backdrop_path.length > 0) {
+        backdrop = infoMeta.backdrop_path[0];
+      } else if (typeof infoMeta.backdrop_path === 'string') {
+        backdrop = infoMeta.backdrop_path;
+      }
+    }
+    if (state.currentSeriesMeta) {
+      state.currentSeriesMeta.backdrop = backdrop;
+    }
+
     if (plot) plot.textContent = infoMeta.plot || infoMeta.description || 'No summary available.';
     if (yearBadge) yearBadge.textContent = infoMeta.releasedate || infoMeta.releaseDate || infoMeta.year || yearBadge.textContent;
     
@@ -1644,7 +1720,8 @@ async function playSeriesEpisode(epStreamId, epName, logo, plot, epExt, epIndex,
     seriesId: sm.id,
     seriesName: sm.name || seriesInfo.info?.name || 'Series',
     season: String(seasonNum),
-    episodeLabel: `S${seasonNum}E${ep.episode_num || (epIndex + 1)}`
+    episodeLabel: `S${seasonNum}E${ep.episode_num || (epIndex + 1)}`,
+    backdrop: sm.backdrop || ''
   };
   lastProgressSave = 0;
 
@@ -1966,7 +2043,15 @@ async function openVODDetailsModal(vodData, type, resumeTime = 0) {
       lucide.createIcons({ scope: playBtn });
       playBtn.onclick = async () => {
         modal.classList.add('hidden');
-        await playVODStream(queryId, 'movie', vodData.name, vodData.stream_icon, plot.textContent, movieExt, resumeTime);
+        let backdrop = '';
+        if (infoMeta.backdrop_path) {
+          if (Array.isArray(infoMeta.backdrop_path) && infoMeta.backdrop_path.length > 0) {
+            backdrop = infoMeta.backdrop_path[0];
+          } else if (typeof infoMeta.backdrop_path === 'string') {
+            backdrop = infoMeta.backdrop_path;
+          }
+        }
+        await playVODStream(queryId, 'movie', vodData.name, vodData.stream_icon, plot.textContent, movieExt, resumeTime, backdrop);
       };
     } else if (type === 'series') {
       // It's a Series, hide direct play button and show Episode Lists
@@ -2033,7 +2118,16 @@ function renderSeriesSeasons(seriesInfo) {
         const epStreamId = ep.id;
         const epExt = ep.container_extension || ep.info?.container_extension || '';
         const epName = `${seriesInfo.info?.name || 'Series'} - S${seasonNum}E${ep.episode_num}: ${ep.title}`;
-        await playVODStream(epStreamId, 'series', epName, seriesInfo.info?.cover, ep.info?.plot || '', epExt);
+        let backdrop = '';
+        const infoMeta = seriesInfo.info || {};
+        if (infoMeta.backdrop_path) {
+          if (Array.isArray(infoMeta.backdrop_path) && infoMeta.backdrop_path.length > 0) {
+            backdrop = infoMeta.backdrop_path[0];
+          } else if (typeof infoMeta.backdrop_path === 'string') {
+            backdrop = infoMeta.backdrop_path;
+          }
+        }
+        await playVODStream(epStreamId, 'series', epName, seriesInfo.info?.cover, ep.info?.plot || '', epExt, 0, backdrop);
       });
       episodesList.appendChild(row);
     });
@@ -2047,9 +2141,9 @@ function renderSeriesSeasons(seriesInfo) {
   loadSeasonEpisodes(seasons[0]);
 }
 
-async function playVODStream(streamId, type, name, logo, description, containerExtension = '', resumeTime = 0) {
+async function playVODStream(streamId, type, name, logo, description, containerExtension = '', resumeTime = 0, backdrop = '') {
   // Track this movie for Continue Watching.
-  currentVodItem = { id: String(streamId), type: 'movie', name, cardTitle: name, logo, containerExtension };
+  currentVodItem = { id: String(streamId), type: type || 'movie', name, cardTitle: name, logo, containerExtension, backdrop };
   lastProgressSave = 0;
 
   // VOD plays in its own full-screen player overlay (movies/series), NOT the
@@ -2182,9 +2276,10 @@ function renderContinueWatching(type) {
       ? `${it.episodeLabel || 'Episode'} · ${formatClock(it.position)}`
       : `Resume · ${formatClock(it.position)}`;
     html += `
-      <div class="continue-card" data-id="${it.id}" tabindex="-1">
+      <div class="continue-card" data-id="${it.id}" data-serieskey="${it.seriesId || it.seriesName || it.id}" tabindex="-1">
         <div class="continue-poster">
           ${it.logo ? `<img src="${proxifyImage(it.logo)}" alt="" loading="lazy">` : `<div class="poster-placeholder"><i data-lucide="${icon}"></i></div>`}
+          <button class="cw-remove" title="Remove from Continue Watching" aria-label="Remove"><i data-lucide="x"></i></button>
           <div class="continue-resume-overlay"><i data-lucide="play"></i></div>
           <div class="continue-progress"><div class="continue-progress-fill" style="width:${pct}%"></div></div>
         </div>
@@ -2199,6 +2294,19 @@ function renderContinueWatching(type) {
     card.addEventListener('click', () => {
       const item = getContinueWatching(type).find(i => String(i.id) === String(card.dataset.id));
       if (item) resumeContinueWatching(item);
+    });
+  });
+  container.querySelectorAll('.cw-remove').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const card = btn.closest('.continue-card');
+      if (!card) return;
+      if (type === 'series') {
+        removeSeriesWatchProgress(card.dataset.serieskey);
+      } else {
+        removeWatchProgress(card.dataset.id);
+      }
+      renderContinueWatching(type);
     });
   });
   if (window.lucide) lucide.createIcons({ scope: container });
@@ -2311,6 +2419,36 @@ function wireVodFilters(kind, reload) {
     });
   }
 }
+
+// Home dashboard tile actions — all reuse the existing playback/detail flows
+// (same routing the global search uses).
+const homeHandlers = {
+  onPlayChannel: async (channel) => {
+    await switchTab('live');
+    await selectAndPlayChannel(channel, null);
+  },
+  onResumeItem: async (item) => {
+    if (item.type === 'series') {
+      await switchTab('series');
+      openSeriesPlaybackDashboard(
+        { series_id: item.seriesId, name: item.seriesName, cover: item.logo },
+        { episodeId: item.id, season: item.season, position: item.position }
+      );
+    } else {
+      await switchTab('movies');
+      openVODDetailsModal({ stream_id: item.id, name: item.name, stream_icon: item.logo }, 'movie', item.position);
+    }
+  },
+  onOpenMovie: async (m) => {
+    await switchTab('movies');
+    openVODDetailsModal(m, 'movie');
+  },
+  onOpenSeries: async (s) => {
+    await switchTab('series');
+    openSeriesPlaybackDashboard(s);
+  },
+  onGoTab: (tab) => switchTab(tab)
+};
 
 // Route a global-search result to the right view + action. Live plays straight
 // away; movies/series open their existing details surfaces.
@@ -2666,6 +2804,27 @@ function bindGlobalEvents() {
     refreshSettingsTiles();
     const label = next === null ? 'Auto' : (next ? 'On' : 'Off');
     showToast(`Performance mode: ${label}`, 'success');
+  });
+
+  // --- Tile: Upscaler (FSR-1-style WebGL enhancement over the <video>) ---
+  document.getElementById('tile-upscaler')?.addEventListener('click', () => {
+    const p = window.playerInstance;
+    if (!p) return;
+    const on = p.toggleUpscaler();
+    refreshSettingsTiles();
+    if (on) showToast('Upscaler on — enhancing video', 'success');
+    else if (p._upscaler && !p._upscaler.supported) showToast('Upscaler needs WebGL2 (unavailable here)', 'error');
+    else showToast('Upscaler off', 'success');
+  });
+
+  // --- Tile: Manage Tabs (show/hide/edit custom web tabs + Flixify) ---
+  document.getElementById('tile-tabs')?.addEventListener('click', () => {
+    openManageTabs();
+  });
+
+  // --- Tile: Ad Blocker (built-in uBlock-style engine, web tabs only) ---
+  document.getElementById('tile-adblock')?.addEventListener('click', () => {
+    toggleAdblock();
   });
 
   // --- Tile: Sleep Timer ---
@@ -3415,20 +3574,20 @@ async function autoEnterSinglePlaylist(id, activeId) {
     const hasCache = await hasCachedData();
 
     if (hasCache) {
-      state.activeCategory = null;
-      await loadTabCategoriesAndContent();   // instant, from cache
+      // Land on the Home dashboard (its rows come straight from cache/CW
+      // storage); Live TV data loads on first visit to that tab.
+      await switchTab('home');
       // Silent background refresh only when the cache is stale (12h TTL) —
       // re-downloading everything on every boot crushed weak devices.
       maybeBackgroundSync();
     } else {
-      // First run: paint Live TV the moment its data lands; movies/series
-      // finish syncing behind the live UI.
+      // First run: sync, then land on Home (it'll mostly show the "recently
+      // added" rows until the user has watched something).
       state.activeCategory = null;
       await triggerFullSync({
-        onLiveReady: async () => { await loadTabCategoriesAndContent(); }
+        onLiveReady: async () => { await switchTab('home'); }
       });
-      // Repaint only if the user hasn't started browsing meanwhile.
-      if (!state.activeCategory) await loadTabCategoriesAndContent();
+      if (state.activeTab === 'home') await switchTab('home'); // repaint with full data
     }
   } catch (err) {
     console.error('Auto-enter single playlist failed:', err);

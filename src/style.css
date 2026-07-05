@@ -2112,7 +2112,7 @@ body.vod-mode .now-next-bar {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--accent-cyan);
+  background: var(--accent-red, #ef4444);
   cursor: pointer;
 }
 
@@ -2121,7 +2121,7 @@ body.vod-mode .now-next-bar {
   height: 14px;
   border: none;
   border-radius: 50%;
-  background: var(--accent-cyan);
+  background: var(--accent-red, #ef4444);
   cursor: pointer;
 }
 
@@ -2630,6 +2630,7 @@ body.vod-mode .now-next-bar {
   justify-content: center;
   gap: 16px;
   z-index: 15;
+  pointer-events: none;
 }
 
 .spinner {
@@ -3661,7 +3662,11 @@ body.vod-mode .now-next-bar {
   gap: 10px;
   overflow-x: auto;
   padding-bottom: 8px;
-  scrollbar-width: thin;
+  scrollbar-width: none; /* Hide scrollbar for Firefox */
+  -ms-overflow-style: none; /* Hide scrollbar for IE/Edge */
+}
+.continue-row-cards::-webkit-scrollbar {
+  display: none; /* Hide scrollbar for Webkit/Electron */
 }
 
 .continue-card {
@@ -3696,6 +3701,40 @@ body.vod-mode .now-next-bar {
   align-items: center;
   justify-content: center;
   color: var(--text-muted);
+}
+
+.cw-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-fast), background-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.cw-remove i {
+  width: 14px;
+  height: 14px;
+}
+
+.continue-card:hover .cw-remove,
+.continue-card.tv-focused .cw-remove {
+  opacity: 1;
+}
+
+.cw-remove:hover {
+  background: var(--accent-red, #ef4444);
+  transform: scale(1.1);
 }
 
 .continue-resume-overlay {
@@ -5056,22 +5095,22 @@ body.vod-mode .now-next-bar {
 
 
 /* Picture-in-Picture Mode Overrides */
-body.pip-mode-active .top-header,
-body.pip-mode-active .sidebar,
-body.pip-mode-active .categories-search-section,
-body.pip-mode-active .categories-list-container,
-body.pip-mode-active .live-top-row > *:not(.player-wrapper),
-body.pip-mode-active .player-controls-overlay,
-body.pip-mode-active .epg-section-container {
+body.app-native.pip-mode-active .top-header,
+body.app-native.pip-mode-active .sidebar,
+body.app-native.pip-mode-active .categories-search-section,
+body.app-native.pip-mode-active .categories-list-container,
+body.app-native.pip-mode-active .live-top-row > *:not(.player-wrapper),
+body.app-native.pip-mode-active .player-controls-overlay,
+body.app-native.pip-mode-active .epg-section-container {
   display: none !important;
 }
 
-body.pip-mode-active .content-viewport,
-body.pip-mode-active #live-view,
-body.pip-mode-active .live-top-row,
-body.pip-mode-active .player-wrapper,
-body.pip-mode-active .video-container,
-body.pip-mode-active #main-video-player {
+body.app-native.pip-mode-active .content-viewport,
+body.app-native.pip-mode-active #live-view,
+body.app-native.pip-mode-active .live-top-row,
+body.app-native.pip-mode-active .player-wrapper,
+body.app-native.pip-mode-active .video-container,
+body.app-native.pip-mode-active #main-video-player {
   position: fixed !important;
   top: 0 !important;
   left: 0 !important;
@@ -5080,6 +5119,21 @@ body.pip-mode-active #main-video-player {
   margin: 0 !important;
   padding: 0 !important;
   z-index: 99999 !important;
+}
+
+/* On desktop/browser, when PiP is active, we allow navigating other tabs.
+   To prevent Chromium from closing the PiP window when the #live-view panel
+   gets hidden (display: none), we keep it visible but throw it off-screen. */
+body.pip-mode-active #live-view:not(.active) {
+  display: flex !important;
+  position: absolute !important;
+  left: -9999px !important;
+  top: -9999px !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  opacity: 0.001 !important;
+  pointer-events: none !important;
 }
 
 /* Full-screen EPG Mode: the guide takes the whole viewport. Header, sidebar and
@@ -7016,10 +7070,10 @@ body.tv-layout .player-wrapper {
   min-height: 300px;
   background: #05070b;
 }
-/* On TV there is no mouse hover, so keep the control overlay (LIVE badge,
-   channel name, play/volume/tool buttons) always visible and D-pad navigable. */
+/* TV: the overlay auto-hides like desktop — any D-pad press wakes it
+   (tv-navigation calls showControlsTemporarily) and it fades after 3s.
+   Only the backdrop gradient is TV-specific. */
 body.tv-layout .player-controls-overlay {
-  opacity: 1 !important;
   background: linear-gradient(to top, rgba(5,7,11,0.88) 0%, rgba(0,0,0,0) 42%);
 }
 body.tv-layout .fps-indicator {

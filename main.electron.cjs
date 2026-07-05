@@ -1,7 +1,68 @@
-const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, dialog, session } = require('electron');
 const net = require('net');
 const path = require('path');
+const fs = require('fs');
 const { initCast } = require('./electron/cast-manager.cjs');
+
+// ---------------------------------------------------------------------------
+// AD BLOCKER (built-in "uBlock-style" engine for custom web tabs)
+// Uses @ghostery/adblocker-electron with the same public filter lists uBlock
+// Origin Lite ships (EasyList, EasyPrivacy, uBO filters). Scoped to the
+// 'persist:webtabs' session, which only the in-app browser <webview>s use —
+// IPTV streams / EPG / API traffic on the default session are never touched.
+// Toggled from Settings via IPC; the compiled engine is cached on disk so
+// startup doesn't re-download lists.
+// ---------------------------------------------------------------------------
+let adblockBlocker = null;   // ElectronBlocker instance (lazy)
+let adblockEnabled = false;  // current wired state
+let adblockLoading = null;   // in-flight engine load
+
+function webTabsSession() {
+  return session.fromPartition('persist:webtabs');
+}
+
+async function loadAdblockEngine() {
+  if (adblockBlocker) return adblockBlocker;
+  if (adblockLoading) return adblockLoading;
+  adblockLoading = (async () => {
+    // Optional dependency: the app must still boot if it isn't installed.
+    const { ElectronBlocker } = require('@ghostery/adblocker-electron');
+    const cachePath = path.join(app.getPath('userData'), 'adblock-engine.bin');
+    adblockBlocker = await ElectronBlocker.fromPrebuiltAdsAndTracking(fetch, {
+      path: cachePath,
+      read: fs.promises.readFile,
+      write: fs.promises.writeFile
+    });
+    return adblockBlocker;
+  })();
+  try {
+    return await adblockLoading;
+  } finally {
+    adblockLoading = null;
+  }
+}
+
+async function setAdblock(enabled) {
+  try {
+    if (enabled) {
+      const blocker = await loadAdblockEngine();
+      if (!adblockEnabled) {
+        blocker.enableBlockingInSession(webTabsSession());
+        adblockEnabled = true;
+      }
+    } else if (adblockEnabled && adblockBlocker) {
+      adblockBlocker.disableBlockingInSession(webTabsSession());
+      adblockEnabled = false;
+    }
+    return { ok: true, enabled: adblockEnabled };
+  } catch (err) {
+    console.error('[adblock] toggle failed:', err && err.message ? err.message : err);
+    return { ok: false, enabled: adblockEnabled, error: String(err && err.message ? err.message : err) };
+  }
+}
+
+ipcMain.handle('adblock:set', (_e, enabled) => setAdblock(!!enabled));
+ipcMain.handle('adblock:get', () => ({ enabled: adblockEnabled }));
 
 // Open download/update links in the user's default browser, not a child window.
 ipcMain.handle('open-external', (_e, url) => {
@@ -27,6 +88,18 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason) => {
   console.error('[main] unhandledRejection (ignored):', reason && reason.message ? reason.message : reason);
 });
+
+// ---------------------------------------------------------------------------
+// GPU / video overlay flags (must be set before app 'ready').
+// NVIDIA/Intel/AMD driver video super-resolution only runs when the decoded
+// video reaches a hardware (DirectComposition) overlay. Conservative GPU
+// driver-bug workarounds and the blocklist can quietly disable that overlay
+// path in a custom Chromium build, so we lift those. Chrome enables these by
+// default; Electron does not always. Verify the result at chrome://gpu
+// ("Direct composition: Enabled" + a video overlay format like NV12).
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+app.commandLine.appendSwitch('disable-gpu-driver-bug-workarounds');
+app.commandLine.appendSwitch('enable-features', 'DirectComposition,ZeroCopyVideoCapture');
 
 // Only allow a single instance. A second launch would otherwise spin up another
 // server and fight over the port, which is what caused the EADDRINUSE crash.
@@ -134,8 +207,40 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, 'electron', 'preload.cjs')
+      preload: path.join(__dirname, 'electron', 'preload.cjs'),
+      // Custom web tabs render sites in <webview> elements (isolated guest
+      // processes on the persist:webtabs session).
+      webviewTag: true
     }
+  });
+
+  // DevTools toggle. The renderer's TV/D-pad key handler (tv-navigation.js)
+  // preventDefault()s almost every keydown, which swallows the menu accelerators
+  // (Alt, Ctrl+Shift+I). before-input-event fires in the main process BEFORE the
+  // renderer sees the key, so it can't be eaten. F12 (or Ctrl+Shift+I) toggles.
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const key = (input.key || '').toLowerCase();
+    if (key === 'f12' || (input.control && input.shift && key === 'i')) {
+      mainWindow.webContents.toggleDevTools();
+      event.preventDefault();
+    }
+    // Ctrl+Shift+G: open chrome://gpu in a plain window to check whether the
+    // hardware overlay path (needed for driver Video Super Resolution) is on.
+    if (input.control && input.shift && key === 'g') {
+      const gpuWin = new BrowserWindow({ width: 1000, height: 800, title: 'GPU status' });
+      gpuWin.loadURL('chrome://gpu');
+      event.preventDefault();
+    }
+  });
+
+  // Web-tab hygiene: no window.open() popup chains from guest pages — open
+  // target=_blank links in the same webview instead (like a single-tab browser).
+  mainWindow.webContents.on('did-attach-webview', (_e, guest) => {
+    guest.setWindowOpenHandler(({ url }) => {
+      if (/^https?:\/\//i.test(url)) guest.loadURL(url);
+      return { action: 'deny' };
+    });
   });
 
   // Set up casting (Chromecast/Android TV + DLNA) once the window exists. The
@@ -152,37 +257,10 @@ function createWindow() {
 
   createTray();
 
-  // Minimize prompt: ask to minimize to tray or to taskbar.
-  let isMinimizingToTaskbar = false;
-  mainWindow.on('minimize', (e) => {
-    if (isMinimizingToTaskbar) {
-      isMinimizingToTaskbar = false;
-      return;
-    }
-    e.preventDefault();
-    const choice = dialog.showMessageBoxSync(mainWindow, {
-      type: 'question',
-      buttons: ['Minimize to tray', 'Minimize to taskbar'],
-      defaultId: 0,
-      title: 'Minimize ZIPTV Pro',
-      message: 'Minimize to tray or taskbar?',
-      detail: 'Choose where to minimize the application.'
-    });
-    if (choice === 0) {
-      mainWindow.hide();
-    } else if (choice === 1) {
-      isMinimizingToTaskbar = true;
-      mainWindow.minimize();
-    }
-  });
+  // ponytail: minimize prompt removed — minimize goes straight to taskbar (OS default).
 
-  // Closing the window asks whether to quit or keep running in the tray. The app
-  // only truly exits via this dialog's "Quit" (or the tray's "Quit"), which sets
-  // isQuitting.
-  // The window's X quits the app outright — no "minimize to tray?" prompt — so it
-  // never lingers as a background process (which blocked installer upgrades). The
-  // tray is still reachable via the minimize button (Minimize to tray option) and
-  // the tray menu, so close-to-tray fans haven't lost it entirely.
+  // The window's X quits the app outright, so it never lingers as a background
+  // process (which blocked installer upgrades).
   mainWindow.on('close', () => {
     isQuitting = true;
     try { if (globalThis.__ziptvKillChildren) globalThis.__ziptvKillChildren(); } catch (e) {}

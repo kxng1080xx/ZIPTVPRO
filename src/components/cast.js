@@ -485,7 +485,10 @@ function startStatusPoll() {
     const bar = document.getElementById('player-seek');
     const curEl = document.getElementById('player-time-current');
     const durEl = document.getElementById('player-time-duration');
-    if (bar && castDuration) bar.value = String(Math.min(100, (castPosition / castDuration) * 100));
+    if (bar && castDuration) {
+      bar.value = String(Math.min(100, (castPosition / castDuration) * 100));
+      if (window.playerInstance) window.playerInstance.updateSeekBackground();
+    }
     if (curEl) curEl.textContent = fmtTime(castPosition);
     if (durEl && castDuration) durEl.textContent = fmtTime(castDuration);
   }, 1000);

@@ -1,6 +1,7 @@
 import Hls from 'hls.js';
 import mpegts from 'mpegts.js';
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { Upscaler } from './upscaler.js';
 import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { proxifyImage } from './xtream-api.js';
 import {
@@ -122,6 +123,9 @@ export class VideoPlayer {
     this.onVodProgress = null; // VOD/series: (currentTime, duration) for Continue Watching
     this.pendingSeek = 0; // resume position to seek to once metadata loads
     this.isVodActive = false;
+    if (this.seek) {
+      this.updateSeekBackground();
+    }
 
     this.hls = null;
     this.mpegtsPlayer = null;
@@ -254,6 +258,7 @@ export class VideoPlayer {
           if (d && isFinite(d)) {
             this.seek.value = (cur / d) * 100;
             this.timeCurrent.textContent = this.formatTime(cur);
+            this.updateSeekBackground();
           }
         }
         // Timeshift: light the LIVE badge red when we're at the live edge,
@@ -274,6 +279,23 @@ export class VideoPlayer {
           document.body.classList.toggle('ts-at-live', atLive);
           // Can't skip forward past live — grey out +10 at the edge.
           if (this.forward10Btn) this.forward10Btn.disabled = atLive;
+          // Track the last steadily-playing position — the 'seeking' anti-jump
+          // guard compares against it to spot backward seeks we didn't request.
+          if (!this.video.seeking && !this.isSeeking) this._lastPlayTime = this.video.currentTime;
+          // Last-resort drift guard: unexpected back-seeks are corrected
+          // instantly by the 'seeking' guard, so this should almost never fire.
+          // Only a truly broken state (>2 min behind while meant to be live)
+          // snaps forward — small stall-induced drift is left alone so
+          // playback never visibly leaps.
+          if (this._wantLive && !atLive && !this.video.paused && !this.isSeeking) {
+            let live = NaN;
+            if (this.hls && isFinite(this.hls.liveSyncPosition)) live = this.hls.liveSyncPosition;
+            else { const w = this._tsWindow(); if (w) live = w.end - 10; }
+            if (isFinite(live) && live - this.video.currentTime > 120) {
+              console.warn('[timeshift] far behind live — snapping back');
+              this.goLive();
+            }
+          }
         } else if (this.forward10Btn) {
           this.forward10Btn.disabled = false; // VOD: forward always allowed
         }
@@ -300,7 +322,10 @@ export class VideoPlayer {
       this.video.addEventListener('loadedmetadata', seekToResume);
       this.video.addEventListener('canplay', seekToResume);
       this.video.addEventListener('durationchange', refreshDuration);
-      this.seek.addEventListener('input', () => { this.isSeeking = true; });
+      this.seek.addEventListener('input', () => {
+        this.isSeeking = true;
+        this.updateSeekBackground();
+      });
       this.seek.addEventListener('change', () => {
         // While casting, seek the TV (the bar is a 0..100 percentage).
         if (this._castMode && window.castControls && window.castControls.isActive()) {
@@ -325,12 +350,17 @@ export class VideoPlayer {
         if (this._timeshiftActive) {
           // Scrub within the DVR window: map 0..100 onto [seekable.start, end].
           const w = this._tsWindow();
+          this._expectSeek = true;
           if (w) { try { this.video.currentTime = w.start + (this.seek.value / 100) * (w.end - w.start); } catch (e) {} }
+          // Scrubbing near the right edge means "live"; anywhere else is a
+          // deliberate rewind — stop the drift guard from yanking them forward.
+          this._wantLive = this.seek.value >= 98;
           this.isSeeking = false;
           return;
         }
         if (d && isFinite(d)) this.video.currentTime = (this.seek.value / 100) * d;
         this.isSeeking = false;
+        this.updateSeekBackground();
       });
     }
 
@@ -371,7 +401,29 @@ export class VideoPlayer {
       }
     });
 
+    // Anti-jump guard (timeshift live): hls.js media-error recovery flushes the
+    // buffer and can silently re-seek playback backwards into the DVR file —
+    // that's the "skips back and it's no longer live" bug. Every deliberate
+    // seek (scrub / ±10s / goLive / resume) sets _expectSeek first, so any
+    // OTHER backward seek is recovery fallout: undo it immediately, before a
+    // single frame of old content plays.
+    this.video.addEventListener('seeking', () => {
+      if (!this._timeshiftActive || this._expectSeek || !this._wantLive) return;
+      const t = this.video.currentTime;
+      if (isFinite(this._lastPlayTime) && this._lastPlayTime - t > 5) {
+        console.warn(`[timeshift] unexpected back-seek (${(this._lastPlayTime - t).toFixed(1)}s) — restoring live position`);
+        this.goLive();
+      }
+    });
+    this.video.addEventListener('seeked', () => {
+      this._expectSeek = false;
+      this._lastPlayTime = this.video.currentTime;
+    });
+
     this.video.addEventListener('pause', () => {
+      // Pausing live is a deliberate step behind the edge (DVR pause) — the
+      // drift guard must not yank playback forward on resume. LIVE/Go-Live re-arms.
+      this._wantLive = false;
       this.playPauseBtn.innerHTML = '<i class="play-icon" data-lucide="play"></i>';
       lucide.createIcons({ attrs: { class: 'play-icon' }, nameList: ['play'], scope: this.playPauseBtn });
       
@@ -414,9 +466,43 @@ export class VideoPlayer {
     // Browser standard PiP events fallback
     this.video.addEventListener('enterpictureinpicture', () => {
       document.body.classList.add('pip-mode-active');
+      if (!Capacitor.isNativePlatform()) {
+        // Restore layout sidebar & top-header for desktop/browser browsing
+        document.querySelector('.sidebar')?.classList.remove('hidden');
+        document.querySelector('.top-header')?.classList.remove('hidden');
+        if (document.body.classList.contains('vod-mode')) {
+          document.body.classList.remove('vod-mode');
+          if (window.state && window.state.activeTab) {
+            if (typeof window.switchTab === 'function') {
+              window.switchTab(window.state.activeTab);
+            } else {
+              const homeTab = document.querySelector('.nav-tab[data-tab="home"]');
+              if (homeTab) homeTab.click();
+            }
+          } else {
+            const homeTab = document.querySelector('.nav-tab[data-tab="home"]');
+            if (homeTab) homeTab.click();
+          }
+        }
+      }
     });
     this.video.addEventListener('leavepictureinpicture', () => {
       document.body.classList.remove('pip-mode-active');
+      if (!Capacitor.isNativePlatform()) {
+        const isStillPlaying = !this.video.paused;
+        if (isStillPlaying) {
+          if (typeof window.switchTab === 'function') {
+            window.switchTab('live');
+          }
+          if (this.isVodActive) {
+            document.body.classList.add('vod-mode');
+            document.querySelector('.sidebar')?.classList.add('hidden');
+            document.querySelector('.top-header')?.classList.add('hidden');
+          }
+        } else {
+          this.stop();
+        }
+      }
     });
 
     // Dynamic quality and FPS tracking
@@ -580,8 +666,8 @@ export class VideoPlayer {
     }, 15000); // Display for 15 seconds
   }
 
-  // Desktop live: route the channel through the server's rolling 30-min HLS
-  // timeshift buffer so the user can pause and rewind up to half an hour. One
+  // Desktop live: route the channel through the server's rolling ~30-sec
+  // in-memory HLS timeshift buffer so the user can pause and rewind briefly. One
   // ffmpeg pulls the stream once (no double connection → no provider connection-
   // limit trip); the player reads the local playlist. Returns false if it can't
   // start, so the caller can fall back to the normal direct live path.
@@ -629,6 +715,10 @@ export class VideoPlayer {
     this.isVodActive = isVod;
     this.hasStream = true; // gates orientation-driven fullscreen
     this.pendingSeek = isVod ? (resumeTime || 0) : 0;
+    if (this.seek) {
+      this.seek.value = 0;
+      this.updateSeekBackground();
+    }
     if (this.idleScreen) this.idleScreen.classList.add('hidden'); // a stream is starting
     // Mark an active playback session from the moment of tap (loading → playing), so
     // the VOD player box appears immediately with the spinner — not only once libVLC
@@ -684,6 +774,13 @@ export class VideoPlayer {
     // loadLiveTimeshift just before this call). Default off for VOD/direct/recordings.
     this._timeshiftActive = !!this._pendingTimeshift;
     this._pendingTimeshift = false;
+    // Live-intent flag: true while the user means to watch the live edge.
+    // Cleared when they rewind/scrub back/pause; restored by goLive(). The
+    // timeupdate drift guard uses it to snap back if playback silently slips
+    // behind live (stall recovery, media-error recovery, buffer hiccups).
+    this._wantLive = this._timeshiftActive;
+    this._lastPlayTime = NaN;  // fresh stream — no stale anti-jump reference
+    this._expectSeek = false;
     document.body.classList.toggle('timeshift-active', this._timeshiftActive);
     // Bumped on every new stream so a pending live reconnect for an old
     // channel cancels itself once the user has switched away.
@@ -892,7 +989,10 @@ export class VideoPlayer {
     }
     this._nativeDuration = dur;
     if (this._streamIsVod && dur > 0 && !this.isSeeking) {
-      if (this.seek) this.seek.value = (cur / dur) * 100;
+      if (this.seek) {
+        this.seek.value = (cur / dur) * 100;
+        this.updateSeekBackground();
+      }
       if (this.timeCurrent) this.timeCurrent.textContent = this.formatTime(cur);
       if (this.timeDuration) this.timeDuration.textContent = this.formatTime(dur);
       if (this.onVodProgress) this.onVodProgress(cur, dur);
@@ -1008,20 +1108,27 @@ export class VideoPlayer {
 
   _playAsHls(url, isVod) {
     if (Hls.isSupported()) {
-      // Timeshift = a live DVR window we want to scrub back in, so keep a few
-      // minutes of back buffer (deeper seeks re-fetch from the on-disk playlist)
-      // and don't snap to the live edge. Plain live wants a short low-latency
-      // buffer; VOD wants normal buffering so it can seek and won't stall.
+      // Timeshift = a ~30-sec live DVR window (held in server RAM) we can scrub
+      // back in, so keep the whole window as back buffer and don't snap to the
+      // live edge. Plain live wants a short low-latency buffer; VOD wants
+      // normal buffering so it can seek and won't stall.
       const ts = this._timeshiftActive && !isVod;
       this.hls = new Hls({
         // --- Memory limits for low-RAM devices ---
         // Keep the forward buffer short and cap total RAM used by media data.
-        maxBufferLength:    ts ? 30 : (isVod ? 15 : 8),  // seconds to buffer ahead
-        maxMaxBufferLength: ts ? 60 : (isVod ? 30 : 8),  // hard ceiling
-        maxBufferSize:      ts ? 60 * 1000 * 1000 : 20 * 1000 * 1000,
-        // ponytail: 120 s of in-memory back buffer; deeper rewinds re-load
-        // segments from disk. Raise toward 1800 to keep the full 30 min in RAM.
-        backBufferLength:   ts ? 120 : 5,
+        maxBufferLength:    ts ? 16 : (isVod ? 15 : 8),  // seconds to buffer ahead
+        maxMaxBufferLength: ts ? 30 : (isVod ? 30 : 8),  // hard ceiling
+        maxBufferSize:      ts ? 30 * 1000 * 1000 : 20 * 1000 * 1000,
+        // Back buffer covers the whole rewind window.
+        backBufferLength:   ts ? 70 : 5,
+        // Timeshift chunks are 10s; the default of 3 segments would park
+        // playback 30s behind live — 2 keeps latency at ~20s. Plain live also
+        // targets 2 segments to sit closer to the edge.
+        ...(ts ? { liveSyncDurationCount: 2 } : (!isVod ? { liveSyncDurationCount: 2 } : {})),
+        // Smoothly reel back toward the live edge by briefly speeding up (up to
+        // 1.5x) instead of a visible hard seek whenever we drift behind. Live
+        // only — VOD must play at 1x.
+        ...(!isVod ? { maxLiveSyncPlaybackRate: 1.5 } : {}),
         enableWorker: true,
         lowLatencyMode: !isVod && !ts
       });
@@ -1124,6 +1231,14 @@ export class VideoPlayer {
         autoCleanupSourceBuffer:        true,
         autoCleanupMinBackwardDuration: 10,
         autoCleanupMaxBackwardDuration: 20,
+        // --- live latency control ---
+        // Without chasing, the live buffer quietly grows and the picture drifts
+        // further behind the edge the longer a channel stays open. Chasing seeks
+        // forward whenever we fall more than ~1.5s behind, holding us near live.
+        liveBufferLatencyChasing:         !isVod,
+        liveBufferLatencyChasingOnPaused: false,
+        liveBufferLatencyMaxLatency:      1.5,  // seconds behind edge before chasing
+        liveBufferLatencyMinRemain:       0.3,  // don't chase past this safety margin
       });
       this.mpegtsPlayer.attachMediaElement(this.video);
       this.mpegtsPlayer.load();
@@ -1389,10 +1504,13 @@ export class VideoPlayer {
     if (this._timeshiftActive) {
       const w = this._tsWindow();
       if (w) { lo = w.start; hi = w.end; }
+      // Skipping back is a deliberate exit from live — disarm the drift guard.
+      if (secs < 0) this._wantLive = false;
     } else {
       const d = this._totalDuration();
       if (isFinite(d)) hi = d;
     }
+    this._expectSeek = true;
     try { this.video.currentTime = Math.max(lo, Math.min(hi, (this.video.currentTime || 0) + secs)); } catch (e) {}
   }
 
@@ -1409,6 +1527,8 @@ export class VideoPlayer {
       if (w) target = Math.max(w.start, w.end - 10); // ~1.5 segments behind the edge
     }
     if (target == null) return;
+    this._wantLive = true; // re-arm the drift guard
+    this._expectSeek = true; // our own seek — don't trip the anti-jump guard
     try { this.video.currentTime = target; this.video.play(); } catch (e) {}
   }
 
@@ -2134,9 +2254,51 @@ export class VideoPlayer {
     } catch (e) {}
   }
 
+  updateSeekBackground() {
+    if (!this.seek) return;
+    const pct = this.seek.value || 0;
+    this.seek.style.background = `linear-gradient(to right, var(--accent-red, #ef4444) 0%, var(--accent-red, #ef4444) ${pct}%, rgba(255, 255, 255, 0.22) ${pct}%, rgba(255, 255, 255, 0.22) 100%)`;
+  }
+
   // Release all resources held by this player instance.
+  // --- Upscaler (FSR-1-style WebGL enhancement over the <video>) --------------
+  // Lazily built the first time it's turned on. Engine-agnostic: it reads frames
+  // straight off the <video>, so it keeps working across channel/engine switches.
+  _ensureUpscaler() {
+    if (this._upscaler) return this._upscaler;
+    const container = document.getElementById('video-container') || this.video.parentElement;
+    this._upscaler = new Upscaler(this.video, container);
+    if (!this._upscaler.supported) console.warn('Upscaler: WebGL2 unavailable — staying on raw video.');
+    return this._upscaler;
+  }
+
+  // Turn the upscaler on/off. Returns the new state. Persists the choice.
+  toggleUpscaler() {
+    const up = this._ensureUpscaler();
+    if (!up.supported) return false;
+    const on = up.toggle();
+    try { localStorage.setItem('upscaler_enabled', on ? '1' : '0'); } catch (e) {}
+    return on;
+  }
+
+  setUpscalerSharpness(v) {
+    const up = this._ensureUpscaler();
+    up.setSharpness(v);
+    try { localStorage.setItem('upscaler_sharpness', String(v)); } catch (e) {}
+  }
+
+  // Apply the saved preference (call once after the player is set up).
+  restoreUpscalerPref() {
+    try {
+      const s = parseFloat(localStorage.getItem('upscaler_sharpness'));
+      if (!isNaN(s)) this._ensureUpscaler().setSharpness(s);
+      if (localStorage.getItem('upscaler_enabled') === '1') this._ensureUpscaler().enable();
+    } catch (e) {}
+  }
+
   // Call this if the player element is ever removed from the DOM.
   destroy() {
+    if (this._upscaler) { this._upscaler.destroy(); this._upscaler = null; }
     clearTimeout(this._vodLoadTimeout);
     if (this._onFullscreenChange) {
       document.removeEventListener('fullscreenchange', this._onFullscreenChange);

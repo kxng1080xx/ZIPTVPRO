@@ -2,6 +2,16 @@
 // Mounts into #flixify-view. Talks to /api/flixify/* (desktop/server mode).
 // Auth = device-PIN flow; playback hands off to the app's player via a callback.
 
+import { Capacitor } from '@capacitor/core';
+
+const isAndroidNative = () => {
+  try {
+    return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
+  } catch (e) {
+    return false;
+  }
+};
+
 let pollTimer = null;
 let onPlay = null;          // (streamUrl, title, poster, subtitles) -> void
 let mounted = false;
@@ -23,10 +33,12 @@ async function getJSON(url, opts) {
 }
 
 export async function flixifyStatus() {
+  if (isAndroidNative()) return false;
   try { const { data } = await getJSON('/api/flixify/status'); return !!(data && data.loggedIn); }
   catch { return false; }
 }
 export async function flixifyLogout() {
+  if (isAndroidNative()) return;
   try { await fetch('/api/flixify/logout', { method: 'POST' }); } catch (e) {}
 }
 
@@ -37,6 +49,7 @@ export function setFlixifyPlayHandler(cb) { onPlay = cb; }
 // Return Flixify search results as a flat array (for the unified top-bar search).
 // Fast no-op when Flixify isn't connected.
 export async function flixifySearchResults(q) {
+  if (isAndroidNative()) return [];
   q = (q || '').trim();
   if (!q || flixifyOff) return [];
   try {
@@ -57,6 +70,7 @@ export function playFlixifySearchItem(item) { if (item) playItem(item, []); }
 
 // Entry point — called by switchTab('flixify'). Renders into #flixify-view.
 export async function enterFlixify(playCb) {
+  if (isAndroidNative()) return;
   onPlay = playCb;
   flixifyOff = false;
   mount();

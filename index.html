@@ -127,7 +127,10 @@
         <button class="rail-item" id="rail-search-btn" title="Search">
           <i data-lucide="search"></i><span class="rail-label">Search</span>
         </button>
-        <button class="nav-tab rail-item active" data-tab="live">
+        <button class="nav-tab rail-item active" data-tab="home">
+          <i data-lucide="house"></i><span class="rail-label">Home</span>
+        </button>
+        <button class="nav-tab rail-item" data-tab="live">
           <i data-lucide="tv"></i><span class="rail-label">Live TV</span>
         </button>
         <button class="nav-tab rail-item" data-tab="movies">
@@ -135,6 +138,12 @@
         </button>
         <button class="nav-tab rail-item" data-tab="series">
           <i data-lucide="clapperboard"></i><span class="rail-label">Series</span>
+        </button>
+        <!-- User-added web tabs (Electron): favicon buttons rendered by web-tabs.js -->
+        <div id="custom-tabs-slot"></div>
+        <!-- "+" opens the Chrome-bookmark-style add-tab dialog. Hidden on non-Electron. -->
+        <button class="rail-item" id="add-tab-btn" title="Add tab" style="display:none">
+          <i data-lucide="plus"></i><span class="rail-label">Add tab</span>
         </button>
         <button class="nav-tab rail-item" data-tab="flixify">
           <i data-lucide="popcorn"></i><span class="rail-label">Flixify</span>
@@ -271,7 +280,7 @@
       <main class="content-viewport">
         
         <!-- 1. LIVE TV VIEW -->
-        <div id="live-view" class="view-panel active">
+        <div id="live-view" class="view-panel">
           <!-- Top section: Split Video Player and Channel Info -->
           <div class="live-top-row details-collapsed">
             
@@ -648,8 +657,14 @@
           </div>
         </div>
 
+        <!-- HOME DASHBOARD (landing page; content built by home.js) -->
+        <div id="home-view" class="view-panel active"></div>
+
         <!-- FLIXIFY VIEW (public-domain VOD) -->
         <div id="flixify-view" class="view-panel"></div>
+
+        <!-- CUSTOM WEB TAB VIEW (Electron in-app browser; chrome built by web-tabs.js) -->
+        <div id="webtab-view" class="view-panel"></div>
 
       </main>
     </div>
@@ -658,7 +673,10 @@
 
   <!-- ==================== MOBILE BOTTOM TAB BAR (phone only) ==================== -->
   <nav class="mobile-tab-bar" id="mobile-tab-bar">
-    <button class="mobile-tab-btn active" data-tab="live">
+    <button class="mobile-tab-btn active" data-tab="home">
+      <i data-lucide="house"></i><span>Home</span>
+    </button>
+    <button class="mobile-tab-btn" data-tab="live">
       <i data-lucide="tv"></i><span>Live</span>
     </button>
     <button class="mobile-tab-btn" data-tab="movies">
@@ -798,6 +816,24 @@
             <div class="settings-tile-icon"><i data-lucide="gauge"></i></div>
             <div class="settings-tile-title">Performance Mode</div>
             <div class="settings-tile-sub">For TVs / projectors: <span class="tile-badge" id="tile-perf-val">Auto</span></div>
+          </button>
+
+          <button class="settings-tile" id="tile-upscaler" tabindex="0">
+            <div class="settings-tile-icon"><i data-lucide="sparkles"></i></div>
+            <div class="settings-tile-title">Upscaler</div>
+            <div class="settings-tile-sub">Enhance low-quality streams: <span class="tile-badge" id="tile-upscaler-val">Off</span></div>
+          </button>
+
+          <button class="settings-tile" id="tile-tabs" tabindex="0">
+            <div class="settings-tile-icon"><i data-lucide="layout-grid"></i></div>
+            <div class="settings-tile-title">Manage Tabs</div>
+            <div class="settings-tile-sub" id="tile-tabs-val">Show, hide &amp; edit tabs</div>
+          </button>
+
+          <button class="settings-tile" id="tile-adblock" tabindex="0" style="display:none">
+            <div class="settings-tile-icon"><i data-lucide="shield-ban"></i></div>
+            <div class="settings-tile-title">Ad Blocker</div>
+            <div class="settings-tile-sub">Web tabs: <span class="tile-badge" id="tile-adblock-val">On</span></div>
           </button>
 
           <button class="settings-tile" id="tile-sleep" tabindex="0">
