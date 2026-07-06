@@ -1050,6 +1050,9 @@ app.get('/api/transcode', (req, res) => {
   if (start > 0) args.push('-ss', String(start));
   args.push(
     '-user_agent', 'VLC/3.0.20',
+    // Regenerate presentation timestamps: sources with missing/irregular PTS
+    // otherwise let the copied video and re-encoded AAC audio drift apart.
+    '-fflags', '+genpts',
     '-i', target
   );
   if (mode === 'audio') {
@@ -1061,6 +1064,11 @@ app.get('/api/transcode', (req, res) => {
   }
   args.push(
     '-c:a', 'aac', '-b:a', '256k', '-ac', '2',
+    // A/V sync: resample audio to track the copied video's clock (absorbs AAC
+    // encoder priming + drift), and zero-base timestamps so a keyframe -ss seek
+    // doesn't leave audio lagging video by the pre-roll offset.
+    '-af', 'aresample=async=1',
+    '-avoid_negative_ts', 'make_zero',
     '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
     '-f', 'mp4',
     'pipe:1'

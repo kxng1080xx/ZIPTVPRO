@@ -787,8 +787,9 @@ function refreshSettingsTiles() {
     const isElectronApp = !!(window.appHost || window.electronCast);
     desktopEngineTile.style.display = isElectronApp ? 'flex' : 'none';
     if (isElectronApp && desktopEngineValEl) {
-      const saved = localStorage.getItem('electronEngine') || 'html5';
-      desktopEngineValEl.textContent = saved === 'ffmpeg' ? 'FFmpeg Transcode' : 'HTML5 Player';
+      const saved = localStorage.getItem('electronEngine') || 'ffmpeg';
+      const labels = { ffmpeg: 'FFmpeg Transcode', external: 'External Player', html5: 'HTML5 Player' };
+      desktopEngineValEl.textContent = labels[saved] || 'FFmpeg Transcode';
     }
   }
 
@@ -854,8 +855,13 @@ function refreshSettingsTiles() {
 
   const logoutEl = document.getElementById('tile-logout-val');
   if (logoutEl) {
-    try { logoutEl.textContent = creds.server_url ? new URL(creds.server_url).hostname : 'Disconnect'; }
-    catch (e) { logoutEl.textContent = 'Disconnect'; }
+    // Show the active playlist's name (fall back to the server hostname, then a
+    // generic label) so users identify which account they'd be logging out of.
+    let logoutLabel = creds.playlistName || '';
+    if (!logoutLabel && creds.server_url) {
+      try { logoutLabel = new URL(creds.server_url).hostname; } catch (e) {}
+    }
+    logoutEl.textContent = logoutLabel || 'Disconnect';
   }
 
   const netEl = document.getElementById('tile-network-val');
@@ -2906,13 +2912,16 @@ function bindGlobalEvents() {
       title: 'Desktop Player',
       options: [
         { value: 'html5', label: 'HTML5 Player (Built-in)' },
-        { value: 'ffmpeg', label: 'FFmpeg Transcode' }
+        { value: 'ffmpeg', label: 'FFmpeg Transcode' },
+        { value: 'external', label: 'External Player (default app)' }
       ],
-      current: localStorage.getItem('electronEngine') === 'ffmpeg' ? 'ffmpeg' : 'html5',
+      current: ['html5', 'external'].includes(localStorage.getItem('electronEngine'))
+        ? localStorage.getItem('electronEngine') : 'ffmpeg',
       onSelect: (v) => {
         localStorage.setItem('electronEngine', v);
         refreshSettingsTiles();
-        const activeLabel = v === 'ffmpeg' ? 'FFmpeg Transcode' : 'HTML5 Player';
+        const labels = { ffmpeg: 'FFmpeg Transcode', external: 'External Player', html5: 'HTML5 Player' };
+        const activeLabel = labels[v] || 'HTML5 Player';
         showToast(`Desktop player set to ${activeLabel}`, 'success');
         navigation.setFocus('modal', document.getElementById('tile-desktop-engine'));
       }

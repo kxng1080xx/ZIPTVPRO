@@ -883,8 +883,33 @@ export class VideoPlayer {
       // away (best for premium HEVC/E-AC3 VOD the browser can't decode); 'html5'
       // (default) uses the browser <video>/hls.js/mpegts.js chain, with transcode
       // still available as an automatic fallback via _handleVodPlaybackFallback.
-      let desktopEngine = 'html5';
-      try { desktopEngine = localStorage.getItem('electronEngine') || 'html5'; } catch (e) {}
+      let desktopEngine = 'ffmpeg';
+      try { desktopEngine = localStorage.getItem('electronEngine') || 'ffmpeg'; } catch (e) {}
+
+      // External Player: hand the stream to the user's default media player (via a
+      // temp .m3u the Electron main process opens). Works for live + VOD. On
+      // success we return to the catalog; on failure we fall back to in-app.
+      if (desktopEngine === 'external' && !this._castMode &&
+          window.appHost && typeof window.appHost.openInPlayer === 'function') {
+        const target = this._transcodeTarget(url); // unwrap /api/proxy → real upstream
+        Promise.resolve(window.appHost.openInPlayer({ url: target, title: this.currentChannelName }))
+          .then((r) => {
+            if (r && r.ok) {
+              if (window.showToast) window.showToast('Opening in your default player…', 'success', 3000);
+              this.stop();
+            } else {
+              const detail = r && r.error ? ` (${r.error})` : '';
+              if (window.showToast) window.showToast(`Couldn't open external player${detail} — playing in-app`, 'error', 5000);
+              this._startPlayback(url, isVod);
+            }
+          })
+          .catch((e) => {
+            if (window.showToast) window.showToast("Couldn't open external player — playing in-app", 'error', 4000);
+            this._startPlayback(url, isVod);
+          });
+        return;
+      }
+
       if (desktopEngine === 'ffmpeg' && isVod && !this._castMode) {
         this._triedTranscodeAudio = true;
         this._playViaTranscode('audio');
