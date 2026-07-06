@@ -50,5 +50,10 @@ contextBridge.exposeInMainWorld('appHost', {
     return () => handlers.forEach(([ch, handler]) => ipcRenderer.removeListener(ch, handler));
   },
   // Trigger install + restart once an update has finished downloading.
-  installUpdate: () => ipcRenderer.invoke('update:install')
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+
+  // Startup behaviour (run at login / start minimized to tray).
+  // get → { openAtLogin, startMinimized }; set(opts) applies + returns the same.
+  getStartupSettings: () => ipcRenderer.invoke('startup:get'),
+  setStartupSettings: (opts) => ipcRenderer.invoke('startup:set', opts)
 });

@@ -64,6 +64,32 @@ async function setAdblock(enabled) {
 ipcMain.handle('adblock:set', (_e, enabled) => setAdblock(!!enabled));
 ipcMain.handle('adblock:get', () => ({ enabled: adblockEnabled }));
 
+// --- Startup behaviour: run at login + start minimized to tray ---------------
+// startMinimized is persisted in userData; openAtLogin is owned by the OS and
+// read back via app.getLoginItemSettings(). When both are on, the login-item is
+// registered with a --minimized arg so an auto-launch opens straight to tray.
+function startupFile() { return path.join(app.getPath('userData'), 'startup.json'); }
+function readStartup() { try { return JSON.parse(fs.readFileSync(startupFile(), 'utf8')); } catch (e) { return {}; } }
+function writeStartup(s) { try { fs.writeFileSync(startupFile(), JSON.stringify(s)); } catch (e) {} }
+
+function getStartupState() {
+  let openAtLogin = false;
+  try { openAtLogin = app.getLoginItemSettings().openAtLogin; } catch (e) {}
+  return { openAtLogin, startMinimized: !!readStartup().startMinimized };
+}
+
+ipcMain.handle('startup:get', () => getStartupState());
+ipcMain.handle('startup:set', (_e, opts = {}) => {
+  const cur = getStartupState();
+  const startMinimized = typeof opts.startMinimized === 'boolean' ? opts.startMinimized : cur.startMinimized;
+  const openAtLogin = typeof opts.openAtLogin === 'boolean' ? opts.openAtLogin : cur.openAtLogin;
+  if (typeof opts.startMinimized === 'boolean') writeStartup({ startMinimized });
+  try {
+    app.setLoginItemSettings({ openAtLogin, args: startMinimized ? ['--minimized'] : [] });
+  } catch (e) {}
+  return getStartupState();
+});
+
 // Open download/update links in the user's default browser, not a child window.
 ipcMain.handle('open-external', (_e, url) => {
   if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
@@ -198,11 +224,16 @@ async function startExpressServer() {
 }
 
 function createWindow() {
+  // Start hidden in the tray when "start minimized" is on, or when the OS
+  // launched us at login with the --minimized arg. The renderer/server still
+  // run so recordings work; the user opens the window from the tray.
+  const startHidden = !!readStartup().startMinimized || process.argv.includes('--minimized');
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     title: 'ZIPTV Pro',
     autoHideMenuBar: true,
+    show: !startHidden,
     backgroundColor: '#070a13',
     webPreferences: {
       nodeIntegration: false,
@@ -259,12 +290,15 @@ function createWindow() {
 
   // ponytail: minimize prompt removed — minimize goes straight to taskbar (OS default).
 
-  // The window's X quits the app outright, so it never lingers as a background
-  // process (which blocked installer upgrades).
-  mainWindow.on('close', () => {
-    isQuitting = true;
-    try { if (globalThis.__ziptvKillChildren) globalThis.__ziptvKillChildren(); } catch (e) {}
-    app.quit();
+  // Close to tray: the X hides the window and keeps the app running in the
+  // background so scheduled/active recordings keep going. The app only truly
+  // quits from the tray's right-click → Quit (which sets isQuitting via
+  // before-quit). before-quit also kills the ffmpeg children.
+  mainWindow.on('close', (e) => {
+    if (!isQuitting) {
+      e.preventDefault();
+      mainWindow.hide();
+    }
   });
 
   loadWhenServerReady();

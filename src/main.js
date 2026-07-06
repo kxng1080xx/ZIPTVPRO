@@ -747,6 +747,17 @@ function setSleepTimer(minutes) {
 }
 
 // Refresh the Settings tile values from current credentials / app state.
+function refreshStartupTiles(s) {
+  const setBadge = (id, on) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = on ? 'On' : 'Off';
+    el.classList.toggle('tile-badge-off', !on);
+  };
+  setBadge('tile-startup-val', !!(s && s.openAtLogin));
+  setBadge('tile-startminimized-val', !!(s && s.startMinimized));
+}
+
 function refreshSettingsTiles() {
   const creds = (state.user && state.user.credentials) || {};
 
@@ -799,6 +810,16 @@ function refreshSettingsTiles() {
       upEl.textContent = on ? 'On' : 'Off';
       upEl.classList.toggle('tile-badge-off', !on);
     }
+  }
+
+  // Startup tiles (Run at Startup / Start Minimized): desktop app only.
+  const isElectronApp = !!(window.appHost && window.appHost.isElectron);
+  const startupTile = document.getElementById('tile-startup');
+  const startMinTile = document.getElementById('tile-startminimized');
+  if (startupTile) startupTile.style.display = isElectronApp ? '' : 'none';
+  if (startMinTile) startMinTile.style.display = isElectronApp ? '' : 'none';
+  if (isElectronApp && window.appHost.getStartupSettings) {
+    window.appHost.getStartupSettings().then(refreshStartupTiles).catch(() => {});
   }
 
   // Ad Blocker tile: Electron-only (webview traffic is filtered in the main
@@ -2941,6 +2962,32 @@ function bindGlobalEvents() {
   document.getElementById('tile-update')?.addEventListener('click', () => {
     checkForUpdate({ manual: true, onStatus: (m) => showToast(m, 'info', 4000) });
   });
+
+  // --- Settings category menu: switch the visible pane ---
+  document.getElementById('settings-menu')?.addEventListener('click', (e) => {
+    const item = e.target.closest('.settings-menu-item');
+    if (!item) return;
+    const pane = item.dataset.pane;
+    document.querySelectorAll('.settings-menu-item').forEach(m => m.classList.toggle('active', m === item));
+    document.querySelectorAll('.settings-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === pane));
+  });
+
+  // --- Tiles: Run at Startup / Start Minimized (desktop only) ---
+  async function toggleStartup(key) {
+    if (!window.appHost?.setStartupSettings) { showToast('Available on the desktop app.', 'error', 3000); return; }
+    try {
+      const cur = await window.appHost.getStartupSettings();
+      const next = !cur[key];
+      const s = await window.appHost.setStartupSettings({ [key]: next });
+      refreshStartupTiles(s);
+      const msg = key === 'openAtLogin'
+        ? (next ? 'Will launch at startup' : 'Startup launch off')
+        : (next ? 'Will start minimized to tray' : 'Start minimized off');
+      showToast(msg, 'success', 3000);
+    } catch (e) { showToast('Could not update startup setting', 'error', 3000); }
+  }
+  document.getElementById('tile-startup')?.addEventListener('click', () => toggleStartup('openAtLogin'));
+  document.getElementById('tile-startminimized')?.addEventListener('click', () => toggleStartup('startMinimized'));
 
   // --- Tile: Smart TV Access ---
   document.getElementById('tile-network')?.addEventListener('click', () => {

@@ -785,86 +785,116 @@
         <button class="modal-close-btn" id="settings-close-btn"><i data-lucide="x"></i></button>
       </div>
       
-      <div class="settings-body">
-        <div class="settings-grid" id="settings-grid">
+      <div class="settings-body settings-body-tabbed">
+        <nav class="settings-menu" id="settings-menu">
+          <button class="settings-menu-item active" data-pane="account" tabindex="0"><i data-lucide="user"></i><span>Account &amp; Playlists</span></button>
+          <button class="settings-menu-item" data-pane="playback" tabindex="0"><i data-lucide="play-circle"></i><span>Playback</span></button>
+          <button class="settings-menu-item" data-pane="network" tabindex="0"><i data-lucide="wifi"></i><span>Network</span></button>
+          <button class="settings-menu-item" data-pane="webtabs" tabindex="0"><i data-lucide="layout-grid"></i><span>Web Tabs</span></button>
+          <button class="settings-menu-item" data-pane="application" tabindex="0"><i data-lucide="app-window"></i><span>Application</span></button>
+          <button class="settings-menu-item" data-pane="general" tabindex="0"><i data-lucide="sliders"></i><span>General</span></button>
+        </nav>
 
-          <button class="settings-tile" id="tile-switch-playlist" tabindex="0">
-            <div class="settings-tile-icon"><i data-lucide="list"></i></div>
-            <div class="settings-tile-title">Switch Playlist</div>
-            <div class="settings-tile-sub" id="tile-switch-playlist-val">Change source</div>
-          </button>
+        <div class="settings-panes" id="settings-panes">
 
-          <button class="settings-tile" id="tile-stream-format" tabindex="0">
-            <div class="settings-tile-icon"><i data-lucide="clapperboard"></i></div>
-            <div class="settings-tile-title">Stream Format</div>
-            <div class="settings-tile-sub">Current: <strong id="tile-stream-format-val">—</strong></div>
-          </button>
+          <section class="settings-pane active" data-pane="account">
+            <h3 class="settings-pane-title">Account &amp; Playlists</h3>
+            <button class="settings-tile" id="tile-switch-playlist" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="list"></i></div>
+              <div class="settings-tile-title">Switch Playlist</div>
+              <div class="settings-tile-sub" id="tile-switch-playlist-val">Change source</div>
+            </button>
+            <button class="settings-tile settings-tile-danger" id="tile-logout" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="log-out"></i></div>
+              <div class="settings-tile-title">Log Out</div>
+              <div class="settings-tile-sub" id="tile-logout-val">Disconnect</div>
+            </button>
+          </section>
 
-          <button class="settings-tile" id="tile-player-engine" tabindex="0" style="display: none;">
-            <div class="settings-tile-icon"><i data-lucide="play-circle"></i></div>
-            <div class="settings-tile-title">Player Engine</div>
-            <div class="settings-tile-sub">Current: <strong id="tile-player-engine-val">Native Player</strong></div>
-          </button>
+          <section class="settings-pane" data-pane="playback">
+            <h3 class="settings-pane-title">Playback</h3>
+            <button class="settings-tile" id="tile-stream-format" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="clapperboard"></i></div>
+              <div class="settings-tile-title">Stream Format</div>
+              <div class="settings-tile-sub">Current: <strong id="tile-stream-format-val">—</strong></div>
+            </button>
+            <button class="settings-tile" id="tile-player-engine" tabindex="0" style="display: none;">
+              <div class="settings-tile-icon"><i data-lucide="play-circle"></i></div>
+              <div class="settings-tile-title">Player Engine</div>
+              <div class="settings-tile-sub">Current: <strong id="tile-player-engine-val">Native Player</strong></div>
+            </button>
+            <button class="settings-tile" id="tile-upscaler" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="sparkles"></i></div>
+              <div class="settings-tile-title">Upscaler</div>
+              <div class="settings-tile-sub">Enhance low-quality streams: <span class="tile-badge" id="tile-upscaler-val">Off</span></div>
+            </button>
+            <button class="settings-tile" id="tile-perf" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="gauge"></i></div>
+              <div class="settings-tile-title">Performance Mode</div>
+              <div class="settings-tile-sub">For TVs / projectors: <span class="tile-badge" id="tile-perf-val">Auto</span></div>
+            </button>
+          </section>
 
-          <button class="settings-tile" id="tile-proxy" tabindex="0">
-            <div class="settings-tile-icon"><i data-lucide="shield-check"></i></div>
-            <div class="settings-tile-title">CORS Proxy</div>
-            <div class="settings-tile-sub">Currently: <span class="tile-badge" id="tile-proxy-val">On</span></div>
-          </button>
+          <section class="settings-pane" data-pane="network">
+            <h3 class="settings-pane-title">Network</h3>
+            <button class="settings-tile" id="tile-proxy" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="shield-check"></i></div>
+              <div class="settings-tile-title">CORS Proxy</div>
+              <div class="settings-tile-sub">Currently: <span class="tile-badge" id="tile-proxy-val">On</span></div>
+            </button>
+            <button class="settings-tile" id="tile-network" tabindex="0" style="display:none;">
+              <div class="settings-tile-icon"><i data-lucide="cast"></i></div>
+              <div class="settings-tile-title">Smart TV Access</div>
+              <div class="settings-tile-sub" id="tile-network-val">Show local URL</div>
+            </button>
+          </section>
 
-          <button class="settings-tile" id="tile-perf" tabindex="0">
-            <div class="settings-tile-icon"><i data-lucide="gauge"></i></div>
-            <div class="settings-tile-title">Performance Mode</div>
-            <div class="settings-tile-sub">For TVs / projectors: <span class="tile-badge" id="tile-perf-val">Auto</span></div>
-          </button>
+          <section class="settings-pane" data-pane="webtabs">
+            <h3 class="settings-pane-title">Web Tabs</h3>
+            <button class="settings-tile" id="tile-tabs" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="layout-grid"></i></div>
+              <div class="settings-tile-title">Manage Tabs</div>
+              <div class="settings-tile-sub" id="tile-tabs-val">Show, hide &amp; edit tabs</div>
+            </button>
+            <button class="settings-tile" id="tile-adblock" tabindex="0" style="display:none">
+              <div class="settings-tile-icon"><i data-lucide="shield-ban"></i></div>
+              <div class="settings-tile-title">Ad Blocker</div>
+              <div class="settings-tile-sub">Web tabs: <span class="tile-badge" id="tile-adblock-val">On</span></div>
+            </button>
+          </section>
 
-          <button class="settings-tile" id="tile-upscaler" tabindex="0">
-            <div class="settings-tile-icon"><i data-lucide="sparkles"></i></div>
-            <div class="settings-tile-title">Upscaler</div>
-            <div class="settings-tile-sub">Enhance low-quality streams: <span class="tile-badge" id="tile-upscaler-val">Off</span></div>
-          </button>
+          <section class="settings-pane" data-pane="application">
+            <h3 class="settings-pane-title">Application</h3>
+            <button class="settings-tile" id="tile-startup" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="power"></i></div>
+              <div class="settings-tile-title">Run at Startup</div>
+              <div class="settings-tile-sub">Launch when Windows starts: <span class="tile-badge" id="tile-startup-val">Off</span></div>
+            </button>
+            <button class="settings-tile" id="tile-startminimized" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="minimize-2"></i></div>
+              <div class="settings-tile-title">Start Minimized</div>
+              <div class="settings-tile-sub">Open to the tray on launch: <span class="tile-badge" id="tile-startminimized-val">Off</span></div>
+            </button>
+            <button class="settings-tile" id="tile-update" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="arrow-up-circle"></i></div>
+              <div class="settings-tile-title">Updates</div>
+              <div class="settings-tile-sub" id="tile-update-val">v—</div>
+            </button>
+          </section>
 
-          <button class="settings-tile" id="tile-tabs" tabindex="0">
-            <div class="settings-tile-icon"><i data-lucide="layout-grid"></i></div>
-            <div class="settings-tile-title">Manage Tabs</div>
-            <div class="settings-tile-sub" id="tile-tabs-val">Show, hide &amp; edit tabs</div>
-          </button>
-
-          <button class="settings-tile" id="tile-adblock" tabindex="0" style="display:none">
-            <div class="settings-tile-icon"><i data-lucide="shield-ban"></i></div>
-            <div class="settings-tile-title">Ad Blocker</div>
-            <div class="settings-tile-sub">Web tabs: <span class="tile-badge" id="tile-adblock-val">On</span></div>
-          </button>
-
-          <button class="settings-tile" id="tile-sleep" tabindex="0">
-            <div class="settings-tile-icon"><i data-lucide="moon"></i></div>
-            <div class="settings-tile-title">Sleep Timer</div>
-            <div class="settings-tile-sub" id="tile-sleep-val">Off</div>
-          </button>
-
-          <button class="settings-tile" id="tile-sync" tabindex="0">
-            <div class="settings-tile-icon"><i data-lucide="refresh-cw"></i></div>
-            <div class="settings-tile-title">Sync &amp; Cache</div>
-            <div class="settings-tile-sub">Refresh all lists</div>
-          </button>
-
-          <button class="settings-tile" id="tile-update" tabindex="0">
-            <div class="settings-tile-icon"><i data-lucide="arrow-up-circle"></i></div>
-            <div class="settings-tile-title">Updates</div>
-            <div class="settings-tile-sub" id="tile-update-val">v—</div>
-          </button>
-
-          <button class="settings-tile" id="tile-network" tabindex="0" style="display:none;">
-            <div class="settings-tile-icon"><i data-lucide="cast"></i></div>
-            <div class="settings-tile-title">Smart TV Access</div>
-            <div class="settings-tile-sub" id="tile-network-val">Show local URL</div>
-          </button>
-
-          <button class="settings-tile settings-tile-danger" id="tile-logout" tabindex="0">
-            <div class="settings-tile-icon"><i data-lucide="log-out"></i></div>
-            <div class="settings-tile-title">Log Out</div>
-            <div class="settings-tile-sub" id="tile-logout-val">Disconnect</div>
-          </button>
+          <section class="settings-pane" data-pane="general">
+            <h3 class="settings-pane-title">General</h3>
+            <button class="settings-tile" id="tile-sleep" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="moon"></i></div>
+              <div class="settings-tile-title">Sleep Timer</div>
+              <div class="settings-tile-sub" id="tile-sleep-val">Off</div>
+            </button>
+            <button class="settings-tile" id="tile-sync" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="refresh-cw"></i></div>
+              <div class="settings-tile-title">Sync &amp; Cache</div>
+              <div class="settings-tile-sub">Refresh all lists</div>
+            </button>
+          </section>
 
         </div>
       </div>

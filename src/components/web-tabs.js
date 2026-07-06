@@ -156,6 +156,16 @@ export function openWebTab(id) {
   const view = document.getElementById('webtab-view');
   if (!tab || !view || !isElectron()) return;
 
+  // Switching to a web tab takes over the screen — stop local IPTV playback so
+  // its audio doesn't keep going behind the tab's own video (double audio).
+  try {
+    const p = window.playerInstance;
+    if (p) {
+      if (p.mpegtsPlayer) { try { p.mpegtsPlayer.pause(); } catch (e) {} }
+      if (p.video) { try { p.video.pause(); } catch (e) {} }
+    }
+  } catch (e) {}
+
   // Build the panel chrome once.
   if (!view.querySelector('.webtab-toolbar')) {
     view.innerHTML = `
