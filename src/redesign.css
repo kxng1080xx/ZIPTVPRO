@@ -853,21 +853,42 @@ body.tv-layout .epg-section-container.timeline-hidden.epg-list-view .epg-channel
   transform: scale(1.05);
 }
 
-/* Utility row: ghost icons — no circles, no borders, no blur */
+/* Utility row: glassmorphism — frosted circular buttons with a glass edge
+   highlight and an accent glow on hover/focus. (Lives inside the auto-hiding
+   controls overlay, so it never sits over the video in the idle VSR state.) */
 .player-control-icon {
-  background: transparent;
-  border: none;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  color: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);
+  color: rgba(255, 255, 255, 0.88);
   border-radius: 50%;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22),
+              0 2px 8px rgba(0, 0, 0, 0.28);
+  transition: background 0.18s ease, border-color 0.18s ease,
+              box-shadow 0.18s ease, transform 0.18s ease, color 0.18s ease;
 }
 .player-control-icon:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.20);
+  border-color: rgba(255, 255, 255, 0.38);
   color: #fff;
-  transform: none;
+  transform: translateY(-1px) scale(1.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
+              0 4px 14px rgba(0, 0, 0, 0.34),
+              0 0 14px var(--rd-accent-solid, rgba(239, 68, 68, 0.55));
 }
-.control-row-right { gap: 4px; }
+.player-control-icon:active {
+  transform: translateY(0) scale(0.97);
+}
+/* TV / D-pad focus: brighter accent ring so it reads from across the room. */
+.player-control-icon.tv-focused {
+  border-color: var(--accent-red, #ef4444);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
+              0 0 0 2px var(--accent-red, #ef4444),
+              0 0 18px var(--rd-accent-solid, rgba(239, 68, 68, 0.7));
+}
+.control-row-left { gap: 12px; }
+.control-row-right { gap: 12px; }
 
 /* Title block */
 .player-playing-title { font-size: 0.95rem; }

@@ -3510,7 +3510,9 @@ body.vod-mode .now-next-bar {
   position: absolute;
   top: 6px;
   right: 6px;
-  display: none;
+  display: inline-flex;
+  opacity: 0.4;
+  transition: opacity 0.15s ease, background 0.15s ease;
   align-items: center;
   gap: 4px;
   font-size: 10px;
@@ -3532,8 +3534,9 @@ body.vod-mode .now-next-bar {
   background: #fff;
   display: inline-block;
 }
-.epg-program-block:hover .epg-rec-btn { display: inline-flex; }
-.epg-rec-btn:hover { background: #ff3b30; }
+.epg-program-block:hover .epg-rec-btn,
+.epg-program-block.tv-focused .epg-rec-btn { opacity: 1; }
+.epg-rec-btn:hover { background: #ff3b30; opacity: 1; }
 
 /* Subtle alternating row shading across the whole guide */
 .epg-programs-row:nth-child(even),

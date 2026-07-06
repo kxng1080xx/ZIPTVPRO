@@ -1197,13 +1197,54 @@ async function renderRecordings() {
   const list = document.getElementById('recordings-list');
   if (!list) return;
   list.innerHTML = '<div class="recordings-empty">Loading…</div>';
-  let recs = [];
+  let recs = [], sched = [];
   try { recs = await (await fetch('/api/recordings')).json(); } catch (e) {}
-  if (!Array.isArray(recs) || recs.length === 0) {
-    list.innerHTML = '<div class="recordings-empty">No recordings yet. Hit the ⦿ record button while watching a channel.</div>';
+  try { sched = await (await fetch('/api/recordings/schedule')).json(); } catch (e) {}
+  if (!Array.isArray(recs)) recs = [];
+  if (!Array.isArray(sched)) sched = [];
+
+  if (recs.length === 0 && sched.length === 0) {
+    list.innerHTML = '<div class="recordings-empty">No recordings yet. In the TV Guide, hover a programme and hit REC — upcoming shows are scheduled, current ones record now.</div>';
     return;
   }
   list.innerHTML = '';
+
+  // Scheduled (upcoming) recordings — the server arms a timer for each and
+  // re-arms them on reboot; this section lets you see and cancel them.
+  if (sched.length) {
+    const hdr = document.createElement('div');
+    hdr.className = 'recordings-section-hdr';
+    hdr.style.cssText = 'font-size:12px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:rgba(255,255,255,0.5);margin:4px 4px 8px;';
+    hdr.textContent = 'Scheduled';
+    list.appendChild(hdr);
+    sched.sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
+    for (const j of sched) {
+      const row = document.createElement('div');
+      row.className = 'recording-row';
+      const when = new Date(j.startAt).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' });
+      row.innerHTML = `
+        <i data-lucide="clock"></i>
+        <div class="rec-meta">
+          <div class="rec-name">${j.name}</div>
+          <div class="rec-sub">Scheduled · ${when} · ${j.durationMins} min</div>
+        </div>
+        <div class="rec-actions">
+          <button data-act="cancel" title="Cancel scheduled recording"><i data-lucide="x"></i></button>
+        </div>`;
+      row.querySelector('[data-act="cancel"]')?.addEventListener('click', async () => {
+        await fetch(`/api/recordings/schedule/${j.id}`, { method: 'DELETE' }).catch(() => {});
+        renderRecordings();
+      });
+      list.appendChild(row);
+    }
+    if (recs.length) {
+      const rhdr = document.createElement('div');
+      rhdr.className = 'recordings-section-hdr';
+      rhdr.style.cssText = hdr.style.cssText + 'margin-top:16px;';
+      rhdr.textContent = 'Recordings';
+      list.appendChild(rhdr);
+    }
+  }
   for (const r of recs) {
     const row = document.createElement('div');
     row.className = 'recording-row';
