@@ -216,6 +216,7 @@ async function initApp() {
   playerInstance = new VideoPlayer();
   window.playerInstance = playerInstance;
   try { playerInstance.restoreUpscalerPref(); } catch (e) {}
+  updateRecordingsCount();
 
   // Set player skip handlers
   playerInstance.setOnPrevChannel(() => playPreviousChannel());
@@ -1134,6 +1135,7 @@ async function recordCurrentChannel() {
     });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
     window.showToast?.(`Recording "${ch.name}" for ${durationMins} min`, 'success', 4000);
+    updateRecordingsCount();
   } catch (e) {
     window.showToast?.(`Could not start recording: ${e.message}`, 'error', 5000);
   }
@@ -1149,14 +1151,35 @@ window.scheduleRecordProgram = (channel, prog) => {
   }
   if (!channel || !prog) return;
   const endMs = parseInt(prog.end_timestamp) * 1000;
-  if (endMs <= Date.now()) { window.showToast?.('That programme has already aired.', 'error', 3000); return; }
-  const live = Date.now() >= parseInt(prog.start_timestamp) * 1000;
-  openSortDropdown({
-    title: prog.title || 'Programme',
-    options: [{ value: 'rec', label: live ? 'Record now (rest of show)' : 'Record this show' }],
-    onSelect: () => doScheduleRecord(channel, prog),
-  });
+  if (!endMs || endMs <= Date.now()) { window.showToast?.('That programme has already aired.', 'error', 3000); return; }
+  // One click = record (if airing) or schedule (if upcoming). No intermediate menu.
+  doScheduleRecord(channel, prog);
 };
+
+// Bulletproof EPG record: a single capture-phase listener on document. It runs
+// BEFORE the programme block's own click handler, so stopping propagation here
+// guarantees the click can't fall through to a channel switch — regardless of
+// per-block listener timing or re-renders. Channel/programme are reconstructed
+// from the block's data-* attributes (set in epg.js render).
+document.addEventListener('click', (e) => {
+  const recBtn = e.target.closest && e.target.closest('.epg-rec-btn');
+  if (!recBtn) return;
+  e.stopPropagation();
+  e.preventDefault();
+  const block = recBtn.closest('.epg-program-block');
+  if (!block) return;
+  const channel = {
+    stream_id: block.dataset.streamId,
+    name: block.dataset.channelName,
+    stream_icon: block.dataset.channelIcon,
+  };
+  const prog = {
+    start_timestamp: block.dataset.progStart,
+    end_timestamp: block.dataset.progEnd,
+    title: block.dataset.progTitle,
+  };
+  window.scheduleRecordProgram?.(channel, prog);
+}, true);
 
 async function doScheduleRecord(channel, prog) {
   try {
@@ -1178,9 +1201,24 @@ async function doScheduleRecord(channel, prog) {
       await post('/api/record', { url: target, name, channel: channel.name, durationMins });
       window.showToast?.(`Recording now: ${name}`, 'success', 4000);
     }
+    updateRecordingsCount();
   } catch (e) {
     window.showToast?.(`Could not record: ${e.message}`, 'error', 5000);
   }
+}
+
+// Keep the sidebar "Recordings" badge in sync with finished + scheduled counts.
+// Called on boot and after any record/schedule/cancel/delete.
+async function updateRecordingsCount() {
+  const el = document.getElementById('count-recordings');
+  if (!el) return;
+  try {
+    const [recs, sched] = await Promise.all([
+      fetch('/api/recordings').then(r => r.ok ? r.json() : []).catch(() => []),
+      fetch('/api/recordings/schedule').then(r => r.ok ? r.json() : []).catch(() => []),
+    ]);
+    el.textContent = (Array.isArray(recs) ? recs.length : 0) + (Array.isArray(sched) ? sched.length : 0);
+  } catch (e) {}
 }
 
 function openRecordingsModal() {
@@ -1202,6 +1240,9 @@ async function renderRecordings() {
   try { sched = await (await fetch('/api/recordings/schedule')).json(); } catch (e) {}
   if (!Array.isArray(recs)) recs = [];
   if (!Array.isArray(sched)) sched = [];
+
+  const cEl = document.getElementById('count-recordings');
+  if (cEl) cEl.textContent = recs.length + sched.length;
 
   if (recs.length === 0 && sched.length === 0) {
     list.innerHTML = '<div class="recordings-empty">No recordings yet. In the TV Guide, hover a programme and hit REC — upcoming shows are scheduled, current ones record now.</div>';

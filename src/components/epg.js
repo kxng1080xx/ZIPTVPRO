@@ -507,7 +507,9 @@ export class EPGGrid {
             prog
           );
 
-          block.addEventListener('click', () => {
+          block.addEventListener('click', (e) => {
+            // Clicks on the REC button must not fall through to a channel switch.
+            if (e.target.closest('.epg-rec-btn')) return;
             chanRow.click();
             this.onChannelSelect(channel, prog);
           });
@@ -522,6 +524,7 @@ export class EPGGrid {
           const recBtn = block.querySelector('.epg-rec-btn');
           if (recBtn) recBtn.addEventListener('click', (e) => {
             e.stopPropagation();
+            e.preventDefault();
             window.scheduleRecordProgram?.(channel, prog);
           });
 
@@ -788,10 +791,22 @@ export class EPGGrid {
         prog
       );
 
-      block.addEventListener('click', () => {
+      block.addEventListener('click', (e) => {
+        // Don't let a REC-button click fall through to a channel switch.
+        if (e.target.closest('.epg-rec-btn')) return;
         if (chanRow) chanRow.click();
         this.onChannelSelect(channel, prog);
       });
+
+      // Same data-* the grid render sets, so the delegated REC handler in main.js
+      // can read a valid start/end time. Without these the record button reported
+      // every show as "already aired".
+      block.dataset.streamId = streamId;
+      block.dataset.channelName = channel?.name || '';
+      block.dataset.channelIcon = channel?.stream_icon || '';
+      block.dataset.progStart = prog.start_timestamp;
+      block.dataset.progEnd = prog.end_timestamp;
+      block.dataset.progTitle = prog.title || '';
 
       progRow.appendChild(block);
     });
