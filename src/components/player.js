@@ -877,6 +877,19 @@ export class VideoPlayer {
         // Engine never showed signs of life (or it's live) → browser fallback.
         // fallback toast removed in production
       }
+    } else if (this._isElectron()) {
+      // Desktop (Electron): no libVLC layer. Honor the user's Desktop Player
+      // preference — 'ffmpeg' forces the server-side ffmpeg transcode straight
+      // away (best for premium HEVC/E-AC3 VOD the browser can't decode); 'html5'
+      // (default) uses the browser <video>/hls.js/mpegts.js chain, with transcode
+      // still available as an automatic fallback via _handleVodPlaybackFallback.
+      let desktopEngine = 'html5';
+      try { desktopEngine = localStorage.getItem('electronEngine') || 'html5'; } catch (e) {}
+      if (desktopEngine === 'ffmpeg' && isVod && !this._castMode) {
+        this._triedTranscodeAudio = true;
+        this._playViaTranscode('audio');
+        return;
+      }
     } else if (window.showToast && isVod) {
       window.showToast('Native player not available on this platform', 'error', 4000);
     }

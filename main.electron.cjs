@@ -97,6 +97,24 @@ ipcMain.handle('open-external', (_e, url) => {
   }
 });
 
+// Hand a stream to the user's default media player (External Player engine).
+// shell.openExternal on an http URL would open the browser, so we write a tiny
+// .m3u playlist and shell.openPath it — Windows launches whatever app is
+// registered for .m3u (VLC / PotPlayer / MPC-HC, etc.). Returns {ok,error?}.
+ipcMain.handle('open-in-player', async (_e, opts = {}) => {
+  try {
+    const url = opts && typeof opts.url === 'string' ? opts.url : '';
+    if (!/^https?:\/\//i.test(url)) return { ok: false, error: 'invalid stream url' };
+    const title = String(opts.title || 'Stream').replace(/[\r\n]+/g, ' ').slice(0, 200);
+    const file = path.join(require('os').tmpdir(), `ziptv-${Date.now()}.m3u`);
+    fs.writeFileSync(file, `#EXTM3U\n#EXTINF:-1,${title}\n${url}\n`, 'utf8');
+    const err = await shell.openPath(file); // '' on success, else error string
+    return err ? { ok: false, error: err } : { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message ? e.message : e) };
+  }
+});
+
 let mainWindow;
 let tray = null;
 let isQuitting = false;

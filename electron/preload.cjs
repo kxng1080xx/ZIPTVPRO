@@ -32,6 +32,10 @@ contextBridge.exposeInMainWorld('appHost', {
 
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
+  // Hand a stream to the user's default media player via a temp .m3u playlist.
+  // opts: { url, title } → { ok, error? }.
+  openInPlayer: (opts) => ipcRenderer.invoke('open-in-player', opts),
+
   // Built-in ad blocker (uBlock-style filter lists) for custom web tabs.
   // set → { ok, enabled, error? }; get → { enabled }.
   setAdblock: (enabled) => ipcRenderer.invoke('adblock:set', enabled),

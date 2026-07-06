@@ -779,6 +779,19 @@ function refreshSettingsTiles() {
     }
   }
 
+  // Desktop (Electron) player engine: FFmpeg server transcode vs HTML5 browser
+  // player. Only shown in the Electron app — web/Android have no ffmpeg host.
+  const desktopEngineTile = document.getElementById('tile-desktop-engine');
+  const desktopEngineValEl = document.getElementById('tile-desktop-engine-val');
+  if (desktopEngineTile) {
+    const isElectronApp = !!(window.appHost || window.electronCast);
+    desktopEngineTile.style.display = isElectronApp ? 'flex' : 'none';
+    if (isElectronApp && desktopEngineValEl) {
+      const saved = localStorage.getItem('electronEngine') || 'html5';
+      desktopEngineValEl.textContent = saved === 'ffmpeg' ? 'FFmpeg Transcode' : 'HTML5 Player';
+    }
+  }
+
   const proxyOn = creds.proxy_streams ?? true;
   const proxyEl = document.getElementById('tile-proxy-val');
   if (proxyEl) {
@@ -2883,6 +2896,25 @@ function bindGlobalEvents() {
         const activeLabel = v === 'web' ? 'Web Player' : 'Native Player';
         showToast(`Player engine set to ${activeLabel}`, 'success');
         navigation.setFocus('modal', document.getElementById('tile-player-engine'));
+      }
+    });
+  });
+
+  // --- Tile: Desktop Player (FFmpeg transcode vs HTML5) ---
+  document.getElementById('tile-desktop-engine')?.addEventListener('click', () => {
+    openSortDropdown({
+      title: 'Desktop Player',
+      options: [
+        { value: 'html5', label: 'HTML5 Player (Built-in)' },
+        { value: 'ffmpeg', label: 'FFmpeg Transcode' }
+      ],
+      current: localStorage.getItem('electronEngine') === 'ffmpeg' ? 'ffmpeg' : 'html5',
+      onSelect: (v) => {
+        localStorage.setItem('electronEngine', v);
+        refreshSettingsTiles();
+        const activeLabel = v === 'ffmpeg' ? 'FFmpeg Transcode' : 'HTML5 Player';
+        showToast(`Desktop player set to ${activeLabel}`, 'success');
+        navigation.setFocus('modal', document.getElementById('tile-desktop-engine'));
       }
     });
   });
