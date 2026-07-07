@@ -713,6 +713,9 @@ export class VideoPlayer {
   }
 
   loadStream(url, name, logo, currentEpg = 'No schedule available', isVod = false, resumeTime = 0) {
+    // Only one thing plays at a time across the whole app: a local stream
+    // starting here silences every custom web tab (no double audio).
+    try { window.stopAllWebtabPlayback?.(); } catch (e) {}
     this.isVod = isVod;
     this.isVodActive = isVod;
     this.hasStream = true; // gates orientation-driven fullscreen

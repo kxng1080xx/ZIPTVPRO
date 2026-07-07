@@ -369,6 +369,11 @@ async function switchTab(tabId) {
   state.activeTab = tabId;
   state.activeCategory = null;
 
+  // Always collapse the mobile category drawer when changing tabs — otherwise a
+  // drawer opened on Live can linger (or show empty) after moving to Home.
+  document.getElementById('app-container')?.classList.remove('sidebar-open');
+  document.getElementById('sidebar-backdrop')?.classList.add('hidden');
+
   // Toggle tab buttons class (header pill + mobile bottom bar stay in sync)
   document.querySelectorAll('.nav-tab, .mobile-tab-btn[data-tab]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tabId);
@@ -1114,7 +1119,15 @@ async function selectAndPlayChannel(channel, programBlock) {
     // spinner immediately, and we run the UI (fullscreen, banners) right away so
     // the click feels instant instead of waiting on ffmpeg's first segments.
     playerInstance.setSeriesMode(false);
-    const wantTimeshift = (window.appHost || window.electronCast) && localStorage.getItem('timeshift') !== 'off';
+    // The external player manages its own buffering and needs the real upstream
+    // URL — never the app's local timeshift HLS buffer (which it can't open).
+    // So skip timeshift entirely when the Desktop Player is set to "external".
+    const usingExternalPlayer = (() => {
+      try { return localStorage.getItem('electronEngine') === 'external'; } catch (e) { return false; }
+    })();
+    const wantTimeshift = (window.appHost || window.electronCast)
+      && localStorage.getItem('timeshift') !== 'off'
+      && !usingExternalPlayer;
     if (wantTimeshift) {
       // Paint the player shell now (synchronously) so autoFullscreen() below has
       // something to fullscreen and the click is instant.

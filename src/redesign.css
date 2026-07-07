@@ -1536,6 +1536,14 @@ body.tv-layout .tv-focused { scroll-margin: 6rem; }
    ========================================================================== */
 body.home-tab .sidebar { display: none !important; }
 
+/* Home / Flixify / Web tabs have no category sidebar, so the mobile hamburger
+   would open an empty translucent drawer. Hide the toggle on those tabs. */
+body.home-tab #mobile-menu-btn,
+body.flixify-tab #mobile-menu-btn,
+body.webtab-tab #mobile-menu-btn {
+  display: none !important;
+}
+
 #home-view.active { display: flex; }
 .home-scroll {
   flex: 1 1 auto;
@@ -1834,8 +1842,32 @@ body.tv-layout .home-tile-title { font-size: 0.95rem; }
 /* Phone portrait: tighter hero, tiles sized off the viewport */
 @media (orientation: portrait) {
   body:not(.tv-layout) .home-scroll { padding: 12px 14px 110px; gap: 20px; }
-  body:not(.tv-layout) .home-hero { padding: 18px; gap: 14px; min-height: 170px; }
-  body:not(.tv-layout) .home-hero-poster { width: 86px; }
+  body:not(.tv-layout) .home-hero { padding: 16px; gap: 14px; min-height: auto; align-items: stretch; }
+  body:not(.tv-layout) .home-hero-poster { width: 84px; align-self: center; }
+  body:not(.tv-layout) .home-hero-info { gap: 8px; justify-content: center; }
+
+  /* Let the hero title wrap to two lines instead of truncating with "…". */
+  body:not(.tv-layout) .home-hero-title {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.15;
+    font-size: clamp(1.25rem, 6vw, 1.7rem);
+  }
+  body:not(.tv-layout) .home-hero-sub { font-size: 0.85rem; }
+  body:not(.tv-layout) .home-hero-progress { width: 100%; }
+
+  /* Keep the CTA on a single line and sized for touch. */
+  body:not(.tv-layout) .home-hero-btn {
+    white-space: nowrap;
+    margin-top: 6px;
+    height: 44px;
+    padding: 0 22px;
+    align-self: flex-start;
+  }
+
   body:not(.tv-layout) .home-card { flex: 0 0 clamp(96px, 27vw, 150px); width: clamp(96px, 27vw, 150px); }
   body:not(.tv-layout) .home-row-wide .home-card { flex: 0 0 clamp(150px, 42vw, 220px); width: clamp(150px, 42vw, 220px); }
 }

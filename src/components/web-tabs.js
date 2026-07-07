@@ -151,6 +151,28 @@ function toggleHidden(id, hide) {
 // ---- open a custom tab (webview browser panel) ------------------------------
 const webviews = new Map(); // tab id → <webview>
 
+// Pause any <video>/<audio> playing inside a webview and mute its audio, so a
+// backgrounded tab can never keep playing behind whatever is on screen now.
+// executeJavaScript / setAudioMuted throw until the guest page has attached —
+// swallow those; a not-yet-ready webview isn't playing anything anyway.
+function silenceWebview(wv) {
+  if (!wv) return;
+  try { wv.setAudioMuted(true); } catch (e) {}
+  try {
+    wv.executeJavaScript(
+      "document.querySelectorAll('video,audio').forEach(function(m){try{m.pause();}catch(e){}});"
+    ).catch(() => {});
+  } catch (e) {}
+}
+
+// Stop playback in every custom web tab. Exposed on window so the video player
+// (player.js) can call it whenever a local stream starts — one call silences
+// all custom tabs regardless of which one was playing.
+export function stopAllWebtabPlayback() {
+  for (const wv of webviews.values()) silenceWebview(wv);
+}
+if (typeof window !== 'undefined') window.stopAllWebtabPlayback = stopAllWebtabPlayback;
+
 export function openWebTab(id) {
   const tab = getWebTabs().find((t) => t.id === id);
   const view = document.getElementById('webtab-view');
@@ -165,6 +187,9 @@ export function openWebTab(id) {
       if (p.video) { try { p.video.pause(); } catch (e) {} }
     }
   } catch (e) {}
+
+  // Only one tab plays at a time: silence every other custom tab as we switch in.
+  for (const [tid, el] of webviews) { if (tid !== id) silenceWebview(el); }
 
   // Build the panel chrome once.
   if (!view.querySelector('.webtab-toolbar')) {
@@ -215,6 +240,9 @@ export function openWebTab(id) {
     stage.appendChild(wv);
   }
   for (const [tid, el] of webviews) el.classList.toggle('active', tid === id);
+  // The tab we're entering is the one allowed to make sound — undo any mute
+  // applied while it sat in the background.
+  try { wv.setAudioMuted(false); } catch (e) {}
   setTitle(tab.name);
 
   function setTitle(t) {
