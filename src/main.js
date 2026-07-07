@@ -106,12 +106,25 @@ function showFatalOverlay(label, detail) {
     el.textContent = `ZIPTV Pro — startup error\n\n${label}\n${detail || ''}`.slice(0, 4000);
   } catch (e) { /* nothing more we can do */ }
 }
+// Benign, non-fatal errors that must NOT trigger the full-screen crash overlay.
+// The classic one is the HTMLMediaElement AbortError — play() rejects when a new
+// load()/src interrupts a pending play() (happens constantly on channel/VOD
+// switches, catch-up replay, deinterlace re-tune, etc.). These are harmless races,
+// not startup crashes, so swallow them instead of bricking the whole UI.
+function isBenignError(r) {
+  if (!r) return false;
+  if (r.name === 'AbortError' || r.name === 'NotAllowedError') return true;
+  const msg = String((r && (r.message || r.reason)) || r || '');
+  return /play\(\)\s*request|interrupted by a new load|request was interrupted|media was removed|removed from the document|The operation was aborted/i.test(msg);
+}
 window.addEventListener('error', (e) => {
+  if (isBenignError(e.error) || isBenignError(e)) return;
   showFatalOverlay(e.message || 'Uncaught error',
     (e.filename ? `${e.filename}:${e.lineno}:${e.colno}\n` : '') + (e.error && e.error.stack ? e.error.stack : ''));
 });
 window.addEventListener('unhandledrejection', (e) => {
   const r = e.reason;
+  if (isBenignError(r)) { e.preventDefault(); return; } // ignore harmless media races
   showFatalOverlay('Unhandled promise rejection', (r && r.stack) ? r.stack : String(r));
 });
 
