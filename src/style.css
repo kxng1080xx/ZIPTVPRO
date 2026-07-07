@@ -1925,6 +1925,15 @@ body.timeshift-active .seekable-only { display: inline-flex !important; }
 .dvr-only { display: none !important; }
 body.desktop-dvr .dvr-only { display: inline-flex !important; }
 body.desktop-dvr.vod-mode .dvr-only { display: none !important; }
+
+/* Deinterlace toggle: desktop only (needs the server ffmpeg), shown for both
+   live and VOD. Lit accent when active. */
+.desktop-ffmpeg-only { display: none !important; }
+body.desktop-dvr .desktop-ffmpeg-only { display: inline-flex !important; }
+.player-control-icon#player-deint-btn.active {
+  color: var(--accent-cyan, #06b6d4);
+  background: rgba(6, 182, 212, 0.16);
+}
 /* Timeshift-only chrome (Go-Live + the seek bar) shows while buffering live. */
 .timeshift-only { display: none !important; }
 body.timeshift-active .timeshift-only { display: inline-flex !important; }

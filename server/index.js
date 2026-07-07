@@ -1075,6 +1075,7 @@ app.get('/api/transcode', (req, res) => {
   }
   const mode = req.query.mode === 'full' ? 'full' : 'audio';
   const start = Math.max(0, parseInt(req.query.start, 10) || 0);
+  const deint = req.query.deint === '1';
   const ffmpeg = findFfmpeg();
 
   const args = [];
@@ -1087,7 +1088,12 @@ app.get('/api/transcode', (req, res) => {
     '-fflags', '+genpts',
     '-i', target
   );
-  if (mode === 'audio') {
+  if (deint) {
+    // Deinterlace + field-double: 1080i (30 frames / 60 fields) -> 1080p60 for
+    // smooth motion. bwdif=send_field emits one frame per field, doubling the
+    // rate. This needs a real video re-encode, so it overrides the copy-video tier.
+    args.push('-vf', 'bwdif=mode=send_field', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p');
+  } else if (mode === 'audio') {
     // Keep HEVC video as-is (Electron HW-decodes it); tag hvc1 for Chromium.
     args.push('-c:v', 'copy', '-tag:v', 'hvc1');
   } else {
@@ -1376,7 +1382,11 @@ function spawnTimeshiftProc(state) {
     // glitch-free without re-encoding video.
     '-fflags', '+genpts+discardcorrupt',
     '-i', state.url,
-    '-c:v', 'copy',
+    // Deinterlace to 60fps (bwdif field-double) needs a video re-encode; otherwise
+    // stream-copy the video untouched (cheap). Live 1080p60 x264 is CPU-heavy.
+    ...(state.deint
+      ? ['-vf', 'bwdif=mode=send_field', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p']
+      : ['-c:v', 'copy']),
     '-c:a', 'aac', '-ac', '2', '-b:a', '256k',
     '-avoid_negative_ts', 'make_zero',
     // 10-sec chunks. 6 in the playlist = ~60s in RAM: ~30s of usable rewind
@@ -1460,13 +1470,14 @@ const waitForSegments = (n, ms) => new Promise((resolve) => {
 app.get('/api/timeshift/start', async (req, res) => {
   const url = req.query.url;
   const ch = sanitize(req.query.ch || 'live');
+  const deint = req.query.deint === '1';
   if (!url || !/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'missing or invalid url' });
-  // Already buffering this channel → just hand back the playlist.
-  if (activeTimeshift && activeTimeshift.ch === ch && !activeTimeshift.stopped) {
+  // Already buffering this channel with the same deinterlace setting → reuse it.
+  if (activeTimeshift && activeTimeshift.ch === ch && activeTimeshift.deint === deint && !activeTimeshift.stopped) {
     return res.json({ playlist: `/api/timeshift/${ch}/index.m3u8` });
   }
   stopTimeshift();   // also clears tsMem from any previous stream
-  const state = { ch, url, proc: null, stopped: false, restarts: 0, windowStart: Date.now(), lastSeq: -1 };
+  const state = { ch, url, deint, proc: null, stopped: false, restarts: 0, windowStart: Date.now(), lastSeq: -1 };
   activeTimeshift = state;
   try { spawnTimeshiftProc(state); }
   catch (e) { activeTimeshift = null; return res.status(500).json({ error: 'ffmpeg spawn failed' }); }

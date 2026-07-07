@@ -1190,6 +1190,32 @@ async function playCatchup(channel, prog) {
   }
 }
 
+// Toggle deinterlace-to-60fps (server ffmpeg field-doubling) from the player
+// control bar, and re-apply it to whatever's playing right now.
+function toggleDeinterlace() {
+  if (!(window.appHost || window.electronCast)) {
+    showToast('Deinterlace is available on the desktop app.', 'error', 3000);
+    return;
+  }
+  const on = localStorage.getItem('deinterlace') === '1';
+  const next = on ? '0' : '1';
+  try { localStorage.setItem('deinterlace', next); } catch (e) {}
+  playerInstance.reflectDeinterlace(next === '1');
+  showToast(next === '1' ? 'Deinterlace On — 60fps' : 'Deinterlace Off', 'success', 2500);
+
+  // Re-apply to the current stream so the change is visible immediately.
+  if (!playerInstance.hasStream) return;
+  if (playerInstance.isVod) {
+    playerInstance.reloadCurrent(); // VOD / catch-up → rebuild the transcode
+  } else if (state.activeChannel) {
+    // Live → re-tune with the now-playing programme (never catch-up) so the
+    // timeshift segmenter restarts with the new deinterlace setting.
+    const nn = (window.epgGridInstance && epgGridInstance.getNowNext)
+      ? epgGridInstance.getNowNext(state.activeChannel.stream_id) : null;
+    selectAndPlayChannel(state.activeChannel, (nn && nn.current) || null);
+  }
+}
+
 // ==========================================================================
 // DVR / RECORDINGS (desktop only — the server records via the bundled ffmpeg)
 // ==========================================================================
@@ -3175,6 +3201,8 @@ function bindGlobalEvents() {
   document.getElementById('player-rewind-10')?.addEventListener('click', () => playerInstance.skipBy(-10));
   document.getElementById('player-forward-10')?.addEventListener('click', () => playerInstance.skipBy(10));
   document.getElementById('player-record-btn')?.addEventListener('click', recordCurrentChannel);
+  document.getElementById('player-deint-btn')?.addEventListener('click', toggleDeinterlace);
+  playerInstance.reflectDeinterlace(localStorage.getItem('deinterlace') === '1');
   document.getElementById('recordings-close-btn')?.addEventListener('click', closeRecordingsModal);
   document.getElementById('recordings-modal')?.addEventListener('click', (e) => {
     if (e.target.id === 'recordings-modal') closeRecordingsModal();

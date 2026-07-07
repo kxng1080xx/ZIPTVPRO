@@ -82,6 +82,7 @@ export class VideoPlayer {
     this.pipBtn = document.getElementById('player-pip-btn');
     this.stopBtn = document.getElementById('player-stop-btn');
     this.infoBtn = document.getElementById('player-info-btn');
+    this.deintBtn = document.getElementById('player-deint-btn');
     this.fpsIndicatorEl = document.getElementById('player-fps-indicator');
     this.qualityBadgeEl = document.getElementById('player-quality-badge');
     this.currentFps = 30;
@@ -678,7 +679,8 @@ export class VideoPlayer {
     this._enterLiveUi(name, logo, currentEpg);
     const target = this._transcodeTarget(streamUrl);
     try {
-      const r = await fetch(`/api/timeshift/start?url=${encodeURIComponent(target)}&ch=${encodeURIComponent(ch)}`);
+      const deintQ = this._deinterlaceOn() ? '&deint=1' : '';
+      const r = await fetch(`/api/timeshift/start?url=${encodeURIComponent(target)}&ch=${encodeURIComponent(ch)}${deintQ}`);
       if (!r.ok) return false;
       const { playlist } = await r.json();
       if (!playlist) return false;
@@ -728,6 +730,7 @@ export class VideoPlayer {
     setScreenAwake(true);
     this.showSpinner();
     this.currentChannelName = name || 'Live Channel';
+    this._currentLogo = logo || '';
     const qBadge = getQualityBadgeHtml(this.currentChannelName);
     this.channelNameEl.innerHTML = `
       <span class="player-channel-name-text">${this.currentChannelName}</span>
@@ -1483,7 +1486,31 @@ export class VideoPlayer {
     const target = this._transcodeTarget(url);
     const params = new URLSearchParams({ url: target, mode });
     if (start > 0) params.set('start', String(Math.floor(start)));
+    if (this._deinterlaceOn()) params.set('deint', '1');
     return `/api/transcode?${params.toString()}`;
+  }
+
+  // Deinterlace-to-60fps preference (desktop ffmpeg paths only).
+  _deinterlaceOn() {
+    try { return localStorage.getItem('deinterlace') === '1'; } catch (e) { return false; }
+  }
+
+  // Reflect the deinterlace toggle state on the control-bar button.
+  reflectDeinterlace(on) {
+    if (this.deintBtn) this.deintBtn.classList.toggle('active', !!on);
+  }
+
+  // Re-run the current VOD/catch-up stream so a changed ffmpeg option (e.g.
+  // deinterlace) takes effect, preserving the playback position. Live channels
+  // are re-tuned from main.js (they must restart the timeshift segmenter).
+  reloadCurrent() {
+    if (!this.hasStream || !this._streamUrl || !this._streamIsVod) return false;
+    let resume = 0;
+    try { resume = (typeof this._currentTime === 'function') ? this._currentTime() : (this.video?.currentTime || 0); } catch (e) {}
+    const name = this.currentChannelName || '';
+    const epg = this.epgTitleEl ? this.epgTitleEl.textContent : '';
+    this.loadStream(this._streamUrl, name, this._currentLogo || '', epg, true, resume || 0);
+    return true;
   }
 
   // Resolve the real upstream URL ffmpeg should fetch (unwrap our /api/proxy, make
