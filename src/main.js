@@ -9,6 +9,7 @@ import {
   toggleFavorite,
   trackPlayback,
   getStreamUrl,
+  getCatchupUrl,
   getStreamInfo,
   getPlaylists,
   switchPlaylist,
@@ -1065,6 +1066,14 @@ async function loadCategoryContent() {
 // LIVE TV CONTROLS & STREAMING
 // ==========================================================================
 async function selectAndPlayChannel(channel, programBlock) {
+  // Catch-up: a past programme on an archive-capable channel replays from the
+  // provider's timeshift archive instead of going live.
+  const progEndMs = programBlock?.end_timestamp ? parseInt(programBlock.end_timestamp, 10) * 1000 : 0;
+  const progStartMs = programBlock?.start_timestamp ? parseInt(programBlock.start_timestamp, 10) * 1000 : 0;
+  if (channel.tv_archive && progStartMs && progEndMs && progEndMs < Date.now()) {
+    return playCatchup(channel, programBlock);
+  }
+
   state.activeChannel = channel;
   state.activeProgram = programBlock;
 
@@ -1150,6 +1159,37 @@ async function selectAndPlayChannel(channel, programBlock) {
   }
 }
 
+// Replay a past programme from the provider's catch-up archive. The timeshift
+// stream is a finite, seekable segment, so we play it as VOD (scrubbable bar)
+// rather than live. On desktop the FFmpeg engine transcodes it to a seekable
+// fMP4; the HTML5 engine plays it via the mpegts.js fallback.
+async function playCatchup(channel, prog) {
+  state.activeChannel = channel;
+  state.activeProgram = prog;
+  document.body.classList.remove('vod-mode');
+  try {
+    const start = parseInt(prog.start_timestamp, 10);
+    const end = parseInt(prog.end_timestamp, 10);
+    const duration = Math.max(1, Math.round((end - start) / 60)); // minutes
+    const url = await getCatchupUrl(channel.stream_id, start, duration);
+    const title = prog.title || 'Catch-up';
+    const label = `${channel.name} — ${title}`;
+
+    incrementChannelView(channel.stream_id);
+
+    playerInstance.setSeriesMode(false);
+    // isVod = true → seekable player UI with the real programme duration.
+    playerInstance.loadStream(url, label, channel.stream_icon, title, true);
+    setCastContext({ streamId: channel.stream_id, type: 'live', title: label, isLive: false });
+    updateDetailsPanel(channel, prog);
+    playerInstance.autoFullscreen();
+    navigation.focusDefault('player');
+  } catch (err) {
+    console.error('Catch-up playback failed:', err);
+    showToast('Catch-up is not available for this programme', 'error', 4000);
+  }
+}
+
 // ==========================================================================
 // DVR / RECORDINGS (desktop only — the server records via the bundled ffmpeg)
 // ==========================================================================
@@ -1161,7 +1201,10 @@ async function recordCurrentChannel() {
   const ch = state.activeChannel;
   if (!ch) { window.showToast?.('Start a channel first, then record.', 'error', 3000); return; }
   try {
-    const target = playerInstance._transcodeTarget(await getStreamUrl(ch.stream_id, 'live'));
+    // Force the continuous .ts stream (not the account's default format, which may
+    // be m3u8) so ffmpeg records the full duration instead of stopping at the end
+    // of a finite HLS playlist.
+    const target = playerInstance._transcodeTarget(await getStreamUrl(ch.stream_id, 'live', '', 'ts'));
     let durationMins = 120;
     const end = state.activeProgram?.end || state.activeProgram?.stop_timestamp;
     if (end) {
@@ -1223,8 +1266,10 @@ document.addEventListener('click', (e) => {
 
 async function doScheduleRecord(channel, prog) {
   try {
-    // m3u8 source for the same reason timeshift uses it: cleaner than raw .ts.
-    const target = playerInstance._transcodeTarget(await getStreamUrl(channel.stream_id, 'live', '', 'm3u8'));
+    // Record from the continuous .ts stream, NOT m3u8: an HLS playlist is finite,
+    // so ffmpeg reads it to the end and exits early (the truncated-recording bug).
+    // The raw .ts never ends, so -t controls the real recording length.
+    const target = playerInstance._transcodeTarget(await getStreamUrl(channel.stream_id, 'live', '', 'ts'));
     const startMs = parseInt(prog.start_timestamp) * 1000;
     const endMs = parseInt(prog.end_timestamp) * 1000;
     const now = Date.now();

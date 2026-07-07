@@ -655,7 +655,8 @@ export async function syncPlaylist(progressCallback = null, { onLiveReady = null
       name: s.name || '',
       stream_icon: s.stream_icon || '',
       epg_channel_id: s.epg_channel_id || '',
-      tv_archive: s.tv_archive || 0
+      tv_archive: s.tv_archive || 0,
+      tv_archive_duration: s.tv_archive_duration || 0
     })) : [];
     liveStreams = null; // release the raw payload before the next download
     const liveCatsMapped = embedCounts(liveCategories, countByCategory(liveStreamsMapped));
@@ -1155,6 +1156,42 @@ export function getStreamUrlSync(streamId, type = 'live', containerExtension = '
   }
 
   return proxify(targetUrl);
+}
+
+// Format a Unix timestamp (seconds, UTC) as the Xtream catch-up "start" token
+// Y-m-d:H-i. Some providers read this as server-local time — if replays come out
+// shifted, a timezone offset would go here.
+function fmtCatchupStart(unixSec) {
+  const d = new Date(unixSec * 1000);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}:${p(d.getUTCHours())}-${p(d.getUTCMinutes())}`;
+}
+
+// Build the Xtream catch-up (timeshift.php) URL for a past programme.
+// start = programme start (unix seconds); duration = programme length (minutes).
+export function getCatchupUrlSync(streamId, start, duration) {
+  const creds = getCredentialsLocal();
+  if (!creds) throw new Error('Not logged in');
+  const dur = Math.max(1, parseInt(duration, 10) || 0);
+  const startStr = fmtCatchupStart(parseInt(start, 10));
+  const targetUrl = `${creds.server_url}/streaming/timeshift.php`
+    + `?username=${encodeURIComponent(creds.username)}`
+    + `&password=${encodeURIComponent(creds.password)}`
+    + `&stream=${encodeURIComponent(streamId)}`
+    + `&start=${encodeURIComponent(startStr)}`
+    + `&duration=${dur}`;
+  return proxify(targetUrl);
+}
+
+export async function getCatchupUrl(streamId, start, duration) {
+  if (isServerMode) {
+    const params = new URLSearchParams({ start: String(start), duration: String(duration) });
+    const response = await fetch(`/api/catchup-url/${encodeURIComponent(streamId)}?${params.toString()}`);
+    if (!response.ok) throw new Error('Failed to get catch-up URL');
+    const data = await response.json();
+    return data.url;
+  }
+  return getCatchupUrlSync(streamId, start, duration);
 }
 
 export async function getStreamUrl(streamId, type = 'live', containerExtension = '', formatOverride = '') {

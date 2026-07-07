@@ -510,9 +510,25 @@ export class EPGGrid {
           block.addEventListener('click', (e) => {
             // Clicks on the REC button must not fall through to a channel switch.
             if (e.target.closest('.epg-rec-btn')) return;
-            chanRow.click();
-            this.onChannelSelect(channel, prog);
+            // Catch-up: a past programme on an archive-capable channel replays via
+            // the timeshift URL. Route straight to onChannelSelect (which detects
+            // catch-up from the prog times) — do NOT also fire the live row click,
+            // or live playback would race the replay.
+            const nowSec = Date.now() / 1000;
+            const isPast = prog.end_timestamp && parseInt(prog.end_timestamp, 10) < nowSec;
+            if (isPast && channel.tv_archive) {
+              this.onChannelSelect(channel, prog);
+            } else {
+              chanRow.click();
+              this.onChannelSelect(channel, prog);
+            }
           });
+
+          // Mark replayable (catch-up) programmes: past + channel has archive.
+          if (channel.tv_archive && endMs < Date.now()) {
+            block.classList.add('epg-catchup');
+            block.title = 'Replay (catch-up)';
+          }
 
           block.dataset.streamId = streamId;
           block.dataset.channelName = channel.name || '';

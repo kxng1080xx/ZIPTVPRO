@@ -944,6 +944,38 @@ app.get('/api/stream-url/:stream_id', (req, res) => {
   }
 });
 
+// Format a Unix timestamp (seconds, UTC) as the Xtream catch-up "start" token
+// Y-m-d:H-i. Note: some providers interpret this in server-local time — if a
+// provider's replays are shifted, this is the spot to apply a timezone offset.
+function fmtCatchupStart(unixSec) {
+  const d = new Date(unixSec * 1000);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}:${p(d.getUTCHours())}-${p(d.getUTCMinutes())}`;
+}
+
+// API: Catch-up / archive replay URL. Builds the Xtream timeshift.php link for a
+// past programme (?start=<Y-m-d:H-i>&duration=<minutes>). Client passes the
+// programme's start_timestamp (unix seconds) and duration in minutes.
+app.get('/api/catchup-url/:stream_id', (req, res) => {
+  const { stream_id } = req.params;
+  const start = parseInt(req.query.start, 10);
+  const duration = Math.max(1, parseInt(req.query.duration, 10) || 0);
+  const creds = getCredentials();
+  if (!creds) return res.status(401).json({ error: 'Not logged in' });
+  if (!start || !duration) return res.status(400).json({ error: 'missing start/duration' });
+
+  const startStr = fmtCatchupStart(start);
+  const targetUrl = `${creds.server_url}/streaming/timeshift.php`
+    + `?username=${encodeURIComponent(creds.username)}`
+    + `&password=${encodeURIComponent(creds.password)}`
+    + `&stream=${encodeURIComponent(stream_id)}`
+    + `&start=${encodeURIComponent(startStr)}`
+    + `&duration=${duration}`;
+
+  const url = creds.proxy_streams ? `/api/proxy?url=${encodeURIComponent(targetUrl)}` : targetUrl;
+  res.json({ url });
+});
+
 // API: Get VOD/Series Info (Info, Cast, Director, Release Date, Episodes, etc.)
 app.get('/api/stream-info/:id', async (req, res) => {
   const { id } = req.params;
@@ -1187,7 +1219,23 @@ function startRecording({ url, name, channel, durationMins, id }) {
   const secs = Math.max(60, Math.round((+durationMins || 120) * 60));
   // ponytail: .ts + stream-copy always works from a live .ts source and the app
   // already plays .ts; remux to .mp4 here if you ever want portable files.
-  const args = ['-user_agent', 'VLC/3.0.20', '-i', url, '-c', 'copy', '-t', String(secs), '-f', 'mpegts', file];
+  const args = [
+    '-user_agent', 'VLC/3.0.20',
+    // Survive the connection cycling IPTV providers do periodically — and the
+    // drop that happens when playing another channel opens a new connection —
+    // instead of exiting and leaving a truncated recording. Same flags the
+    // timeshift segmenter relies on; without them a single drop ends the capture.
+    '-reconnect', '1',
+    '-reconnect_at_eof', '1',
+    '-reconnect_streamed', '1',
+    '-reconnect_delay_max', '4',
+    '-fflags', '+genpts+discardcorrupt',
+    '-i', url,
+    '-c', 'copy',
+    '-t', String(secs),
+    '-f', 'mpegts',
+    file,
+  ];
   const proc = trackChild(spawn(findFfmpeg(), args, { windowsHide: true }));
   recProcs.set(recId, proc);
   const entry = {
