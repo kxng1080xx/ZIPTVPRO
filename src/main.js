@@ -4357,7 +4357,7 @@ function updateHeaderTvIpBadge(status) {
 // heartbeats to /api/device, mirrors the device's playlists, shows the admin's
 // expiration, and wipes everything when the device expires.
 // ==========================================================================
-const CLOUD_SYNC_MS = 5 * 60 * 1000;      // reconcile every 5 min while open
+const CLOUD_SYNC_MS = 15 * 1000;      // reconcile every 15 seconds while open
 const DEVICE_EXPIRY_KEY = 'ziptv_device_expiry';
 let cloudSyncBusy = false;
 
@@ -4417,7 +4417,7 @@ async function applyCloudState(state) {
   // whatever the user may already have locally — we only mirror (incl. removals)
   // once the device is managed. This protects existing users during migration.
   const managed = state.status && state.status !== 'pending';
-  await reconcilePlaylists(state.playlists || [], { allowRemovals: managed });
+  const { activeChanged } = await reconcilePlaylists(state.playlists || [], { allowRemovals: managed });
 
   // Managed device whose playlists were ALL removed from the dashboard → treat
   // like an expired subscription: stop playback, return to the login screen and
@@ -4436,12 +4436,14 @@ async function applyCloudState(state) {
   const banner = document.getElementById('expiry-banner');
   if (banner) banner.remove();
 
-  // Apply hidden tabs and refresh current categories/content dynamically
-  applyHiddenTabs();
-  const onLoginScreen = !document.getElementById('app-container') ||
-    document.getElementById('app-container').classList.contains('hidden');
-  if (!onLoginScreen) {
-    await loadTabCategoriesAndContent();
+  // Apply hidden tabs and refresh current categories/content dynamically on changes
+  if (activeChanged) {
+    applyHiddenTabs();
+    const onLoginScreen = !document.getElementById('app-container') ||
+      document.getElementById('app-container').classList.contains('hidden');
+    if (!onLoginScreen) {
+      await loadTabCategoriesAndContent();
+    }
   }
 }
 
@@ -4450,12 +4452,13 @@ async function reconcilePlaylists(remote, { allowRemovals } = {}) {
   const norm = (s) => String(s || '').trim().toLowerCase().replace(/\/+$/, '').replace(/^https?:\/\//, '');
   const key = (p) => norm(p.server_url) + '|' + String(p.username || '').toLowerCase();
 
-  const { playlists: local } = await getPlaylists();
+  const { playlists: local, activeId } = await getPlaylists();
   const localKeys = new Set((local || []).map(key));
   const remoteKeys = new Set((remote || []).map(key));
 
   let added = false;
   let addedKey = null;
+  let activeChanged = false;
   for (const r of remote) {
     const k = key(r);
     if (!localKeys.has(k)) {
@@ -4469,11 +4472,14 @@ async function reconcilePlaylists(remote, { allowRemovals } = {}) {
     }
     // Update local settings with remote configurations
     try {
-      updatePlaylistByServerAndUser(r.server_url, r.username, {
+      const res = updatePlaylistByServerAndUser(r.server_url, r.username, {
         playlistName: r.playlistName || 'Playlist',
         hidden_tabs: r.hidden_tabs || [],
         hidden_categories: r.hidden_categories || []
       });
+      if (res && res.changed && res.id === activeId) {
+        activeChanged = true;
+      }
     } catch (e) {
       console.warn('Failed to update synced playlist settings:', r.playlistName, e.message);
     }
@@ -4509,6 +4515,7 @@ async function reconcilePlaylists(remote, { allowRemovals } = {}) {
       }
     } catch (e) { console.warn('Auto-enter after sync failed:', e.message); }
   }
+  return { activeChanged };
 }
 
 // Wipe all local playlists, stop playback and bounce to the login screen.

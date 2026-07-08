@@ -167,11 +167,20 @@ export function updatePlaylistByServerAndUser(serverUrl, username, settings) {
   const list = readPlaylists();
   const idx = list.findIndex(p => (norm(p.server_url) + '|' + String(p.username || '').toLowerCase()) === targetKey);
   if (idx >= 0) {
-    list[idx] = { ...list[idx], ...settings };
-    writePlaylists(list);
-    return list[idx].id;
+    const old = list[idx];
+    const changed = 
+      JSON.stringify(old.hidden_tabs || []) !== JSON.stringify(settings.hidden_tabs || []) ||
+      JSON.stringify(old.hidden_categories || []) !== JSON.stringify(settings.hidden_categories || []) ||
+      (settings.playlistName && old.name !== settings.playlistName);
+      
+    if (changed) {
+      list[idx] = { ...old, ...settings };
+      if (settings.playlistName) list[idx].name = settings.playlistName;
+      writePlaylists(list);
+    }
+    return { id: old.id, changed };
   }
-  return null;
+  return { id: null, changed: false };
 }
 
 // Best-effort fetch of the Xtream user_info for a saved playlist (client mode),
