@@ -164,6 +164,26 @@ export async function updatePlaylistByServerAndUser(serverUrl, username, setting
   const norm = (s) => String(s || '').trim().toLowerCase().replace(/\/+$/, '').replace(/^https?:\/\//, '');
   const targetKey = norm(serverUrl) + '|' + String(username || '').toLowerCase();
   
+  // 1. Always update local storage first so the browser UI is kept in sync immediately
+  const localList = readPlaylists();
+  const localIdx = localList.findIndex(p => (norm(p.server_url) + '|' + String(p.username || '').toLowerCase()) === targetKey);
+  let localChanged = false;
+  let localId = null;
+  if (localIdx >= 0) {
+    const old = localList[localIdx];
+    localId = old.id;
+    localChanged = 
+      JSON.stringify(old.hidden_tabs || []) !== JSON.stringify(settings.hidden_tabs || []) ||
+      JSON.stringify(old.hidden_categories || []) !== JSON.stringify(settings.hidden_categories || []) ||
+      (settings.playlistName && old.name !== settings.playlistName);
+      
+    if (localChanged) {
+      localList[localIdx] = { ...old, ...settings };
+      if (settings.playlistName) localList[localIdx].name = settings.playlistName;
+      writePlaylists(localList);
+    }
+  }
+
   if (isServerMode) {
     try {
       const { playlists } = await getPlaylists();
@@ -187,31 +207,15 @@ export async function updatePlaylistByServerAndUser(serverUrl, username, setting
             })
           });
         }
-        return { id: old.id, changed };
+        return { id: old.id, changed: changed || localChanged };
       }
     } catch (e) {
       console.warn('Failed to update remote settings on server:', e.message);
     }
-    return { id: null, changed: false };
+    return { id: localId, changed: localChanged };
   } else {
     // Client mode
-    const list = readPlaylists();
-    const idx = list.findIndex(p => (norm(p.server_url) + '|' + String(p.username || '').toLowerCase()) === targetKey);
-    if (idx >= 0) {
-      const old = list[idx];
-      const changed = 
-        JSON.stringify(old.hidden_tabs || []) !== JSON.stringify(settings.hidden_tabs || []) ||
-        JSON.stringify(old.hidden_categories || []) !== JSON.stringify(settings.hidden_categories || []) ||
-        (settings.playlistName && old.name !== settings.playlistName);
-        
-      if (changed) {
-        list[idx] = { ...old, ...settings };
-        if (settings.playlistName) list[idx].name = settings.playlistName;
-        writePlaylists(list);
-      }
-      return { id: old.id, changed };
-    }
-    return { id: null, changed: false };
+    return { id: localId, changed: localChanged };
   }
 }
 
@@ -830,7 +834,7 @@ export async function getCategories(type) {
   const normType = type === 'movies' ? 'movie' : type;
 
   if (isServerMode) {
-    const response = await fetch(`/api/categories?type=${encodeURIComponent(normType)}`);
+    const response = await fetch(`/api/categories?type=${encodeURIComponent(normType)}&t=${Date.now()}`);
     if (!response.ok) throw new Error('Failed to fetch categories');
     return response.json();
   } else {
@@ -914,7 +918,8 @@ export async function getStreams({ type, categoryId, page = 1, limit = 50, searc
       page: String(page),
       limit: String(limit),
       search,
-      sort
+      sort,
+      t: String(Date.now())
     });
     const response = await fetch(`/api/streams?${params.toString()}`);
     if (!response.ok) throw new Error('Failed to fetch streams');
