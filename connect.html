@@ -1097,19 +1097,11 @@
       icons();
       
       try {
-        const fetchCats = async (action) => {
-          const url = `${activePl.server_url}/player_api.php?username=${encodeURIComponent(activePl.username)}&password=${encodeURIComponent(activePl.password)}&action=${action}`;
-          const res = await fetch(`/api/proxy?url=${encodeURIComponent(url)}`);
-          if (!res.ok) throw new Error(`Status ${res.status}`);
-          const data = await res.json();
-          return Array.isArray(data) ? data : [];
-        };
+        const data = await api(`playlist-categories&id=${activePl.id}`);
         
-        const [liveCats, vodCats, seriesCats] = await Promise.all([
-          fetchCats('get_live_categories').catch(() => []),
-          fetchCats('get_vod_categories').catch(() => []),
-          fetchCats('get_series_categories').catch(() => [])
-        ]);
+        const liveCats = data.live || [];
+        const vodCats = data.movie || [];
+        const seriesCats = data.series || [];
         
         if (liveCats.length === 0 && vodCats.length === 0 && seriesCats.length === 0) {
           throw new Error('No categories returned from server. Check credentials/server URL.');

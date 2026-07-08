@@ -109,6 +109,35 @@ export default async function handler(req, res) {
       return res.status(200).json({ playlist: updated && updated[0] });
     }
 
+    // ---- Fetch categories for a playlist (server-side, keeping password secure)
+    if (action === 'playlist-categories' && req.method === 'GET') {
+      const id = req.query.id;
+      if (!id) return res.status(400).json({ error: 'id required' });
+      
+      const rows = await sb(`/playlists?id=eq.${encodeURIComponent(id)}&select=*`);
+      const pl = rows && rows[0];
+      if (!pl) return res.status(404).json({ error: 'Playlist not found' });
+      
+      const fetchCats = async (act) => {
+        const url = `${pl.server_url}/player_api.php?username=${encodeURIComponent(pl.username)}&password=${encodeURIComponent(pl.password)}&action=${act}`;
+        const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+        if (!response.ok) throw new Error(`Xtream status ${response.status}`);
+        const data = await response.json();
+        return Array.isArray(data) ? data : [];
+      };
+      
+      try {
+        const [live, movie, series] = await Promise.all([
+          fetchCats('get_live_categories').catch(() => []),
+          fetchCats('get_vod_categories').catch(() => []),
+          fetchCats('get_series_categories').catch(() => [])
+        ]);
+        return res.status(200).json({ live, movie, series });
+      } catch (err) {
+        return res.status(500).json({ error: `Failed to fetch categories: ${err.message}` });
+      }
+    }
+
     // ---- Delete a device (and its playlists via cascade) -------------------
     if (action === 'delete-device' && req.method === 'POST') {
       const b = await readBody(req);
