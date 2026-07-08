@@ -166,10 +166,32 @@ export function getPlaylistsList() {
       id: p.id,
       playlistName: p.playlistName,
       server_url: p.server_url,
-      username: p.username
+      username: p.username,
+      hidden_tabs: p.hidden_tabs || [],
+      hidden_categories: p.hidden_categories || []
     })),
     activeId
   };
+}
+
+export function updatePlaylistSettings(id, settings) {
+  const store = readStore();
+  const idx = store.playlists.findIndex(p => p.id === id);
+  if (idx >= 0) {
+    const old = store.playlists[idx];
+    const changed = 
+      JSON.stringify(old.hidden_tabs || []) !== JSON.stringify(settings.hidden_tabs || []) ||
+      JSON.stringify(old.hidden_categories || []) !== JSON.stringify(settings.hidden_categories || []) ||
+      (settings.playlistName && old.playlistName !== settings.playlistName);
+      
+    if (changed) {
+      store.playlists[idx] = { ...old, ...settings };
+      if (settings.playlistName) store.playlists[idx].playlistName = settings.playlistName;
+      writeStore(store);
+    }
+    return { id: old.id, changed };
+  }
+  return { id: null, changed: false };
 }
 
 export function setActivePlaylist(id) {
@@ -310,11 +332,19 @@ export function getCategories(type) {
     countMap[catId] = (countMap[catId] || 0) + 1;
   });
 
+  const creds = getCredentials();
+  const hiddenCats = creds && Array.isArray(creds.hidden_categories) ? creds.hidden_categories : [];
+
   // Map categories and add count
-  return categories.map(cat => ({
+  let mapped = categories.map(cat => ({
     ...cat,
     count: countMap[cat.category_id] || 0
   })).filter(cat => cat.count > 0 || cat.category_id === 'all'); // Keep empty categories out unless 'all'
+
+  if (hiddenCats.length > 0) {
+    mapped = mapped.filter(cat => !hiddenCats.includes(String(cat.category_id)));
+  }
+  return mapped;
 }
 
 export function getStreams(type, categoryId, page = 1, limit = 50, search = '', sort = 'added') {
@@ -323,6 +353,12 @@ export function getStreams(type, categoryId, page = 1, limit = 50, search = '', 
   if (normType === 'live') streams = cache.live_streams || [];
   else if (normType === 'movie') streams = cache.vod_streams || [];
   else if (normType === 'series') streams = cache.series_streams || [];
+
+  const creds = getCredentials();
+  const hiddenCats = creds && Array.isArray(creds.hidden_categories) ? creds.hidden_categories : [];
+  if (hiddenCats.length > 0) {
+    streams = streams.filter(s => !hiddenCats.includes(String(s.category_id)));
+  }
 
   // Filter by category
   let filtered = streams;

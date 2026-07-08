@@ -160,27 +160,59 @@ function saveCredentialsLocal(creds) {
 }
 
 // Update a playlist's details by matching server URL and username.
-export function updatePlaylistByServerAndUser(serverUrl, username, settings) {
+export async function updatePlaylistByServerAndUser(serverUrl, username, settings) {
   const norm = (s) => String(s || '').trim().toLowerCase().replace(/\/+$/, '').replace(/^https?:\/\//, '');
   const targetKey = norm(serverUrl) + '|' + String(username || '').toLowerCase();
   
-  const list = readPlaylists();
-  const idx = list.findIndex(p => (norm(p.server_url) + '|' + String(p.username || '').toLowerCase()) === targetKey);
-  if (idx >= 0) {
-    const old = list[idx];
-    const changed = 
-      JSON.stringify(old.hidden_tabs || []) !== JSON.stringify(settings.hidden_tabs || []) ||
-      JSON.stringify(old.hidden_categories || []) !== JSON.stringify(settings.hidden_categories || []) ||
-      (settings.playlistName && old.name !== settings.playlistName);
-      
-    if (changed) {
-      list[idx] = { ...old, ...settings };
-      if (settings.playlistName) list[idx].name = settings.playlistName;
-      writePlaylists(list);
+  if (isServerMode) {
+    try {
+      const { playlists } = await getPlaylists();
+      const match = (playlists || []).find(p => (norm(p.server_url) + '|' + String(p.username || '').toLowerCase()) === targetKey);
+      if (match) {
+        const old = match;
+        const changed = 
+          JSON.stringify(old.hidden_tabs || []) !== JSON.stringify(settings.hidden_tabs || []) ||
+          JSON.stringify(old.hidden_categories || []) !== JSON.stringify(settings.hidden_categories || []) ||
+          (settings.playlistName && old.playlistName !== settings.playlistName);
+          
+        if (changed) {
+          await fetch('/api/playlists/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: old.id,
+              hidden_tabs: settings.hidden_tabs,
+              hidden_categories: settings.hidden_categories,
+              playlistName: settings.playlistName
+            })
+          });
+        }
+        return { id: old.id, changed };
+      }
+    } catch (e) {
+      console.warn('Failed to update remote settings on server:', e.message);
     }
-    return { id: old.id, changed };
+    return { id: null, changed: false };
+  } else {
+    // Client mode
+    const list = readPlaylists();
+    const idx = list.findIndex(p => (norm(p.server_url) + '|' + String(p.username || '').toLowerCase()) === targetKey);
+    if (idx >= 0) {
+      const old = list[idx];
+      const changed = 
+        JSON.stringify(old.hidden_tabs || []) !== JSON.stringify(settings.hidden_tabs || []) ||
+        JSON.stringify(old.hidden_categories || []) !== JSON.stringify(settings.hidden_categories || []) ||
+        (settings.playlistName && old.name !== settings.playlistName);
+        
+      if (changed) {
+        list[idx] = { ...old, ...settings };
+        if (settings.playlistName) list[idx].name = settings.playlistName;
+        writePlaylists(list);
+      }
+      return { id: old.id, changed };
+    }
+    return { id: null, changed: false };
   }
-  return { id: null, changed: false };
 }
 
 // Best-effort fetch of the Xtream user_info for a saved playlist (client mode),

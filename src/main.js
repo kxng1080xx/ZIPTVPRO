@@ -4472,7 +4472,7 @@ async function reconcilePlaylists(remote, { allowRemovals } = {}) {
     }
     // Update local settings with remote configurations
     try {
-      const res = updatePlaylistByServerAndUser(r.server_url, r.username, {
+      const res = await updatePlaylistByServerAndUser(r.server_url, r.username, {
         playlistName: r.playlistName || 'Playlist',
         hidden_tabs: r.hidden_tabs || [],
         hidden_categories: r.hidden_categories || []

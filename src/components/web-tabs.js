@@ -453,11 +453,30 @@ export function openManageTabs() {
 function renderManageList() {
   const list = manageEl.querySelector('#managetabs-list');
   const hidden = getHiddenTabs();
+  const creds = getCredentialsLocal();
+  const serverHiddenTabs = creds && Array.isArray(creds.hidden_tabs) ? creds.hidden_tabs : [];
   list.innerHTML = '';
 
   const row = ({ id, name, sub, icon, custom, tab }) => {
     const el = document.createElement('div');
     el.className = 'managetabs-row';
+    const isLocked = serverHiddenTabs.includes(id);
+    
+    let btnHtml = '';
+    if (isLocked) {
+      btnHtml = `
+        <button class="webtab-btn managetabs-lock" disabled title="Locked by server admin" style="cursor: not-allowed; opacity: 0.6;">
+          <i data-lucide="lock"></i>
+        </button>
+      `;
+    } else {
+      btnHtml = `
+        <button class="webtab-btn managetabs-eye" data-act="vis" title="Show / hide">
+          <i data-lucide="${hidden.includes(id) ? 'eye-off' : 'eye'}"></i>
+        </button>
+      `;
+    }
+
     el.innerHTML = `
       ${icon}
       <div class="managetabs-info">
@@ -466,15 +485,14 @@ function renderManageList() {
       </div>
       ${custom ? '<button class="webtab-btn" data-act="edit" title="Edit"><i data-lucide="pencil"></i></button>' : ''}
       ${custom ? '<button class="webtab-btn" data-act="del" title="Remove"><i data-lucide="trash-2"></i></button>' : ''}
-      <button class="webtab-btn managetabs-eye" data-act="vis" title="Show / hide">
-        <i data-lucide="${hidden.includes(id) ? 'eye-off' : 'eye'}"></i>
-      </button>`;
+      ${btnHtml}
+    `;
     el.querySelector('.managetabs-name').textContent = name;
-    el.querySelector('.managetabs-sub').textContent = hidden.includes(id) ? 'Hidden' : (sub || 'Visible');
-    el.classList.toggle('managetabs-hidden', hidden.includes(id));
+    el.querySelector('.managetabs-sub').textContent = isLocked ? 'Locked by server' : (hidden.includes(id) ? 'Hidden' : (sub || 'Visible'));
+    el.classList.toggle('managetabs-hidden', hidden.includes(id) || isLocked);
     el.addEventListener('click', (e) => {
       const act = e.target.closest('[data-act]')?.dataset.act;
-      if (act === 'vis') { toggleHidden(id, !getHiddenTabs().includes(id)); renderManageList(); }
+      if (act === 'vis' && !isLocked) { toggleHidden(id, !getHiddenTabs().includes(id)); renderManageList(); }
       else if (act === 'edit') { manageEl.classList.add('hidden'); openTabDialog(tab); }
       else if (act === 'del') { removeWebTab(id); renderManageList(); }
     });

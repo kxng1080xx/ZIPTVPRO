@@ -105,7 +105,8 @@ import {
   getPlaylistsList,
   setActivePlaylist,
   removePlaylist,
-  deactivateActivePlaylist
+  deactivateActivePlaylist,
+  updatePlaylistSettings
 } from './cache.js';
 import * as flixify from './flixify.js';
 
@@ -296,6 +297,13 @@ app.post('/api/playlists/remove', (req, res) => {
   const { id } = req.body;
   if (!id) return res.status(400).json({ error: 'Missing playlist id' });
   res.json(removePlaylist(id));
+});
+
+app.post('/api/playlists/update', (req, res) => {
+  const { id, hidden_tabs, hidden_categories, playlistName } = req.body;
+  if (!id) return res.status(400).json({ error: 'Missing playlist id' });
+  const result = updatePlaylistSettings(id, { hidden_tabs, hidden_categories, playlistName });
+  res.json({ success: true, ...result });
 });
 
 // 4. API: Update Settings
