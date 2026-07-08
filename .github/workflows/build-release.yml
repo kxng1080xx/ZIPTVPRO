@@ -40,6 +40,12 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
+          # android/gradle.properties pins org.gradle.java.home to a Windows
+          # path (the repo's normal dev build runs on Windows). Override it
+          # at the user level, which takes precedence over the project file,
+          # instead of editing the committed Windows-oriented properties.
+          mkdir -p "$HOME/.gradle"
+          echo "org.gradle.java.home=$JAVA_HOME" >> "$HOME/.gradle/gradle.properties"
           ./gradlew assembleDebug --console=plain
 
       - run: |
