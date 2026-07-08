@@ -36,8 +36,40 @@ function readJSON(key, fallback) {
 }
 export function getWebTabs() { return readJSON(LS_TABS, []); }
 function saveWebTabs(tabs) { localStorage.setItem(LS_TABS, JSON.stringify(tabs)); }
-export function getHiddenTabs() { return readJSON(LS_HIDDEN, []); }
-function saveHiddenTabs(list) { localStorage.setItem(LS_HIDDEN, JSON.stringify(list)); }
+
+function getCredentialsLocal() {
+  try {
+    const list = JSON.parse(localStorage.getItem('ziptv_playlists') || '[]');
+    const activeId = localStorage.getItem('ziptv_active_playlist_id');
+    return list.find(p => p.id === activeId) || list[0];
+  } catch (e) {
+    return null;
+  }
+}
+
+export function getHiddenTabs() {
+  const creds = getCredentialsLocal();
+  if (creds && Array.isArray(creds.hidden_tabs)) {
+    return creds.hidden_tabs;
+  }
+  return readJSON(LS_HIDDEN, []);
+}
+
+function saveHiddenTabs(list) {
+  const creds = getCredentialsLocal();
+  if (creds) {
+    creds.hidden_tabs = list;
+    try {
+      const plList = JSON.parse(localStorage.getItem('ziptv_playlists') || '[]');
+      const idx = plList.findIndex(p => p.id === creds.id);
+      if (idx >= 0) {
+        plList[idx].hidden_tabs = list;
+        localStorage.setItem('ziptv_playlists', JSON.stringify(plList));
+      }
+    } catch (e) {}
+  }
+  localStorage.setItem(LS_HIDDEN, JSON.stringify(list));
+}
 export function isAdblockOn() { return (localStorage.getItem(LS_ADBLOCK) || 'on') === 'on'; }
 
 function faviconUrl(url) {
@@ -126,11 +158,14 @@ function renderRailTabs() {
 }
 
 // ---- hidden tabs (built-ins + custom) ---------------------------------------
+// Built-in tabs that can be hidden from Settings → Manage Tabs. Home is the
+// fallback destination, so it's never hideable.
+const HIDEABLE_BUILTINS = ['live', 'movies', 'series', 'flixify'];
+
 export function applyHiddenTabs() {
   const hidden = getHiddenTabs();
-  // Built-ins that support hiding (Flixify for now).
-  for (const id of ['flixify']) {
-    const off = isAndroidNative() || hidden.includes(id);
+  for (const id of HIDEABLE_BUILTINS) {
+    const off = (id === 'flixify' && isAndroidNative()) || hidden.includes(id);
     document.querySelectorAll(`.nav-tab[data-tab="${id}"], .mobile-tab-btn[data-tab="${id}"]`)
       .forEach((el) => { el.style.display = off ? 'none' : ''; });
   }
@@ -139,6 +174,17 @@ export function applyHiddenTabs() {
     const id = (el.dataset.tab || '').replace(/^web:/, '');
     el.style.display = hidden.includes(id) ? 'none' : '';
   });
+
+  // Hiding the tab you're on strands the view — bounce home.
+  if (switchTabCb) {
+    const activeBtn = document.querySelector('.nav-tab.rail-item.active') || document.querySelector('.mobile-tab-btn.active');
+    if (activeBtn) {
+      const activeId = activeBtn.dataset.tab;
+      if (hidden.includes(activeId)) {
+        switchTabCb('home');
+      }
+    }
+  }
 }
 
 function toggleHidden(id, hide) {
@@ -435,7 +481,17 @@ function renderManageList() {
     return el;
   };
 
-  // Built-in hideable tab
+  // Built-in hideable tabs (Home stays — it's the fallback when hiding others).
+  [
+    { id: 'live', name: 'Live TV', icon: 'tv' },
+    { id: 'movies', name: 'Movies', icon: 'film' },
+    { id: 'series', name: 'Series', icon: 'clapperboard' },
+  ].forEach((b) => {
+    list.appendChild(row({
+      id: b.id, name: b.name, sub: 'Built-in',
+      icon: `<span class="managetabs-icon"><i data-lucide="${b.icon}"></i></span>`, custom: false
+    }));
+  });
   if (!isAndroidNative()) {
     list.appendChild(row({
       id: 'flixify', name: 'Flixify', sub: 'Built-in',

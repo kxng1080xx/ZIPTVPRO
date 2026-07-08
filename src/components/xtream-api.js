@@ -159,6 +159,21 @@ function saveCredentialsLocal(creds) {
   setActiveIdLocal(creds.id);
 }
 
+// Update a playlist's details by matching server URL and username.
+export function updatePlaylistByServerAndUser(serverUrl, username, settings) {
+  const norm = (s) => String(s || '').trim().toLowerCase().replace(/\/+$/, '').replace(/^https?:\/\//, '');
+  const targetKey = norm(serverUrl) + '|' + String(username || '').toLowerCase();
+  
+  const list = readPlaylists();
+  const idx = list.findIndex(p => (norm(p.server_url) + '|' + String(p.username || '').toLowerCase()) === targetKey);
+  if (idx >= 0) {
+    list[idx] = { ...list[idx], ...settings };
+    writePlaylists(list);
+    return list[idx].id;
+  }
+  return null;
+}
+
 // Best-effort fetch of the Xtream user_info for a saved playlist (client mode),
 // used to backfill the subscription expiry for playlists saved before exp_date
 // was tracked. Returns the user_info object or null on any failure.
@@ -832,6 +847,12 @@ export async function getCategories(type) {
       }))).catch(() => {});
     }
 
+    const creds = getCredentialsLocal();
+    const hiddenCats = creds && Array.isArray(creds.hidden_categories) ? creds.hidden_categories : [];
+    if (hiddenCats.length > 0) {
+      mappedCategories = mappedCategories.filter(cat => !hiddenCats.includes(String(cat.category_id)));
+    }
+
     return {
       categories: mappedCategories,
       counts: {
@@ -863,6 +884,11 @@ export async function getStreams({ type, categoryId, page = 1, limit = 50, searc
     let collection;
     const idField = normType === 'series' ? 'series_id' : 'stream_id';
 
+    const creds = getCredentialsLocal();
+    const hiddenCats = creds && Array.isArray(creds.hidden_categories) ? creds.hidden_categories : [];
+    const hasHiddenCats = hiddenCats.length > 0;
+    const isAll = !categoryId || categoryId === 'all';
+
     if (categoryId === 'favorites') {
       const favRecords = await db.favorites.where('type').equals(normType).toArray();
       const favIds = favRecords.map(f => String(f.id));
@@ -893,7 +919,8 @@ export async function getStreams({ type, categoryId, page = 1, limit = 50, searc
     // the index with offset/limit instead of materializing the entire table
     // (which on big playlists meant deserializing 20k-100k records just to
     // show 50). Ordering is identical to the slow path (primary-key order).
-    if (!search && sort === 'added' && categoryId !== 'favorites' && categoryId !== 'recently_viewed') {
+    // Bypassed if we need to filter out hidden categories from "All".
+    if (!search && sort === 'added' && categoryId !== 'favorites' && categoryId !== 'recently_viewed' && !(hasHiddenCats && isAll)) {
       const total = await collection.count();
       const startIndex = (page - 1) * limit;
       const paginatedItems = await collection.offset(startIndex).limit(limit).toArray();
@@ -904,6 +931,11 @@ export async function getStreams({ type, categoryId, page = 1, limit = 50, searc
     }
 
     let items = await collection.toArray();
+
+    // Filter out streams belonging to hidden categories
+    if (hasHiddenCats) {
+      items = items.filter(item => !hiddenCats.includes(String(item.category_id)));
+    }
 
     // Preserve viewing order for recently viewed
     if (categoryId === 'recently_viewed') {

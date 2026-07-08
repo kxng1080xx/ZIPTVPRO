@@ -2424,6 +2424,41 @@ body.perf-lite .continue-card:hover { transform: none; }
   text-overflow: ellipsis;
 }
 
+/* ==========================================================================
+   Playlist rows: flat and borderless. State is carried by fill alone —
+   idle = faint, hover = lighter, active = cyan tint + filled check badge.
+   (TV focus keeps its ring via .tv-focused, which now stands out clearly.)
+   ========================================================================== */
+.playlist-row {
+  border: none;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 12px 14px;
+}
+.playlist-row:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: transparent;
+}
+.playlist-row.active {
+  background: rgba(0, 243, 255, 0.10);
+  border-color: transparent;
+}
+.playlist-row.active:hover { background: rgba(0, 243, 255, 0.14); }
+.playlist-row.active .playlist-row-name { color: #9ff9ff; }
+.playlist-row.last-used { border-left: none; }
+.playlist-row-check {
+  width: 20px;
+  height: 20px;
+  padding: 3px;
+  border-radius: 50%;
+  background: var(--accent-cyan, #00f3ff);
+  color: #06282c;
+  box-sizing: border-box;
+}
+.playlist-row-del { opacity: 0; transition: opacity 0.15s ease; }
+.playlist-row:hover .playlist-row-del,
+.playlist-row.tv-focused .playlist-row-del,
+.playlist-row-del:focus-visible { opacity: 1; }
+
 /* Search keyboard: paste button (styled like the keyboard toggle) */
 .tvk-paste {
   display: inline-flex;

@@ -22,7 +22,8 @@ import {
   getStreamUrlSync,
   proxifyImage,
   getLastSyncAge,
-  hasCachedData
+  hasCachedData,
+  updatePlaylistByServerAndUser
 } from './components/xtream-api.js';
 import { Capacitor } from '@capacitor/core';
 import { VideoPlayer } from './components/player.js';
@@ -35,7 +36,7 @@ import { enterFlixify, flixifySearch, setFlixifyPlayHandler, playFlixifySearchIt
 import { openGlobalSearch, setGlobalSearchQuery } from './components/global-search.js';
 import { isNativeAvailable } from './components/native-player.js';
 import { getDeviceCode, syncDevice, readCachedState, clearCachedState, isStateExpired } from './components/cloud-sync.js';
-import { initWebTabs, openWebTab, openManageTabs, toggleAdblock, isAdblockOn } from './components/web-tabs.js';
+import { initWebTabs, openWebTab, openManageTabs, toggleAdblock, isAdblockOn, applyHiddenTabs } from './components/web-tabs.js';
 import { renderHome } from './components/home.js';
 
 // Cloud sync (ZIPTV Pro 5.0): device + playlist state lives in Supabase, managed
@@ -4045,6 +4046,7 @@ async function autoEnterSinglePlaylist(id, activeId) {
     state.user = status;
     if (status.favorites) state.favorites = status.favorites;
     showDashboard();
+    applyHiddenTabs();
 
     // Detect an existing cache cheaply (index count — no table scan).
     const hasCache = await hasCachedData();
@@ -4085,6 +4087,7 @@ async function switchToPlaylist(id) {
     state.user = status;
     if (status.favorites) state.favorites = status.favorites;
     showDashboard();
+    applyHiddenTabs();
 
     // Load instantly from cache when this playlist already has one (e.g. the
     // last-used playlist), and refresh in the background. Only do a blocking
@@ -4432,6 +4435,14 @@ async function applyCloudState(state) {
   // Healthy + active: clear any lingering expiry banner.
   const banner = document.getElementById('expiry-banner');
   if (banner) banner.remove();
+
+  // Apply hidden tabs and refresh current categories/content dynamically
+  applyHiddenTabs();
+  const onLoginScreen = !document.getElementById('app-container') ||
+    document.getElementById('app-container').classList.contains('hidden');
+  if (!onLoginScreen) {
+    await loadTabCategoriesAndContent();
+  }
 }
 
 // Make the local playlists match the dashboard's list (match on host+username).
@@ -4446,13 +4457,25 @@ async function reconcilePlaylists(remote, { allowRemovals } = {}) {
   let added = false;
   let addedKey = null;
   for (const r of remote) {
-    if (localKeys.has(key(r))) continue;
+    const k = key(r);
+    if (!localKeys.has(k)) {
+      try {
+        await login(r.server_url, r.username, r.password, r.playlistName || 'Playlist', { skipAccountCheck: true });
+        added = true;
+        addedKey = k;
+      } catch (e) {
+        console.warn('Could not add synced playlist:', r.playlistName, e.message);
+      }
+    }
+    // Update local settings with remote configurations
     try {
-      await login(r.server_url, r.username, r.password, r.playlistName || 'Playlist', { skipAccountCheck: true });
-      added = true;
-      addedKey = key(r);
+      updatePlaylistByServerAndUser(r.server_url, r.username, {
+        playlistName: r.playlistName || 'Playlist',
+        hidden_tabs: r.hidden_tabs || [],
+        hidden_categories: r.hidden_categories || []
+      });
     } catch (e) {
-      console.warn('Could not add synced playlist:', r.playlistName, e.message);
+      console.warn('Failed to update synced playlist settings:', r.playlistName, e.message);
     }
   }
 

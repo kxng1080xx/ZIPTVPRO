@@ -47,7 +47,7 @@ export default async function handler(req, res) {
     // Pull the device + its playlists.
     const rows = await sb(
       `/devices?device_id=eq.${encodeURIComponent(deviceId)}` +
-      `&select=device_id,label,expires_at,status,archived,playlists(id,name,type,server_url,username,password)`
+      `&select=device_id,label,expires_at,status,archived,playlists(id,name,type,server_url,username,password,hidden_tabs,hidden_categories)`
     );
     const dev = rows && rows[0];
     if (!dev) return res.status(200).json({ status: 'pending', playlists: [] });
@@ -75,7 +75,9 @@ export default async function handler(req, res) {
         type: p.type,
         server_url: p.server_url,
         username: p.username,
-        password: p.password
+        password: p.password,
+        hidden_tabs: p.hidden_tabs || [],
+        hidden_categories: p.hidden_categories || []
       }))
     });
   } catch (err) {

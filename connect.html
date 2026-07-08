@@ -230,6 +230,20 @@
     .pl-row .pi { flex: 1; min-width: 0; }
     .pl-row .pn { font-weight: 600; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .pl-row .pm { font-size: 0.75rem; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+
+    /* Visibility Drawer */
+    #vis-drawer { width: 420px; max-width: 90vw; }
+    .vis-cat-row {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 0.82rem; padding: 7px 9px; border-radius: 6px;
+      background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.04);
+      cursor: pointer; transition: background 0.15s;
+    }
+    .vis-cat-row:hover { background: rgba(255, 255, 255, 0.05); }
+    .vis-cat-row input[type=checkbox] { margin: 0; cursor: pointer; }
+    .spin { animation: spin 1.5s linear infinite; display: inline-block; }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+
     .addform { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
     .addform .split { display: flex; gap: 8px; }
 
@@ -408,6 +422,71 @@
       </div>
       <div class="sec">
         <button class="btn" id="cfg-save" style="justify-content:center; width:100%;">Save settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =============== VISIBILITY DRAWER =============== -->
+  <div class="drawer" id="vis-drawer" role="dialog" aria-modal="true">
+    <div class="drawer-head">
+      <div style="flex:1; min-width:0;">
+        <div class="brand" style="font-size:1.15rem;">Playlist Visibility</div>
+        <div class="topbar-note" style="margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" id="vis-pl-name"></div>
+      </div>
+      <button class="btn-icon" id="vis-close" title="Close"><i data-lucide="x"></i></button>
+    </div>
+    <div class="drawer-body">
+      <div class="sec">
+        <div class="sec-h">Tab Visibility</div>
+        <div class="vis-tabs-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 8px;">
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 0.82rem; cursor: pointer;">
+            <input type="checkbox" id="tab-live" checked /> Live TV
+          </label>
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 0.82rem; cursor: pointer;">
+            <input type="checkbox" id="tab-movies" checked /> Movies
+          </label>
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 0.82rem; cursor: pointer;">
+            <input type="checkbox" id="tab-series" checked /> Series
+          </label>
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 0.82rem; cursor: pointer;">
+            <input type="checkbox" id="tab-flixify" checked /> Flixify
+          </label>
+        </div>
+      </div>
+
+      <div class="sec" style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 15px; margin-top: 15px;">
+        <div class="sec-h" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span>Category Visibility</span>
+          <button class="chip" id="vis-btn-load" style="margin: 0; font-size: 0.7rem; padding: 4px 10px;">Load Categories</button>
+        </div>
+        
+        <div id="vis-cats-container" style="display:none;">
+          <input type="text" id="vis-cats-search" placeholder="Search categories..." style="width: 100%; margin-bottom: 10px; font-size: 0.8rem; padding: 7px 10px; border-radius: 6px; background: var(--surface); box-sizing: border-box;" />
+          
+          <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+            <button class="chip" id="vis-btn-all" style="margin:0; flex:1; font-size: 0.72rem; padding: 4px 0;">Show All</button>
+            <button class="chip" id="vis-btn-none" style="margin:0; flex:1; font-size: 0.72rem; padding: 4px 0;">Hide All</button>
+          </div>
+          
+          <div style="display: flex; gap: 5px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 8px; margin-bottom: 10px;">
+            <button class="chip active" id="vis-tab-cat-live" style="margin:0; flex:1; font-size: 0.72rem; padding: 4px 0;">Live</button>
+            <button class="chip" id="vis-tab-cat-movie" style="margin:0; flex:1; font-size: 0.72rem; padding: 4px 0;">Movies</button>
+            <button class="chip" id="vis-tab-cat-series" style="margin:0; flex:1; font-size: 0.72rem; padding: 4px 0;">Series</button>
+          </div>
+
+          <div id="vis-cats-list" style="max-height: 250px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 4px;">
+            <!-- Category checkboxes dynamically rendered here -->
+          </div>
+        </div>
+
+        <div id="vis-cats-status" style="text-align: center; color: var(--text-3); font-size: 0.8rem; padding: 15px 0;">
+          Categories not loaded yet. Click "Load Categories".
+        </div>
+      </div>
+
+      <div class="sec" style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 15px; margin-top: 20px; display: flex; gap: 10px;">
+        <button class="btn" id="vis-save" style="justify-content:center; flex:1;">Save Visibility</button>
+        <button class="btn btn-ghost" id="vis-cancel" style="justify-content:center; flex:1;">Cancel</button>
       </div>
     </div>
   </div>
@@ -812,11 +891,18 @@
             <div class="pn">${esc(p.name)}</div>
             <div class="pm">${esc(p.username)} · ${esc(p.type)}${p.server_url ? ' · ' + esc(hostName(p.server_url)) : ''}</div>
           </div>
+          <button class="btn-icon" data-editvis="${esc(p.id)}" title="Manage visibility"><i data-lucide="eye-off"></i></button>
           <button class="btn-icon btn-danger" data-rmpl="${esc(p.id)}" title="Remove playlist"><i data-lucide="trash-2"></i></button>
         </div>`).join('') || '<div class="topbar-note" style="padding:4px 0 2px;">No playlists yet — add one below.</div>';
 
       $('d-archive').innerHTML = `<i data-lucide="${d.archived ? 'archive-restore' : 'archive'}"></i>${d.archived ? 'Unarchive' : 'Archive'}`;
       icons();
+
+      $('d-pls').querySelectorAll('[data-editvis]').forEach(b => b.addEventListener('click', () => {
+        const plId = b.getAttribute('data-editvis');
+        const playlist = pls.find(p => String(p.id) === plId);
+        if (playlist) openVisDrawer(playlist);
+      }));
 
       $('d-pls').querySelectorAll('[data-rmpl]').forEach(b => b.addEventListener('click', () => {
         armConfirm(b, 'Sure?', async () => {
@@ -896,6 +982,174 @@
           toast('Device deleted'); closeDrawer(); load();
         } catch (e) { toast(e.message, true); }
       });
+    });
+
+    // ---------------------------- visibility drawer ----------------------------
+    let activePl = null;
+    let loadedCategories = null;
+    let currentCatTab = 'live';
+    let hiddenCategoriesSet = new Set();
+
+    function closeVis() {
+      $('vis-drawer').classList.remove('show');
+      if (!openId) $('scrim').classList.remove('show');
+    }
+
+    function openVisDrawer(p) {
+      activePl = p;
+      $('vis-pl-name').textContent = `${p.name || 'Playlist'} (${p.username})`;
+      
+      const hiddenTabs = p.hidden_tabs || [];
+      $('tab-live').checked = !hiddenTabs.includes('live');
+      $('tab-movies').checked = !hiddenTabs.includes('movies');
+      $('tab-series').checked = !hiddenTabs.includes('series');
+      $('tab-flixify').checked = !hiddenTabs.includes('flixify');
+
+      hiddenCategoriesSet = new Set(p.hidden_categories || []);
+      loadedCategories = null;
+      currentCatTab = 'live';
+
+      $('vis-cats-container').style.display = 'none';
+      $('vis-cats-status').style.display = '';
+      $('vis-cats-status').textContent = 'Categories not loaded yet. Click "Load Categories".';
+      
+      closeDrawer();
+      $('scrim').classList.add('show');
+      $('vis-drawer').classList.add('show');
+    }
+
+    $('vis-close').addEventListener('click', closeVis);
+    $('vis-cancel').addEventListener('click', closeVis);
+
+    $('vis-tab-cat-live').addEventListener('click', () => switchCatTab('live'));
+    $('vis-tab-cat-movie').addEventListener('click', () => switchCatTab('movie'));
+    $('vis-tab-cat-series').addEventListener('click', () => switchCatTab('series'));
+    
+    $('vis-cats-search').addEventListener('input', renderCategoriesVis);
+    $('vis-btn-all').addEventListener('click', () => toggleAllCats(true));
+    $('vis-btn-none').addEventListener('click', () => toggleAllCats(false));
+
+    function switchCatTab(tab) {
+      currentCatTab = tab;
+      ['vis-tab-cat-live', 'vis-tab-cat-movie', 'vis-tab-cat-series'].forEach(id => {
+        $(id).classList.toggle('active', id === `vis-tab-cat-${tab}`);
+      });
+      renderCategoriesVis();
+    }
+
+    function renderCategoriesVis() {
+      const listEl = $('vis-cats-list');
+      listEl.innerHTML = '';
+      
+      const currentCats = loadedCategories[currentCatTab] || [];
+      const query = $('vis-cats-search').value.toLowerCase();
+      const filtered = currentCats.filter(c => (c.category_name || '').toLowerCase().includes(query));
+      
+      if (filtered.length === 0) {
+        listEl.innerHTML = '<div style="color: var(--text-3); text-align: center; padding: 15px; font-size: 0.8rem;">No categories found</div>';
+        return;
+      }
+      
+      filtered.forEach(cat => {
+        const cid = String(cat.category_id);
+        const name = cat.category_name || `Category ${cid}`;
+        const isChecked = !hiddenCategoriesSet.has(cid);
+        
+        const label = document.createElement('label');
+        label.className = 'vis-cat-row';
+        label.innerHTML = `
+          <input type="checkbox" value="${esc(cid)}" ${isChecked ? 'checked' : ''} />
+          <span>${esc(name)}</span>
+        `;
+        
+        label.querySelector('input').addEventListener('change', (e) => {
+          if (e.target.checked) {
+            hiddenCategoriesSet.delete(cid);
+          } else {
+            hiddenCategoriesSet.add(cid);
+          }
+        });
+        
+        listEl.appendChild(label);
+      });
+    }
+
+    function toggleAllCats(show) {
+      const currentCats = loadedCategories[currentCatTab] || [];
+      const query = $('vis-cats-search').value.toLowerCase();
+      const filtered = currentCats.filter(c => (c.category_name || '').toLowerCase().includes(query));
+      
+      filtered.forEach(c => {
+        const cid = String(c.category_id);
+        if (show) {
+          hiddenCategoriesSet.delete(cid);
+        } else {
+          hiddenCategoriesSet.add(cid);
+        }
+      });
+      renderCategoriesVis();
+    }
+
+    $('vis-btn-load').addEventListener('click', async () => {
+      if (!activePl) return;
+      
+      $('vis-cats-status').innerHTML = '<span style="display:inline-flex; align-items:center; gap:8px;"><i data-lucide="loader" class="spin"></i> Connecting to server and fetching categories...</span>';
+      icons();
+      
+      try {
+        const fetchCats = async (action) => {
+          const url = `${activePl.server_url}/player_api.php?username=${encodeURIComponent(activePl.username)}&password=${encodeURIComponent(activePl.password)}&action=${action}`;
+          const res = await fetch(`/api/proxy?url=${encodeURIComponent(url)}`);
+          if (!res.ok) throw new Error(`Status ${res.status}`);
+          const data = await res.json();
+          return Array.isArray(data) ? data : [];
+        };
+        
+        const [liveCats, vodCats, seriesCats] = await Promise.all([
+          fetchCats('get_live_categories').catch(() => []),
+          fetchCats('get_vod_categories').catch(() => []),
+          fetchCats('get_series_categories').catch(() => [])
+        ]);
+        
+        if (liveCats.length === 0 && vodCats.length === 0 && seriesCats.length === 0) {
+          throw new Error('No categories returned from server. Check credentials/server URL.');
+        }
+        
+        loadedCategories = { live: liveCats, movie: vodCats, series: seriesCats };
+        
+        $('vis-cats-status').style.display = 'none';
+        $('vis-cats-container').style.display = '';
+        switchCatTab('live');
+      } catch (e) {
+        $('vis-cats-status').textContent = `Error loading categories: ${e.message}`;
+      }
+    });
+
+    $('vis-save').addEventListener('click', async () => {
+      if (!activePl) return;
+      const hidden_tabs = [];
+      if (!$('tab-live').checked) hidden_tabs.push('live');
+      if (!$('tab-movies').checked) hidden_tabs.push('movies');
+      if (!$('tab-series').checked) hidden_tabs.push('series');
+      if (!$('tab-flixify').checked) hidden_tabs.push('flixify');
+      
+      const hidden_categories = Array.from(hiddenCategoriesSet);
+      
+      try {
+        await api('update-playlist', {
+          method: 'POST',
+          body: {
+            id: activePl.id,
+            hidden_tabs,
+            hidden_categories
+          }
+        });
+        toast('Visibility settings saved');
+        closeVis();
+        await load();
+      } catch (e) {
+        toast(e.message, true);
+      }
     });
 
     // ---------------------------- settings drawer ----------------------------

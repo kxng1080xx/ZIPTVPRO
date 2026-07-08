@@ -38,7 +38,7 @@ export default async function handler(req, res) {
     if (action === 'devices' && req.method === 'GET') {
       const archived = req.query.archived === '1';
       const rows = await sb(
-        `/devices?select=*,playlists(id,name,type,server_url,username,created_at)` +
+        `/devices?select=*,playlists(id,name,type,server_url,username,created_at,hidden_tabs,hidden_categories)` +
         `&archived=eq.${archived}&order=last_seen.desc.nullslast,created_at.desc`
       );
       return res.status(200).json({ devices: rows || [] });
@@ -93,6 +93,20 @@ export default async function handler(req, res) {
       if (!b.id) return res.status(400).json({ error: 'id required' });
       await sb(`/playlists?id=eq.${encodeURIComponent(b.id)}`, { method: 'DELETE' });
       return res.status(200).json({ ok: true });
+    }
+ 
+    // ---- Update a playlist (tabs & categories visibility) ------------------
+    if (action === 'update-playlist' && req.method === 'POST') {
+      const b = await readBody(req);
+      if (!b.id) return res.status(400).json({ error: 'id required' });
+      const patch = {};
+      if ('name' in b) patch.name = b.name;
+      if ('hidden_tabs' in b) patch.hidden_tabs = b.hidden_tabs;
+      if ('hidden_categories' in b) patch.hidden_categories = b.hidden_categories;
+      const updated = await sb(`/playlists?id=eq.${encodeURIComponent(b.id)}`, {
+        method: 'PATCH', body: patch, prefer: 'return=representation'
+      });
+      return res.status(200).json({ playlist: updated && updated[0] });
     }
 
     // ---- Delete a device (and its playlists via cascade) -------------------

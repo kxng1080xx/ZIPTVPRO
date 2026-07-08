@@ -28,14 +28,16 @@ create table if not exists public.devices (
 -- Deleting a row here makes the app drop that playlist on its next sync.
 -- ----------------------------------------------------------------------------
 create table if not exists public.playlists (
-  id          uuid primary key default gen_random_uuid(),
-  device_id   text not null references public.devices(device_id) on delete cascade,
-  name        text not null default 'Playlist',
-  type        text not null default 'xtream',           -- 'xtream' | 'm3u'
-  server_url  text not null,
-  username    text not null,
-  password    text not null,
-  created_at  timestamptz not null default now()
+  id                uuid primary key default gen_random_uuid(),
+  device_id         text not null references public.devices(device_id) on delete cascade,
+  name              text not null default 'Playlist',
+  type              text not null default 'xtream',           -- 'xtream' | 'm3u'
+  server_url        text not null,
+  username          text not null,
+  password          text not null,
+  hidden_tabs       text[] default '{}',
+  hidden_categories text[] default '{}',
+  created_at        timestamptz not null default now()
 );
 
 create index if not exists playlists_device_idx on public.playlists(device_id);
@@ -87,3 +89,8 @@ end $$;
 -- Leave commented until every client has updated, so old (<5.0) apps still pair.
 -- ----------------------------------------------------------------------------
 -- drop table if exists public.device_pairings;
+
+-- Migration to update existing 5.0 databases with visibility control columns:
+ALTER TABLE public.playlists ADD COLUMN IF NOT EXISTS hidden_tabs text[] DEFAULT '{}';
+ALTER TABLE public.playlists ADD COLUMN IF NOT EXISTS hidden_categories text[] DEFAULT '{}';
+
