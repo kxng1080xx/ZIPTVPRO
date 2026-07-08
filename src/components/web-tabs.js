@@ -39,7 +39,7 @@ function saveWebTabs(tabs) { localStorage.setItem(LS_TABS, JSON.stringify(tabs))
 
 function getCredentialsLocal() {
   try {
-    const list = JSON.parse(localStorage.getItem('ziptv_playlists') || '[]');
+    const list = JSON.parse(localStorage.getItem('xtream_playlists') || '[]');
     const activeId = localStorage.getItem('xtream_active_id');
     return list.find(p => p.id === activeId) || list[0];
   } catch (e) {
@@ -60,11 +60,11 @@ function saveHiddenTabs(list) {
   if (creds) {
     creds.hidden_tabs = list;
     try {
-      const plList = JSON.parse(localStorage.getItem('ziptv_playlists') || '[]');
+      const plList = JSON.parse(localStorage.getItem('xtream_playlists') || '[]');
       const idx = plList.findIndex(p => p.id === creds.id);
       if (idx >= 0) {
         plList[idx].hidden_tabs = list;
-        localStorage.setItem('ziptv_playlists', JSON.stringify(plList));
+        localStorage.setItem('xtream_playlists', JSON.stringify(plList));
       }
     } catch (e) {}
   }
