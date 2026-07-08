@@ -40,7 +40,7 @@ function saveWebTabs(tabs) { localStorage.setItem(LS_TABS, JSON.stringify(tabs))
 function getCredentialsLocal() {
   try {
     const list = JSON.parse(localStorage.getItem('ziptv_playlists') || '[]');
-    const activeId = localStorage.getItem('ziptv_active_playlist_id');
+    const activeId = localStorage.getItem('xtream_active_id');
     return list.find(p => p.id === activeId) || list[0];
   } catch (e) {
     return null;
