@@ -26,7 +26,11 @@ epg_cache.json
 # Android Studio and Gradle settings/caches
 .gradle/
 .idea/
-build/
+# Top-level build/ holds electron-builder resources; only installer.nsh is source.
+build/*
+!build/installer.nsh
+# Nested build dirs (Capacitor/Cordova modules) stay fully ignored.
+android/**/build/
 local.properties
 capture/
 android/.gradle/
