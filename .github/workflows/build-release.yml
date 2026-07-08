@@ -1,0 +1,125 @@
+name: Build & Release (APK + EXE)
+
+# Manual trigger — builds the Android APK and Windows EXE on hosted runners
+# (both need full internet access to Google's Maven repo / GitHub release
+# assets that some sandboxed dev environments can't reach), then publishes
+# them via `npm run release` and commits the updated app.apk/ZIPTV-Pro.apk
+# back to the triggering branch.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+
+      - run: npm ci
+
+      - run: npm run bump -- --no-bump
+
+      - run: npm run build
+
+      - run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --console=plain
+
+      - run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk app.apk
+          cp app.apk ZIPTV-Pro.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: |
+            app.apk
+            ZIPTV-Pro.apk
+          retention-days: 7
+
+  build-exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - run: npm run fetch:ffmpeg
+
+      - run: npm run bump -- --no-bump
+
+      - run: npm run build
+
+      - run: npx electron-builder
+
+      - name: Rename installer to latest.exe
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          cp "dist-electron/ZIPTV-Pro-Setup-${version}.exe" latest.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exe
+          path: latest.exe
+          retention-days: 7
+
+  release:
+    needs: [build-apk, build-exe]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
+          path: .
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: exe
+          path: .
+
+      - name: Publish GitHub release (latest.exe + app.apk)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run release
+
+      - name: Commit rebuilt APK back to the branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add app.apk ZIPTV-Pro.apk
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: rebuild APK via CI ($(node -p "require('./package.json').version"))"
+            git push
+          else
+            echo "No APK changes to commit."
+          fi

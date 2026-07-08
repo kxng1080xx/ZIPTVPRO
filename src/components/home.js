@@ -88,8 +88,8 @@ function heroHtml(cw, channels) {
       : 'Movie';
     const backdropUrl = it.backdrop || it.logo || '';
     return `
-      <div class="home-hero" data-hrow>
-        ${backdropUrl ? `<img class="home-hero-backdrop" src="${esc(proxifyImage(backdropUrl))}" alt="" onerror="this.remove()">` : ''}
+      <div class="home-hero${backdropUrl ? ' home-hero-media' : ''}" data-hrow>
+        ${backdropUrl ? `<img class="home-hero-backdrop" src="${esc(proxifyImage(backdropUrl))}" alt="" onerror="this.parentElement.classList.remove('home-hero-media')">` : ''}
         <div class="home-hero-scrim"></div>
         ${it.logo ? `<img class="home-hero-poster" src="${esc(proxifyImage(it.logo))}" alt="" onerror="this.remove()">` : ''}
         <div class="home-hero-info">
