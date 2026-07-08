@@ -611,6 +611,9 @@ export class VideoPlayer {
       this._setFsDirect(isL);
       return;
     }
+    // Desktop (Electron): stay boxed so the details panel stays visible next to
+    // the video. /tv mode keeps the immersive auto-fullscreen behavior.
+    if (this._isElectron() && !this._isTv()) return;
     if (this.isLandscape()) this.enterFullscreen();
   }
 
@@ -2227,6 +2230,25 @@ export class VideoPlayer {
         this.ccBtn.style.color = '#06b6d4';
       }
     }
+  }
+
+  // Attach an externally fetched subtitle (VTT text) as a <track> and show it.
+  // Used by the OpenSubtitles search in the Audio & Subtitles menu.
+  addExternalSubtitle(vttText, label = 'Online subtitle') {
+    if (this._extSubUrl) { try { URL.revokeObjectURL(this._extSubUrl); } catch (e) {} }
+    // Remove any previous online track so repeated searches don't pile up.
+    this.video.querySelectorAll('track[data-external-sub]').forEach(t => t.remove());
+    this._extSubUrl = URL.createObjectURL(new Blob([vttText], { type: 'text/vtt' }));
+    const track = document.createElement('track');
+    track.kind = 'subtitles';
+    track.label = label;
+    track.srclang = 'en';
+    track.src = this._extSubUrl;
+    track.setAttribute('data-external-sub', '1');
+    this.video.appendChild(track);
+    const tt = this.video.textTracks;
+    for (let j = 0; j < tt.length; j++) tt[j].mode = (j === tt.length - 1) ? 'showing' : 'disabled';
+    if (this.ccBtn) this.ccBtn.style.color = '#06b6d4';
   }
 
   async togglePiP() {

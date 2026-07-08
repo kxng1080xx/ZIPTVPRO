@@ -853,39 +853,35 @@ body.tv-layout .epg-section-container.timeline-hidden.epg-list-view .epg-channel
   transform: scale(1.05);
 }
 
-/* Utility row: glassmorphism — frosted circular buttons with a glass edge
-   highlight and an accent glow on hover/focus. (Lives inside the auto-hiding
-   controls overlay, so it never sits over the video in the idle VSR state.) */
+/* Utility row: flat — bare icons, no chrome. A quiet rounded-square fill
+   only appears on hover/focus. (Lives inside the auto-hiding controls
+   overlay, so it never sits over the video in the idle VSR state.) */
 .player-control-icon {
-  background: rgba(255, 255, 255, 0.10);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-  backdrop-filter: blur(14px) saturate(150%);
-  color: rgba(255, 255, 255, 0.88);
-  border-radius: 50%;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22),
-              0 2px 8px rgba(0, 0, 0, 0.28);
-  transition: background 0.18s ease, border-color 0.18s ease,
-              box-shadow 0.18s ease, transform 0.18s ease, color 0.18s ease;
+  background: transparent;
+  border: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  color: rgba(255, 255, 255, 0.75);
+  border-radius: 10px;
+  box-shadow: none;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
 .player-control-icon:hover {
-  background: rgba(255, 255, 255, 0.20);
-  border-color: rgba(255, 255, 255, 0.38);
+  background: rgba(255, 255, 255, 0.12);
   color: #fff;
-  transform: translateY(-1px) scale(1.06);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
-              0 4px 14px rgba(0, 0, 0, 0.34),
-              0 0 14px var(--rd-accent-solid, rgba(239, 68, 68, 0.55));
+  transform: none;
+  box-shadow: none;
 }
 .player-control-icon:active {
-  transform: translateY(0) scale(0.97);
+  background: rgba(255, 255, 255, 0.08);
+  transform: scale(0.94);
 }
-/* TV / D-pad focus: brighter accent ring so it reads from across the room. */
+/* TV / D-pad focus: flat accent fill so it reads from across the room. */
 .player-control-icon.tv-focused {
-  border-color: var(--accent-red, #ef4444);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
-              0 0 0 2px var(--accent-red, #ef4444),
-              0 0 18px var(--rd-accent-solid, rgba(239, 68, 68, 0.7));
+  background: var(--accent-red, #ef4444);
+  color: #fff;
+  border: none;
+  box-shadow: none;
 }
 .control-row-left { gap: 12px; }
 .control-row-right { gap: 12px; }
@@ -1124,13 +1120,16 @@ body.perf-lite .player-seek10-btn:hover { transform: none; }
   background: rgba(255, 255, 255, 0.1);
 }
 
-.player-control-icon.tv-focused,
 .player-play-btn.tv-focused,
 .player-skip-btn.tv-focused,
 .player-seek10-btn.tv-focused,
 .player-back-btn.tv-focused {
   box-shadow: var(--rd-focus-ring);
   border-radius: 50%;
+}
+.player-control-icon.tv-focused {
+  box-shadow: var(--rd-focus-ring);
+  border-radius: 10px;
 }
 
 /* ==========================================================================
@@ -2327,3 +2326,74 @@ body.perf-lite .continue-card:hover { transform: none; }
   }
   .settings-menu-item span { display: none; }
 }
+
+/* ==========================================================================
+   UP NEXT row actions (reminder bell + record) — flat icons, reveal on hover
+   ========================================================================== */
+.upcoming-item { position: relative; }
+.upcoming-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.upcoming-item:hover .upcoming-actions,
+.upcoming-actions:focus-within,
+.upcoming-actions:has(.active) { opacity: 1; }
+.upcoming-act {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.upcoming-act i { width: 15px; height: 15px; }
+.upcoming-act:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+.upcoming-remind.active { color: var(--accent-red, #ef4444); opacity: 1; }
+.upcoming-rec:hover { color: var(--accent-red, #ef4444); }
+
+/* Reminder banner: flat card, bottom-right */
+#reminder-banner {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: #16161a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.9rem;
+  max-width: 440px;
+}
+#reminder-banner .reminder-banner-text strong { color: #fff; }
+#reminder-banner button {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+#reminder-banner .reminder-banner-watch {
+  background: var(--accent-red, #ef4444);
+  color: #fff;
+}
+#reminder-banner .reminder-banner-watch:hover { background: #dc2626; }
+#reminder-banner .reminder-banner-close {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.75);
+}
+#reminder-banner .reminder-banner-close:hover { background: rgba(255, 255, 255, 0.16); }

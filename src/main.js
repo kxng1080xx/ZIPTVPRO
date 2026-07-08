@@ -723,6 +723,12 @@ window.openPlayerTrackMenu = function () {
     }));
   }
 
+  // VOD on desktop: offer an online subtitle search (OpenSubtitles via the
+  // local server proxy) — TS streams rarely carry usable subs.
+  if (p.isVod && (window.appHost || window.electronCast)) {
+    options.push({ value: 'os:search', label: 'Search online subtitles…' });
+  }
+
   if (options.length === 0) {
     showToast('No alternate audio or subtitle tracks', 'info');
     return;
@@ -732,11 +738,84 @@ window.openPlayerTrackMenu = function () {
     title: 'Audio & Subtitles',
     options,
     onSelect: (v) => {
+      if (v === 'os:search') { searchOnlineSubtitles(); return; }
       p.applyTrack(v);
       navigation.focusDefault('player');
     }
   });
 };
+
+// ==========================================================================
+// ONLINE SUBTITLES (OpenSubtitles) — search by title, download, convert
+// SRT→VTT, attach to the video. Needs a free API key (opensubtitles.com).
+// ==========================================================================
+function srtToVtt(srt) {
+  const body = String(srt)
+    .replace(/^﻿/, '')
+    .replace(/\r+/g, '')
+    .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
+  return 'WEBVTT\n\n' + body;
+}
+
+function searchOnlineSubtitles() {
+  const key = (localStorage.getItem('osApiKey') || '').trim();
+  if (!key) {
+    let typed = '';
+    openSearchKeyboard({
+      title: 'Enter OpenSubtitles API key (free at opensubtitles.com/consumers)',
+      initial: '',
+      onChange: (v) => { typed = v; },
+      onClose: () => {
+        if (typed && typed.trim()) {
+          localStorage.setItem('osApiKey', typed.trim());
+          searchOnlineSubtitles(); // continue straight into the search
+        }
+      }
+    });
+    return;
+  }
+  let typed = playerInstance.currentChannelName || '';
+  openSearchKeyboard({
+    title: 'Search online subtitles',
+    initial: typed,
+    onChange: (v) => { typed = v; },
+    onClose: async () => {
+      const query = (typed || '').trim();
+      if (!query) return;
+      try {
+        showToast('Searching subtitles…', 'info', 2000);
+        const r = await fetch(`/api/subs/search?q=${encodeURIComponent(query)}&key=${encodeURIComponent(key)}`);
+        if (!r.ok) {
+          const err = (await r.json().catch(() => ({}))).error || r.statusText;
+          if (/401|bad api key/i.test(err)) localStorage.removeItem('osApiKey'); // re-prompt next time
+          throw new Error(err);
+        }
+        const items = await r.json();
+        if (!items.length) { showToast('No subtitles found', 'info', 3000); return; }
+        openSortDropdown({
+          title: 'Subtitles',
+          options: items.map(it => ({ value: String(it.fileId), label: it.label })),
+          onSelect: async (fileId) => {
+            try {
+              const dl = await fetch('/api/subs/download', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fileId: +fileId, key }),
+              });
+              if (!dl.ok) throw new Error((await dl.json().catch(() => ({}))).error || dl.statusText);
+              playerInstance.addExternalSubtitle(srtToVtt(await dl.text()), 'OpenSubtitles');
+              showToast('Subtitles loaded', 'success', 3000);
+            } catch (e) {
+              showToast(`Subtitle download failed: ${e.message}`, 'error', 5000);
+            }
+          }
+        });
+      } catch (e) {
+        showToast(`Subtitle search failed: ${e.message}`, 'error', 5000);
+      }
+    }
+  });
+}
 
 // ==========================================================================
 // SLEEP TIMER — stop playback after a chosen number of minutes.
@@ -1092,6 +1171,12 @@ async function selectAndPlayChannel(channel, programBlock) {
     return playCatchup(channel, programBlock);
   }
 
+  // Last-channel zap: remember the channel we're leaving so Backspace can
+  // jump straight back to it (classic cable-box behavior).
+  if (state.activeChannel && String(state.activeChannel.stream_id) !== String(channel.stream_id)) {
+    state.lastChannel = state.activeChannel;
+  }
+
   state.activeChannel = channel;
   state.activeProgram = programBlock;
 
@@ -1184,6 +1269,107 @@ async function selectAndPlayChannel(channel, programBlock) {
     alert(`Could not start stream: ${err.message}`);
   }
 }
+
+// ==========================================================================
+// LAST-CHANNEL ZAP — Backspace jumps between the two most recent channels.
+// ==========================================================================
+window.zapLastChannel = function () {
+  const prev = state.lastChannel;
+  if (!prev) { window.showToast?.('No previous channel yet', 'info', 2000); return; }
+  const nn = (window.epgGridInstance && epgGridInstance.getNowNext)
+    ? epgGridInstance.getNowNext(prev.stream_id) : null;
+  selectAndPlayChannel(prev, (nn && nn.current) || null);
+};
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Backspace') return;
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  // TV remotes map Back to Backspace — that's navigation, not zap.
+  if (document.body.classList.contains('tv-layout')) return;
+  if (!state.lastChannel) return;
+  e.preventDefault();
+  window.zapLastChannel();
+});
+
+// ==========================================================================
+// EPG REMINDERS — bell a future programme; a banner pops when it starts,
+// with one-click tune-in. Persisted in localStorage.
+// ==========================================================================
+const REMINDERS_KEY = 'epgReminders';
+function getReminders() {
+  try { return JSON.parse(localStorage.getItem(REMINDERS_KEY)) || []; } catch (e) { return []; }
+}
+function saveReminders(rems) {
+  try { localStorage.setItem(REMINDERS_KEY, JSON.stringify(rems)); } catch (e) {}
+}
+window.isReminderSet = (streamId, startTs) =>
+  getReminders().some(r => String(r.sid) === String(streamId) && +r.start === +startTs);
+
+window.toggleReminder = function (streamId, channelName, progTitle, startTs) {
+  const rems = getReminders();
+  const i = rems.findIndex(r => String(r.sid) === String(streamId) && +r.start === +startTs);
+  if (i >= 0) {
+    rems.splice(i, 1);
+    window.showToast?.('Reminder removed', 'info', 2000);
+  } else {
+    rems.push({ sid: streamId, ch: channelName || '', title: progTitle || 'Programme', start: +startTs });
+    const t = new Date(startTs * 1000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    window.showToast?.(`Reminder set: ${progTitle} at ${t}`, 'success', 3000);
+  }
+  saveReminders(rems);
+};
+
+function showReminderBanner(rem) {
+  document.getElementById('reminder-banner')?.remove();
+  const el = document.createElement('div');
+  el.id = 'reminder-banner';
+  const text = document.createElement('div');
+  text.className = 'reminder-banner-text';
+  const strong = document.createElement('strong');
+  strong.textContent = rem.title;
+  text.appendChild(strong);
+  text.appendChild(document.createTextNode(` is starting on ${rem.ch}`));
+  const watch = document.createElement('button');
+  watch.className = 'reminder-banner-watch';
+  watch.textContent = 'Watch';
+  watch.addEventListener('click', () => {
+    el.remove();
+    const ch = (epgGridInstance?.channels || []).find(c => String(c.stream_id) === String(rem.sid));
+    if (!ch) { window.showToast?.('Channel not found in the current list', 'error', 3000); return; }
+    const nn = epgGridInstance?.getNowNext ? epgGridInstance.getNowNext(ch.stream_id) : null;
+    selectAndPlayChannel(ch, (nn && nn.current) || null);
+  });
+  const close = document.createElement('button');
+  close.className = 'reminder-banner-close';
+  close.textContent = 'Dismiss';
+  close.addEventListener('click', () => el.remove());
+  el.appendChild(text);
+  el.appendChild(watch);
+  el.appendChild(close);
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 60000); // self-clears after a minute
+}
+
+function checkReminders() {
+  const now = Date.now();
+  const rems = getReminders();
+  if (!rems.length) return;
+  const due = [];
+  const keep = [];
+  rems.forEach(r => {
+    const startMs = r.start * 1000;
+    if (startMs - now <= 60000) due.push(r); // fires up to 1 min early
+    else keep.push(r);
+  });
+  if (!due.length) return;
+  saveReminders(keep);
+  // Fire only reminders that aren't stale (missed by >10 min, e.g. app closed).
+  due.filter(r => now - r.start * 1000 < 10 * 60000).forEach(showReminderBanner);
+  // Refresh any visible bells so their active state matches storage.
+  if (state.activeChannel) renderUpcomingPrograms(state.activeChannel);
+}
+setInterval(checkReminders, 30000);
 
 // Replay a past programme from the provider's catch-up archive. The timeshift
 // stream is a finite, seekable segment, so we play it as VOD (scrubbable bar)
@@ -1544,16 +1730,37 @@ function renderUpcomingPrograms(channel) {
     return;
   }
 
+  const canRecord = !!(window.appHost || window.electronCast); // DVR is desktop-only
   list.innerHTML = upcoming.map(prog => {
     const startMs = parseInt(prog.start_timestamp) * 1000;
     const time = new Date(startMs).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
     const title = prog.title || 'No information';
+    const remOn = window.isReminderSet(channel.stream_id, +prog.start_timestamp);
     return `
       <div class="upcoming-item">
         <span class="upcoming-time">${time}</span>
         <span class="upcoming-title">${title}</span>
+        <span class="upcoming-actions">
+          <button class="upcoming-act upcoming-remind${remOn ? ' active' : ''}" title="${remOn ? 'Remove reminder' : 'Remind me'}"><i data-lucide="bell"></i></button>
+          ${canRecord ? '<button class="upcoming-act upcoming-rec" title="Record this programme"><i data-lucide="circle-dot"></i></button>' : ''}
+        </span>
       </div>`;
   }).join('');
+  list.querySelectorAll('.upcoming-remind').forEach((btn, i) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const prog = upcoming[i];
+      window.toggleReminder(channel.stream_id, channel.name, prog.title || 'Programme', +prog.start_timestamp);
+      renderUpcomingPrograms(channel); // re-render to reflect the new bell state
+    });
+  });
+  list.querySelectorAll('.upcoming-rec').forEach((btn, i) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.scheduleRecordProgram(channel, upcoming[i]);
+    });
+  });
+  if (window.lucide) lucide.createIcons({ scope: list });
   wrap.classList.remove('hidden');
 }
 

@@ -1342,6 +1342,58 @@ app.delete('/api/recordings/schedule/:id', (req, res) => {
   if (future.length !== jobs.length) writeJson(SCHED_INDEX, future);
 }
 
+// --- Online subtitles (OpenSubtitles proxy) ---------------------------------
+// The renderer can't call the OpenSubtitles API cross-origin, so the local
+// server relays search + download. The user's API key is passed per-call and
+// never stored here.
+const OS_API = 'https://api.opensubtitles.com/api/v1';
+const osHeaders = (key) => ({
+  'Api-Key': key,
+  'User-Agent': 'ZIPTV v1.0',
+  'Content-Type': 'application/json',
+  Accept: 'application/json',
+});
+
+app.get('/api/subs/search', async (req, res) => {
+  const { q, lang, key } = req.query;
+  if (!q || !key) return res.status(400).json({ error: 'q and key are required' });
+  try {
+    const url = `${OS_API}/subtitles?query=${encodeURIComponent(q)}&languages=${encodeURIComponent(lang || 'en')}`;
+    const r = await fetch(url, { headers: osHeaders(key) });
+    if (!r.ok) throw new Error(`OpenSubtitles replied ${r.status}${r.status === 401 ? ' (bad API key?)' : ''}`);
+    const data = await r.json();
+    // Slim the payload to what the picker needs: one file per result.
+    const items = (data.data || []).map((d) => {
+      const a = d.attributes || {};
+      const f = (a.files || [])[0];
+      if (!f) return null;
+      const name = a.release || a.feature_details?.title || 'Subtitle';
+      return { fileId: f.file_id, label: `${name} [${a.language || '?'}]${a.hearing_impaired ? ' (HI)' : ''}` };
+    }).filter(Boolean).slice(0, 15);
+    res.json(items);
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
+app.post('/api/subs/download', async (req, res) => {
+  const { fileId, key } = req.body || {};
+  if (!fileId || !key) return res.status(400).json({ error: 'fileId and key are required' });
+  try {
+    const r = await fetch(`${OS_API}/download`, {
+      method: 'POST', headers: osHeaders(key), body: JSON.stringify({ file_id: fileId }),
+    });
+    if (!r.ok) throw new Error(`OpenSubtitles replied ${r.status}`);
+    const { link } = await r.json();
+    if (!link) throw new Error('No download link (daily download quota reached?)');
+    const sub = await fetch(link);
+    if (!sub.ok) throw new Error(`Subtitle file fetch failed (${sub.status})`);
+    res.type('text/plain').send(await sub.text());
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
 // --- Timeshift (rolling 30-sec in-memory HLS buffer) -----------------------
 // Segments + playlist live in a RAM map (tsMem) — nothing is written to disk.
 // ffmpeg PUTs each file to the local ingest route below; the player reads the
