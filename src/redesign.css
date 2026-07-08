@@ -2397,3 +2397,41 @@ body.perf-lite .continue-card:hover { transform: none; }
   color: rgba(255, 255, 255, 0.75);
 }
 #reminder-banner .reminder-banner-close:hover { background: rgba(255, 255, 255, 0.16); }
+
+/* ==========================================================================
+   Player bottom bar: long titles truncate with an ellipsis instead of
+   pushing the right-side control buttons off-screen.
+   ========================================================================== */
+.controls-bottom-row { gap: 16px; }
+.controls-bottom-row .control-row-left {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  max-width: none;
+}
+.controls-bottom-row .control-row-right { flex-shrink: 0; }
+.player-playing-details { min-width: 0; max-width: 100%; }
+.player-playing-title { min-width: 0; }
+.player-playing-title,
+.player-playing-epg {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.player-playing-title .player-channel-name-text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Search keyboard: paste button (styled like the keyboard toggle) */
+.tvk-paste {
+  display: inline-flex;
+  background: transparent;
+  border: none;
+  color: var(--text-muted, #8aa);
+  cursor: pointer;
+  padding: 4px;
+}
+.tvk-paste:hover { color: #fff; }
+.tvk-paste i { width: 18px; height: 18px; }

@@ -46,6 +46,7 @@ export function openSearchKeyboard({ title = 'Search', initial = '', onChange, o
       <div class="tvk-header">
         <span class="tvk-title"><i data-lucide="search"></i> ${title}</span>
         <div class="tvk-header-btns">
+          <button class="tvk-paste" title="Paste from clipboard"><i data-lucide="clipboard"></i></button>
           <button class="tvk-toggle" title="Hide on-screen keyboard"><i data-lucide="keyboard"></i></button>
           <button class="tvk-close" title="Close"><i data-lucide="x"></i></button>
         </div>
@@ -114,6 +115,7 @@ export function openSearchKeyboard({ title = 'Search', initial = '', onChange, o
   kb.input.value = kb.query;
 
   overlay.querySelector('.tvk-close').addEventListener('click', () => done());
+  overlay.querySelector('.tvk-paste')?.addEventListener('click', () => pasteClipboard());
   const toggleBtn = overlay.querySelector('.tvk-toggle');
   if (toggleBtn) toggleBtn.addEventListener('click', () => toggleKeys());
   overlay.querySelectorAll('.tvk-key').forEach((btn) => {
@@ -221,9 +223,28 @@ function focusCurrent() {
   }
 }
 
+// Append clipboard text to the query (paste button or Ctrl+V).
+function pasteClipboard() {
+  if (!kb || !navigator.clipboard?.readText) return;
+  navigator.clipboard.readText().then((t) => {
+    if (!kb || !t) return;
+    kb.query += t.replace(/[\r\n]+/g, ' ').trim();
+    renderQuery();
+    emitChange();
+  }).catch(() => {});
+}
+
 function kbKeyHandler(e) {
   if (!kb) return;
   const k = e.key;
+
+  // Ctrl/Cmd+V pastes into the query.
+  if ((e.ctrlKey || e.metaKey) && (k === 'v' || k === 'V')) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    pasteClipboard();
+    return;
+  }
 
   // Physical keyboard (PC .exe or a hardware/Bluetooth keyboard on the APK):
   // printable single characters type straight into the query, alongside the
