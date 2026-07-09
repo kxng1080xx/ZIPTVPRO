@@ -241,3 +241,113 @@ body.light-mode:not(.tv-layout) .player-idle__hint {
   background: rgba(15, 23, 42, 0.05);
   border-color: rgba(15, 23, 42, 0.10);
 }
+
+/* Global search popout: frosted glass in light mode (the dark rd-surface
+   values otherwise leak through unadjusted). */
+body.light-mode:not(.tv-layout) .gsearch-overlay {
+  background: rgba(148, 163, 184, 0.30);
+}
+body.light-mode:not(.tv-layout) .gsearch-modal {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(26px) saturate(1.5);
+  -webkit-backdrop-filter: blur(26px) saturate(1.5);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
+}
+body.light-mode:not(.tv-layout) .gsearch-bar {
+  border-bottom-color: rgba(15, 23, 42, 0.10);
+}
+body.light-mode:not(.tv-layout) .gsearch-item:hover {
+  background: rgba(15, 23, 42, 0.06);
+}
+body.light-mode:not(.tv-layout) .gsearch-thumb {
+  background: rgba(15, 23, 42, 0.06);
+}
+
+/* ==========================================================================
+   LIVE CHANNEL TABLE (card + list view) — the redesign strips borders and
+   uses white-on-dark ghost tints, so on a light canvas the "table" had no
+   definition at all: white cards on a white panel, invisible hovers.
+   ========================================================================== */
+
+/* Channel cards: hairline + soft shadow so each tile reads on the light bg */
+body.light-mode:not(.tv-layout) .epg-section-container.timeline-hidden .epg-channel-row {
+  border: 1px solid rgba(15, 23, 42, 0.10);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+body.light-mode:not(.tv-layout) .epg-section-container.timeline-hidden .epg-channel-row:hover {
+  border-color: rgba(15, 23, 42, 0.20);
+}
+/* Logo tile was rgba(255,255,255,0.05) — invisible on a white card */
+body.light-mode:not(.tv-layout) .epg-section-container.timeline-hidden .epg-channel-row-logo {
+  background: rgba(15, 23, 42, 0.06);
+}
+/* Playing card keeps its solid accent fill — no hairline on top of it */
+body.light-mode:not(.tv-layout) .epg-section-container.timeline-hidden .epg-channel-row.active {
+  border-color: transparent;
+}
+
+/* List view: flat rows separated by hairline dividers, dark hover tint */
+body.light-mode:not(.tv-layout) .epg-section-container.timeline-hidden.epg-list-view .epg-channel-row {
+  border: none;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: none;
+}
+body.light-mode:not(.tv-layout) .epg-section-container.timeline-hidden.epg-list-view .epg-channel-row:hover {
+  background: rgba(15, 23, 42, 0.05);
+}
+body.light-mode:not(.tv-layout) .epg-section-container.timeline-hidden.epg-list-view .epg-channel-row.active {
+  border-bottom-color: transparent;
+}
+
+/* Controls header: search pill + filter-active were white ghost tints */
+body.light-mode:not(.tv-layout) .epg-search-field {
+  background: rgba(15, 23, 42, 0.06);
+}
+body.light-mode:not(.tv-layout) .epg-search-field:focus-within {
+  background: rgba(15, 23, 42, 0.10);
+}
+body.light-mode:not(.tv-layout) .epg-ctrl-btn.filter-active {
+  color: #0e7490;
+  background: rgba(8, 145, 178, 0.12);
+}
+
+/* NOW time + pin marker: brighten-on-dark cyans → deeper cyan for white bg */
+body.light-mode:not(.tv-layout) .now-seg-time { color: #0891b2; }
+body.light-mode:not(.tv-layout) .epg-pin-marker {
+  color: #0891b2 !important;
+  fill: #0891b2 !important;
+}
+
+/* ==========================================================================
+   FULL EPG GUIDE (timeline grid, incl. fullscreen mode) — grid lines, cell
+   fills, zebra shading and the active-channel gradient were all hardcoded
+   white-on-dark values.
+   ========================================================================== */
+
+/* Hour ticks in the timeline header: white hairlines → dark */
+body.light-mode:not(.tv-layout) .epg-hour-tick {
+  border-left-color: rgba(15, 23, 42, 0.08);
+}
+body.light-mode:not(.tv-layout) .epg-hour-tick-major {
+  border-left-color: rgba(15, 23, 42, 0.16);
+}
+
+/* Programme cell hover was a white tint */
+body.light-mode:not(.tv-layout) .epg-program-block:hover {
+  background-color: rgba(15, 23, 42, 0.06);
+}
+
+/* Alternating row shading across the guide */
+body.light-mode:not(.tv-layout) .epg-section-container:not(.timeline-hidden) .epg-programs-row:nth-child(even),
+body.light-mode:not(.tv-layout) .epg-section-container:not(.timeline-hidden) .epg-channel-row:nth-child(even) {
+  background-color: rgba(15, 23, 42, 0.025);
+}
+
+/* Active channel row faded into a hardcoded dark navy (rgba(17,24,39,1)) */
+body.light-mode:not(.tv-layout) .epg-section-container:not(.timeline-hidden) .epg-channel-row.active {
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.14) 0%, rgba(255, 255, 255, 0) 100%);
+}
+body.light-mode:not(.tv-layout) .epg-section-container:not(.timeline-hidden) .epg-channel-row.active .epg-channel-row-name {
+  color: #0e7490;
+}

@@ -1658,6 +1658,30 @@ body.webtab-tab #mobile-menu-btn {
   box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);
   transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
 }
+/* Live-channel hero (no VOD continue-watching yet): the last-watched channel
+   gets the same full hero treatment as the media card — it IS the "pick up
+   where you left off" target. Live channels have no backdrop stills, so the
+   channel logo becomes the art. */
+.home-hero-live .home-hero-live-art {
+  position: absolute;
+  right: 6%;
+  top: 50%;
+  transform: translateY(-50%);
+  width: min(30%, 240px);
+  max-height: 64%;
+  object-fit: contain;
+  filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.6));
+}
+.home-hero-live .home-hero-scrim {
+  background: linear-gradient(90deg, rgba(4, 6, 11, 0.96) 0%, rgba(4, 6, 11, 0.72) 50%, rgba(4, 6, 11, 0.30) 100%);
+}
+.home-hero-live-badge {
+  position: static; /* .home-badge is absolute inside tiles; inline here */
+  align-self: flex-start;
+  font-size: 0.7rem;
+  padding: 3px 10px;
+}
+
 .home-hero-btn:hover {
   transform: scale(1.04) !important;
   background-color: #1d4ed8 !important;
@@ -1878,6 +1902,30 @@ body.tv-layout .home-tile-title { font-size: 0.95rem; }
   }
   body:not(.tv-layout) .home-hero.home-hero-media .home-hero-title {
     font-size: clamp(1.5rem, 7vw, 2.1rem);
+  }
+
+  /* Live-channel hero: same dominant-card treatment (the collapsed min-height
+     rule above otherwise shrinks it to a small pill). Slightly shorter than
+     the near-square media hero since a channel logo carries less art. */
+  body:not(.tv-layout) .home-hero.home-hero-live {
+    aspect-ratio: 16 / 10;
+    justify-content: flex-end;
+    padding: 0;
+  }
+  body:not(.tv-layout) .home-hero.home-hero-live .home-hero-live-art {
+    right: 50%;
+    top: 10%;
+    transform: translateX(50%);
+    width: 44%;
+    max-height: 40%;
+  }
+  body:not(.tv-layout) .home-hero.home-hero-live .home-hero-scrim {
+    background: linear-gradient(180deg, rgba(4, 6, 11, 0.10) 0%, rgba(4, 6, 11, 0.55) 55%, #04060b 100%);
+  }
+  body:not(.tv-layout) .home-hero.home-hero-live .home-hero-info {
+    position: relative;
+    padding: 20px 20px 22px;
+    gap: 8px;
   }
 
   /* Let the hero title wrap to two lines instead of truncating with "…". */

@@ -1445,10 +1445,10 @@ app.post('/api/subs/download', async (req, res) => {
   }
 });
 
-// --- Timeshift (rolling 30-sec in-memory HLS buffer) -----------------------
+// --- Timeshift (rolling ~2-min in-memory HLS buffer) ------------------------
 // Segments + playlist live in a RAM map (tsMem) — nothing is written to disk.
 // ffmpeg PUTs each file to the local ingest route below; the player reads the
-// same bytes back out of memory. ~8 x 4s segments ≈ 30 s of rewind, a few MB.
+// same bytes back out of memory. 12 x 10s segments ≈ 100s of usable rewind.
 let activeTimeshift = null; // { ch, url, proc, stopped, restarts, windowStart, lastSeq }
 const tsMem = new Map();    // filename -> Buffer
 
@@ -1492,10 +1492,15 @@ function spawnTimeshiftProc(state) {
       : ['-c:v', 'copy']),
     '-c:a', 'aac', '-ac', '2', '-b:a', '256k',
     '-avoid_negative_ts', 'make_zero',
-    // 10-sec chunks. 6 in the playlist = ~60s in RAM: ~30s of usable rewind
-    // plus the cushion hls.js needs to keep live playback smooth (it parks
-    // playback a couple of segments behind the newest one).
-    '-f', 'hls', '-hls_time', '10', '-hls_init_time', '1', '-hls_list_size', '6',
+    // 10-sec chunks, 12 in the playlist = ~120s window in RAM. hls.js parks
+    // playback ~2 segments behind the newest, and every network stall drifts
+    // it further back — with the old 60s window a few stalls put playback at
+    // the sliding window's tail, where segments are evicted while still being
+    // fetched. That fetch/evict race is what caused the recurring backward
+    // skips ("skips back once, then more and more"). The wider window keeps
+    // drifted playback far from the tail (and doubles usable rewind to ~100s);
+    // RAM cost is ~60-150MB at typical live bitrates, desktop-only.
+    '-f', 'hls', '-hls_time', '10', '-hls_init_time', '1', '-hls_list_size', '12',
     '-start_number', String(state.lastSeq + 1),
     '-hls_flags', 'omit_endlist' + (respawn ? '+discont_start' : ''),
     '-hls_segment_type', 'mpegts',

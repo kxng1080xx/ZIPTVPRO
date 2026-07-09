@@ -288,12 +288,112 @@ export class EPGGrid {
     this.renderChannelsAndGrid();
   }
 
+  // Public: find current/upcoming programs matching a query across all cached
+  // EPG. Returns [{ channel, program }] sorted by start time — used by the
+  // global search overlay's "On Live TV" group.
+  getEpgSearchMatches(query) {
+    const q = (query || '').toLowerCase();
+    if (q.length < 3) return [];
+    const now = Date.now();
+    const out = [];
+    for (const c of this.channels) {
+      const listings = this.epgData[String(c.stream_id)];
+      if (!listings || !listings.length) continue;
+      for (const p of listings) {
+        const end = parseInt(p.end_timestamp) * 1000;
+        if (!isFinite(end) || end <= now) continue;
+        if ((p.title || '').toLowerCase().includes(q)) {
+          out.push({ channel: c, program: p });
+          break; // one entry per channel (earliest upcoming match)
+        }
+      }
+    }
+    out.sort((a, b) => parseInt(a.program.start_timestamp) - parseInt(b.program.start_timestamp));
+    return out;
+  }
+
+  // Does a channel's cached EPG have a current-or-upcoming program matching
+  // the query? Past programs are skipped — the point is "where can I watch it".
+  _epgListingsMatch(streamId, query) {
+    const listings = this.epgData[streamId];
+    if (!listings || !listings.length) return false;
+    const now = Date.now();
+    return listings.some((p) => {
+      const end = parseInt(p.end_timestamp) * 1000;
+      if (!isFinite(end) || end <= now) return false;
+      return (p.title || '').toLowerCase().includes(query);
+    });
+  }
+
+  // Background EPG fill for search: while a query is active, fetch listings for
+  // channels that don't have cached EPG yet (small parallel chunks, capped) and
+  // re-render whenever new EPG matches appear. Stops as soon as the query is
+  // cleared; survives query *changes* since the fetched data is query-agnostic.
+  async _kickEpgSearchSweep() {
+    if (this._epgSweepActive) return;
+    this._epgSweepActive = true;
+    if (!this._epgFetchAttempted) this._epgFetchAttempted = new Set();
+    try {
+      const CAP = 600;   // don't hammer huge "All" categories
+      const CHUNK = 6;
+      const ids = this.channels
+        .map(c => String(c.stream_id))
+        .filter(id => !this.epgData[id] && !this._epgFetchAttempted.has(id))
+        .slice(0, CAP);
+      let lastRender = Date.now();
+      let pendingMatches = false;
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const q = (this.channelFilterQuery || '').toLowerCase();
+        // Sweep for the channel-list filter OR the global search overlay
+        // (which sets externalEpgQuery while open) — data is query-agnostic.
+        const external = (this.externalEpgQuery || '').toLowerCase();
+        if (q.length < 3 && external.length < 3) break; // no active query — stop
+        const chunk = ids.slice(i, i + CHUNK);
+        await Promise.all(chunk.map(async (id) => {
+          this._epgFetchAttempted.add(id);
+          try {
+            const data = await getEPG(id);
+            this.epgData[id] = data.listings || [];
+            if (q.length >= 3 && this._epgListingsMatch(id, q)) pendingMatches = true;
+          } catch (err) { /* attempted-set prevents refetch loops */ }
+        }));
+        // Batch re-renders (~1s) so typing stays smooth while results stream in.
+        if (pendingMatches && Date.now() - lastRender > 1000) {
+          pendingMatches = false;
+          lastRender = Date.now();
+          this.renderChannelsAndGrid(this.channelFilterQuery, false);
+        }
+        // Let other listeners (global search) refresh their EPG matches.
+        try { window.dispatchEvent(new CustomEvent('ziptv:epg-updated')); } catch (e) {}
+      }
+      if (pendingMatches) this.renderChannelsAndGrid(this.channelFilterQuery, false);
+    } finally {
+      this._epgSweepActive = false;
+    }
+  }
+
   renderChannelsAndGrid(filterKeyword = this.channelFilterQuery || '', resetPagination = true) {
     const { startTime, endTime } = this.getGuideTimeWindow();
     const pxPerMs = this.pxPerHour / (60 * 60 * 1000);
 
     const query = (filterKeyword || '').toLowerCase();
     let filtered = this.channels.filter(c => (c.name || '').toLowerCase().includes(query));
+
+    // EPG-aware search: also surface channels whose current/upcoming programs
+    // match the query ("rick and morty" → the channel it's airing on), ranked
+    // after direct name matches. EPG is fetched lazily per visible row, so a
+    // background sweep (kicked below) fills the cache while a query is active
+    // and re-renders as matches land.
+    if (query.length >= 3) {
+      const named = new Set(filtered.map(c => String(c.stream_id)));
+      const epgMatches = this.channels.filter(c => {
+        const id = String(c.stream_id);
+        if (named.has(id)) return false;
+        return this._epgListingsMatch(id, query);
+      });
+      if (epgMatches.length) filtered = [...filtered, ...epgMatches];
+      this._kickEpgSearchSweep();
+    }
 
     if (this.channelsSort === 'name') {
       filtered.sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));

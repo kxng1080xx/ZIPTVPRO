@@ -262,6 +262,12 @@ export class VideoPlayer {
             this.updateSeekBackground();
           }
         }
+        // Track the last steadily-playing position on every live stream — the
+        // 'seeking' anti-jump guard compares against it to spot backward seeks
+        // we didn't request (engine error-recovery fallout).
+        if (!this._streamIsVod && !this.video.seeking && !this.isSeeking) {
+          this._lastPlayTime = this.video.currentTime;
+        }
         // Timeshift: light the LIVE badge red when we're at the live edge,
         // dim it when watching behind (YouTube-style). Measure against hls.js's
         // own live position so it reads "live" right after goLive (which targets
@@ -280,9 +286,6 @@ export class VideoPlayer {
           document.body.classList.toggle('ts-at-live', atLive);
           // Can't skip forward past live — grey out +10 at the edge.
           if (this.forward10Btn) this.forward10Btn.disabled = atLive;
-          // Track the last steadily-playing position — the 'seeking' anti-jump
-          // guard compares against it to spot backward seeks we didn't request.
-          if (!this.video.seeking && !this.isSeeking) this._lastPlayTime = this.video.currentTime;
           // Last-resort drift guard: unexpected back-seeks are corrected
           // instantly by the 'seeking' guard, so this should almost never fire.
           // Only a truly broken state (>2 min behind while meant to be live)
@@ -402,18 +405,49 @@ export class VideoPlayer {
       }
     });
 
-    // Anti-jump guard (timeshift live): hls.js media-error recovery flushes the
-    // buffer and can silently re-seek playback backwards into the DVR file —
-    // that's the "skips back and it's no longer live" bug. Every deliberate
-    // seek (scrub / ±10s / goLive / resume) sets _expectSeek first, so any
-    // OTHER backward seek is recovery fallout: undo it immediately, before a
-    // single frame of old content plays.
+    // Anti-jump guard (ALL live, incl. timeshift): engine error-recovery
+    // (hls.js media-error flushes, mpegts rebuilds) can silently re-seek
+    // playback backwards into the buffer — that's the "skips back and it's no
+    // longer live" bug. Every deliberate seek (scrub / ±10s / goLive / resume)
+    // sets _expectSeek first, so any OTHER backward seek is recovery fallout:
+    // undo it immediately, before a single frame of old content plays.
     this.video.addEventListener('seeking', () => {
-      if (!this._timeshiftActive || this._expectSeek || !this._wantLive) return;
+      if (this._streamIsVod || this._expectSeek) return;
       const t = this.video.currentTime;
-      if (isFinite(this._lastPlayTime) && this._lastPlayTime - t > 5) {
+      // 1.5s tolerance: every deliberate seek is flagged with _expectSeek, so
+      // any unrequested backward move beyond a hiccup is recovery fallout. The
+      // old 5s threshold let smaller flush-jumps through — each one visibly
+      // replayed content.
+      if (!isFinite(this._lastPlayTime) || this._lastPlayTime - t <= 1.5) return;
+      if (this._timeshiftActive) {
+        if (!this._wantLive) {
+          // Deliberately behind live (DVR pause/rewind): don't yank to the
+          // edge, but don't let recovery replay either — restore the position
+          // we were actually playing.
+          console.warn(`[timeshift] unexpected back-seek (${(this._lastPlayTime - t).toFixed(1)}s) while behind live — restoring position`);
+          this._expectSeek = true;
+          try { this.video.currentTime = this._lastPlayTime; } catch (e) {}
+          return;
+        }
         console.warn(`[timeshift] unexpected back-seek (${(this._lastPlayTime - t).toFixed(1)}s) — restoring live position`);
         this.goLive();
+        return;
+      }
+      // Plain live: snap back to the live edge (hls.js's own live position, or
+      // the end of the buffered range for mpegts/direct).
+      let live = NaN;
+      if (this.hls && isFinite(this.hls.liveSyncPosition)) {
+        live = this.hls.liveSyncPosition;
+      } else {
+        try {
+          const b = this.video.buffered;
+          if (b && b.length) live = b.end(b.length - 1) - 1;
+        } catch (e) {}
+      }
+      if (isFinite(live) && live > t) {
+        console.warn(`[live] unexpected back-seek (${(this._lastPlayTime - t).toFixed(1)}s) — restoring live edge`);
+        this._expectSeek = true;
+        try { this.video.currentTime = live; } catch (e) {}
       }
     });
     this.video.addEventListener('seeked', () => {
@@ -782,6 +816,9 @@ export class VideoPlayer {
     this._stopVodStallWatch();
     this._stopLiveStallWatch();
     this._retryCount = 0;
+    this._nativeRecoverCount = 0;
+    this._nativeProgressSince = null;
+    this._lastNativeCur = 0;
     this._streamUrl = url;
     this._streamIsVod = isVod;
     this._triedMpegtsOriginal = false;
@@ -971,20 +1008,57 @@ export class VideoPlayer {
   }
 
   // After committing to native, guard against a silent post-start stall (engine
-  // reports playing then buffers forever with no time progress). If no timeupdate
-  // advances for ~25s, surface an error rather than spinning indefinitely.
+  // reports playing then buffers forever with no time progress — typically the
+  // server dropped the connection without libVLC raising an error). Instead of
+  // surfacing an error, reconnect at the stalled position (VOD) / live edge,
+  // same as the browser paths' stall watchdogs.
   _startNativeStallWatch() {
     this._stopNativeStallWatch();
     this._lastNativeProgress = Date.now();
     this._nativeStallTimer = setInterval(() => {
       if (!this._nativeActive || this._nativePaused) { this._lastNativeProgress = Date.now(); return; }
-      if (Date.now() - this._lastNativeProgress > 25000) {
-        this._stopNativeStallWatch();
-        console.warn('[player] native playback stalled (no progress 25s)');
-        if (window.showToast) window.showToast('Playback stalled', 'error', 4000);
-        this.showError('Playback stalled. The connection may have dropped or the device cannot keep up with this stream. Try again or pick another title.');
+      if (Date.now() - this._lastNativeProgress > 12000) {
+        this._lastNativeProgress = Date.now();
+        console.warn('[player] native playback stalled (no progress 12s) — reconnecting');
+        this._recoverNativeStall(false);
       }
     }, 5000);
+  }
+
+  // Native (libVLC) mid-playback reconnect — the same dropped-connection
+  // mitigation as the browser watchdogs: restart the native engine at the
+  // stalled position (VOD) or the live edge. Budget of 6 attempts, refunded
+  // after 15s of healthy progress (see _onNativeTime), so a server that drops
+  // every few minutes keeps recovering; a genuinely dead stream errors out
+  // (VOD) or falls back to the browser engine (live).
+  async _recoverNativeStall(fromError = false) {
+    if (this._castMode || !this._streamUrl) return;
+    const isVod = this._streamIsVod;
+    this._nativeRecoverCount = (this._nativeRecoverCount || 0) + 1;
+    this._nativeProgressSince = null;
+    if (this._nativeRecoverCount > 6) {
+      console.warn('[native] reconnect budget exhausted');
+      this._stopNativeStallWatch();
+      if (isVod) {
+        this.showError('The server keeps dropping the connection. Try again in a bit, or pick another title.');
+      } else {
+        this._startPlayback(this._streamUrl, false); // live: try the browser engine
+      }
+      return;
+    }
+    const pos = isVod ? (this._lastNativeCur || 0) : 0;
+    console.warn(`[native] ${fromError ? 'error' : 'stall'} — reconnect attempt ${this._nativeRecoverCount} at ${pos.toFixed(0)}s`);
+    if (window.showToast && this._nativeRecoverCount === 1) window.showToast('Connection dropped — reconnecting…', 'info', 2500);
+    this._showNativeStatus('Reconnecting…');
+    this._stopNativeStallWatch();
+    this._stopRectSync();
+    this._nativeActive = false;
+    const gen = this._streamGen;
+    try { await nativeStop(); } catch (e) {}
+    if (gen !== this._streamGen) return; // user switched streams meanwhile
+    // Re-run the native-first chain with the resume offset; on native failure it
+    // falls through to the usual fallback/error handling.
+    await this._beginPlayback(this._streamUrl, isVod, pos);
   }
 
   _stopNativeStallWatch() {
@@ -1053,6 +1127,12 @@ export class VideoPlayer {
       this._lastNativeCur = cur;
       if (this._nativeActive) this.hideSpinner();
       this._updateNativeHud({ time: cur });
+      // 15s of uninterrupted progress refunds the reconnect budget (mirrors
+      // the browser watchdogs' behavior over long titles on flaky servers).
+      if (this._nativeRecoverCount > 0) {
+        if (!this._nativeProgressSince) this._nativeProgressSince = Date.now();
+        else if (Date.now() - this._nativeProgressSince > 15000) this._nativeRecoverCount = 0;
+      }
     }
     this._nativeDuration = dur;
     if (this._streamIsVod && dur > 0 && !this.isSeeking) {
@@ -1078,9 +1158,11 @@ export class VideoPlayer {
     this._setFsDirect(false);
     nativeStop().catch(() => {});
     // For VOD, the browser path can't decode what libVLC was already playing, so
-    // a fallback would only hang — surface the error. Live can still retry browser.
+    // a fallback would only hang — reconnect native at the stalled position
+    // instead (dropped connections surface as errors here too); the reconnect
+    // budget surfaces the terminal error. Live can still retry browser.
     if (this._streamIsVod) {
-      this.showError('Playback stopped unexpectedly. Please try again or pick another title.');
+      this._recoverNativeStall(true);
       return;
     }
     this._startPlayback(this._streamUrl, this._streamIsVod);
@@ -1196,6 +1278,10 @@ export class VideoPlayer {
         // 1.5x) instead of a visible hard seek whenever we drift behind. Live
         // only — VOD must play at 1x.
         ...(!isVod ? { maxLiveSyncPlaybackRate: 1.5 } : {}),
+        // Plain live only: if stalls drift playback more than ~6 segments
+        // behind, let hls.js hard-seek FORWARD to re-sync. Never set for
+        // timeshift — it would fight deliberate DVR pause/rewind.
+        ...(!isVod && !ts ? { liveMaxLatencyDurationCount: 6 } : {}),
         enableWorker: true,
         lowLatencyMode: !isVod && !ts
       });

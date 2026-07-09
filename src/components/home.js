@@ -105,13 +105,16 @@ function heroHtml(cw, channels) {
   }
   const ch = channels[0];
   if (ch) {
+    const art = ch.stream_icon || '';
     return `
       <div class="home-hero home-hero-live" data-hrow>
+        ${art ? `<img class="home-hero-live-art" src="${esc(proxifyImage(art))}" alt="" onerror="this.remove()">` : ''}
         <div class="home-hero-scrim"></div>
         <div class="home-hero-info">
-          <span class="home-hero-kicker">${greeting()}</span>
+          <span class="home-badge home-badge-live home-hero-live-badge">LIVE</span>
+          <span class="home-hero-kicker">${greeting()} — pick up where you left off</span>
           <h2 class="home-hero-title">${esc(ch.name)}</h2>
-          <span class="home-hero-sub">Jump back into Live TV</span>
+          <span class="home-hero-sub">Continue watching Live TV</span>
           <button class="home-card home-hero-btn" tabindex="0" data-act="channel" data-id="${esc(ch.stream_id)}">
             <i data-lucide="play"></i> Watch Live
           </button>

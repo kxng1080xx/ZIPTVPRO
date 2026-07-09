@@ -609,6 +609,20 @@ button {
   white-space: nowrap;
 }
 
+/* PC: the modal's own text input (typing happens inside the popout, not in the
+   header field hidden behind it). */
+.gsearch-field {
+  flex: 1 1 auto;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 1.05rem;
+  padding: 4px 0;
+  min-width: 0;
+}
+.gsearch-field::placeholder { color: var(--text-muted); }
+
 .gsearch-close {
   flex-shrink: 0;
   background: rgba(255, 255, 255, 0.06);

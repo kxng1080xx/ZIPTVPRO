@@ -50,7 +50,9 @@ export function openGlobalSearch({ tvInput = false, onPick } = {}) {
     <div class="gsearch-modal">
       <div class="gsearch-bar">
         <i data-lucide="search"></i>
-        <button class="gsearch-display" type="button">${tvInput ? 'Tap to type…' : 'Search…'}</button>
+        ${tvInput
+          ? `<button class="gsearch-display" type="button">Tap to type…</button>`
+          : `<input class="gsearch-field" type="text" placeholder="Search live, movies & series…" autocomplete="off" spellcheck="false">`}
         <button class="gsearch-close" title="Close"><i data-lucide="x"></i></button>
       </div>
       <div class="gsearch-body">
@@ -67,8 +69,9 @@ export function openGlobalSearch({ tvInput = false, onPick } = {}) {
     searchToken: 0,
     debounce: null,
     body: overlay.querySelector('.gsearch-body'),
-    field: null,
+    field: overlay.querySelector('.gsearch-field'),
     display: overlay.querySelector('.gsearch-display'),
+    last: null, // last fetched result sets, for EPG-only re-renders
   };
 
   overlay.querySelector('.gsearch-close').addEventListener('click', closeGlobalSearch);
@@ -84,13 +87,24 @@ export function openGlobalSearch({ tvInput = false, onPick } = {}) {
     gs.display.addEventListener('click', open);
     open(); // open the keyboard immediately, like tapping the button
   } else {
-    // PC: the bar echoes the query; clicking it returns focus to the header field.
-    gs.display.addEventListener('click', () => {
-      const hf = document.getElementById('global-search-input');
-      if (hf) { try { hf.focus(); } catch (e) {} }
+    // PC: the modal owns a real input — typing continues here, in front of the
+    // results, instead of in the header field hidden behind the overlay.
+    const seed = document.getElementById('global-search-input');
+    if (seed && seed.value) gs.field.value = seed.value;
+    gs.field.addEventListener('input', () => {
+      clearTimeout(gs.debounce);
+      const v = gs.field.value;
+      gs.debounce = setTimeout(() => setQuery(v), 250);
     });
+    try {
+      gs.field.focus();
+      const len = gs.field.value.length;
+      gs.field.setSelectionRange(len, len);
+    } catch (e) {}
   }
 
+  // Live EPG results stream in as the guide sweep fills the cache.
+  window.addEventListener('ziptv:epg-updated', onEpgUpdated);
   document.addEventListener('keydown', gsKeyHandler, true);
   lucide(overlay);
 }
@@ -109,8 +123,10 @@ export function isGlobalSearchOpen() { return !!gs; }
 export function closeGlobalSearch() {
   if (!gs) return;
   document.removeEventListener('keydown', gsKeyHandler, true);
+  window.removeEventListener('ziptv:epg-updated', onEpgUpdated);
   clearTimeout(gs.debounce);
   closeSearchKeyboard();
+  if (window.epgGridInstance) window.epgGridInstance.externalEpgQuery = '';
   gs.overlay.remove();
   gs = null;
 }
@@ -118,9 +134,35 @@ export function closeGlobalSearch() {
 function setQuery(q) {
   if (!gs) return;
   gs.query = q || '';
-  const empty = gs.tvInput ? 'Tap to type…' : 'Search…';
-  if (gs.display) gs.display.textContent = gs.query || empty;
+  if (gs.display) gs.display.textContent = gs.query || 'Tap to type…';
+  if (gs.field && gs.field.value !== gs.query) gs.field.value = gs.query;
+  // Mirror into the header field so its clear/close behavior stays coherent.
+  const hf = document.getElementById('global-search-input');
+  if (hf && hf.value !== gs.query) hf.value = gs.query;
   runSearch(gs.query.trim());
+}
+
+// The guide sweep fetched more EPG — refresh the "On Live TV" group in place.
+function onEpgUpdated() {
+  if (!gs || !gs.last) return;
+  const q = gs.query.trim().toLowerCase();
+  if (q.length < MIN_QUERY) return;
+  const epg = epgMatchesFor(q, gs.last.live);
+  if (epg.length !== (gs.last.epg || []).length) {
+    gs.last.epg = epg;
+    renderResults(gs.last);
+  }
+}
+
+// Current/upcoming EPG matches via the guide instance, minus channels already
+// in the name-match results.
+function epgMatchesFor(q, liveResults) {
+  const inst = window.epgGridInstance;
+  if (!inst || typeof inst.getEpgSearchMatches !== 'function') return [];
+  const seen = new Set((liveResults || []).map((c) => String(c.stream_id)));
+  return inst.getEpgSearchMatches(q)
+    .filter((m) => !seen.has(String(m.channel.stream_id)))
+    .slice(0, PER_TYPE_LIMIT);
 }
 
 async function runSearch(q) {
@@ -137,18 +179,41 @@ async function runSearch(q) {
     .then((r) => (r && Array.isArray(r.items) ? r.items : []))
     .catch(() => []);
 
+  // EPG: search the guide cache and keep the sweep filling it while we're open,
+  // so "rick and morty" also surfaces the channel it's airing on.
+  if (window.epgGridInstance) {
+    window.epgGridInstance.externalEpgQuery = q;
+    if (typeof window.epgGridInstance._kickEpgSearchSweep === 'function') {
+      window.epgGridInstance._kickEpgSearchSweep();
+    }
+  }
+
   const [live, movies, series, flixify] = await Promise.all([
     fetchType('live'), fetchType('movies'), fetchType('series'),
     flixifySearchResults(q).catch(() => []),
   ]);
 
   if (!gs || token !== gs.searchToken) return; // a newer query superseded this one
-  renderResults({ live, movies, series, flixify });
+  const epg = epgMatchesFor(q.toLowerCase(), live);
+  gs.last = { live, movies, series, flixify, epg };
+  renderResults(gs.last);
 }
 
-function renderResults({ live, movies, series, flixify = [] }) {
+function fmtAirTime(p) {
+  const ts = parseInt(p.start_timestamp) * 1000;
+  if (!isFinite(ts)) return '';
+  const d = new Date(ts);
+  const now = new Date();
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  if (d.toDateString() === now.toDateString()) {
+    return Date.now() >= ts ? `On now · ${time}` : `Today · ${time}`;
+  }
+  return `${d.toLocaleDateString('en-US', { weekday: 'short' })} · ${time}`;
+}
+
+function renderResults({ live, movies, series, flixify = [], epg = [] }) {
   if (!gs) return;
-  const total = live.length + movies.length + series.length + flixify.length;
+  const total = live.length + movies.length + series.length + flixify.length + epg.length;
   if (total === 0) {
     gs.body.innerHTML = `<div class="gsearch-hint">No matches for “${esc(gs.query.trim())}”.</div>`;
     return;
@@ -177,16 +242,35 @@ function renderResults({ live, movies, series, flixify = [] }) {
       </div>`;
   };
 
+  // "On Live TV": EPG matches — the program is the headline, the channel and
+  // air time are the meta. Clicking tunes the channel.
+  const epgGroup = !epg.length ? '' : `
+    <div class="gsearch-group">
+      <div class="gsearch-group-title"><i data-lucide="calendar-clock"></i> On Live TV <span>${epg.length}</span></div>
+      <div class="gsearch-grid">${epg.map((m) => `
+        <button class="gsearch-item" data-type="live" data-id="${esc(m.channel.stream_id)}">
+          <div class="gsearch-thumb live">
+            ${m.channel.stream_icon
+              ? `<img src="${esc(proxifyImage(m.channel.stream_icon))}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${PLACEHOLDER_SVG}'">`
+              : `<i data-lucide="tv"></i>`}
+          </div>
+          <span class="gsearch-item-title">${esc(m.program.title || '')}</span>
+          <span class="gsearch-item-meta">${esc(m.channel.name || '')} · ${esc(fmtAirTime(m.program))}</span>
+        </button>`).join('')}
+      </div>
+    </div>`;
+
   gs.body.innerHTML =
     group('Live TV', 'tv', live, 'live') +
+    epgGroup +
     group('Movies', 'film', movies, 'movies') +
     group('Series', 'clapperboard', series, 'series') +
     group('Flixify', 'film', flixify, 'flixify');
 
   // Stash the raw item objects on each button so the click handler can route
-  // them without re-querying.
+  // them without re-querying. Order must match the DOM order above.
   const items = gs.body.querySelectorAll('.gsearch-item');
-  const all = [...live.map(i => ['live', i]), ...movies.map(i => ['movies', i]), ...series.map(i => ['series', i]), ...flixify.map(i => ['flixify', i])];
+  const all = [...live.map(i => ['live', i]), ...epg.map(m => ['live', m.channel]), ...movies.map(i => ['movies', i]), ...series.map(i => ['series', i]), ...flixify.map(i => ['flixify', i])];
   items.forEach((btn, idx) => {
     const [type, item] = all[idx];
     btn.addEventListener('click', () => pick(type, item));
@@ -231,9 +315,11 @@ function focusFirstResult() {
 function gsKeyHandler(e) {
   if (!gs) return;
   const k = e.key;
-  // The PC header field lives outside the overlay; while it has focus, only
-  // Escape (close) and ArrowDown (jump into results) are intercepted.
-  const inField = document.activeElement === document.getElementById('global-search-input');
+  // While a text field drives the search (the modal's own input, or the legacy
+  // header field), only Escape (close) and ArrowDown (jump into results) are
+  // intercepted — everything else types.
+  const inField = document.activeElement === gs.field ||
+    document.activeElement === document.getElementById('global-search-input');
 
   if (k === 'Escape') {
     e.preventDefault(); e.stopImmediatePropagation();
