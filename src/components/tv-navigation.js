@@ -1302,49 +1302,67 @@ class TVNavigation {
         e.preventDefault();
       }
     } else if (modal.id === 'settings-modal') {
-      // Settings modal: a grid of tiles + the header close (X) button.
+      // Settings modal (tabbed layout): a vertical menu column (#settings-menu
+      // .settings-menu-item) on the left, the active pane's tiles
+      // (.settings-pane.active .settings-tile) on the right, plus the header
+      // close (X) button. UP/DOWN walks the current column, LEFT/RIGHT hops
+      // between menu and tiles, ENTER activates (menu items switch panes).
       const closeBtn = document.getElementById('settings-close-btn');
-      const tiles = Array.from(document.querySelectorAll('#settings-grid .settings-tile'))
+      const menu = Array.from(document.querySelectorAll('#settings-menu .settings-menu-item'))
         .filter(t => t.offsetParent !== null);
-      if (tiles.length === 0) return;
+      const tiles = Array.from(document.querySelectorAll('#settings-panes .settings-pane.active .settings-tile'))
+        .filter(t => t.offsetParent !== null);
+      if (!menu.length && !tiles.length) return;
 
-      // Close (X) button: Enter closes; Down drops back into the grid.
+      // Close (X) button: Enter closes; Down drops back into the menu.
       if (this.focusedElement === closeBtn) {
         if (e.key === this.KEYS.ENTER) { closeBtn.click(); e.preventDefault(); }
-        else if (e.key === this.KEYS.DOWN) { this.setFocus('modal', tiles[0]); e.preventDefault(); }
+        else if (e.key === this.KEYS.DOWN) { this.setFocus('modal', menu[0] || tiles[0]); e.preventDefault(); }
         return;
       }
 
-      let index = tiles.indexOf(this.focusedElement);
-      if (index === -1) {
-        this.setFocus('modal', tiles[0]);
+      const inMenu = menu.indexOf(this.focusedElement);
+      const inTiles = tiles.indexOf(this.focusedElement);
+
+      if (inMenu === -1 && inTiles === -1) {
+        this.setFocus('modal', menu[0] || tiles[0]);
         e.preventDefault();
         return;
       }
 
-      // Columns = number of tiles sharing the first row's offsetTop.
-      let cols = 1;
-      const firstTop = tiles[0].offsetTop;
-      for (let i = 1; i < tiles.length; i++) {
-        if (tiles[i].offsetTop > firstTop) { cols = i; break; }
-        cols = i + 1;
-      }
+      const list = inMenu !== -1 ? menu : tiles;
+      const index = inMenu !== -1 ? inMenu : inTiles;
 
-      if (e.key === this.KEYS.RIGHT) {
-        if (index < tiles.length - 1) this.setFocus('modal', tiles[index + 1]);
-        e.preventDefault();
-      } else if (e.key === this.KEYS.LEFT) {
-        if (index > 0) this.setFocus('modal', tiles[index - 1]);
-        e.preventDefault();
-      } else if (e.key === this.KEYS.DOWN) {
-        if (index + cols < tiles.length) this.setFocus('modal', tiles[index + cols]);
+      if (e.key === this.KEYS.DOWN) {
+        if (index < list.length - 1) this.setFocus('modal', list[index + 1]);
         e.preventDefault();
       } else if (e.key === this.KEYS.UP) {
-        if (index - cols >= 0) this.setFocus('modal', tiles[index - cols]);
-        else if (closeBtn) this.setFocus('modal', closeBtn); // top row → header X
+        if (index > 0) this.setFocus('modal', list[index - 1]);
+        else if (closeBtn) this.setFocus('modal', closeBtn); // column top → header X
+        e.preventDefault();
+      } else if (e.key === this.KEYS.RIGHT) {
+        if (inMenu !== -1) {
+          // Activate the hovered section, then move into its tiles.
+          this.focusedElement.click();
+          const fresh = Array.from(document.querySelectorAll('#settings-panes .settings-pane.active .settings-tile'))
+            .filter(t => t.offsetParent !== null);
+          if (fresh.length) this.setFocus('modal', fresh[0]);
+        }
+        e.preventDefault();
+      } else if (e.key === this.KEYS.LEFT) {
+        if (inTiles !== -1 && menu.length) {
+          const activeItem = menu.find(m => m.classList.contains('active')) || menu[0];
+          this.setFocus('modal', activeItem);
+        }
         e.preventDefault();
       } else if (e.key === this.KEYS.ENTER) {
         this.focusedElement.click();
+        if (inMenu !== -1) {
+          // Selecting a section moves focus into its (re-rendered) tiles.
+          const fresh = Array.from(document.querySelectorAll('#settings-panes .settings-pane.active .settings-tile'))
+            .filter(t => t.offsetParent !== null);
+          if (fresh.length) this.setFocus('modal', fresh[0]);
+        }
         e.preventDefault();
       }
     }

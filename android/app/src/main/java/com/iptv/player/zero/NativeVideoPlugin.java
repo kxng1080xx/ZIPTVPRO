@@ -81,6 +81,25 @@ public class NativeVideoPlugin extends Plugin {
     // covers both the libVLC surface and the WebView <video> fallback, and is the
     // reliable Android way (WebView doesn't hold a wake lock on its own). Window
     // flags must be toggled on the UI thread. player.js calls these on play/stop.
+    // TV detection the UA can't lie about: Android's UI mode + the leanback /
+    // Fire TV system features. UA sniffing missed some Fire TV WebViews, which
+    // made the app render the desktop layout (light theme, wrong player box,
+    // broken D-pad zones) on those boxes.
+    @PluginMethod
+    public void isTv(PluginCall call) {
+        boolean tv = false;
+        try {
+            android.app.UiModeManager m =
+                (android.app.UiModeManager) getContext().getSystemService(android.content.Context.UI_MODE_SERVICE);
+            tv = (m != null && m.getCurrentModeType() == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION)
+                || getContext().getPackageManager().hasSystemFeature("amazon.hardware.fire_tv")
+                || getContext().getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK);
+        } catch (Exception e) {}
+        JSObject r = new JSObject();
+        r.put("tv", tv);
+        call.resolve(r);
+    }
+
     @PluginMethod
     public void keepAwake(PluginCall call) {
         ui.post(() -> {

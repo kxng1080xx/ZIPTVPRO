@@ -34,7 +34,7 @@ import { initCastUI, setCastContext } from './components/cast.js';
 import { checkForUpdate, downloadApp, startPeriodicUpdateCheck, initElectronUpdaterUI } from './components/update-check.js';
 import { openSearchKeyboard, openSortDropdown } from './components/tv-search.js';
 import { openGlobalSearch, setGlobalSearchQuery } from './components/global-search.js';
-import { isNativeAvailable } from './components/native-player.js';
+import { isNativeAvailable, nativeIsTv } from './components/native-player.js';
 import { getDeviceCode, syncDevice, readCachedState, clearCachedState, isStateExpired } from './components/cloud-sync.js';
 import { initWebTabs, openWebTab, openManageTabs, toggleAdblock, isAdblockOn, applyHiddenTabs } from './components/web-tabs.js';
 import { renderHome } from './components/home.js';
@@ -149,7 +149,13 @@ async function initApp() {
     const isTvPath = /(^|\/)tv$/i.test(path);
     const tvParam = new URLSearchParams(window.location.search).get('tv');
     const ua = (navigator.userAgent || '').toLowerCase();
-    const isTV = /aft|tizen|web0s|webos|smart-?tv|googletv|android tv|bravia|netcast/.test(ua);
+    let isTV = /aft|tizen|web0s|webos|smart-?tv|googletv|android tv|bravia|netcast/.test(ua);
+    // UA sniffing misses some TV WebViews (seen on a Fire TV whose UA looks
+    // like a phone → desktop layout, light theme, dead D-pad). On Android ask
+    // the OS directly: UiModeManager / leanback / fire_tv feature flags.
+    if (!isTV && Capacitor.isNativePlatform()) {
+      try { isTV = await nativeIsTv(); } catch (e) {}
+    }
     if (isTvPath || tvParam === 'true' || tvParam === '1' || isTV) {
       document.body.classList.add('tv-layout');
       document.documentElement.classList.add('tv-layout');
@@ -458,10 +464,16 @@ function getThemePref() {
 }
 function isLightEnabled() {
   if (document.body.classList.contains('tv-layout')) return false;
-  const saved = getThemePref();
-  if (saved === 'light') return true;
-  if (saved === 'dark') return false;
-  try { return window.matchMedia('(prefers-color-scheme: light)').matches; } catch (e) { return false; }
+  // Native Android (phone APK) stays dark too: theme-light.css was styled
+  // against the desktop surfaces and renders inconsistently on the mobile
+  // layout. Re-enable here only after a dedicated mobile light-mode pass.
+  try {
+    if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') return false;
+  } catch (e) {}
+  // Dark is the default everywhere — light mode only when explicitly chosen.
+  // (Previously "Auto" followed the OS, which surprised users whose device
+  // reported a light preference.)
+  return getThemePref() === 'light';
 }
 function applyTheme() {
   document.body.classList.toggle('light-mode', isLightEnabled());
@@ -897,18 +909,16 @@ function refreshSettingsTiles() {
     perfEl.classList.toggle('tile-badge-off', !on);
   }
 
-  // Appearance tile (Auto / Light / Dark). Hidden on TV — always dark there.
+  // Appearance tile (Dark default / Light). Hidden on TV and the Android app —
+  // both are forced dark (see isLightEnabled).
   const themeTile = document.getElementById('tile-theme');
   if (themeTile) {
-    const isTV = document.body.classList.contains('tv-layout');
-    themeTile.style.display = isTV ? 'none' : '';
+    const forcedDark = document.body.classList.contains('tv-layout') ||
+      (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android');
+    themeTile.style.display = forcedDark ? 'none' : '';
     const themeEl = document.getElementById('tile-theme-val');
     if (themeEl) {
-      const saved = getThemePref();
-      const light = document.body.classList.contains('light-mode');
-      themeEl.textContent = saved === null
-        ? `Auto (${light ? 'Light' : 'Dark'})`
-        : (saved === 'light' ? 'Light' : 'Dark');
+      themeEl.textContent = getThemePref() === 'light' ? 'Light' : 'Dark';
     }
   }
 
@@ -3176,8 +3186,10 @@ function bindGlobalEvents() {
     }
     settingsModal.classList.remove('hidden');
     setSettingsActive(true);
-    const firstTile = settingsModal.querySelector('.settings-tile');
-    if (firstTile) navigation.setFocus('modal', firstTile);
+    // D-pad: land on the section menu first (tabbed layout), tiles second.
+    const firstFocus = settingsModal.querySelector('.settings-menu-item') ||
+                       settingsModal.querySelector('.settings-tile');
+    if (firstFocus) navigation.setFocus('modal', firstFocus);
   });
 
   settingsClose.addEventListener('click', () => {
@@ -3264,12 +3276,11 @@ function bindGlobalEvents() {
 
   // --- Tile: Appearance (cycles Auto → Light → Dark) ---
   document.getElementById('tile-theme')?.addEventListener('click', () => {
-    const saved = getThemePref();
-    const next = saved === null ? 'light' : (saved === 'light' ? 'dark' : null);
+    // Two-state toggle: dark (default) ↔ light.
+    const next = getThemePref() === 'light' ? 'dark' : 'light';
     setTheme(next);
     refreshSettingsTiles();
-    const label = next === null ? 'Auto' : (next === 'light' ? 'Light' : 'Dark');
-    showToast(`Theme: ${label}`, 'success');
+    showToast(`Theme: ${next === 'light' ? 'Light' : 'Dark'}`, 'success');
   });
 
   // --- Tile: Performance Mode (cycles Auto → On → Off) ---

@@ -2371,6 +2371,11 @@ body.perf-lite .continue-card:hover { transform: none; }
 .settings-menu-item.tv-focused {
   background: var(--rd-accent-solid, rgba(239,68,68,0.92)); color: #fff;
 }
+/* D-pad focus must read distinctly from the (also filled) active section. */
+.settings-menu-item.tv-focused {
+  outline: 2px solid var(--rd-active-border, #38bdf8);
+  outline-offset: -2px;
+}
 
 .settings-panes { flex: 1; min-width: 0; overflow-y: auto; padding: 24px 28px; }
 .settings-pane { display: none; max-width: 760px; }

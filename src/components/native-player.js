@@ -27,6 +27,17 @@ export function isNativeAvailable() {
   return !!AndroidNative;
 }
 
+// True on Android TV / Fire TV (UiModeManager + leanback/fire_tv features).
+// The authoritative check — some TV WebView user agents look like phones, so
+// UA sniffing alone put TVs in the desktop layout. False on phones/desktop/web.
+export async function nativeIsTv() {
+  if (!AndroidNative || !AndroidNative.isTv) return false;
+  try {
+    const r = await AndroidNative.isTv();
+    return !!(r && r.tv);
+  } catch (e) { return false; }
+}
+
 // Keep the phone screen on during playback (Android APK only). Activity-level, so
 // it covers both the libVLC surface and the <video> fallback. No-op elsewhere
 // (desktop/web rely on the OS keeping the screen on while media plays).
