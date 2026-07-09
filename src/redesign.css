@@ -2458,6 +2458,10 @@ body.perf-lite .continue-card:hover { transform: none; }
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* The control bar sits on a dark glass overlay regardless of app theme, so its
+   text must not inherit the theme's text color (dark-on-dark in light mode). */
+.player-playing-title { color: #ffffff; }
+.player-playing-epg { color: rgba(255, 255, 255, 0.72); }
 
 /* ==========================================================================
    Playlist rows: flat and borderless. State is carried by fill alone —
@@ -2505,3 +2509,46 @@ body.perf-lite .continue-card:hover { transform: none; }
 }
 .tvk-paste:hover { color: #fff; }
 .tvk-paste i { width: 18px; height: 18px; }
+
+/* ==========================================================================
+   SETTINGS AS A TAB
+   The #settings-modal node is moved into <main> at boot (see initApp), so it
+   fills the content area like every other view panel: the side rail stays
+   visible/clickable, and picking another tab simply switches away — no popup
+   to close. It keeps the .modal-overlay class + id so the existing bindings
+   and TV D-pad "modal" zone continue to work unchanged. These rules override
+   the fixed-fullscreen overlay/bottom-sheet styling above (incl. the portrait
+   body:not(.tv-layout) rules — selectors below match their specificity and
+   come later in the cascade).
+   ========================================================================== */
+.app-main main { position: relative; }
+
+/* No category sidebar while on the settings page (same as Flixify). */
+body.settings-tab .sidebar { display: none !important; }
+
+#settings-modal.modal-overlay,
+body:not(.tv-layout) #settings-modal.modal-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 60;                 /* above sibling view panels, below toasts */
+  padding: 0;
+  align-items: stretch;
+  justify-content: stretch;
+  /* It's a page, not a dialog: opaque background, no dim/blur backdrop. */
+  background: var(--rd-glass-modal, #0e1119);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+#settings-modal .settings-card,
+body:not(.tv-layout) #settings-modal .settings-card {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  border-radius: 0;
+  border: none;
+  animation: none;
+  display: flex;
+  flex-direction: column;
+}

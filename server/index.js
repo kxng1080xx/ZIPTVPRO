@@ -1094,72 +1094,107 @@ app.get('/api/transcode', (req, res) => {
   const deint = req.query.deint === '1';
   const ffmpeg = findFfmpeg();
 
-  const args = [];
-  // Fast input seek (before -i) for resume / restart-at-offset.
-  if (start > 0) args.push('-ss', String(start));
-  args.push(
-    '-user_agent', 'VLC/3.0.20',
-    // Regenerate presentation timestamps: sources with missing/irregular PTS
-    // otherwise let the copied video and re-encoded AAC audio drift apart.
-    '-fflags', '+genpts',
-    '-i', target
-  );
-  if (deint) {
-    // Deinterlace + field-double: 1080i (30 frames / 60 fields) -> 1080p60 for
-    // smooth motion. bwdif=send_field emits one frame per field, doubling the
-    // rate. This needs a real video re-encode, so it overrides the copy-video tier.
-    args.push('-vf', 'bwdif=mode=send_field', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p');
-  } else if (mode === 'audio') {
-    // Keep HEVC video as-is (Electron HW-decodes it); tag hvc1 for Chromium.
-    args.push('-c:v', 'copy', '-tag:v', 'hvc1');
-  } else {
-    // Re-encode video for hardware that can't decode HEVC10.
-    args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p');
-  }
-  args.push(
-    '-c:a', 'aac', '-b:a', '256k', '-ac', '2',
-    // A/V sync: resample audio to track the copied video's clock (absorbs AAC
-    // encoder priming + drift), and zero-base timestamps so a keyframe -ss seek
-    // doesn't leave audio lagging video by the pre-roll offset.
-    '-af', 'aresample=async=1',
-    '-avoid_negative_ts', 'make_zero',
-    '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
-    '-f', 'mp4',
-    'pipe:1'
-  );
+  const buildArgs = (hvc1Tag) => {
+    const args = [];
+    // Fast input seek (before -i) for resume / restart-at-offset.
+    if (start > 0) args.push('-ss', String(start));
+    args.push(
+      '-user_agent', 'VLC/3.0.20',
+      // Auto-reconnect when the provider drops the HTTP connection mid-file
+      // (some Xtream servers kill long-lived VOD downloads). Without these,
+      // ffmpeg treats the drop as EOF and the transcode ends early. A clean
+      // premature FIN also reads as EOF, hence reconnect_at_eof; at the true
+      // end of file the resume request fails and ffmpeg exits normally.
+      '-reconnect', '1',
+      '-reconnect_at_eof', '1',
+      '-reconnect_streamed', '1',
+      '-reconnect_delay_max', '4',
+      // Regenerate presentation timestamps: sources with missing/irregular PTS
+      // otherwise let the copied video and re-encoded AAC audio drift apart.
+      '-fflags', '+genpts',
+      '-i', target
+    );
+    if (deint) {
+      // Deinterlace + field-double: 1080i (30 frames / 60 fields) -> 1080p60 for
+      // smooth motion. bwdif=send_field emits one frame per field, doubling the
+      // rate. This needs a real video re-encode, so it overrides the copy-video tier.
+      args.push('-vf', 'bwdif=mode=send_field', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p');
+    } else if (mode === 'audio') {
+      // Keep the video as-is (Electron HW-decodes it). HEVC needs the hvc1 tag
+      // for Chromium — but the tag is fatal on non-HEVC sources ("Tag hvc1
+      // incompatible with codec id"), so the exit handler retries without it
+      // when the source turns out to be H.264 etc.
+      args.push('-c:v', 'copy');
+      if (hvc1Tag) args.push('-tag:v', 'hvc1');
+    } else {
+      // Re-encode video for hardware that can't decode HEVC10.
+      args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p');
+    }
+    args.push(
+      '-c:a', 'aac', '-b:a', '256k', '-ac', '2',
+      // A/V sync: resample audio to track the copied video's clock (absorbs AAC
+      // encoder priming + drift), and zero-base timestamps so a keyframe -ss seek
+      // doesn't leave audio lagging video by the pre-roll offset.
+      '-af', 'aresample=async=1',
+      '-avoid_negative_ts', 'make_zero',
+      '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
+      '-f', 'mp4',
+      'pipe:1'
+    );
+    return args;
+  };
 
   res.setHeader('Content-Type', 'video/mp4');
   res.setHeader('Cache-Control', 'no-store');
 
-  let proc;
-  try {
-    proc = trackChild(spawn(ffmpeg, args, { windowsHide: true }));
-  } catch (err) {
-    console.error('[transcode] ffmpeg spawn failed:', err);
-    if (!res.headersSent) res.status(500);
-    return res.end();
-  }
+  let proc = null;
+  let wroteData = false;   // any bytes reached the client?
+  let retriedTag = false;  // one-shot hvc1 → untagged retry
+  let closed = false;      // client went away — don't respawn
 
-  proc.stdout.pipe(res);
-  // ffmpeg logs to stderr; surface only on failure to keep logs quiet.
-  let stderrTail = '';
-  proc.stderr.on('data', (d) => { stderrTail = (stderrTail + d).slice(-2000); });
-
-  const kill = () => { try { proc.kill('SIGKILL'); } catch (e) {} };
+  const kill = () => { closed = true; if (proc) { try { proc.kill('SIGKILL'); } catch (e) {} } };
   req.on('close', kill);
   res.on('close', kill);
 
-  proc.on('error', (err) => {
-    console.error('[transcode] ffmpeg error:', err && err.message, '| is ffmpeg installed/bundled?');
-    if (!res.headersSent) res.status(500);
-    try { res.end(); } catch (e) {}
-  });
-  proc.on('exit', (code) => {
-    if (code && code !== 0 && code !== 255) {
-      console.error(`[transcode] ffmpeg exited ${code} (${mode}). Tail:\n${stderrTail}`);
+  const startProc = (hvc1Tag) => {
+    let stderrTail = '';
+    try {
+      proc = trackChild(spawn(ffmpeg, buildArgs(hvc1Tag), { windowsHide: true }));
+    } catch (err) {
+      console.error('[transcode] ffmpeg spawn failed:', err);
+      if (!res.headersSent) res.status(500);
+      return res.end();
     }
-    try { res.end(); } catch (e) {}
-  });
+
+    proc.stdout.on('data', () => { wroteData = true; });
+    // end:false — the response is ended explicitly in the exit handler, so the
+    // hvc1-tag retry can reuse the same response stream.
+    proc.stdout.pipe(res, { end: false });
+    // ffmpeg logs to stderr; surface only on failure to keep logs quiet.
+    proc.stderr.on('data', (d) => { stderrTail = (stderrTail + d).slice(-2000); });
+
+    proc.on('error', (err) => {
+      console.error('[transcode] ffmpeg error:', err && err.message, '| is ffmpeg installed/bundled?');
+      if (!res.headersSent) res.status(500);
+      try { res.end(); } catch (e) {}
+    });
+    proc.on('exit', (code) => {
+      // Copy-video tier assumed HEVC but the source is H.264/other: the hvc1
+      // tag kills muxing before a single byte is written. Retry untagged.
+      if (!closed && !wroteData && !retriedTag && /Tag hvc1 incompatible/i.test(stderrTail)) {
+        retriedTag = true;
+        console.warn('[transcode] source is not HEVC — retrying without hvc1 tag');
+        startProc(false);
+        return;
+      }
+      if (code && code !== 0 && code !== 255) {
+        console.error(`[transcode] ffmpeg exited ${code} (${mode}). Tail:\n${stderrTail}`);
+      }
+      try { res.end(); } catch (e) {}
+    });
+  };
+
+  startProc(mode === 'audio' && !deint);
 });
 
 // Probe a stream's total duration with the bundled ffmpeg (no ffprobe needed):

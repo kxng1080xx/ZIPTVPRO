@@ -1,0 +1,243 @@
+/* ==========================================================================
+   ZIPTV PRO — LIGHT THEME LAYER
+   Loaded AFTER style.css and redesign.css; every rule is gated on
+   body.light-mode:not(.tv-layout). TVs never get light mode (10-foot UIs
+   stay dark — glare/contrast), and main.js never applies .light-mode when
+   body.tv-layout is set, so the :not() guard is belt-and-braces.
+
+   Strategy:
+     1. Re-point the design tokens (style.css + redesign.css :root vars) —
+        this converts every var()-driven surface in one shot.
+     2. Patch the hardcoded "ghost on dark" patterns (rgba(255,255,255,…)
+        surfaces, color:#fff hovers) on high-traffic components.
+     3. Player overlays, zap OSD, poster shades and hero scrims are NOT
+        overridden — they sit over video/artwork and stay dark by design.
+   ========================================================================== */
+
+body.light-mode:not(.tv-layout) {
+  /* ---- Legacy palette ---- */
+  --bg-darkest: #e6eaf2;
+  --bg-base: #eef1f7;
+  --bg-panel: #ffffff;
+  --bg-surface: #f1f4f9;
+  --bg-surface-hover: #e5eaf3;
+  --border-color: #d8dfeb;
+
+  --glow-cyan: rgba(6, 182, 212, 0.10);
+  --glow-blue: rgba(37, 99, 235, 0.12);
+
+  --text-primary: #0f172a;
+  --text-secondary: #46536b;
+  --text-muted: #66748f;
+
+  /* ---- Redesign glass tokens ---- */
+  --rd-bg-darkest: #e6eaf2;
+  --rd-bg-base: #eef1f7;
+  --rd-glow-a: radial-gradient(1400px 800px at 90% -20%, rgba(37, 99, 235, 0.08), transparent 60%);
+  --rd-glow-b: radial-gradient(1100px 800px at -15% 115%, rgba(6, 182, 212, 0.06), transparent 60%);
+
+  --rd-glass-panel: rgba(15, 23, 42, 0.04);
+  --rd-glass-header: rgba(255, 255, 255, 0.72);
+  --rd-glass-drawer: rgba(255, 255, 255, 0.90);
+  --rd-glass-modal: rgba(250, 251, 253, 0.96);
+
+  --rd-hairline: rgba(15, 23, 42, 0.10);
+  --rd-hairline-soft: rgba(15, 23, 42, 0.08);
+  --rd-hairline-strong: rgba(15, 23, 42, 0.14);
+
+  --rd-active-tint: linear-gradient(90deg, rgba(37, 99, 235, 0.14), rgba(37, 99, 235, 0.04));
+  --rd-active-border: rgba(37, 99, 235, 0.30);
+  --rd-count-active: #1d4ed8;
+
+  --rd-card-shadow: 0 10px 28px rgba(15, 23, 42, 0.14);
+  --rd-player-shadow: 0 24px 54px rgba(15, 23, 42, 0.22);
+  --rd-focus-glow: 0 0 0 3px rgba(37, 99, 235, 0.85), 0 0 0 6px rgba(37, 99, 235, 0.25), 0 18px 44px rgba(15, 23, 42, 0.20);
+}
+
+/* Base canvas */
+body.light-mode:not(.tv-layout) {
+  background-color: var(--rd-bg-base);
+  color: var(--text-primary);
+}
+
+/* Performance mode kills backdrop blurs, so translucent glass would show
+   content through — give perf-lite opaque light surfaces (mirrors the
+   opaque dark tokens perf-lite sets in style.css). */
+body.light-mode.perf-lite:not(.tv-layout) {
+  --rd-glass-panel: #eef1f7;
+  --rd-glass-header: #f7f9fc;
+  --rd-glass-drawer: #f7f9fc;
+  --rd-glass-modal: #fafbfd;
+}
+
+/* Scrollbars: dark thumbs on light track */
+body.light-mode:not(.tv-layout) ::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.18); }
+body.light-mode:not(.tv-layout) ::-webkit-scrollbar-thumb:hover { background: rgba(15, 23, 42, 0.32); }
+
+/* ==========================================================================
+   SHELL — side rail, header
+   ========================================================================== */
+body.light-mode:not(.tv-layout) .side-rail {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(244, 246, 251, 0.96));
+}
+body.light-mode:not(.tv-layout) .side-rail:hover,
+body.light-mode:not(.tv-layout) .side-rail:focus-within,
+body.light-mode:not(.tv-layout) .side-rail.rail-expanded {
+  background: rgba(255, 255, 255, 0.98);
+}
+body.light-mode:not(.tv-layout) .side-rail .rail-item:hover,
+body.light-mode:not(.tv-layout) .side-rail .nav-tab:hover {
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--text-primary);
+}
+body.light-mode:not(.tv-layout) .rail-label,
+body.light-mode:not(.tv-layout) .rail-wordmark { color: var(--text-primary); }
+
+/* ==========================================================================
+   GHOST SURFACES — the recurring rgba(255,255,255,x) pattern flipped dark
+   ========================================================================== */
+body.light-mode:not(.tv-layout) .header-icon-btn:hover,
+body.light-mode:not(.tv-layout) .epg-ctrl-btn:hover,
+body.light-mode:not(.tv-layout) .category-item:hover,
+body.light-mode:not(.tv-layout) .settings-menu-item:hover {
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--text-primary);
+}
+body.light-mode:not(.tv-layout) .epg-ctrl-btn.active {
+  background: rgba(15, 23, 42, 0.10);
+  color: var(--text-primary);
+}
+body.light-mode:not(.tv-layout) .settings-menu-item { color: rgba(15, 23, 42, 0.72); }
+body.light-mode:not(.tv-layout) .settings-menu-item.active,
+body.light-mode:not(.tv-layout) .settings-menu-item.tv-focused { color: #fff; } /* accent fill stays */
+
+body.light-mode:not(.tv-layout) .settings-body-tabbed .settings-tile {
+  background: rgba(15, 23, 42, 0.035);
+  border-color: var(--rd-hairline-soft);
+}
+body.light-mode:not(.tv-layout) .settings-body-tabbed .settings-tile:hover,
+body.light-mode:not(.tv-layout) .settings-body-tabbed .settings-tile.tv-focused {
+  background: rgba(15, 23, 42, 0.07);
+  border-color: rgba(15, 23, 42, 0.22);
+}
+body.light-mode:not(.tv-layout) .settings-body-tabbed .settings-tile-icon {
+  background: rgba(15, 23, 42, 0.06);
+}
+
+/* ==========================================================================
+   LIVE / EPG
+   ========================================================================== */
+body.light-mode:not(.tv-layout) .epg-program-block {
+  background-color: rgba(15, 23, 42, 0.025);
+}
+body.light-mode:not(.tv-layout) .epg-channel-row-name,
+body.light-mode:not(.tv-layout) .epg-channel-name-text { color: var(--text-primary); }
+
+/* ==========================================================================
+   FEEDBACK — toasts
+   ========================================================================== */
+body.light-mode:not(.tv-layout) .toast {
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--text-primary);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+}
+
+/* ==========================================================================
+   OVERLAY SCRIMS — lighter dim so the page doesn't go pitch black
+   ========================================================================== */
+body.light-mode:not(.tv-layout) .modal-overlay:not(#settings-modal) {
+  background: rgba(15, 23, 42, 0.35);
+}
+body.light-mode:not(.tv-layout) .tvk-overlay,
+body.light-mode:not(.tv-layout) .tvsort-overlay {
+  background: rgba(15, 23, 42, 0.40);
+}
+
+/* Generic hardcoded-white text inside common chrome (headers, titles) */
+body.light-mode:not(.tv-layout) .settings-header h2,
+body.light-mode:not(.tv-layout) .settings-pane-title,
+body.light-mode:not(.tv-layout) .settings-body-tabbed .settings-tile-title,
+body.light-mode:not(.tv-layout) .tvk-title { color: var(--text-primary); }
+
+/* Categories sidebar: pins + ghost action buttons */
+body.light-mode:not(.tv-layout) .pin-item:hover {
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--text-primary);
+}
+body.light-mode:not(.tv-layout) .categories-actions .category-search-btn:hover,
+body.light-mode:not(.tv-layout) .categories-actions .category-sort-btn:hover {
+  background: rgba(15, 23, 42, 0.08);
+  color: var(--text-primary);
+}
+
+/* Mobile floating tab bar → frosted white pill */
+body.light-mode:not(.tv-layout) .mobile-tab-bar {
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.22);
+}
+body.light-mode:not(.tv-layout) .mobile-tab-btn.active { color: var(--text-primary); }
+body.light-mode:not(.tv-layout) .mobile-tab-btn.active i { color: var(--rd-accent-solid, #3b82f6); }
+
+/* EPG details panel: upcoming-programme action chips */
+body.light-mode:not(.tv-layout) .upcoming-act { color: rgba(15, 23, 42, 0.55); }
+body.light-mode:not(.tv-layout) .upcoming-act:hover {
+  background: rgba(15, 23, 42, 0.10);
+  color: var(--text-primary);
+}
+
+/* Reminder banner close chip */
+body.light-mode:not(.tv-layout) #reminder-banner .reminder-banner-close {
+  background: rgba(15, 23, 42, 0.08);
+  color: rgba(15, 23, 42, 0.75);
+}
+
+/* ==========================================================================
+   CONTRAST FIXES (from light-mode screenshots)
+   ========================================================================== */
+
+/* Header: ZIPTV wordmark was #fff; TV-link badge was pale blue on pale tint */
+body.light-mode:not(.tv-layout) .logo-wordmark { color: var(--text-primary); }
+body.light-mode:not(.tv-layout) .header-tv-ip-badge { color: #1d4ed8; }
+body.light-mode:not(.tv-layout) .header-tv-ip-badge i { color: #1d4ed8; }
+
+/* "Show/Exit Full Guide" pill: white-on-pale-blue → solid accent */
+body.light-mode:not(.tv-layout) #epg-full-btn {
+  background: var(--rd-accent-solid, #3b82f6);
+  color: #fff;
+}
+body.light-mode:not(.tv-layout) #epg-full-btn:hover {
+  background: #2563eb;
+  color: #fff;
+}
+
+/* Channel list rows: the NOW programme title was near-white (#e4e7ec) */
+body.light-mode:not(.tv-layout) .now-seg-title { color: #1e293b; }
+body.light-mode:not(.tv-layout) .now-seg.is-next .now-seg-title { color: #5b6778; }
+body.light-mode:not(.tv-layout) .now-seg.is-next .now-seg-time { color: #66748f; }
+body.light-mode:not(.tv-layout) .now-seg.is-next::before { background: rgba(15, 23, 42, 0.18); }
+
+/* Full guide: the currently-airing block highlighted white-on-cyan-tint */
+body.light-mode:not(.tv-layout) .epg-program-block.active .epg-program-title {
+  color: #0f172a;
+}
+body.light-mode:not(.tv-layout) .epg-program-block.active {
+  background: rgba(6, 182, 212, 0.16);
+}
+
+/* Settings tile subtitles: hardcoded rgba(255,255,255,0.6) in the tabbed
+   layout — invisible on light tiles */
+body.light-mode:not(.tv-layout) .settings-body-tabbed .settings-tile-sub {
+  color: rgba(15, 23, 42, 0.60);
+}
+body.light-mode:not(.tv-layout) .tile-badge.tile-badge-off {
+  background: rgba(15, 23, 42, 0.08);
+  color: #5b6778;
+}
+
+/* Player idle screen: brand + hint chips were pale-gray-on-dark values */
+body.light-mode:not(.tv-layout) .player-idle__brand { color: #334155; }
+body.light-mode:not(.tv-layout) .player-idle__hint {
+  color: #334155;
+  background: rgba(15, 23, 42, 0.05);
+  border-color: rgba(15, 23, 42, 0.10);
+}

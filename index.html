@@ -17,6 +17,7 @@
   <script defer src="/lucide.min.js"></script>
   <link rel="stylesheet" href="/src/style.css">
   <link rel="stylesheet" href="/src/redesign.css">
+  <link rel="stylesheet" href="/src/theme-light.css">
   <script type="module" src="/src/main.js"></script>
 </head>
 <body class="dark-mode">
@@ -895,6 +896,11 @@
 
           <section class="settings-pane" data-pane="general">
             <h3 class="settings-pane-title">General</h3>
+            <button class="settings-tile" id="tile-theme" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="sun-moon"></i></div>
+              <div class="settings-tile-title">Appearance</div>
+              <div class="settings-tile-sub">Theme: <span class="tile-badge" id="tile-theme-val">Auto</span></div>
+            </button>
             <button class="settings-tile" id="tile-sleep" tabindex="0">
               <div class="settings-tile-icon"><i data-lucide="moon"></i></div>
               <div class="settings-tile-title">Sleep Timer</div>

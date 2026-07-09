@@ -178,6 +178,9 @@ async function initApp() {
   // for those targets; a Settings toggle (stored in localStorage) overrides.
   applyPerfMode();
 
+  // Light/dark theme (Auto follows the OS; TVs stay dark).
+  applyTheme();
+
   // Initialize device code (identity for the /connect dashboard).
   deviceCode = getDeviceCode();
   const codeEl = document.getElementById('remote-device-code');
@@ -256,6 +259,17 @@ async function initApp() {
     return state.favorites[type]?.includes(String(id)) || false;
   };
   window.toggleChannelFavorite = toggleChannelFavorite;
+
+  // Settings acts like a tab, not a popup: host its panel inside <main> so it
+  // fills the content area and the side rail stays visible/clickable. The
+  // markup keeps its #settings-modal id + .modal-overlay class so all existing
+  // bindings and TV D-pad handling keep working; CSS (redesign.css "settings
+  // as a tab") repositions it from fixed fullscreen to absolute-in-main.
+  try {
+    const mainEl = document.querySelector('.app-main main');
+    const settingsPanel = document.getElementById('settings-modal');
+    if (mainEl && settingsPanel) mainEl.appendChild(settingsPanel);
+  } catch (e) {}
 
   // 3. Bind Global UI Events (Tabs, Logins, Settings, Modal Closers)
   bindGlobalEvents();
@@ -376,6 +390,11 @@ async function switchTab(tabId) {
   document.getElementById('app-container')?.classList.remove('sidebar-open');
   document.getElementById('sidebar-backdrop')?.classList.add('hidden');
 
+  // Settings acts like a tab: navigating to any real tab leaves it.
+  document.getElementById('settings-modal')?.classList.add('hidden');
+  document.getElementById('settings-btn')?.classList.remove('active');
+  document.body.classList.remove('settings-tab');
+
   // Toggle tab buttons class (header pill + mobile bottom bar stay in sync)
   document.querySelectorAll('.nav-tab, .mobile-tab-btn[data-tab]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tabId);
@@ -491,6 +510,37 @@ function isPerfLiteEnabled() {
 function applyPerfMode() {
   document.body.classList.toggle('perf-lite', isPerfLiteEnabled());
 }
+
+// ---- Appearance (light / dark theme) -------------------------------------
+// localStorage 'theme': 'light' | 'dark' | absent (= Auto, follows the OS).
+// TVs never get light mode — 10-foot UIs stay dark (glare/contrast), so
+// body.tv-layout short-circuits to dark regardless of the setting.
+function getThemePref() {
+  try { return localStorage.getItem('theme'); } catch (e) { return null; }
+}
+function isLightEnabled() {
+  if (document.body.classList.contains('tv-layout')) return false;
+  const saved = getThemePref();
+  if (saved === 'light') return true;
+  if (saved === 'dark') return false;
+  try { return window.matchMedia('(prefers-color-scheme: light)').matches; } catch (e) { return false; }
+}
+function applyTheme() {
+  document.body.classList.toggle('light-mode', isLightEnabled());
+}
+function setTheme(value) {
+  try {
+    if (value === null) localStorage.removeItem('theme');
+    else localStorage.setItem('theme', value);
+  } catch (e) {}
+  applyTheme();
+}
+window.setTheme = setTheme;
+// Auto mode tracks the OS preference live.
+try {
+  window.matchMedia('(prefers-color-scheme: light)')
+    .addEventListener('change', () => { if (getThemePref() === null) applyTheme(); });
+} catch (e) {}
 
 // Persist an explicit choice and re-apply. Pass null to clear back to auto.
 function setPerfLite(value) {
@@ -907,6 +957,21 @@ function refreshSettingsTiles() {
     const on = document.body.classList.contains('perf-lite');
     perfEl.textContent = perfSaved === null ? `Auto (${on ? 'On' : 'Off'})` : (perfSaved === 'on' ? 'On' : 'Off');
     perfEl.classList.toggle('tile-badge-off', !on);
+  }
+
+  // Appearance tile (Auto / Light / Dark). Hidden on TV — always dark there.
+  const themeTile = document.getElementById('tile-theme');
+  if (themeTile) {
+    const isTV = document.body.classList.contains('tv-layout');
+    themeTile.style.display = isTV ? 'none' : '';
+    const themeEl = document.getElementById('tile-theme-val');
+    if (themeEl) {
+      const saved = getThemePref();
+      const light = document.body.classList.contains('light-mode');
+      themeEl.textContent = saved === null
+        ? `Auto (${light ? 'Light' : 'Dark'})`
+        : (saved === 'light' ? 'Light' : 'Dark');
+    }
   }
 
   // Upscaler tile: works on the Chromium <video> path (Electron/web). Hidden on
@@ -3149,6 +3214,27 @@ function bindGlobalEvents() {
   const settingsModal = document.getElementById('settings-modal');
   const settingsClose = document.getElementById('settings-close-btn');
 
+  // Settings behaves like a tab: opening it highlights the rail button like an
+  // active tab; leaving it (X / Back / picking another tab) restores the
+  // highlight on whichever real tab is still active underneath.
+  const setSettingsActive = (on) => {
+    // No category sidebar on the settings page (same treatment as Flixify).
+    document.body.classList.toggle('settings-tab', on);
+    settingsBtn.classList.toggle('active', on);
+    const t = state.activeTab || 'home';
+    document.querySelectorAll(`.nav-tab[data-tab="${t}"], .mobile-tab-btn[data-tab="${t}"]`)
+      .forEach(b => b.classList.toggle('active', !on));
+    if (on) {
+      document.querySelectorAll('.nav-tab, .mobile-tab-btn[data-tab]')
+        .forEach(b => { if (b.dataset.tab !== t) b.classList.remove('active'); });
+    }
+  };
+  const closeSettingsPanel = () => {
+    settingsModal.classList.add('hidden');
+    setSettingsActive(false);
+  };
+  window.closeSettingsPanel = closeSettingsPanel;
+
   settingsBtn.addEventListener('click', () => {
     refreshSettingsTiles();
     // Smart TV access tile: always show — we can derive a /tv link (LAN IP,
@@ -3158,19 +3244,20 @@ function bindGlobalEvents() {
       netTile.style.display = '';
     }
     settingsModal.classList.remove('hidden');
+    setSettingsActive(true);
     const firstTile = settingsModal.querySelector('.settings-tile');
     if (firstTile) navigation.setFocus('modal', firstTile);
   });
 
   settingsClose.addEventListener('click', () => {
-    settingsModal.classList.add('hidden');
+    closeSettingsPanel();
     navigation.focusDefault('tabs');
   });
 
   // --- Tile: Switch Playlist (opens the playlist picker drawer) ---
   document.getElementById('tile-switch-playlist')?.addEventListener('click', (e) => {
     e.stopPropagation();
-    settingsModal.classList.add('hidden');
+    closeSettingsPanel();
     togglePlaylistDropdown();
   });
 
@@ -3242,6 +3329,16 @@ function bindGlobalEvents() {
     if (state.user && state.user.credentials) state.user.credentials.proxy_streams = next;
     refreshSettingsTiles();
     showToast(`CORS Proxy ${next ? 'enabled' : 'disabled'}`, 'success');
+  });
+
+  // --- Tile: Appearance (cycles Auto → Light → Dark) ---
+  document.getElementById('tile-theme')?.addEventListener('click', () => {
+    const saved = getThemePref();
+    const next = saved === null ? 'light' : (saved === 'light' ? 'dark' : null);
+    setTheme(next);
+    refreshSettingsTiles();
+    const label = next === null ? 'Auto' : (next === 'light' ? 'Light' : 'Dark');
+    showToast(`Theme: ${label}`, 'success');
   });
 
   // --- Tile: Performance Mode (cycles Auto → On → Off) ---
@@ -3357,7 +3454,7 @@ function bindGlobalEvents() {
   // --- Tile: Log Out ---
   document.getElementById('tile-logout')?.addEventListener('click', async () => {
     if (confirm('Are you sure you want to disconnect this playlist? This will erase local cache.')) {
-      settingsModal.classList.add('hidden');
+      closeSettingsPanel();
       playerInstance.stop();
       await logout();
       state.user = null;
@@ -3379,9 +3476,10 @@ function bindGlobalEvents() {
     document.getElementById('vod-modal').classList.add('hidden');
   });
 
-  // Close modals on background overlay click
+  // Close modals on background overlay click. Settings is exempt — it acts
+  // like a tab page now, so clicking its empty space must not close it.
   window.addEventListener('click', (e) => {
-    if (e.target.classList.contains('modal-overlay')) {
+    if (e.target.classList.contains('modal-overlay') && e.target.id !== 'settings-modal') {
       e.target.classList.add('hidden');
     }
   });

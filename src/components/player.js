@@ -526,6 +526,18 @@ export class VideoPlayer {
     this.video.addEventListener('pause', () => this.stopFpsTracker());
     this.video.addEventListener('ended', () => {
       this.stopFpsTracker();
+      // A piped transcode "ends" wherever the ffmpeg pipe died — if the real
+      // (probed) duration says we're nowhere near the end, this is a dropped
+      // upstream connection, not the credits. Resume instead of auto-advancing
+      // to the next episode.
+      if (this._transcodeActive && this._transcodeDuration > 0) {
+        const realPos = this._transcodeOffset + this.video.currentTime;
+        if (this._transcodeDuration - realPos > 5) {
+          console.warn(`[vod] transcode ended prematurely at ${realPos.toFixed(0)}s of ${this._transcodeDuration.toFixed(0)}s — resuming`);
+          this._recoverVodStall(true);
+          return;
+        }
+      }
       // Auto-advance: for series this triggers the next episode (set in main.js).
       // Null for movies/live, so it safely no-ops there. Was dropped in v2.7.0
       // when FPS tracking replaced this handler, breaking series autoplay.
@@ -548,11 +560,17 @@ export class VideoPlayer {
           // Otherwise, treat it as a playback interruption.
           if (this.video.currentTime < 2) {
             this._handleVodPlaybackFallback(err);
+          } else if (err && (err.code === 2 || err.code === 4)) {
+            // Network drop mid-playback (server closed the connection).
+            // Reload the source and resume where we stalled — same recovery
+            // as the silent-stall watchdog. Only surfaces an error once the
+            // reconnect budget is spent.
+            console.warn('[vod] network error mid-playback — attempting resume');
+            this._recoverVodStall(true);
           } else {
             let errMsg = 'VOD playback interrupted.';
             if (err) {
               if (err.code === 3) errMsg = 'Video decoding failed.';
-              else if (err.code === 4) errMsg = 'VOD stream connection lost.';
               if (err.message) errMsg += ` (${err.message})`;
             }
             this.showError(errMsg);
@@ -761,6 +779,8 @@ export class VideoPlayer {
     clearTimeout(this._retryTimer);
     clearTimeout(this._reconnectTimer);
     clearTimeout(this._vodLoadTimeout);
+    this._stopVodStallWatch();
+    this._stopLiveStallWatch();
     this._retryCount = 0;
     this._streamUrl = url;
     this._streamIsVod = isVod;
@@ -1181,7 +1201,8 @@ export class VideoPlayer {
       });
       this.hls.loadSource(url);
       this.hls.attachMedia(this.video);
-      if (!isVod) this._startHlsStallWatch(); // live/timeshift: recover silent stalls
+      // Live/timeshift silent-stall recovery is handled by _startLiveStallWatch
+      // (armed in _startPlayback for every live engine, not just hls.js).
 
       this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
         this.video.play().catch(err => console.log('Playback auto-play blocked:', err));
@@ -1335,6 +1356,17 @@ export class VideoPlayer {
   // Internal: set up the HLS / MPEG-TS / native player for a given URL.
   // Called by loadStream(), _retryStream() and _reconnectLive().
   _startPlayback(url, isVod) {
+    // Watch for silent mid-playback stalls (server dropping the connection
+    // without an error event) and auto-reconnect. Separate watchdogs: VOD
+    // resumes at the stalled file position, live rejoins the stream edge.
+    if (isVod) {
+      this._stopLiveStallWatch();
+      this._startVodStallWatch();
+    } else {
+      this._stopVodStallWatch();
+      this._startLiveStallWatch();
+    }
+
     // VOD (movies / series episodes) is a single on-demand file addressed by its
     // real container extension, so match strictly on the file type. Live streams
     // keep the looser matching (and the /live/ path heuristic).
@@ -1815,6 +1847,8 @@ export class VideoPlayer {
     setScreenAwake(false);
     clearTimeout(this._vodLoadTimeout);
     this._stopNativeStallWatch();
+    this._stopVodStallWatch();
+    this._stopLiveStallWatch();
     this._stopRectSync();
     this._hideNativeHud();
     this.stopFpsTracker();
@@ -1949,35 +1983,167 @@ export class VideoPlayer {
   }
 
   destroyHls() {
-    this._stopHlsStallWatch();
     if (this.hls) {
       this.hls.destroy();
       this.hls = null;
     }
   }
 
-  // Watchdog for live HLS (incl. timeshift): if currentTime stops advancing for
-  // >12 s while we're meant to be playing, the buffer ran dry without hls.js
-  // declaring a fatal error (e.g. the segmenter blipped). Reconnect once; the
-  // server keeps the timeshift buffer alive so the reload picks straight back up.
-  _startHlsStallWatch() {
-    this._stopHlsStallWatch();
+  // --- VOD stall auto-recovery ---------------------------------------------
+  // Some Xtream servers drop the HTTP connection mid-file on VOD. The browser
+  // plays out whatever it already buffered, then stops silently — no 'error'
+  // event fires because a prematurely closed download isn't a media error. A
+  // manual seek "fixes" it because seeking issues a fresh range request on a
+  // new connection. This watchdog automates that: when playback stalls with
+  // no progress, micro-seek into unbuffered space (forces a new range
+  // request); if that doesn't take, fully reload the source and resume at the
+  // stalled position via the existing pendingSeek machinery.
+  _startVodStallWatch() {
+    this._stopVodStallWatch();
+    this._vodRecoverCount = 0;
     let last = -1;
     let lastChange = Date.now();
-    this._hlsStallTimer = setInterval(() => {
-      if (!this.hasStream || this.video.paused || this._castMode) { lastChange = Date.now(); last = this.video.currentTime; return; }
-      const t = this.video.currentTime;
-      if (Math.abs(t - last) > 0.25) { last = t; lastChange = Date.now(); return; }
-      if (Date.now() - lastChange > 12000) {
-        console.warn('Live HLS stalled >12s — reconnecting…');
+    let progressSince = null; // wall-clock start of the current healthy stretch
+    this._vodStallTimer = setInterval(() => {
+      const v = this.video;
+      if (!this.hasStream || !this._streamIsVod || this._castMode || this._nativeActive ||
+          v.paused || v.seeking || v.ended) {
+        last = v.currentTime; lastChange = Date.now(); progressSince = null;
+        return;
+      }
+      const t = v.currentTime;
+      if (Math.abs(t - last) > 0.2) {
+        last = t; lastChange = Date.now();
+        if (progressSince == null) progressSince = Date.now();
+        // 15s of uninterrupted playback earns the recovery budget back, so a
+        // server that drops every few minutes over a 2h movie keeps recovering.
+        else if (this._vodRecoverCount > 0 && Date.now() - progressSince > 15000) this._vodRecoverCount = 0;
+        return;
+      }
+      progressSince = null;
+      // Don't fight a legitimate end-of-file. Under a piped transcode the
+      // element's duration is just the buffered length (it ends wherever the
+      // pipe died), so use the probed real duration instead.
+      const dur = (this._transcodeActive && this._transcodeDuration > 0)
+        ? this._transcodeDuration - this._transcodeOffset
+        : v.duration;
+      if (isFinite(dur) && dur > 0 && dur - t < 1.5) return;
+      if (Date.now() - lastChange > 6000) {
         lastChange = Date.now();
-        this._retryStream();
+        this._recoverVodStall();
+      }
+    }, 2000);
+  }
+
+  _stopVodStallWatch() {
+    if (this._vodStallTimer) { clearInterval(this._vodStallTimer); this._vodStallTimer = null; }
+  }
+
+  // One reconnect attempt. Returns false once the retry budget is spent (the
+  // caller may then surface a terminal error).
+  _recoverVodStall(forceReload = false) {
+    this._vodRecoverCount = (this._vodRecoverCount || 0) + 1;
+    if (this._vodRecoverCount > 6) {
+      console.warn('[vod] stall recovery budget exhausted');
+      this._stopVodStallWatch();
+      this.showError('The server keeps dropping the connection. Try again in a bit, or pick another title.');
+      return false;
+    }
+    const pos = this.video.currentTime;
+    console.warn(`[vod] stalled at ${pos.toFixed(1)}s — reconnect attempt ${this._vodRecoverCount}`);
+    if (window.showToast && this._vodRecoverCount === 1) window.showToast('Connection dropped — reconnecting…', 'info', 2500);
+
+    if (this._transcodeActive) {
+      // Piped ffmpeg transcode: not range-seekable, so neither a micro-seek
+      // nor a plain reload can resume it. Re-request the transcode at the
+      // stalled absolute position (?start= → server-side -ss) — fresh ffmpeg,
+      // fresh upstream connection, picks up where it died.
+      this._seekTranscode(this._transcodeOffset + pos);
+      return true;
+    }
+    if (this.hls) {
+      // hls.js: kick the loader — it re-requests the stalled fragment on a
+      // fresh connection.
+      try { this.hls.stopLoad(); this.hls.startLoad(pos); this.video.play().catch(() => {}); } catch (e) {}
+      return true;
+    }
+    if (!forceReload && !this.mpegtsPlayer && this._vodRecoverCount <= 2) {
+      // Direct file: a tiny forward seek lands in unbuffered space, forcing
+      // the browser to open a fresh range request — exactly what a manual
+      // seek does. Costs 0.1s of content, keeps A/V state intact.
+      this._expectSeek = true;
+      try {
+        this.video.currentTime = pos + 0.1;
+        this.video.play().catch(() => {});
+      } catch (e) {}
+      return true;
+    }
+    // Micro-seek didn't take (or the element errored, or mpegts is driving):
+    // full reload of the same URL, resuming at the stalled position.
+    const url = this._streamUrl;
+    if (!url) return false;
+    this.pendingSeek = pos; // applied on loadedmetadata/canplay
+    if (this.mpegtsPlayer) {
+      // .ts VOD: the element can't play raw TS directly — rebuild the engine.
+      this.destroyMpegts();
+      this._playAsMpegTs(url, true);
+    } else {
+      this.video.src = url;
+      this.video.load();
+      this.video.play().catch(() => {});
+    }
+    return true;
+  }
+
+  // --- Live stall auto-recovery ----------------------------------------------
+  // Watchdog for ALL live engines (hls.js incl. timeshift, mpegts.js, direct):
+  // if currentTime stops advancing for >8s while we're meant to be playing, the
+  // connection dropped without the engine declaring an error (server closed the
+  // socket silently, segmenter blipped, half-open TCP…). Recover seamlessly
+  // first — mpegts unload()/load() keeps the last frame on screen, an hls.js
+  // loader kick re-requests the stalled fragment — and only escalate to the
+  // visible "Retrying…" full rebuild (_retryStream) if the soft path doesn't
+  // restore progress. Soft attempts reset once playback advances again, so a
+  // provider that drops every few minutes keeps reconnecting indefinitely;
+  // _retryStream's 4-strike budget (refunded on 'playing') still catches
+  // genuinely dead streams.
+  _startLiveStallWatch() {
+    this._stopLiveStallWatch();
+    let last = -1;
+    let lastChange = Date.now();
+    let softTries = 0; // seamless attempts within the current stall episode
+    this._liveStallTimer = setInterval(() => {
+      const v = this.video;
+      if (!this.hasStream || this._streamIsVod || this._castMode || this._nativeActive ||
+          v.paused || v.seeking) {
+        last = v.currentTime; lastChange = Date.now();
+        return;
+      }
+      const t = v.currentTime;
+      if (Math.abs(t - last) > 0.25) { last = t; lastChange = Date.now(); softTries = 0; return; }
+      if (Date.now() - lastChange > 8000) {
+        lastChange = Date.now();
+        softTries++;
+        if (this.mpegtsPlayer && softTries <= 2) {
+          console.warn('[live] stalled >8s — seamless mpegts reconnect…');
+          this._reconnectLive(); // light unload()/load(), rapid-loop guarded
+        } else if (this.hls && softTries <= 2) {
+          console.warn('[live] HLS stalled >8s — kicking loader…');
+          try {
+            this.hls.stopLoad();
+            this.hls.startLoad();
+            v.play().catch(() => {});
+          } catch (e) { this._retryStream(); }
+        } else {
+          console.warn('[live] stalled — full retry…');
+          this._retryStream();
+        }
       }
     }, 3000);
   }
 
-  _stopHlsStallWatch() {
-    if (this._hlsStallTimer) { clearInterval(this._hlsStallTimer); this._hlsStallTimer = null; }
+  _stopLiveStallWatch() {
+    if (this._liveStallTimer) { clearInterval(this._liveStallTimer); this._liveStallTimer = null; }
   }
 
   destroyMpegts() {
@@ -2003,6 +2169,8 @@ export class VideoPlayer {
     clearTimeout(this._retryTimer);
     clearTimeout(this._reconnectTimer);
     this._stopNativeStallWatch();
+    this._stopVodStallWatch();
+    this._stopLiveStallWatch();
     this._stopRectSync();
     if (this._nativeActive) {
       nativeStop().catch(() => {});
