@@ -563,7 +563,7 @@ class TVNavigation {
   }
 
   // 1. SIDE-RAIL NAVIGATION (vertical: Search · Live · Movies · Series ·
-  //    Flixify · Refresh · Settings · Profile). UP/DOWN moves the highlight,
+  //    Refresh · Settings · Profile). UP/DOWN moves the highlight,
   //    ENTER selects, RIGHT leaves the rail into the content area.
   handleTabsNavigation(e) {
     // Everything focusable in the rail, top-to-bottom (DOM order), visible only.

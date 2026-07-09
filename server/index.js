@@ -108,7 +108,6 @@ import {
   deactivateActivePlaylist,
   updatePlaylistSettings
 } from './cache.js';
-import * as flixify from './flixify.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -595,30 +594,6 @@ const CAST_MIME = {
 };
 
 app.get('/cast/:kind/:file', async (req, res) => {
-  // Flixify casts a resolved third-party URL, not an Xtream stream — handle it
-  // first (no Xtream creds needed) and proxy with an MP4 DLNA profile.
-  if (req.params.kind === 'flixify') {
-    const f = req.params.file;
-    const d = f.lastIndexOf('.');
-    const id = d >= 0 ? f.slice(0, d) : f;
-    const ext = (d >= 0 ? f.slice(d + 1) : 'mp4').toLowerCase();
-    let target;
-    try { target = await flixify.castUrl(id); } catch (e) { target = null; }
-    if (!target) return res.status(404).send('Flixify stream not found');
-    const { mime, features } = dlnaProfile(false, ext);
-    if (req.method === 'HEAD') {
-      res.setHeader('Content-Type', mime);
-      res.setHeader('transferMode.dlna.org', 'Streaming');
-      res.setHeader('contentFeatures.dlna.org', features);
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      return fetchUpstreamLength(target, (len) => {
-        res.setHeader('Accept-Ranges', 'bytes');
-        if (len) res.setHeader('Content-Length', String(len));
-        res.status(200).end();
-      });
-    }
-    return proxyStream(target, req, res, { contentType: mime, dlnaContentFeatures: features });
-  }
 
   const creds = getCredentials();
   if (!creds) return res.status(401).send('Not logged in');
@@ -1616,66 +1591,6 @@ const serveTsMem = (req, res) => {
 };
 app.get('/api/timeshift/ingest/:file', serveTsMem);
 app.get('/api/timeshift/:ch/:file', serveTsMem);
-
-// --- Flixify (public-domain VOD source) — PIN/device auth (desktop/server) ---
-app.post('/api/flixify/pin', async (req, res) => {
-  try { res.json(await flixify.generatePin()); }
-  catch (e) { res.status(502).json({ error: e.message }); }
-});
-
-app.get('/api/flixify/pin/status', async (req, res) => {
-  try { res.json(await flixify.checkPin()); }
-  catch (e) { res.status(502).json({ error: e.message }); }
-});
-
-app.get('/api/flixify/status', async (req, res) => {
-  res.json({ loggedIn: await flixify.isLoggedIn() });
-});
-
-app.post('/api/flixify/logout', (req, res) => {
-  res.json(flixify.logout());
-});
-
-app.get('/api/flixify/home', async (req, res) => {
-  try { res.json(await flixify.browse(flixify.homePath(), {})); }
-  catch (e) { res.status(502).json({ error: e.message }); }
-});
-
-app.get('/api/flixify/browse', async (req, res) => {
-  const { path: p, page, q } = req.query;
-  if (!p) return res.status(400).json({ error: 'Missing path' });
-  try { res.json(await flixify.browse(p, { page: parseInt(page, 10) || 1, q: q || '' })); }
-  catch (e) { res.status(502).json({ error: e.message }); }
-});
-
-app.get('/api/flixify/resolve', async (req, res) => {
-  const { path: p, quality } = req.query;
-  if (!p) return res.status(400).json({ error: 'Missing path' });
-  try { res.json(await flixify.resolve(p, quality)); }
-  catch (e) { res.status(502).json({ error: e.message }); }
-});
-
-app.get('/api/flixify/profiles', async (req, res) => {
-  try { res.json(await flixify.profiles()); }
-  catch (e) { res.status(502).json({ error: e.message }); }
-});
-
-app.post('/api/flixify/profiles/select', async (req, res) => {
-  const { id } = req.body;
-  if (!id) return res.status(400).json({ error: 'Missing id' });
-  try { res.json(await flixify.selectProfile(id)); }
-  catch (e) { res.status(502).json({ error: e.message }); }
-});
-
-app.post('/api/flixify/progress', async (req, res) => {
-  const { id, pos, delta, cw, completed } = req.body || {};
-  if (!id) return res.status(400).json({ error: 'Missing id' });
-  try {
-    res.json(await flixify.reportProgress(id, {
-      pos: +pos || 0, delta: +delta || 0, cw: !!cw, completed: !!completed,
-    }));
-  } catch (e) { res.status(502).json({ error: e.message }); }
-});
 
 // Serve Vite frontend in production
 const distPath = path.join(__dirname, '../dist');

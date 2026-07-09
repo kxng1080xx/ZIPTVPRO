@@ -1,6 +1,7 @@
 import Hls from 'hls.js';
 import mpegts from 'mpegts.js';
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { App } from '@capacitor/app';
 import { Upscaler } from './upscaler.js';
 import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { proxifyImage } from './xtream-api.js';
@@ -643,6 +644,41 @@ export class VideoPlayer {
     const reapplyFs = () => { if (Capacitor.isNativePlatform() && !this._isTv()) this._applyFsForOrientation(); };
     window.addEventListener('resize', reapplyFs);
     window.addEventListener('orientationchange', reapplyFs);
+
+    // TV devices (Fire TV / Android TV): pressing Home backgrounds the app,
+    // and these low-RAM boxes reclaim the media pipeline (or kill the process)
+    // while backgrounded — playback is dead when the user comes back. So on
+    // background: snapshot what's playing, stop and release the decoders
+    // (which is also what Fire TV guidelines expect); on foreground: reload
+    // the same stream — live re-tunes to the edge, VOD resumes at position.
+    // Phones are exempt: background audio keeps playing there by design.
+    if (Capacitor.isNativePlatform()) {
+      try {
+        App.addListener('appStateChange', ({ isActive }) => {
+          if (!isActive) {
+            if (!this._isTv() || !this.hasStream || !this._streamUrl || this._castMode) return;
+            const meta = this._lastLoadMeta || {};
+            this._bgResume = {
+              url: this._streamUrl,
+              name: meta.name || this.currentChannelName,
+              logo: meta.logo || '',
+              epg: meta.epg || '',
+              isVod: this._streamIsVod,
+              pos: this._streamIsVod
+                ? (this._nativeActive ? (this._lastNativeCur || 0) : this._currentTime())
+                : 0,
+            };
+            console.warn('[player] app backgrounded on TV — releasing playback, will resume');
+            this.stop();
+          } else if (this._bgResume) {
+            const r = this._bgResume;
+            this._bgResume = null;
+            console.warn('[player] app foregrounded — resuming playback');
+            this.loadStream(r.url, r.name, r.logo, r.epg, r.isVod, r.pos);
+          }
+        });
+      } catch (e) {}
+    }
   }
 
   isLandscape() {
@@ -821,6 +857,7 @@ export class VideoPlayer {
     this._lastNativeCur = 0;
     this._streamUrl = url;
     this._streamIsVod = isVod;
+    this._lastLoadMeta = { name, logo, epg: currentEpg }; // for background-resume snapshot
     this._triedMpegtsOriginal = false;
     this._triedHlsOriginal = false;
     this._triedMpegtsRewritten = false;

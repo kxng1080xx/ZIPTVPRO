@@ -1422,7 +1422,7 @@ body.tv-layout .tv-focused { scroll-margin: 6rem; }
        (icon | title/sub | chevron) instead of the big square tiles.
    ========================================================================== */
 @media (orientation: portrait) {
-  /* ---- Poster grids (Movies / Series / Flixify): viewport-scaled 3-up.
+  /* ---- Poster grids (Movies / Series): viewport-scaled 3-up.
      27vw min-column ⇒ exactly 3 columns on any portrait width; posters keep
      their 2/3 aspect-ratio so height follows automatically. Beats the legacy
      !important minmax(100px) in style.css (later in cascade). ---- */
@@ -1535,10 +1535,9 @@ body.tv-layout .tv-focused { scroll-margin: 6rem; }
    ========================================================================== */
 body.home-tab .sidebar { display: none !important; }
 
-/* Home / Flixify / Web tabs have no category sidebar, so the mobile hamburger
+/* Home / Web tabs have no category sidebar, so the mobile hamburger
    would open an empty translucent drawer. Hide the toggle on those tabs. */
 body.home-tab #mobile-menu-btn,
-body.flixify-tab #mobile-menu-btn,
 body.webtab-tab #mobile-menu-btn {
   display: none !important;
 }
@@ -1971,7 +1970,7 @@ body.tv-layout .home-tile-title { font-size: 0.95rem; }
   object-fit: cover;
 }
 
-/* No category sidebar on web tabs (same treatment as Flixify) */
+/* No category sidebar on web tabs */
 body.webtab-tab .sidebar { display: none !important; }
 
 /* ---- Browser panel: slim toolbar + full-bleed webview stage ---- */
@@ -2571,7 +2570,7 @@ body.perf-lite .continue-card:hover { transform: none; }
    ========================================================================== */
 .app-main main { position: relative; }
 
-/* No category sidebar while on the settings page (same as Flixify). */
+/* No category sidebar while on the settings page. */
 body.settings-tab .sidebar { display: none !important; }
 
 #settings-modal.modal-overlay,

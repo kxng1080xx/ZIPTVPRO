@@ -183,9 +183,6 @@
           <label style="display: flex; align-items: center; gap: 8px; font-size: 0.82rem; cursor: pointer;">
             <input type="checkbox" id="tab-series" checked /> Series
           </label>
-          <label style="display: flex; align-items: center; gap: 8px; font-size: 0.82rem; cursor: pointer;">
-            <input type="checkbox" id="tab-flixify" checked /> Flixify
-          </label>
         </div>
       </div>
 
@@ -738,7 +735,6 @@
       $('tab-live').checked = !hiddenTabs.includes('live');
       $('tab-movies').checked = !hiddenTabs.includes('movies');
       $('tab-series').checked = !hiddenTabs.includes('series');
-      $('tab-flixify').checked = !hiddenTabs.includes('flixify');
 
       hiddenCategoriesSet = new Set(p.hidden_categories || []);
       loadedCategories = null;
@@ -858,7 +854,6 @@
       if (!$('tab-live').checked) hidden_tabs.push('live');
       if (!$('tab-movies').checked) hidden_tabs.push('movies');
       if (!$('tab-series').checked) hidden_tabs.push('series');
-      if (!$('tab-flixify').checked) hidden_tabs.push('flixify');
       
       const hidden_categories = Array.from(hiddenCategoriesSet);
       

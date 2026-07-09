@@ -33,7 +33,6 @@ import { navigation } from './components/tv-navigation.js';
 import { initCastUI, setCastContext } from './components/cast.js';
 import { checkForUpdate, downloadApp, startPeriodicUpdateCheck, initElectronUpdaterUI } from './components/update-check.js';
 import { openSearchKeyboard, openSortDropdown } from './components/tv-search.js';
-import { enterFlixify, flixifySearch, setFlixifyPlayHandler, playFlixifySearchItem } from './components/flixify.js';
 import { openGlobalSearch, setGlobalSearchQuery } from './components/global-search.js';
 import { isNativeAvailable } from './components/native-player.js';
 import { getDeviceCode, syncDevice, readCachedState, clearCachedState, isStateExpired } from './components/cloud-sync.js';
@@ -331,53 +330,6 @@ async function initApp() {
 // ==========================================================================
 // TABS & VIEW ROUTER
 // ==========================================================================
-// Hand a resolved Flixify stream to the app's player. Mirrors playVODStream:
-// the <video> lives inside the (now hidden) Live-TV panel, so we must enter
-// vod-mode to float the player over the catalog — otherwise nothing shows.
-function playFlixify(url, title, poster, opts = {}) {
-  if (!url) return;
-  document.body.classList.add('vod-mode');
-  document.querySelector('.sidebar')?.classList.add('hidden');
-  document.querySelector('.top-header')?.classList.add('hidden');
-  document.querySelector('.epg-section-container')?.classList.add('hidden');
-  document.querySelector('.program-details-panel')?.classList.add('hidden');
-  if (playerInstance.vodTitleTag) playerInstance.vodTitleTag.textContent = title || '';
-  playerInstance.showSpinner();
-  try {
-    playerInstance.setSeriesMode(false);
-    playerInstance.onExitVod = exitFlixifyPlayer;
-    playerInstance.onVideoEnded = () => {
-      // opts.onEnded advances to the next episode and returns true; if it didn't
-      // (movie, or last episode), leave the player instead of stranding on idle.
-      const advanced = opts.onEnded && opts.onEnded();
-      if (!advanced) exitFlixifyPlayer();
-    };
-    playerInstance.onVodProgress = opts.onProgress || null; // resume tracking
-    playerInstance.loadStream(url, title || 'Flixify', poster || '', '', true, opts.resumeTime || 0);
-    // Enable casting: the receiver fetches /cast/flixify/<id>.mp4 from the server.
-    if (opts.castId) setCastContext({ type: 'flixify', streamId: opts.castId, ext: 'mp4', title: title || 'Flixify', isLive: false });
-    playerInstance.autoFullscreen();
-  } catch (e) {
-    console.error('Flixify play failed:', e);
-    playerInstance.hideSpinner();
-    exitFlixifyPlayer();
-  }
-}
-
-// Restore chrome after the Flixify player exits (Flixify tab stays active).
-function exitFlixifyPlayer() {
-  document.body.classList.remove('vod-mode');
-  document.querySelector('.sidebar')?.classList.remove('hidden');
-  document.querySelector('.top-header')?.classList.remove('hidden');
-  document.querySelector('.epg-section-container')?.classList.remove('hidden');
-  document.querySelector('.program-details-panel')?.classList.remove('hidden');
-  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-  try { playerInstance.stop(); } catch (e) {}
-  // Restore the Xtream VOD defaults so normal Movies/Series tracking is unaffected.
-  playerInstance.onVideoEnded = null;
-  playerInstance.onVodProgress = saveCurrentProgress;
-}
-
 async function switchTab(tabId) {
   if (tabId !== 'series' || state.activeTab === 'series') {
     exitSeriesPlaybackDashboard();
@@ -408,9 +360,6 @@ async function switchTab(tabId) {
     panel.classList.toggle('active', panel.id === (isWebTab ? 'webtab-view' : `${tabId}-view`));
   });
 
-  // Flixify has no category sidebar — hide the left rail on that tab (CSS-driven
-  // so it stays hidden through playback exit too).
-  document.body.classList.toggle('flixify-tab', tabId === 'flixify');
   // Web tabs are a full-bleed browser: no category sidebar either.
   document.body.classList.toggle('webtab-tab', isWebTab);
   // Home dashboard: full-bleed rows, no category sidebar.
@@ -433,18 +382,7 @@ async function switchTab(tabId) {
   if (headerSearch) {
     headerSearch.placeholder = tabId === 'movies' ? 'Search movies'
       : tabId === 'series' ? 'Search series'
-      : tabId === 'flixify' ? 'Search Flixify'
       : 'Search live channels';
-  }
-
-  // Flixify is its own source — render its panel instead of the Xtream pipeline.
-  if (tabId === 'flixify') {
-    if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
-      switchTab('home');
-      return;
-    }
-    enterFlixify((url, title, poster, subs, opts) => playFlixify(url, title, poster, opts));
-    return;
   }
 
   // Load left categories and main content area
@@ -2958,8 +2896,6 @@ async function routeGlobalSearchPick(type, item) {
     } else if (type === 'series') {
       await switchTab('series');
       openSeriesPlaybackDashboard(item);
-    } else if (type === 'flixify') {
-      playFlixifySearchItem(item);
     }
   } catch (err) {
     console.error('Global search routing failed:', err);
@@ -2970,9 +2906,6 @@ async function routeGlobalSearchPick(type, item) {
 // PC/web (physical keyboard), a D-pad button that opens the on-screen keyboard
 // on the APK/TV — matching the per-view search buttons.
 function initGlobalSearch() {
-  // Flixify results can be played straight from the global search, before the
-  // Flixify tab has been opened — register the play handler once here.
-  setFlixifyPlayHandler((url, title, poster, subs, opts) => playFlixify(url, title, poster, opts));
   // Button + on-screen keyboard whenever D-pad is the input model: the native
   // APK/TV build, or the /tv (?tv=true) "10-foot" layout on PC/web.
   const onTv = Capacitor.isNativePlatform() || window.__TV_PREVIEW__;
@@ -3144,8 +3077,6 @@ function bindGlobalEvents() {
           state.series.search = q;
           state.series.page = 1;
           loadSeriesGrid();
-        } else if (state.activeTab === 'flixify') {
-          flixifySearch(q);
         }
       }, state.activeTab === 'live' ? 120 : 350);
     });
@@ -3218,7 +3149,7 @@ function bindGlobalEvents() {
   // active tab; leaving it (X / Back / picking another tab) restores the
   // highlight on whichever real tab is still active underneath.
   const setSettingsActive = (on) => {
-    // No category sidebar on the settings page (same treatment as Flixify).
+    // No category sidebar on the settings page.
     document.body.classList.toggle('settings-tab', on);
     settingsBtn.classList.toggle('active', on);
     const t = state.activeTab || 'home';
@@ -3364,7 +3295,7 @@ function bindGlobalEvents() {
     else showToast('Upscaler off', 'success');
   });
 
-  // --- Tile: Manage Tabs (show/hide/edit custom web tabs + Flixify) ---
+  // --- Tile: Manage Tabs (show/hide/edit custom web tabs) ---
   document.getElementById('tile-tabs')?.addEventListener('click', () => {
     openManageTabs();
   });

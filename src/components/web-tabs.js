@@ -2,12 +2,12 @@
 // Each tab is just a webpage rendered in an Electron <webview> (isolated guest
 // process, persist:webtabs session — which is also where the built-in ad
 // blocker hooks in). Adding a tab mirrors Chrome's add-bookmark flow: name +
-// URL, icon = the site's favicon. Tabs (and built-in Flixify) can be hidden /
-// edited / removed from Settings → Manage Tabs.
+// URL, icon = the site's favicon. Tabs can be hidden / edited / removed from
+// Settings → Manage Tabs.
 //
 // Storage (localStorage):
 //   webTabs    → [{ id, name, url }]
-//   hiddenTabs → ['flixify', <webtab ids>...]   (hidden from the rail/tab bar)
+//   hiddenTabs → ['live', <webtab ids>...]      (hidden from the rail/tab bar)
 //   adblock    → 'on' | 'off'                   (default on)
 
 import { Capacitor } from '@capacitor/core';
@@ -161,12 +161,12 @@ function renderRailTabs() {
 // ---- hidden tabs (built-ins + custom) ---------------------------------------
 // Built-in tabs that can be hidden from Settings → Manage Tabs. Home is the
 // fallback destination, so it's never hideable.
-const HIDEABLE_BUILTINS = ['live', 'movies', 'series', 'flixify'];
+const HIDEABLE_BUILTINS = ['live', 'movies', 'series'];
 
 export function applyHiddenTabs() {
   const hidden = getHiddenTabs();
   for (const id of HIDEABLE_BUILTINS) {
-    const off = (id === 'flixify' && isAndroidNative()) || hidden.includes(id);
+    const off = hidden.includes(id);
     document.querySelectorAll(`.nav-tab[data-tab="${id}"], .mobile-tab-btn[data-tab="${id}"]`)
       .forEach((el) => { el.style.display = off ? 'none' : ''; });
   }
@@ -517,13 +517,6 @@ function renderManageList() {
       icon: `<span class="managetabs-icon"><i data-lucide="${b.icon}"></i></span>`, custom: false
     }));
   });
-  if (!isAndroidNative()) {
-    list.appendChild(row({
-      id: 'flixify', name: 'Flixify', sub: 'Built-in',
-      icon: '<span class="managetabs-icon"><i data-lucide="popcorn"></i></span>', custom: false
-    }));
-  }
-
   // Custom web tabs (Electron only)
   if (isElectron()) {
     for (const tab of getWebTabs()) {

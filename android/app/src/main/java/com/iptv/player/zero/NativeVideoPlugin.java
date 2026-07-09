@@ -46,6 +46,25 @@ public class NativeVideoPlugin extends Plugin {
     private boolean readyFired = false;
     private long lengthMs = 0;
 
+    // ALL blocking libVLC calls (stop/setMedia/play/release) run on this
+    // serial background thread, NEVER the main thread. libVLC's stop() joins
+    // the network input thread — when the provider connection is wedged that
+    // join blocks for tens of seconds, and doing it on the main thread froze
+    // input dispatching → ANR → the "ZIPTV keeps stopping" dialog (seen in
+    // the 6.6.0 ANR trace: lambda$stop → libvlc_media_player_stop →
+    // input_Close → vlc_join on tid=1). View work stays on the UI thread.
+    private android.os.HandlerThread vlcThread;
+    private Handler vlcOps;
+
+    private Handler vlc() {
+        if (vlcOps == null) {
+            vlcThread = new android.os.HandlerThread("vlc-ops");
+            vlcThread.start();
+            vlcOps = new Handler(vlcThread.getLooper());
+        }
+        return vlcOps;
+    }
+
     private static final String UA = "VLC/3.0.20";
 
     // Forward a coarse libVLC lifecycle state to JS so the player UI (and the
@@ -195,31 +214,40 @@ public class NativeVideoPlugin extends Plugin {
         if (url == null) { call.reject("missing url"); return; }
         final boolean isLive = Boolean.TRUE.equals(call.getBoolean("isLive", false));
         final double startAt = call.getDouble("startAt", 0.0);
+        // Views must be touched on the UI thread; the media swap (setMedia
+        // implicitly closes the previous input — blocking) runs on vlc-ops.
         ui.post(() -> {
             try {
                 ensurePlayer();
-                readyFired = false;
-                lengthMs = 0;
-                Media media = new Media(libVLC, android.net.Uri.parse(url));
-                media.addOption(":http-user-agent=" + UA);
-                if (isLive) media.addOption(":network-caching=2500");
-                player.setMedia(media);
-                media.release();
                 if (backing != null) backing.setVisibility(View.VISIBLE);
                 if (videoLayout != null) videoLayout.setVisibility(View.VISIBLE);
-                player.play();
-                if (!isLive && startAt > 0) {
-                    // Seek once playback has begun (position is fractional 0..1).
-                    ui.postDelayed(() -> {
-                        if (player != null && lengthMs > 0) {
-                            player.setPosition((float) ((startAt * 1000.0) / lengthMs));
-                        }
-                    }, 800);
-                }
-                call.resolve();
             } catch (Exception e) {
                 call.reject("native load failed: " + e.getMessage());
+                return;
             }
+            vlc().post(() -> {
+                try {
+                    readyFired = false;
+                    lengthMs = 0;
+                    Media media = new Media(libVLC, android.net.Uri.parse(url));
+                    media.addOption(":http-user-agent=" + UA);
+                    if (isLive) media.addOption(":network-caching=2500");
+                    player.setMedia(media);
+                    media.release();
+                    player.play();
+                    if (!isLive && startAt > 0) {
+                        // Seek once playback has begun (position is fractional 0..1).
+                        vlc().postDelayed(() -> {
+                            if (player != null && lengthMs > 0) {
+                                player.setPosition((float) ((startAt * 1000.0) / lengthMs));
+                            }
+                        }, 800);
+                    }
+                    call.resolve();
+                } catch (Exception e) {
+                    call.reject("native load failed: " + e.getMessage());
+                }
+            });
         });
     }
 
@@ -256,18 +284,18 @@ public class NativeVideoPlugin extends Plugin {
 
     @PluginMethod
     public void play(final PluginCall call) {
-        ui.post(() -> { if (player != null) player.play(); call.resolve(); });
+        vlc().post(() -> { if (player != null) player.play(); call.resolve(); });
     }
 
     @PluginMethod
     public void pause(final PluginCall call) {
-        ui.post(() -> { if (player != null) player.pause(); call.resolve(); });
+        vlc().post(() -> { if (player != null) player.pause(); call.resolve(); });
     }
 
     @PluginMethod
     public void seek(final PluginCall call) {
         final double pos = call.getDouble("position", 0.0);
-        ui.post(() -> {
+        vlc().post(() -> {
             if (player != null && lengthMs > 0) player.setPosition((float) ((pos * 1000.0) / lengthMs));
             call.resolve();
         });
@@ -276,22 +304,30 @@ public class NativeVideoPlugin extends Plugin {
     @PluginMethod
     public void setVolume(final PluginCall call) {
         final double v = call.getDouble("volume", 1.0);
-        ui.post(() -> { if (player != null) player.setVolume((int) Math.round(v * 100)); call.resolve(); });
+        vlc().post(() -> { if (player != null) player.setVolume((int) Math.round(v * 100)); call.resolve(); });
     }
 
     @PluginMethod
     public void stop(final PluginCall call) {
+        // Hide the surface immediately (UI thread), but run the blocking
+        // player.stop() on vlc-ops — on a wedged connection it joins a stuck
+        // network thread for many seconds, which ANR'd the app when it ran on
+        // the main thread. Resolve right away: JS awaits this before starting
+        // the reconnect load(), and that load is queued behind the stop on the
+        // same serial handler, so ordering is preserved without blocking JS.
         ui.post(() -> {
-            if (player != null) { try { player.stop(); } catch (Exception e) {} }
             if (videoLayout != null) videoLayout.setVisibility(View.GONE);
             if (backing != null) backing.setVisibility(View.GONE);
-            call.resolve();
         });
+        vlc().post(() -> {
+            if (player != null) { try { player.stop(); } catch (Exception e) {} }
+        });
+        call.resolve();
     }
 
     @PluginMethod
     public void getAudioTracks(final PluginCall call) {
-        ui.post(() -> {
+        vlc().post(() -> {
             JSArray arr = new JSArray();
             if (player != null) {
                 try {
@@ -317,9 +353,14 @@ public class NativeVideoPlugin extends Plugin {
 
     @Override
     protected void handleOnDestroy() {
+        // stop()/release() block (thread joins) — keep them off the main
+        // thread even during teardown. Views are detached on the UI thread.
         ui.post(() -> {
+            try { if (player != null) player.detachViews(); } catch (Exception e) {}
+        });
+        vlc().post(() -> {
             try {
-                if (player != null) { player.stop(); player.detachViews(); player.release(); player = null; }
+                if (player != null) { player.stop(); player.release(); player = null; }
                 if (libVLC != null) { libVLC.release(); libVLC = null; }
             } catch (Exception e) {}
         });
