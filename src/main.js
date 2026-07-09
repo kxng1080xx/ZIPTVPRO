@@ -22,6 +22,7 @@ import {
   getStreamUrlSync,
   proxifyImage,
   getLastSyncAge,
+  markSyncStale,
   hasCachedData,
   updatePlaylistByServerAndUser
 } from './components/xtream-api.js';
@@ -3755,6 +3756,8 @@ function maybeBackgroundSync() {
     .then(() => loadTabCategoriesAndContent())
     .catch(() => {});
 }
+// Exposed so web-tabs.js can trigger a backfill sync after unhiding a tab.
+window.maybeBackgroundSync = maybeBackgroundSync;
 
 // ==========================================================================
 // SESSION SCREEN TRANSITIONS
@@ -4479,6 +4482,12 @@ async function reconcilePlaylists(remote, { allowRemovals } = {}) {
       });
       if (res && res.changed && res.id === activeId) {
         activeChanged = true;
+        // Something was unhidden remotely — its catalog was skipped during
+        // sync, so backfill it.
+        if (res.unhid) {
+          markSyncStale();
+          maybeBackgroundSync();
+        }
       }
     } catch (e) {
       console.warn('Failed to update synced playlist settings:', r.playlistName, e.message);

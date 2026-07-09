@@ -7417,9 +7417,17 @@ body.perf-lite *::after {
 /* 3. Neutralize `transition: all` (animates layout props) and heavy shadows.
    Keep only cheap compositor-friendly transitions on common interactive bits. */
 body.perf-lite * {
-  transition-property: opacity, transform, color, background-color, border-color !important;
-  transition-duration: 0.12s !important;
-  animation-duration: 0.001s !important;
+  transition: none !important;
+  animation: none !important;
+}
+/* Keep functional loading spinners alive at their normal speed (animation:none
+   would freeze them; the old 0.001s duration made them spin 1000x and burn CPU). */
+body.perf-lite .spinner,
+body.perf-lite .startup-spinner,
+body.perf-lite .btn-loader,
+body.perf-lite .cast-spinner,
+body.perf-lite .cast-device-row.busy::after {
+  animation: spin 1s linear infinite !important;
 }
 body.perf-lite .player-wrapper,
 body.perf-lite .player-stage {

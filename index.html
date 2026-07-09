@@ -4,12 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ZIPTV Pro</title>
-  <!-- Google Fonts: Inter & Outfit -->
+  <!-- Google Fonts: Inter & Outfit — loaded async so an offline/slow TV never
+       blocks first paint on the font CSS fetch (system fonts render meanwhile). -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
+  <!-- Lucide Icons — vendored locally (public/lucide.min.js, pinned 0.525.0).
+       The old unpkg @latest script was synchronous + network-dependent: every
+       APK cold start blocked first paint on an unpkg round-trip. `defer` keeps
+       it ahead of the module script without blocking parsing. -->
+  <script defer src="/lucide.min.js"></script>
   <link rel="stylesheet" href="/src/style.css">
   <link rel="stylesheet" href="/src/redesign.css">
   <script type="module" src="/src/main.js"></script>

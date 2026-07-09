@@ -169,14 +169,24 @@ export async function updatePlaylistByServerAndUser(serverUrl, username, setting
   const localIdx = localList.findIndex(p => (norm(p.server_url) + '|' + String(p.username || '').toLowerCase()) === targetKey);
   let localChanged = false;
   let localId = null;
+  let unhid = false;
   if (localIdx >= 0) {
     const old = localList[localIdx];
     localId = old.id;
-    localChanged = 
+    localChanged =
       JSON.stringify(old.hidden_tabs || []) !== JSON.stringify(settings.hidden_tabs || []) ||
       JSON.stringify(old.hidden_categories || []) !== JSON.stringify(settings.hidden_categories || []) ||
       (settings.playlistName && old.name !== settings.playlistName);
-      
+
+    // Was anything revealed? Hidden tabs/categories are skipped at sync time,
+    // so unhiding one means its data is missing and needs a backfill sync.
+    const newHidden = new Set([
+      ...(settings.hidden_tabs || []),
+      ...(settings.hidden_categories || []).map(String)
+    ]);
+    unhid = [...(old.hidden_tabs || []), ...(old.hidden_categories || []).map(String)]
+      .some(h => !newHidden.has(h));
+
     if (localChanged) {
       localList[localIdx] = { ...old, ...settings };
       if (settings.playlistName) localList[localIdx].name = settings.playlistName;
@@ -207,15 +217,15 @@ export async function updatePlaylistByServerAndUser(serverUrl, username, setting
             })
           });
         }
-        return { id: old.id, changed: changed || localChanged };
+        return { id: old.id, changed: changed || localChanged, unhid };
       }
     } catch (e) {
       console.warn('Failed to update remote settings on server:', e.message);
     }
-    return { id: localId, changed: localChanged };
+    return { id: localId, changed: localChanged, unhid };
   } else {
     // Client mode
-    return { id: localId, changed: localChanged };
+    return { id: localId, changed: localChanged, unhid };
   }
 }
 
@@ -672,6 +682,21 @@ export async function syncPlaylist(progressCallback = null, { onLiveReady = null
     const creds = getCredentialsLocal();
     if (!creds) throw new Error('No playlist credentials found');
 
+    // Hidden tabs / categories: don't download or store what the user can't
+    // see. On low-power devices this skips entire multi-MB JSON catalogs.
+    // Skipped stages leave the old cached tables untouched; unhiding marks
+    // the sync stale so the next background sync backfills them.
+    const hiddenTabs = Array.isArray(creds.hidden_tabs)
+      ? creds.hidden_tabs
+      : (() => { try { return JSON.parse(localStorage.getItem('hiddenTabs')) || []; } catch (e) { return []; } })();
+    const hiddenCatSet = new Set(
+      (Array.isArray(creds.hidden_categories) ? creds.hidden_categories : []).map(String)
+    );
+    const dropHiddenRows = (rows) =>
+      (hiddenCatSet.size && Array.isArray(rows)) ? rows.filter(r => !hiddenCatSet.has(String(r.category_id))) : rows;
+    const dropHiddenCats = (cats) =>
+      (hiddenCatSet.size && Array.isArray(cats)) ? cats.filter(c => !hiddenCatSet.has(String(c.category_id))) : cats;
+
     const baseApiUrl = `${creds.server_url}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}`;
 
     const jget = (action) =>
@@ -704,11 +729,15 @@ export async function syncPlaylist(progressCallback = null, { onLiveReady = null
     //      part of the "very slow" feel on Fire Sticks).
 
     // ---- Stage 1: LIVE (the critical path) ----
+    let liveCount = 0;
+    if (!hiddenTabs.includes('live')) {
     if (progressCallback) progressCallback('Downloading live channels…');
     let [liveCategories, liveStreams] = await Promise.all([
       jget('get_live_categories'),
       jget('get_live_streams')
     ]);
+    liveStreams = dropHiddenRows(liveStreams);
+    liveCategories = dropHiddenCats(liveCategories);
     const liveStreamsMapped = Array.isArray(liveStreams) ? liveStreams.map(s => ({
       stream_id: String(s.stream_id),
       category_id: String(s.category_id),
@@ -728,7 +757,8 @@ export async function syncPlaylist(progressCallback = null, { onLiveReady = null
       await db.live_streams.clear();
       if (liveStreamsMapped.length > 0) await db.live_streams.bulkAdd(liveStreamsMapped);
     });
-    const liveCount = liveStreamsMapped.length;
+    liveCount = liveStreamsMapped.length;
+    } // end live stage
 
     // Live TV is browsable NOW — let the app paint while movies/series load.
     if (onLiveReady) {
@@ -736,11 +766,15 @@ export async function syncPlaylist(progressCallback = null, { onLiveReady = null
     }
 
     // ---- Stage 2: MOVIES ----
+    let vodCount = 0;
+    if (!hiddenTabs.includes('movies')) {
     if (progressCallback) progressCallback('Downloading movies…');
     let [vodCategories, vodStreams] = await Promise.all([
       jget('get_vod_categories'),
       jget('get_vod_streams')
     ]);
+    vodStreams = dropHiddenRows(vodStreams);
+    vodCategories = dropHiddenCats(vodCategories);
     const vodStreamsMapped = Array.isArray(vodStreams) ? vodStreams.map(s => ({
       stream_id: String(s.stream_id),
       category_id: String(s.category_id),
@@ -759,14 +793,19 @@ export async function syncPlaylist(progressCallback = null, { onLiveReady = null
       await db.vod_streams.clear();
       if (vodStreamsMapped.length > 0) await db.vod_streams.bulkAdd(vodStreamsMapped);
     });
-    const vodCount = vodStreamsMapped.length;
+    vodCount = vodStreamsMapped.length;
+    } // end movies stage
 
     // ---- Stage 3: SERIES ----
+    let seriesCount = 0;
+    if (!hiddenTabs.includes('series')) {
     if (progressCallback) progressCallback('Downloading series…');
     let [seriesCategories, seriesStreams] = await Promise.all([
       jget('get_series_categories'),
       jget('get_series')
     ]);
+    seriesStreams = dropHiddenRows(seriesStreams);
+    seriesCategories = dropHiddenCats(seriesCategories);
     const seriesStreamsMapped = Array.isArray(seriesStreams) ? seriesStreams.map(s => ({
       series_id: String(s.series_id || s.stream_id),
       category_id: String(s.category_id),
@@ -785,6 +824,8 @@ export async function syncPlaylist(progressCallback = null, { onLiveReady = null
       await db.series_streams.clear();
       if (seriesStreamsMapped.length > 0) await db.series_streams.bulkAdd(seriesStreamsMapped);
     });
+    seriesCount = seriesStreamsMapped.length;
+    } // end series stage
 
     stampLastSync();
 
@@ -793,13 +834,13 @@ export async function syncPlaylist(progressCallback = null, { onLiveReady = null
       counts: {
         live: liveCount,
         movies: vodCount,
-        series: seriesStreamsMapped.length
+        series: seriesCount
       }
     };
   }
 }
 
-// ---- Sync freshness ------------------------------------------------------
+// ---- Sync freshness -------------------------------------------------------
 // Used to skip the automatic full re-download on every boot: on weak devices
 // (Fire TV, smart TVs) that background sync saturated CPU + network right at
 // startup and made the cached UI feel sluggish. Manual Refresh always syncs.
@@ -808,6 +849,11 @@ function lastSyncKey() {
 }
 function stampLastSync() {
   try { localStorage.setItem(lastSyncKey(), String(Date.now())); } catch (e) {}
+}
+// Force the next background sync to run (used when a tab/category is unhidden
+// so its skipped catalog gets backfilled).
+export function markSyncStale() {
+  try { localStorage.removeItem(lastSyncKey()); } catch (e) {}
 }
 export function getLastSyncAge() {
   try {

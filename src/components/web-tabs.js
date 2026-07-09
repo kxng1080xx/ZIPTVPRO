@@ -11,6 +11,7 @@
 //   adblock    → 'on' | 'off'                   (default on)
 
 import { Capacitor } from '@capacitor/core';
+import { markSyncStale } from './xtream-api.js';
 
 const isAndroidNative = () => {
   try {
@@ -192,6 +193,12 @@ function toggleHidden(id, hide) {
   if (hide) hidden.push(id);
   saveHiddenTabs(hidden);
   applyHiddenTabs();
+  // Catalogs aren't downloaded while their tab is hidden — unhiding one needs
+  // a re-sync to backfill its data.
+  if (!hide && ['live', 'movies', 'series'].includes(id)) {
+    markSyncStale();
+    if (typeof window.maybeBackgroundSync === 'function') window.maybeBackgroundSync();
+  }
 }
 
 // ---- open a custom tab (webview browser panel) ------------------------------
