@@ -92,6 +92,7 @@ export function openSearchKeyboard({ title = 'Search', initial = '', onChange, o
     query: initial || '',
     r: 1,
     c: 0,
+    hdr: -1, // ≥0 = D-pad focus is on a header button (paste/hide/close)
     changeTimer: null,
     // On the PC build a physical keyboard is the norm, so collapse the tap-keys
     // by default (the toggle still restores them). Touch/D-pad builds keep them.
@@ -213,14 +214,34 @@ function keyAt(r, c) {
 
 function focusCurrent() {
   if (!kb) return;
+  kb.hdr = -1;
   const rowLen = KEY_ROWS[kb.r].length;
   if (kb.c >= rowLen) kb.c = rowLen - 1;
-  kb.overlay.querySelectorAll('.tvk-key').forEach((b) => b.classList.remove('tvk-focused'));
+  kb.overlay.querySelectorAll('.tvk-key, .tvk-header-btns button').forEach((b) => b.classList.remove('tvk-focused'));
   const el = keyAt(kb.r, kb.c);
   if (el) {
     el.classList.add('tvk-focused');
     try { el.focus({ preventScroll: true }); } catch (e) {}
   }
+}
+
+// Header buttons (paste / hide-keyboard / close) form a pseudo-row above the
+// key grid — UP from the top row reaches them, DOWN returns to the grid.
+function headerBtns() {
+  if (!kb) return [];
+  return Array.from(kb.overlay.querySelectorAll('.tvk-header-btns button'))
+    .filter((b) => b.offsetParent !== null);
+}
+
+function focusHeader() {
+  if (!kb) return;
+  const btns = headerBtns();
+  if (!btns.length) { kb.hdr = -1; return; }
+  kb.hdr = Math.max(0, Math.min(kb.hdr, btns.length - 1));
+  kb.overlay.querySelectorAll('.tvk-key, .tvk-header-btns button').forEach((b) => b.classList.remove('tvk-focused'));
+  const el = btns[kb.hdr];
+  el.classList.add('tvk-focused');
+  try { el.focus({ preventScroll: true }); } catch (e) {}
 }
 
 // Append clipboard text to the query (paste button or Ctrl+V).
@@ -263,6 +284,17 @@ function kbKeyHandler(e) {
 
   if (k === 'Escape') { done(); return; }
   if (k === 'Backspace') { pressKey('BACK'); return; } // physical Backspace deletes a character
+
+  // Header pseudo-row (paste / hide / close) has its own LEFT/RIGHT/ENTER.
+  if (kb.hdr >= 0) {
+    const btns = headerBtns();
+    if (k === 'ArrowLeft') { kb.hdr = Math.max(0, kb.hdr - 1); focusHeader(); }
+    else if (k === 'ArrowRight') { kb.hdr = Math.min(btns.length - 1, kb.hdr + 1); focusHeader(); }
+    else if (k === 'ArrowDown') { focusCurrent(); }
+    else if (k === 'Enter') { btns[kb.hdr]?.click(); }
+    return; // ArrowUp: already at the top
+  }
+
   if (k === 'Enter') {
     // No visible grid to "OK" (PC, keys collapsed) → Enter submits the search.
     // With the grid up (D-pad/TV) Enter still acts as select on the focused key.
@@ -274,7 +306,15 @@ function kbKeyHandler(e) {
   }
   if (k === 'ArrowLeft') { kb.c = Math.max(0, kb.c - 1); focusCurrent(); return; }
   if (k === 'ArrowRight') { kb.c = Math.min(KEY_ROWS[kb.r].length - 1, kb.c + 1); focusCurrent(); return; }
-  if (k === 'ArrowUp') { kb.r = Math.max(0, kb.r - 1); focusCurrent(); return; }
+  if (k === 'ArrowUp') {
+    if (kb.r === 0) {
+      // Top key row → header buttons (land on Close, the rightmost).
+      const btns = headerBtns();
+      if (btns.length) { kb.hdr = btns.length - 1; focusHeader(); }
+      return;
+    }
+    kb.r = Math.max(0, kb.r - 1); focusCurrent(); return;
+  }
   if (k === 'ArrowDown') { kb.r = Math.min(KEY_ROWS.length - 1, kb.r + 1); focusCurrent(); return; }
 }
 

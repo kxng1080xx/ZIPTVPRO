@@ -690,10 +690,11 @@ export class VideoPlayer {
   _isTv() { return document.body.classList.contains('tv-layout'); }
 
   autoFullscreen() {
-    // Native phone: starting playback in landscape goes straight to immersive. TV
-    // never auto-fullscreens (stays boxed: player + grid). Web keeps its behavior.
+    // Native phone: starting playback in landscape goes straight to immersive.
+    // TV: starting playback goes fullscreen too (Back returns to the boxed
+    // player + grid — see tv-navigation handleBack). Web keeps its behavior.
     if (Capacitor.isNativePlatform()) {
-      if (this._isTv()) return;
+      if (this._isTv()) { this._setFsDirect(true); return; }
       const isL = this.isLandscape();
       this._wasLandscape = isL;
       this._setFsDirect(isL);
