@@ -105,6 +105,9 @@ class TVNavigation {
       } else {
         document.exitFullscreen().catch(() => {});
       }
+      // Live: land in the channel list so the user can browse to the next
+      // channel silently (VOD keeps its own exit flow via vod-mode below).
+      if (!document.body.classList.contains('vod-mode')) this.focusDefault('channels');
       return;
     }
 
@@ -1024,23 +1027,18 @@ class TVNavigation {
     const player = window.playerInstance;
     
     if (!isFullscreen || !player) {
-      // NON-FULLSCREEN behavior: keep current zapping and LEFT-arrow exit.
-      // Wake the (auto-hiding) overlay so zaps/pauses give visible feedback.
+      // NON-FULLSCREEN (boxed) behavior: any directional press returns to the
+      // channel list so the user can browse WITHOUT playing each channel.
+      // (UP/DOWN used to zap prev/next here — that forced playing every
+      // channel on the way to the one you wanted. Zapping is still available
+      // on the fullscreen HUD's prev/next buttons.)
       if (player) player.showControlsTemporarily();
-      if (e.key === this.KEYS.LEFT) {
+      if (e.key === this.KEYS.LEFT || e.key === this.KEYS.UP || e.key === this.KEYS.DOWN) {
         this.focusDefault('channels');
         e.preventDefault();
       } else if (e.key === this.KEYS.ENTER || e.key === this.KEYS.SPACE) {
         const playBtn = document.getElementById('player-play-pause-btn');
         if (playBtn) playBtn.click();
-        e.preventDefault();
-      } else if (e.key === this.KEYS.UP) {
-        const prevBtn = document.getElementById('player-prev-btn');
-        if (prevBtn) prevBtn.click();
-        e.preventDefault();
-      } else if (e.key === this.KEYS.DOWN) {
-        const nextBtn = document.getElementById('player-next-btn');
-        if (nextBtn) nextBtn.click();
         e.preventDefault();
       } else if (e.key === this.KEYS.BACKSPACE || e.key === this.KEYS.ESCAPE) {
         this.focusDefault('channels');

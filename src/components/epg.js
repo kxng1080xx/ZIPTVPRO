@@ -66,6 +66,8 @@ export class EPGGrid {
       }
       isScrollingViewport = true;
       this.channelsList.scrollTop = this.gridViewport.scrollTop;
+      // Sync horizontal scroll with the timeline header
+      this.timelineHours.scrollLeft = this.gridViewport.scrollLeft;
     });
 
     this.channelsList.addEventListener('scroll', () => {
@@ -661,6 +663,9 @@ export class EPGGrid {
 
     // Lazily fetch EPG only for channel rows that are actually on screen
     this.observeVisibleChannels();
+
+    // Refresh time indicator height to cover newly added rows
+    this._refreshTimeIndicatorHeight();
   }
 
   createProgramBlock(title, startMs, endMs, startTime, pxPerMs, progData = null) {
@@ -772,8 +777,22 @@ export class EPGGrid {
       const left = (now - startTime.getTime()) * pxPerMs;
       this.timeIndicator.style.left = `${left}px`;
       this.timeIndicator.style.display = 'block';
+      // Ensure the red line spans the full scrollable content, not just the viewport
+      const contentHeight = this.programsRows.scrollHeight || this.programsRows.offsetHeight;
+      if (contentHeight > 0) {
+        this.timeIndicator.style.height = `${contentHeight}px`;
+      }
     } else {
       this.timeIndicator.style.display = 'none';
+    }
+  }
+
+  // Lightweight refresh of the red line height (called after new rows are appended)
+  _refreshTimeIndicatorHeight() {
+    if (this.timeIndicator.style.display === 'none') return;
+    const contentHeight = this.programsRows.scrollHeight || this.programsRows.offsetHeight;
+    if (contentHeight > 0) {
+      this.timeIndicator.style.height = `${contentHeight}px`;
     }
   }
 
@@ -786,6 +805,8 @@ export class EPGGrid {
     if (currentOffsetMs > 0) {
       const scrollPos = currentOffsetMs * pxPerMs - 200; // Center or offset by 200px
       this.gridViewport.scrollLeft = Math.max(0, scrollPos);
+      // Keep the timeline header in sync
+      this.timelineHours.scrollLeft = this.gridViewport.scrollLeft;
     }
   }
 

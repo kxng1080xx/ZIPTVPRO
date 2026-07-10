@@ -3162,10 +3162,17 @@ body.vod-mode .now-next-bar {
 }
 
 .epg-hours-select select {
-  background: none;
+  background: var(--bg-base);
   border: none;
   font-weight: 700;
   color: var(--text-primary);
+  cursor: pointer;
+}
+
+.epg-hours-select select option {
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  padding: 4px 8px;
 }
 
 .epg-nav-controls {
@@ -3443,8 +3450,8 @@ body.vod-mode .now-next-bar {
 .epg-current-time-line {
   position: absolute;
   top: 0;
-  bottom: 0;
   width: 2px;
+  min-height: 100%;
   background-color: var(--accent-red);
   box-shadow: 0 0 8px var(--accent-red);
   z-index: 5;
