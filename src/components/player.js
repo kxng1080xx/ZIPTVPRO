@@ -1127,7 +1127,10 @@ export class VideoPlayer {
         this._playViaTranscode('audio');
         return;
       }
-    } else if (window.showToast && isVod) {
+    } else if (window.showToast && isVod && useNative && !this._castMode &&
+               Capacitor.isNativePlatform() && !isNativeAvailable()) {
+      // Only when the user WANTED native and the APK genuinely lacks the
+      // plugin — picking the Web/HTML5 engine on purpose must not warn.
       window.showToast('Native player not available on this platform', 'error', 4000);
     }
     this._startPlayback(url, isVod);

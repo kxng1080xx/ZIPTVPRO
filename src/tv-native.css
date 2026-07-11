@@ -1326,6 +1326,34 @@ body.tv-native.tvn-playing:not(.native-video-active) .video-container {
   background: #000 !important;
 }
 
+/* Native (libVLC) counterpart: the surface is composited BEHIND the WebView,
+   so instead of an opaque cover, NOTHING else may paint — hide the legacy app
+   layout wholesale and keep only the player overlay subtree visible, pinned
+   fullscreen over a transparent hole. Without this, any state where player-fs
+   drops before the shell restores (OS fullscreen denied, Back-from-fullscreen
+   races) paints the legacy home view straight over the live video ("old UI
+   bleed"). Modals and #tvn-root live outside #app-container and are unaffected. */
+body.tv-native.tvn-playing.native-video-active #app-container {
+  visibility: hidden !important;
+}
+body.tv-native.tvn-playing.native-video-active #video-container,
+body.tv-native.tvn-playing.native-video-active #video-container * {
+  visibility: visible !important;
+}
+body.tv-native.tvn-playing.native-video-active #live-view.view-panel {
+  display: block !important;
+}
+body.tv-native.tvn-playing.native-video-active #video-container {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-height: none !important;
+  border-radius: 0 !important;
+  z-index: 900 !important;
+  background: transparent !important;
+}
+
 /* --------------------------------------------------------------------------
    Player reskin while the native TV shell owns the session: match the design
    tokens (dark glass, accent, pulsing LIVE pill) on the existing live OSD.
