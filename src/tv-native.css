@@ -1,0 +1,1346 @@
+/* ==========================================================================
+   ZIPTV Pro 7.0 — Native TV (10-foot) interface
+   Design source: "TV app native interface" handoff (1920×1080 design canvas).
+   Everything is scoped under #tvn-root so it can never leak into the
+   phone/desktop UI. The stage is a fixed 1920×1080 canvas scaled uniformly
+   to the viewport (transform set from JS), exactly like the prototype.
+   ========================================================================== */
+
+#tvn-root {
+  position: fixed;
+  inset: 0;
+  z-index: 500; /* above the app shell, below modals (1000) and player-fs */
+  background: #04060b;
+  font-family: 'Manrope', 'Inter', system-ui, sans-serif;
+  color: #e8ecf5;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+}
+#tvn-root.tvn-hidden { display: none; }
+
+#tvn-stage {
+  width: 1920px;
+  height: 1080px;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  overflow: hidden;
+  background: #060911;
+  transform-origin: center center;
+  --acc: #38bdf8;
+}
+
+#tvn-root * { box-sizing: border-box; }
+#tvn-root *::-webkit-scrollbar { display: none; }
+#tvn-root * { scrollbar-width: none; }
+#tvn-root [data-nav] { outline: none; cursor: pointer; }
+#tvn-root img { -webkit-user-drag: none; }
+
+/* While the shell is the visible surface, the legacy chrome (side-rail,
+   mobile tab bar, floating badges — some sit at z-index 9999) must not bleed
+   over it. Playback chrome (player-fs/vod-mode fullscreen) stays untouched. */
+body.tv-native:not(.player-fs):not(.vod-mode) .side-rail,
+body.tv-native:not(.player-fs):not(.vod-mode) .mobile-tab-bar,
+body.tv-native:not(.player-fs):not(.vod-mode) #reminder-banner {
+  display: none !important;
+}
+
+/* ambient glows behind every screen */
+.tvn-ambient {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(1400px 800px at 92% -15%, rgba(37, 99, 235, 0.14), transparent 60%),
+    radial-gradient(1100px 800px at -12% 112%, rgba(6, 182, 212, 0.10), transparent 60%);
+}
+body.perf-lite .tvn-ambient { background: none; }
+
+@keyframes tvn-livepulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+@keyframes tvn-fadein { from { opacity: 0; } to { opacity: 1; } }
+
+.tvn-screen {
+  position: absolute;
+  inset: 0;
+  animation: tvn-fadein 0.18s ease;
+}
+body.perf-lite #tvn-root .tvn-screen { animation: none; }
+
+/* --------------------------------------------------------------------------
+   Shared atoms
+   -------------------------------------------------------------------------- */
+
+/* Focus ring (design token): white inner ring + accent glow */
+#tvn-root .tvn-focable,
+#tvn-chooser .tvn-focable {
+  transition: transform 0.15s ease, box-shadow 0.15s ease,
+              border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+body.perf-lite #tvn-root .tvn-focable { transition: none; }
+#tvn-root .tvn-focable:focus,
+#tvn-chooser .tvn-focable:focus {
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95),
+              0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent);
+}
+
+/* round icon button (62px) */
+.tvn-iconbtn {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: #fff;
+  padding: 0;
+}
+.tvn-iconbtn:focus { transform: scale(1.06); }
+.tvn-iconbtn svg { display: block; }
+
+.tvn-avatar {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  background: linear-gradient(140deg, #7c5cff, #2563eb);
+  display: grid;
+  place-items: center;
+  font-size: 24px;
+  font-weight: 800;
+  color: #fff;
+  flex-shrink: 0;
+  border: none;
+}
+
+/* generic monogram tile (gradient set inline from JS) */
+.tvn-mono {
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.92);
+  letter-spacing: 0.04em;
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+}
+.tvn-mono img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 8%;
+}
+/* once the real logo loads, the monogram letters get out of its way */
+.tvn-mono.tvn-has-logo > span { opacity: 0; }
+
+/* badge chip (HD / EPG / CATCHUP) */
+.tvn-badge {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* --------------------------------------------------------------------------
+   HOME (launcher)
+   -------------------------------------------------------------------------- */
+.tvn-home {
+  display: flex;
+  flex-direction: column;
+  padding: 64px 90px 48px;
+}
+.tvn-home-top {
+  display: flex;
+  align-items: center;
+  gap: 40px;
+}
+.tvn-logo {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-shrink: 0;
+}
+.tvn-logo-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 15px;
+  background: linear-gradient(140deg, var(--acc, #38bdf8), #2563eb);
+  display: grid;
+  place-items: center;
+}
+.tvn-logo-word {
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.tvn-logo-word b { color: var(--acc, #38bdf8); font-weight: 800; }
+.tvn-logo-word span {
+  font-weight: 500;
+  opacity: 0.55;
+  font-size: 26px;
+  margin-left: 10px;
+}
+
+.tvn-search-pill {
+  flex: 0 0 560px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 62px;
+  padding: 0 28px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+.tvn-search-pill:focus { transform: scale(1.02); }
+.tvn-search-pill span {
+  font-size: 25px;
+  color: rgba(255, 255, 255, 0.45);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tvn-home-mid {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 60px;
+  min-height: 0;
+}
+.tvn-cards { display: flex; gap: 36px; }
+
+.tvn-card {
+  width: 305px;
+  height: 470px;
+  border-radius: 26px;
+  background: linear-gradient(175deg, rgba(38, 50, 78, 0.55), rgba(13, 18, 32, 0.9));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 30px;
+  position: relative;
+  color: #e8ecf5;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+body.perf-lite #tvn-root .tvn-card { transition: none; }
+
+/* ambient screen backdrop — one colorful layer per launcher card, crossfaded
+   to match whichever tile has D-pad focus */
+.tvn-home { isolation: isolate; }
+.tvn-home-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+}
+.tvn-home-bg i {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.7s ease;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+body.perf-lite #tvn-root .tvn-home-bg i { transition: none; }
+.tvn-home-bg i.on { opacity: 1; }
+.tvn-home-bg i[data-bg="live"] { background-image: url('/tv-bg/live.svg'); }
+.tvn-home-bg i[data-bg="movies"] { background-image: url('/tv-bg/movies.svg'); }
+.tvn-home-bg i[data-bg="series"] { background-image: url('/tv-bg/series.svg'); }
+.tvn-home-bg i[data-bg="guide"] { background-image: url('/tv-bg/guide.svg'); }
+.tvn-home-bg i[data-bg="settings"] { background-image: url('/tv-bg/settings.svg'); }
+.tvn-card:focus {
+  transform: scale(1.05) translateY(-8px);
+  border-color: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95),
+              0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent),
+              0 30px 70px rgba(0, 0, 0, 0.6);
+}
+.tvn-card-tag {
+  position: absolute;
+  top: 22px;
+  left: 22px;
+  font-size: 19px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.45);
+}
+.tvn-card-icon {
+  width: 108px;
+  height: 108px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.07);
+  display: grid;
+  place-items: center;
+}
+.tvn-card-txt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.tvn-card-title { font-size: 40px; font-weight: 800; }
+.tvn-card-sub { font-size: 24px; font-weight: 500; color: rgba(255, 255, 255, 0.5); }
+
+/* stacked half-height cards (Guide / Settings) — same language, 4th column */
+.tvn-card-col {
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+  width: 305px;
+  height: 470px;
+}
+.tvn-card-half {
+  width: 305px;
+  height: 217px;
+  flex: 1;
+  gap: 18px;
+}
+.tvn-card-half .tvn-card-icon { width: 84px; height: 84px; }
+.tvn-card-half .tvn-card-title { font-size: 30px; }
+
+.tvn-clock-block {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  padding-right: 10px;
+  min-width: 0;
+}
+.tvn-clock-meta {
+  font-size: 26px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+}
+.tvn-clock-time {
+  font-size: 96px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+.tvn-clock-time .tvn-ampm {
+  font-size: 38px;
+  font-weight: 700;
+  margin-left: 12px;
+  color: rgba(255, 255, 255, 0.65);
+}
+.tvn-clock-date {
+  font-size: 32px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.55);
+  white-space: nowrap;
+}
+
+.tvn-hint {
+  display: flex;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+/* --------------------------------------------------------------------------
+   LIVE TV — three panes
+   -------------------------------------------------------------------------- */
+.tvn-live { display: flex; }
+
+.tvn-live-rail {
+  flex: 0 0 400px;
+  display: flex;
+  flex-direction: column;
+  padding: 56px 0 40px 56px;
+  min-height: 0;
+}
+.tvn-rail-head {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding-right: 32px;
+}
+.tvn-rail-title { font-size: 40px; font-weight: 800; white-space: nowrap; }
+
+.tvn-cat-list {
+  flex: 1;
+  overflow-y: auto;
+  margin-top: 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 32px 10px 0;
+  min-height: 0;
+}
+.tvn-cat-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 12px 16px;
+  border-radius: 18px;
+  background: transparent;
+  flex-shrink: 0;
+}
+.tvn-cat-row.tvn-sel { background: rgba(255, 255, 255, 0.08); }
+.tvn-cat-tile {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  font-size: 22px;
+}
+.tvn-cat-txt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start; /* buttons center text by default → ragged counts */
+  text-align: left;
+  gap: 2px;
+  min-width: 0;
+}
+.tvn-cat-name {
+  font-size: 27px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.tvn-cat-count { font-size: 21px; font-weight: 500; color: rgba(255, 255, 255, 0.45); }
+
+.tvn-ch-list {
+  flex: 0 0 620px;
+  overflow-y: auto;
+  padding: 56px 12px 56px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 0;
+}
+.tvn-ch-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 20px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+.tvn-ch-row:focus {
+  background: rgba(255, 255, 255, 0.09);
+  transform: scale(1.02);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95),
+              0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent),
+              0 20px 50px rgba(0, 0, 0, 0.5);
+}
+.tvn-ch-tile {
+  width: 168px;
+  height: 106px;
+  border-radius: 14px;
+  font-size: 34px;
+}
+.tvn-ch-txt {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.tvn-ch-name {
+  font-size: 29px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tvn-ch-sub {
+  font-size: 22px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.5);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tvn-ch-badges { display: flex; gap: 8px; }
+.tvn-ch-star {
+  font-size: 30px;
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 12px;
+  color: rgba(255, 255, 255, 0.22);
+  cursor: pointer;
+}
+.tvn-ch-star.tvn-fav { color: var(--acc, #38bdf8); }
+.tvn-ch-star:focus { color: rgba(255, 255, 255, 0.8); outline: none; }
+.tvn-ch-star.tvn-fav:focus { color: var(--acc, #38bdf8); }
+
+/* "Return to <channel>" jump in the now-playing panel — only rendered while a
+   stream is still running under the shell. */
+.tvn-return-pill {
+  align-self: flex-start;
+  max-width: 100%;
+  margin-bottom: 6px;
+  gap: 12px;
+  cursor: pointer;
+}
+.tvn-return-pill svg { flex-shrink: 0; }
+.tvn-return-pill [data-return-label] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tvn-now {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+}
+.tvn-now-bg { position: absolute; inset: 0; }
+.tvn-now-bg img {
+  position: absolute;
+  right: 8%;
+  top: 12%;
+  width: 40%;
+  height: 46%;
+  object-fit: contain;
+  opacity: 0.9;
+  filter: drop-shadow(0 20px 50px rgba(0, 0, 0, 0.6));
+}
+.tvn-now-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, #060911 0%, rgba(6, 9, 17, 0.55) 30%, transparent 65%),
+              linear-gradient(0deg, rgba(4, 6, 11, 0.92) 0%, transparent 55%);
+}
+.tvn-now-top {
+  position: absolute;
+  top: 52px;
+  right: 64px;
+  display: flex;
+  align-items: center;
+  gap: 26px;
+}
+.tvn-now-clock { font-size: 28px; font-weight: 700; }
+.tvn-now-top .tvn-iconbtn {
+  width: 58px;
+  height: 58px;
+  background: rgba(6, 9, 17, 0.5);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.tvn-now-top .tvn-avatar { width: 58px; height: 58px; font-size: 22px; }
+
+.tvn-now-info {
+  position: absolute;
+  left: 64px;
+  right: 64px;
+  bottom: 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.tvn-kicker {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+}
+.tvn-now-title {
+  font-size: 54px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  max-width: 900px;
+}
+.tvn-now-desc {
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.7);
+  max-width: 560px;
+  text-wrap: pretty;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.tvn-progress-wrap {
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 10px;
+}
+.tvn-progress {
+  height: 6px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+}
+.tvn-progress > div {
+  height: 100%;
+  border-radius: 99px;
+  background: var(--acc, #38bdf8);
+  width: 0%;
+}
+.tvn-progress-times {
+  display: flex;
+  justify-content: space-between;
+  font-size: 22px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+/* list loading / empty note */
+.tvn-note {
+  font-size: 24px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.45);
+  padding: 30px 10px;
+}
+
+/* --------------------------------------------------------------------------
+   BROWSE (Movies / Series) — pill nav + hero + poster rows
+   -------------------------------------------------------------------------- */
+.tvn-browse {
+  display: flex;
+  flex-direction: column;
+}
+.tvn-hero-bg,
+.tvn-hero-scrim {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 64%;
+  height: 60%;
+}
+.tvn-hero-bg { overflow: hidden; }
+.tvn-hero-bg img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.tvn-hero-scrim {
+  background: linear-gradient(90deg, #060911 0%, rgba(6, 9, 17, 0.4) 40%, transparent 75%),
+              linear-gradient(0deg, #060911 4%, transparent 60%);
+}
+
+.tvn-browse-top {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 30px;
+  padding: 44px 80px 0;
+}
+.tvn-pillnav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 999px;
+  background: rgba(13, 18, 32, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.tvn-pillnav .tvn-iconbtn {
+  width: 56px;
+  height: 56px;
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+}
+.tvn-pillnav-word { font-size: 27px; font-weight: 800; padding: 0 16px; white-space: nowrap; }
+.tvn-pillnav-word b { color: var(--acc, #38bdf8); }
+.tvn-tab {
+  padding: 12px 26px;
+  border-radius: 999px;
+  font-size: 25px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+  border: none;
+  white-space: nowrap;
+}
+.tvn-tab.tvn-sel { background: rgba(255, 255, 255, 0.92); color: #0a0f1a; }
+.tvn-browse-date {
+  font-size: 25px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.65);
+  white-space: nowrap;
+}
+.tvn-browse-top .tvn-iconbtn {
+  width: 56px;
+  height: 56px;
+  background: rgba(13, 18, 32, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.tvn-browse-top .tvn-avatar { width: 56px; height: 56px; font-size: 21px; }
+
+.tvn-hero-txt {
+  position: relative;
+  margin-left: 52%;
+  padding: 34px 90px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  /* FIXED height (fits 2-line title + 3-line desc): the hero must never
+     resize with the focused item's text or the rows below jump vertically. */
+  height: 330px;
+  overflow: hidden;
+}
+.tvn-hero-genres { font-size: 24px; font-weight: 600; color: rgba(255, 255, 255, 0.6); }
+.tvn-hero-title {
+  font-size: 54px;
+  font-weight: 800;
+  line-height: 1.08;
+  letter-spacing: -0.01em;
+  text-wrap: pretty;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.tvn-hero-desc {
+  font-size: 23px;
+  font-weight: 500;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.7);
+  max-width: 700px;
+  text-wrap: pretty;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.tvn-rows {
+  position: relative;
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 0 34px 80px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.tvn-rows.tvn-rows-multi { justify-content: flex-start; }
+.tvn-row-title { font-size: 30px; font-weight: 800; flex-shrink: 0; }
+.tvn-posterrow {
+  display: flex;
+  gap: 26px;
+  overflow-x: auto;
+  /* headroom for the focus zoom + halo (the row clips vertically) */
+  padding: 32px 80px 26px 10px;
+  flex-shrink: 0;
+}
+.tvn-poster {
+  flex-shrink: 0;
+  width: 216px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+}
+/* Focused poster: zoom + soft accent halo (no border ring). The #tvn-root
+   prefix must out-specify the generic .tvn-focable:focus ring. */
+#tvn-root .tvn-poster:focus { transform: scale(1.09); box-shadow: none; z-index: 2; }
+.tvn-poster-art {
+  width: 216px;
+  height: 316px;
+  border-radius: 16px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+  transition: box-shadow 0.16s ease;
+}
+.tvn-poster:focus .tvn-poster-art {
+  box-shadow: 0 0 24px 5px color-mix(in srgb, var(--acc, #38bdf8) 60%, transparent),
+              0 0 70px 20px color-mix(in srgb, var(--acc, #38bdf8) 28%, transparent),
+              0 24px 55px rgba(0, 0, 0, 0.55);
+}
+.tvn-poster-art img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.tvn-poster-art .tvn-poster-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(0deg, rgba(4, 6, 11, 0.85) 0%, transparent 45%);
+}
+.tvn-poster-art .tvn-poster-name {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 16px;
+  font-size: 25px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-wrap: pretty;
+  text-align: left;
+}
+.tvn-poster-label {
+  font-size: 23px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  max-width: 216px;
+}
+.tvn-poster:focus .tvn-poster-label { color: #fff; }
+
+/* progress strip on continue-watching posters */
+.tvn-poster-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.2);
+}
+.tvn-poster-progress > div { height: 100%; background: var(--acc, #38bdf8); }
+
+/* --------------------------------------------------------------------------
+   DETAILS (movie / series) — hero + actions + episodes
+   -------------------------------------------------------------------------- */
+.tvn-details {
+  display: flex;
+  flex-direction: column;
+}
+.tvn-details-body {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 0 80px 48px;
+  gap: 26px;
+  min-height: 0;
+}
+.tvn-details-meta {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  font-size: 24px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  flex-wrap: wrap;
+}
+.tvn-details-title {
+  font-size: 62px;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  max-width: 1100px;
+  text-wrap: pretty;
+}
+.tvn-details-desc {
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.7);
+  max-width: 860px;
+  text-wrap: pretty;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.tvn-actions { display: flex; gap: 22px; flex-wrap: wrap; }
+.tvn-btn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 74px;
+  padding: 0 34px;
+  border-radius: 999px;
+  font-size: 26px;
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.tvn-btn.tvn-btn-primary { background: rgba(255, 255, 255, 0.95); color: #0a0f1a; border: none; }
+.tvn-btn:focus { transform: scale(1.04); }
+
+/* season pills + episode rows */
+.tvn-seasons {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  padding: 4px 6px;
+  flex-shrink: 0;
+}
+.tvn-season-pill {
+  padding: 12px 26px;
+  border-radius: 999px;
+  font-size: 24px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.tvn-season-pill.tvn-sel { background: rgba(255, 255, 255, 0.92); color: #0a0f1a; }
+.tvn-episodes {
+  display: flex;
+  gap: 22px;
+  overflow-x: auto;
+  padding: 20px 80px 6px 6px;
+  flex-shrink: 0;
+}
+.tvn-ep-card {
+  flex-shrink: 0;
+  width: 420px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: inherit;
+  text-align: left;
+  font-family: inherit;
+}
+.tvn-ep-card:focus { background: rgba(255, 255, 255, 0.1); transform: scale(1.03); }
+.tvn-ep-num {
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--acc, #38bdf8);
+  text-transform: uppercase;
+}
+.tvn-ep-title {
+  font-size: 26px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tvn-ep-meta { font-size: 21px; font-weight: 500; color: rgba(255, 255, 255, 0.5); }
+
+/* --------------------------------------------------------------------------
+   GUIDE — rail + channel now/next rows
+   -------------------------------------------------------------------------- */
+.tvn-guide { display: flex; }
+.tvn-guide-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 56px 64px 56px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 0;
+}
+.tvn-g-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 18px 22px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+  min-width: 0;
+}
+.tvn-g-row:focus {
+  background: rgba(255, 255, 255, 0.09);
+  transform: scale(1.01);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95),
+              0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent),
+              0 20px 50px rgba(0, 0, 0, 0.5);
+}
+.tvn-g-ch {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex: 0 0 360px;
+  min-width: 0;
+}
+.tvn-g-tile {
+  width: 112px;
+  height: 70px;
+  border-radius: 12px;
+  font-size: 24px;
+}
+.tvn-g-name {
+  font-size: 25px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tvn-g-progs {
+  flex: 1;
+  display: flex;
+  gap: 26px;
+  min-width: 0;
+  overflow: hidden;
+}
+.tvn-g-seg {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 0 0 30%;
+}
+.tvn-g-seg-time {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--acc, #38bdf8);
+  letter-spacing: 0.04em;
+}
+.tvn-g-seg.tvn-g-next .tvn-g-seg-time { color: rgba(255, 255, 255, 0.45); }
+.tvn-g-seg-title {
+  font-size: 23px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #fff;
+}
+.tvn-g-seg.tvn-g-next .tvn-g-seg-title { color: rgba(255, 255, 255, 0.6); }
+.tvn-g-seg .tvn-progress { max-width: 300px; margin-top: 6px; }
+
+/* --------------------------------------------------------------------------
+   SETTINGS
+   -------------------------------------------------------------------------- */
+.tvn-settings { display: flex; }
+.tvn-set-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 56px 90px 56px 34px;
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  min-height: 0;
+}
+.tvn-set-group {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.tvn-set-group-title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  padding-left: 8px;
+}
+.tvn-set-grid { display: flex; flex-wrap: wrap; gap: 22px; }
+.tvn-set-tile {
+  width: 400px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 26px 28px;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  color: inherit;
+  text-align: left;
+  font-family: inherit;
+}
+.tvn-set-tile:focus {
+  background: rgba(255, 255, 255, 0.09);
+  transform: scale(1.02);
+}
+.tvn-set-tile-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.07);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: var(--acc, #38bdf8);
+}
+.tvn-set-tile-txt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.tvn-set-tile-title {
+  font-size: 26px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tvn-set-tile-sub {
+  font-size: 21px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.5);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tvn-set-tile.tvn-danger .tvn-set-tile-icon { color: #f87171; }
+.tvn-swatch-row { display: flex; gap: 18px; padding: 4px 8px; }
+.tvn-swatch {
+  width: 74px;
+  height: 74px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  padding: 0;
+}
+.tvn-swatch.tvn-sel { border-color: rgba(255, 255, 255, 0.95); }
+.tvn-swatch:focus { transform: scale(1.1); }
+.tvn-toggle-state { font-size: 21px; font-weight: 800; letter-spacing: 0.06em; }
+.tvn-toggle-state.tvn-on { color: var(--acc, #38bdf8); }
+.tvn-toggle-state.tvn-off { color: rgba(255, 255, 255, 0.4); }
+
+/* --------------------------------------------------------------------------
+   SEARCH — keyboard + result rows
+   -------------------------------------------------------------------------- */
+.tvn-search { display: flex; }
+.tvn-search-left {
+  flex: 0 0 560px;
+  display: flex;
+  flex-direction: column;
+  padding: 56px 0 48px 56px;
+  gap: 30px;
+  min-height: 0;
+}
+.tvn-query-box {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 72px;
+  padding: 0 26px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  margin-right: 44px;
+}
+.tvn-query-text {
+  font-size: 30px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.tvn-query-text .tvn-caret {
+  display: inline-block;
+  width: 3px;
+  height: 34px;
+  background: var(--acc, #38bdf8);
+  vertical-align: -6px;
+  margin-left: 4px;
+  animation: tvn-livepulse 1.2s ease-in-out infinite;
+}
+.tvn-query-text .tvn-placeholder { color: rgba(255, 255, 255, 0.35); font-weight: 500; }
+.tvn-keys {
+  display: grid;
+  grid-template-columns: repeat(6, 72px);
+  gap: 14px;
+  align-content: start;
+}
+.tvn-key {
+  width: 72px;
+  height: 72px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  display: grid;
+  place-items: center;
+  font-size: 26px;
+  font-weight: 700;
+  color: #e8ecf5;
+  font-family: inherit;
+  padding: 0;
+}
+.tvn-key.tvn-key-wide { width: 158px; grid-column: span 2; }
+.tvn-key:focus { background: rgba(255, 255, 255, 0.12); }
+.tvn-search-results {
+  flex: 1;
+  overflow-y: auto;
+  padding: 56px 0 40px 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+.tvn-result-row-title {
+  font-size: 28px;
+  font-weight: 800;
+  padding-left: 6px;
+  flex-shrink: 0;
+}
+.tvn-result-chrow {
+  display: flex;
+  gap: 22px;
+  overflow-x: auto;
+  padding: 18px 60px 22px 6px;
+  flex-shrink: 0;
+}
+.tvn-result-ch {
+  flex-shrink: 0;
+  width: 300px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: inherit;
+  font-family: inherit;
+}
+.tvn-result-ch:focus { background: rgba(255, 255, 255, 0.09); transform: scale(1.03); }
+.tvn-result-ch .tvn-mono { width: 100%; height: 130px; border-radius: 12px; font-size: 30px; }
+.tvn-result-ch-name {
+  font-size: 24px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+/* --------------------------------------------------------------------------
+   DEVICE CHOOSER (first boot, pre-login)
+   -------------------------------------------------------------------------- */
+#tvn-chooser {
+  position: fixed;
+  inset: 0;
+  z-index: 12000; /* above everything incl. login */
+  background: #04060b;
+  font-family: 'Manrope', 'Inter', system-ui, sans-serif;
+  color: #e8ecf5;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* The chooser is responsive (no fixed canvas): it must look right both on a
+   1080p TV with a remote and on a portrait phone with touch. */
+#tvn-chooser .tvn-chooser-stage {
+  position: absolute;
+  inset: 0;
+  background: #060911;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5vmin;
+  padding: 24px;
+  --acc: #38bdf8;
+}
+#tvn-chooser * { box-sizing: border-box; }
+#tvn-chooser [data-nav] { outline: none; cursor: pointer; }
+#tvn-chooser .tvn-logo {
+  position: absolute;
+  top: clamp(18px, 5vmin, 64px);
+  left: clamp(18px, 6vmin, 90px);
+}
+#tvn-chooser .tvn-logo-icon { width: clamp(36px, 5vmin, 56px); height: clamp(36px, 5vmin, 56px); }
+#tvn-chooser .tvn-logo-word { font-size: clamp(22px, 3.2vmin, 36px); }
+#tvn-chooser .tvn-logo-word span { font-size: clamp(16px, 2.4vmin, 26px); }
+.tvn-chooser-title {
+  font-size: clamp(24px, 5vmin, 54px);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  text-align: center;
+}
+.tvn-chooser-sub {
+  font-size: clamp(14px, 2.4vmin, 26px);
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.55);
+  margin-top: calc(-3.5vmin);
+  text-align: center;
+  max-width: 80vw;
+}
+.tvn-chooser-cards { display: flex; gap: clamp(18px, 4.5vmin, 48px); }
+#tvn-chooser .tvn-card {
+  width: clamp(150px, 28vmin, 305px);
+  height: clamp(230px, 43vmin, 470px);
+  gap: clamp(14px, 2.8vmin, 30px);
+}
+#tvn-chooser .tvn-card-icon { width: clamp(60px, 10vmin, 108px); height: clamp(60px, 10vmin, 108px); }
+#tvn-chooser .tvn-card-icon svg { width: clamp(30px, 4.8vmin, 52px); height: clamp(30px, 4.8vmin, 52px); }
+#tvn-chooser .tvn-card-title { font-size: clamp(22px, 3.7vmin, 40px); }
+#tvn-chooser .tvn-card-sub {
+  font-size: clamp(13px, 2.2vmin, 24px);
+  padding: 0 10px;
+  text-align: center;
+}
+.tvn-chooser-hint {
+  font-size: clamp(13px, 2vmin, 22px);
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+/* --------------------------------------------------------------------------
+   Playback surface (body.tvn-playing): while the shell hands off to the
+   player, force the legacy video container into a fullscreen layer. The
+   container lives inside #live-view, which is display:none when the app
+   sits on another tab underneath — and requestFullscreen can be denied
+   (the user-gesture window expires while the stream URL is fetched). This
+   CSS layer guarantees the video is visible in TV mode either way; real
+   OS fullscreen / player-fs / vod-mode simply win on top of it.
+
+   IMPORTANT: exclude native (libVLC) playback. On Android the video surface
+   is composited BEHIND the WebView and shows through a TRANSPARENT hole in
+   #video-container (body.native-video-active forces the whole player chain
+   transparent). This rule's opaque `background:#000` has higher specificity
+   than that transparency punch-through, so without :not(.native-video-active)
+   it paints an opaque cover OVER the native surface — the video goes black and
+   the shell's dark-blue stage bleeds around it (the "blue layer over the
+   player"). Native already has its own player-fs/surface fullscreen system,
+   so it never needs this CSS cover. */
+body.tv-native.tvn-playing:not(.native-video-active) #live-view.view-panel {
+  display: block !important;
+}
+body.tv-native.tvn-playing:not(.native-video-active) .video-container {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-height: none !important;
+  border-radius: 0 !important;
+  z-index: 900 !important;
+  background: #000 !important;
+}
+
+/* --------------------------------------------------------------------------
+   Player reskin while the native TV shell owns the session: match the design
+   tokens (dark glass, accent, pulsing LIVE pill) on the existing live OSD.
+   -------------------------------------------------------------------------- */
+body.tv-native .channel-info-banner,
+body.tv-native .now-next-bar {
+  background: linear-gradient(175deg, rgba(38, 50, 78, 0.72), rgba(13, 18, 32, 0.94));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 22px;
+  backdrop-filter: none;
+}
+body.tv-native .player-live-badge,
+body.tv-native .live-badge {
+  background: #e11d48 !important;
+  border-radius: 7px;
+  letter-spacing: 0.08em;
+  animation: tvn-livepulse 2.4s ease-in-out infinite;
+}

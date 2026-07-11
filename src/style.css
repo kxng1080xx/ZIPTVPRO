@@ -1948,9 +1948,14 @@ body.desktop-dvr .desktop-ffmpeg-only { display: inline-flex !important; }
   color: var(--accent-cyan, #06b6d4);
   background: rgba(6, 182, 212, 0.16);
 }
-/* Timeshift-only chrome (Go-Live + the seek bar) shows while buffering live. */
+/* Timeshift-only chrome (the seek bar's LIVE badge) shows while buffering live. */
 .timeshift-only { display: none !important; }
 body.timeshift-active .timeshift-only { display: inline-flex !important; }
+
+/* Go-Live: available on ALL live playback, not just timeshift — with the
+   no-skips policy the user re-syncs to the true live edge manually. VOD hides it. */
+#player-golive-btn { display: inline-flex !important; }
+body.vod-mode #player-golive-btn { display: none !important; }
 body.timeshift-active:not(.vod-mode) #player-seek-wrap { display: flex !important; }
 /* The window length on the right is meaningless for live — the LIVE badge sits
    there instead. */
@@ -6960,8 +6965,14 @@ body:has(.gsearch-overlay) .tvk-overlay {
    design: logo-left top bar, left category column, large preview banner, and
    a 4-up channel-card grid. Reuses the existing DOM/ids.
    ========================================================================== */
-body.tv-layout {
-  cursor: none;
+/* Cursor is hidden for the 10-foot D-pad experience — but only while the
+   mouse is idle. tv-native.js toggles body.tv-mouse on mouse movement so
+   pointer users (desktop ?tv=true, Fire TV air-mouse) get a visible cursor
+   everywhere; the blanket `*` keeps per-element cursor rules from making it
+   flicker in and out over buttons while hidden. */
+body.tv-layout:not(.tv-mouse),
+body.tv-layout:not(.tv-mouse) * {
+  cursor: none !important;
 }
 
 body.tv-layout .tv-focused {

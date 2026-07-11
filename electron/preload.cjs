@@ -59,5 +59,10 @@ contextBridge.exposeInMainWorld('appHost', {
   // Startup behaviour (run at login / start minimized to tray).
   // get → { openAtLogin, startMinimized }; set(opts) applies + returns the same.
   getStartupSettings: () => ipcRenderer.invoke('startup:get'),
-  setStartupSettings: (opts) => ipcRenderer.invoke('startup:set', opts)
+  setStartupSettings: (opts) => ipcRenderer.invoke('startup:set', opts),
+
+  // TV interface (7.0): borderless fullscreen for the 10-foot UI + explicit
+  // app exit from the TV shell (bypasses close-to-tray).
+  setFullscreen: (on) => ipcRenderer.invoke('window:set-fullscreen', on),
+  quitApp: () => ipcRenderer.invoke('app:quit')
 });

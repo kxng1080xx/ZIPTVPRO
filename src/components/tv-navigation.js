@@ -34,6 +34,12 @@ class TVNavigation {
 
     document.addEventListener('fullscreenchange', () => {
       if (!document.fullscreenElement) {
+        // 7.0 native TV shell: leaving fullscreen live playback lands back in
+        // the 10-foot UI (its live screen), not the legacy channel list.
+        if (!document.body.classList.contains('vod-mode') &&
+            window.__tvNativeOnPlayerExit && window.__tvNativeOnPlayerExit()) {
+          return;
+        }
         if (document.body.classList.contains('vod-mode')) {
           // Exiting fullscreen on a movie/episode keeps the windowed VOD overlay
           // (which is itself a full-window player). Don't tear down playback —
@@ -111,6 +117,14 @@ class TVNavigation {
       return;
     }
 
+    // 2.5) 7.0 TV shell CSS-fullscreen playback (OS fullscreen was denied or
+    // not used) → hand the screen back to the shell. VOD is handled below.
+    if (document.body.classList.contains('tvn-playing') &&
+        !document.body.classList.contains('vod-mode') &&
+        window.__tvNativeOnPlayerExit && window.__tvNativeOnPlayerExit()) {
+      return;
+    }
+
     // 3) Full-screen EPG guide.
     if (document.body.classList.contains('epg-fullscreen-active')) {
       const fullBtn = document.getElementById('epg-full-btn');
@@ -129,6 +143,18 @@ class TVNavigation {
     if (seriesPlayback && !seriesPlayback.classList.contains('hidden')) {
       const sb = document.getElementById('series-back-btn');
       if (sb) { sb.click(); this.focusDefault('grid'); return; }
+    }
+
+    // 5.5) 7.0 native TV shell owns back-navigation while it is the visible
+    // surface. At its home screen it declines (returns false) → treat that as
+    // the app root: double-back exits instead of walking the legacy zones.
+    if (window.__tvNativeBack) {
+      if (window.__tvNativeBack()) return;
+      const tvnRoot = document.getElementById('tvn-root');
+      if (tvnRoot && !tvnRoot.classList.contains('tvn-hidden')) {
+        this.confirmExit();
+        return;
+      }
     }
 
     // 6) Walk up the focus hierarchy.
@@ -181,6 +207,10 @@ class TVNavigation {
   // Set focus to a specific element within a zone
   setFocus(zone, element) {
     if (!element) return;
+
+    // 7.0 native TV shell: while the shell is the visible surface it owns
+    // focus — legacy zones must not yank it as their data loads underneath.
+    if (window.__tvNativeHasScreen && window.__tvNativeHasScreen()) return;
 
     // Trap focus inside active overlays/modals (block background focus stealing)
     const updateOverlay = document.getElementById('update-modal-overlay');
@@ -296,6 +326,8 @@ class TVNavigation {
 
   // Automatically focus the default element when views switch
   focusDefault(zone) {
+    // 7.0 native TV shell owns focus while visible (see setFocus).
+    if (window.__tvNativeHasScreen && window.__tvNativeHasScreen()) return;
     this.pendingZone = zone;
 
     if (zone === 'categories') {
@@ -436,6 +468,17 @@ class TVNavigation {
       }
       e.preventDefault();
       return;
+    }
+
+    // 7.0 TV shell CSS-fullscreen playback (no OS fullscreen granted):
+    // Back/Esc returns to the shell. VOD keeps its own back flow (vod-mode).
+    if (document.body.classList.contains('tvn-playing') &&
+        !document.body.classList.contains('vod-mode') &&
+        (e.key === this.KEYS.ESCAPE || e.key === this.KEYS.BACKSPACE)) {
+      if (window.__tvNativeOnPlayerExit && window.__tvNativeOnPlayerExit()) {
+        e.preventDefault();
+        return;
+      }
     }
 
     // Remote MENU button (Android TV) or the ContextMenu key on a PC keyboard:

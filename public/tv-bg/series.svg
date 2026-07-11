@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <filter id="b" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="130"/></filter>
+    <radialGradient id="vig" cx="50%" cy="42%" r="78%">
+      <stop offset="58%" stop-color="#05070d" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#05070d" stop-opacity="0.92"/>
+    </radialGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="#05070d"/>
+  <g filter="url(#b)">
+    <ellipse cx="1460" cy="150" rx="540" ry="390" fill="#fb923c" opacity="0.38"/>
+    <ellipse cx="240" cy="960" rx="580" ry="410" fill="#f43f5e" opacity="0.30"/>
+    <ellipse cx="880" cy="520" rx="430" ry="300" fill="#f59e0b" opacity="0.16"/>
+  </g>
+  <g fill="none" stroke="#fdba74" stroke-width="3">
+    <rect x="1330" y="230" width="430" height="270" rx="24" opacity="0.05"/>
+    <rect x="1280" y="180" width="430" height="270" rx="24" opacity="0.08"/>
+    <rect x="1230" y="130" width="430" height="270" rx="24" opacity="0.13"/>
+    <polygon points="1410,220 1410,310 1490,265" opacity="0.13"/>
+  </g>
+  <g fill="none" stroke="#fda4af" stroke-width="3" opacity="0.09">
+    <rect x="180" y="720" width="360" height="220" rx="20"/>
+    <rect x="230" y="770" width="360" height="220" rx="20"/>
+  </g>
+  <rect width="1920" height="1080" fill="url(#vig)"/>
+</svg>

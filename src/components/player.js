@@ -9,6 +9,18 @@ import {
   isNativeAvailable, nativePlay, nativeStop, nativePlayCtl, nativePauseCtl,
   nativeSeek, nativeSetVolume, nativeSetRect, setScreenAwake
 } from './native-player.js';
+import { navigation } from './tv-navigation.js';
+
+// 7.0 "no skips" live policy: every automatic snap-to-live correction —
+// latency chasing (mpegts), catch-up playback rate / forward re-sync (hls.js),
+// the timeshift drift snap, the seeking guard's live-edge restore, and the
+// native libVLC reconnect-at-edge guards — is DISABLED by default. Live
+// playback holds its position and never jumps on its own; drifting a little
+// behind the edge is accepted as the price of consistency. Set localStorage
+// 'liveSync' to 'on' to restore the old edge-chasing behavior.
+function liveSyncEnabled() {
+  try { return localStorage.getItem('liveSync') === 'on'; } catch (e) { return false; }
+}
 
 function getQualityTag(name) {
   const n = String(name).toLowerCase();
@@ -218,6 +230,67 @@ export class VideoPlayer {
     };
     document.addEventListener('fullscreenchange', this._onFullscreenChange);
 
+    // ---- Global playback hotkeys + TV-remote media keys --------------------
+    // Keyboard: M mute · F fullscreen · N / P next / previous channel (next /
+    // previous episode in series mode). Remote (Fire TV / Android TV):
+    // Play/Pause toggles, >> / << zap channels live (seek ±10s in VOD), and
+    // MENU pops the control bar as the options row (record, tracks, info, …).
+    this._onHotkey = (e) => {
+      if (!this.hasStream) return;
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+
+      const k = e.key || '';
+      const kc = e.keyCode || 0;
+      const act = (fn) => {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        this.showControlsTemporarily();
+        fn();
+      };
+
+      // Remote media keys — active whenever a stream is up.
+      if (k === 'MediaPlayPause' || kc === 179 || k === 'MediaPlay' || k === 'MediaPause') {
+        return act(() => this.togglePlay());
+      }
+      if (k === 'MediaStop' || kc === 178) {
+        return act(() => { if (this.stopBtn) this.stopBtn.click(); });
+      }
+      if (k === 'MediaTrackNext' || kc === 176 || k === 'MediaFastForward' || kc === 228) {
+        return act(() => {
+          if (this.isVodActive) document.getElementById('player-forward-10')?.click();
+          else if (this.nextBtn) this.nextBtn.click();
+        });
+      }
+      if (k === 'MediaTrackPrevious' || kc === 177 || k === 'MediaRewind' || kc === 227) {
+        return act(() => {
+          if (this.isVodActive) document.getElementById('player-rewind-10')?.click();
+          else if (this.prevBtn) this.prevBtn.click();
+        });
+      }
+      // Remote MENU (Android KEYCODE_MENU arrives as keyCode 82, some remotes /
+      // keyboards send ContextMenu) → options while playback chrome is up.
+      const isMenuKey = k === 'ContextMenu' || kc === 93 ||
+        (kc === 82 && (!e.key || e.key === 'Unidentified'));
+      if (isMenuKey && (document.fullscreenElement ||
+          document.body.classList.contains('player-fs') ||
+          document.body.classList.contains('tvn-playing') ||
+          document.body.classList.contains('vod-mode'))) {
+        return act(() => this.openRemoteOptions());
+      }
+
+      // Letter hotkeys — skip with modifiers held, and never steal letters
+      // from the TV shell while it is the visible surface (search typing).
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      if (typeof window.__tvNativeHasScreen === 'function' && window.__tvNativeHasScreen()) return;
+      const lk = k.length === 1 ? k.toLowerCase() : '';
+      if (lk === 'm') return act(() => { if (this.volumeBtn) this.volumeBtn.click(); });
+      if (lk === 'f') return act(() => this.toggleFullscreen());
+      if (lk === 'n') return act(() => { if (this.nextBtn) this.nextBtn.click(); });
+      if (lk === 'p') return act(() => { if (this.prevBtn) this.prevBtn.click(); });
+    };
+    document.addEventListener('keydown', this._onHotkey, true);
+
     // Stop playback (tear down the stream entirely).
     if (this.stopBtn) {
       this.stopBtn.addEventListener('click', () => {
@@ -287,16 +360,18 @@ export class VideoPlayer {
           document.body.classList.toggle('ts-at-live', atLive);
           // Can't skip forward past live — grey out +10 at the edge.
           if (this.forward10Btn) this.forward10Btn.disabled = atLive;
-          // Last-resort drift guard: unexpected back-seeks are corrected
-          // instantly by the 'seeking' guard, so this should almost never fire.
-          // Only a truly broken state (>2 min behind while meant to be live)
-          // snaps forward — small stall-induced drift is left alone so
-          // playback never visibly leaps.
-          if (this._wantLive && !atLive && !this.video.paused && !this.isSeeking) {
+          // Drift guard: unexpected back-seeks are corrected instantly by the
+          // 'seeking' guard; this catches the slow kind — stall after stall
+          // quietly parking playback behind the edge. While the user means to
+          // be live, >25s behind the live sync point snaps forward (goLive is
+          // always a forward seek here, never back). 25s rides out one 10s
+          // segment of churn but keeps "live" actually live — the old 120s
+          // tolerance let playback sit 2 minutes behind indefinitely.
+          if (this._wantLive && !atLive && !this.video.paused && !this.isSeeking && liveSyncEnabled()) {
             let live = NaN;
             if (this.hls && isFinite(this.hls.liveSyncPosition)) live = this.hls.liveSyncPosition;
             else { const w = this._tsWindow(); if (w) live = w.end - 10; }
-            if (isFinite(live) && live - this.video.currentTime > 120) {
+            if (isFinite(live) && live - this.video.currentTime > 25) {
               console.warn('[timeshift] far behind live — snapping back');
               this.goLive();
             }
@@ -430,12 +505,28 @@ export class VideoPlayer {
           try { this.video.currentTime = this._lastPlayTime; } catch (e) {}
           return;
         }
-        console.warn(`[timeshift] unexpected back-seek (${(this._lastPlayTime - t).toFixed(1)}s) — restoring live position`);
-        this.goLive();
+        if (liveSyncEnabled()) {
+          console.warn(`[timeshift] unexpected back-seek (${(this._lastPlayTime - t).toFixed(1)}s) — restoring live position`);
+          this.goLive();
+          return;
+        }
+        // No-skips policy: put playback back exactly where it was — never
+        // jump to the edge on the user's behalf.
+        console.warn(`[timeshift] unexpected back-seek (${(this._lastPlayTime - t).toFixed(1)}s) — restoring previous position (no-skip)`);
+        this._expectSeek = true;
+        try { this.video.currentTime = this._lastPlayTime; } catch (e) {}
         return;
       }
-      // Plain live: snap back to the live edge (hls.js's own live position, or
-      // the end of the buffered range for mpegts/direct).
+      // Plain live. No-skips policy (default): restore the position we were
+      // actually playing — the correction itself must not be a visible jump.
+      if (!liveSyncEnabled()) {
+        console.warn(`[live] unexpected back-seek (${(this._lastPlayTime - t).toFixed(1)}s) — restoring previous position (no-skip)`);
+        this._expectSeek = true;
+        try { this.video.currentTime = this._lastPlayTime; } catch (e) {}
+        return;
+      }
+      // Legacy edge-chasing behavior: snap back to the live edge (hls.js's own
+      // live position, or the end of the buffered range for mpegts/direct).
       let live = NaN;
       if (this.hls && isFinite(this.hls.liveSyncPosition)) {
         live = this.hls.liveSyncPosition;
@@ -906,6 +997,12 @@ export class VideoPlayer {
   async _beginPlayback(url, isVod, resumeTime = 0) {
     this._nativeActive = false;
     this._nativeSawLife = false;
+    // Live-guard baselines. Reset here (not just loadStream) so the reconnect
+    // path also starts clean — a fresh live connection restarts VLC's clock
+    // near 0, and a stale _lastNativeCur from the old connection would read as
+    // a giant "backward jump" and re-trigger recovery in a loop.
+    this._lastNativeCur = 0;
+    this._nativeDriftAnchor = null;
     let useNative = true;
     try {
       useNative = localStorage.getItem('playerEngine') !== 'web';
@@ -919,7 +1016,18 @@ export class VideoPlayer {
           {
             onReady: () => { this.hideSpinner(); },
             onTime: (d) => this._onNativeTime(d),
-            onEnded: () => { if (typeof this.onVideoEnded === 'function') this.onVideoEnded(); },
+            // Live never legitimately "ends" — EndReached means the provider
+            // closed the socket (with :http-reconnect now VOD-only, a drop
+            // surfaces here fast). Reopen fresh: the new connection starts at
+            // the server's live edge, so recovery can never replay old content.
+            onEnded: () => {
+              if (!this._streamIsVod && this._nativeActive) {
+                console.warn('[native] live stream EOF (provider dropped) — reconnecting at live edge');
+                this._recoverNativeStall(false);
+                return;
+              }
+              if (typeof this.onVideoEnded === 'function') this.onVideoEnded();
+            },
             onError: (d) => this._onNativeError(d),
             // While loading: reflect the real libVLC state so a buffer loop is
             // visible as buffering, not a generic spinner. After we've committed
@@ -1055,12 +1163,16 @@ export class VideoPlayer {
     this._lastNativeProgress = Date.now();
     this._nativeStallTimer = setInterval(() => {
       if (!this._nativeActive || this._nativePaused) { this._lastNativeProgress = Date.now(); return; }
-      if (Date.now() - this._lastNativeProgress > 12000) {
+      // 8s matches the browser engines' stall watchdog. Clean drops surface
+      // faster on their own (VOD: :http-reconnect resumes in place; live: EOF
+      // → EndReached → reconnect), so by the time this fires the engine is
+      // genuinely wedged — reopen it.
+      if (Date.now() - this._lastNativeProgress > 8000) {
         this._lastNativeProgress = Date.now();
-        console.warn('[player] native playback stalled (no progress 12s) — reconnecting');
+        console.warn('[player] native playback stalled (no progress 8s) — reconnecting');
         this._recoverNativeStall(false);
       }
-    }, 5000);
+    }, 4000);
   }
 
   // Native (libVLC) mid-playback reconnect — the same dropped-connection
@@ -1077,6 +1189,12 @@ export class VideoPlayer {
     if (this._nativeRecoverCount > 6) {
       console.warn('[native] reconnect budget exhausted');
       this._stopNativeStallWatch();
+      this._stopRectSync();
+      // Terminal: native is done for this stream — tear its compositing state
+      // down (transparent-WebView mode would hide the browser <video>/error).
+      this._nativeActive = false;
+      document.body.classList.remove('native-video-active');
+      nativeStop().catch(() => {});
       if (isVod) {
         this.showError('The server keeps dropping the connection. Try again in a bit, or pick another title.');
       } else {
@@ -1159,6 +1277,39 @@ export class VideoPlayer {
   _onNativeTime(d) {
     const cur = d.currentTime || 0;
     const dur = d.duration || 0;
+    // --- Native LIVE anti-skip-back guards (the browser paths' 'seeking'
+    // guard can't see libVLC, so the same protection is rebuilt here from the
+    // engine's time ticks). Playback must only ever move forward on live:
+    // Both guards reconnect at the live edge — a visible forward jump — so the
+    // no-skips policy turns them off entirely (holding position wins).
+    if (!this._streamIsVod && this._nativeActive && !this._nativePaused && cur > 0 && liveSyncEnabled()) {
+      // 1) Backward jump: VLC's clock runs off the stream's PCR, so a
+      //    backward step >3s means old content got spliced into the input
+      //    (provider-side discontinuity/replay). Never play it — reopen at
+      //    the live edge. (3s tolerance ignores normal clock resync jitter.)
+      if (this._lastNativeCur > 0 && this._lastNativeCur - cur > 3) {
+        console.warn(`[native] live time jumped BACK ${(this._lastNativeCur - cur).toFixed(1)}s — reconnecting at live edge`);
+        this._recoverNativeStall(false);
+        return;
+      }
+      // 2) Drift: every stall delays playback (TCP backlog plays out at 1x,
+      //    never catches up), so wall-clock time outpacing media time = how
+      //    far we've slipped behind live SINCE this connection started. Past
+      //    20s, reopen — a fresh connection starts at the provider's live
+      //    edge. Anchor is cleared on pause/resume so a deliberate pause
+      //    isn't treated as drift.
+      const wall = Date.now();
+      if (!this._nativeDriftAnchor) {
+        this._nativeDriftAnchor = { wall, media: cur };
+      } else {
+        const drift = (wall - this._nativeDriftAnchor.wall) / 1000 - (cur - this._nativeDriftAnchor.media);
+        if (drift > 20) {
+          console.warn(`[native] live drifted ${drift.toFixed(1)}s behind — reconnecting at live edge`);
+          this._recoverNativeStall(false);
+          return;
+        }
+      }
+    }
     // Any forward progress resets the post-start stall watchdog.
     if (cur > 0 && cur !== this._lastNativeCur) {
       this._lastNativeProgress = Date.now();
@@ -1189,21 +1340,16 @@ export class VideoPlayer {
   _onNativeError(d) {
     if (!this._nativeActive) return; // pre-ready errors handled by nativePlay() reject
     console.warn('[player] native error mid-playback:', d && d.message);
-    this._stopNativeStallWatch();
-    this._stopRectSync();
-    this._nativeActive = false;
-    document.body.classList.remove('native-video-active');
-    this._setFsDirect(false);
-    nativeStop().catch(() => {});
-    // For VOD, the browser path can't decode what libVLC was already playing, so
-    // a fallback would only hang — reconnect native at the stalled position
-    // instead (dropped connections surface as errors here too); the reconnect
-    // budget surfaces the terminal error. Live can still retry browser.
-    if (this._streamIsVod) {
-      this._recoverNativeStall(true);
-      return;
-    }
-    this._startPlayback(this._streamUrl, this._streamIsVod);
+    // Reconnect native in place for BOTH kinds of stream (dropped connections
+    // surface as errors here too). VOD resumes at the stalled position; live
+    // reopens at the live edge — never the browser engine straight away, since
+    // it can't decode most of these streams and a mere socket drop would have
+    // dumped us there permanently. Deliberately NO fullscreen/CSS teardown
+    // here: the reopen lands in a couple of seconds and playback continues in
+    // the layout the viewer is already in (a TV must not get kicked out of
+    // fullscreen every time the provider drops the socket). The terminal
+    // paths (budget exhausted / nativePlay reject) do their own teardown.
+    this._recoverNativeStall(true);
   }
 
   // Show a retrying message in the spinner area
@@ -1314,12 +1460,13 @@ export class VideoPlayer {
         ...(ts ? { liveSyncDurationCount: 2 } : (!isVod ? { liveSyncDurationCount: 2 } : {})),
         // Smoothly reel back toward the live edge by briefly speeding up (up to
         // 1.5x) instead of a visible hard seek whenever we drift behind. Live
-        // only — VOD must play at 1x.
-        ...(!isVod ? { maxLiveSyncPlaybackRate: 1.5 } : {}),
+        // only — VOD must play at 1x. Off under the no-skips policy.
+        ...(!isVod && liveSyncEnabled() ? { maxLiveSyncPlaybackRate: 1.5 } : {}),
         // Plain live only: if stalls drift playback more than ~6 segments
         // behind, let hls.js hard-seek FORWARD to re-sync. Never set for
-        // timeshift — it would fight deliberate DVR pause/rewind.
-        ...(!isVod && !ts ? { liveMaxLatencyDurationCount: 6 } : {}),
+        // timeshift — it would fight deliberate DVR pause/rewind. Off under
+        // the no-skips policy (default Infinity = never hard-seek).
+        ...(!isVod && !ts && liveSyncEnabled() ? { liveMaxLatencyDurationCount: 6 } : {}),
         enableWorker: true,
         lowLatencyMode: !isVod && !ts
       });
@@ -1418,7 +1565,12 @@ export class VideoPlayer {
         isLive: !isVod,
         url: url
       }, {
-        enableStashBuffer:              isVod,
+        // Stash buffer ON for live too (small): an IO jitter buffer between the
+        // network and the demuxer. Without it every network hiccup hits the
+        // demuxer directly and stalls the picture. Latency chasing (below)
+        // bounds the drift it could otherwise add, so this is stability for
+        // ~free — the buffer never parks us more than the chase cap behind.
+        enableStashBuffer:              true,
         stashInitialSize:               128,
         autoCleanupSourceBuffer:        true,
         autoCleanupMinBackwardDuration: 10,
@@ -1426,11 +1578,17 @@ export class VideoPlayer {
         // --- live latency control ---
         // Without chasing, the live buffer quietly grows and the picture drifts
         // further behind the edge the longer a channel stays open. Chasing seeks
-        // forward whenever we fall more than ~1.5s behind, holding us near live.
-        liveBufferLatencyChasing:         !isVod,
+        // forward whenever we fall behind the cap, holding us near live.
+        // Cap at 3s (was 1.5s): with only 1.5s of runway any jitter drained the
+        // buffer → stall → chase-seek → stutter loop. 3s absorbs normal jitter
+        // and is still far below the provider chain's own latency; stability is
+        // the priority, and the worst case stays bounded and imperceptible.
+        // Off under the no-skips policy: chasing is exactly the "skips forward
+        // because it thinks it's behind" behavior.
+        liveBufferLatencyChasing:         !isVod && liveSyncEnabled(),
         liveBufferLatencyChasingOnPaused: false,
-        liveBufferLatencyMaxLatency:      1.5,  // seconds behind edge before chasing
-        liveBufferLatencyMinRemain:       0.3,  // don't chase past this safety margin
+        liveBufferLatencyMaxLatency:      3.0,  // seconds behind edge before chasing
+        liveBufferLatencyMinRemain:       0.8,  // don't chase past this safety margin
       });
       this.mpegtsPlayer.attachMediaElement(this.video);
       this.mpegtsPlayer.load();
@@ -1746,15 +1904,31 @@ export class VideoPlayer {
   // the forward buffer and freezes. Target hls.js's own liveSyncPosition (a few
   // seconds back, where it keeps appending) — that's "live" and keeps advancing.
   goLive() {
+    // Native (libVLC) live: there's no client buffer to seek in — a fresh
+    // connection starts at the provider's true live edge. Deliberate jump, so
+    // pre-set the recover count past 1 to skip the "connection dropped" toast
+    // (15s of clean progress refunds it back to 0).
+    if (this._nativeActive && !this._streamIsVod) {
+      this._nativeRecoverCount = Math.max(this._nativeRecoverCount || 0, 1);
+      this._recoverNativeStall(false);
+      return;
+    }
     let target = null;
     if (this.hls && typeof this.hls.liveSyncPosition === 'number' && isFinite(this.hls.liveSyncPosition)) {
       target = this.hls.liveSyncPosition;
-    } else {
+    } else if (this._timeshiftActive) {
       const w = this._tsWindow();
       if (w) target = Math.max(w.start, w.end - 10); // ~1.5 segments behind the edge
+    } else {
+      // Plain live (mpegts / direct <video>): the buffered end tracks the true
+      // edge in real time — park just off it so the growing edge isn't starved.
+      try {
+        const b = this.video.buffered;
+        if (b && b.length) target = Math.max(0, b.end(b.length - 1) - 1.5);
+      } catch (e) {}
     }
     if (target == null) return;
-    this._wantLive = true; // re-arm the drift guard
+    this._wantLive = true; // re-arm the drift guard (when live-sync is enabled)
     this._expectSeek = true; // our own seek — don't trip the anti-jump guard
     try { this.video.currentTime = target; this.video.play(); } catch (e) {}
   }
@@ -1950,7 +2124,9 @@ export class VideoPlayer {
       return;
     }
     if (this._nativeActive) {
-      if (this._nativePaused) { nativePlayCtl(); this._nativePaused = false; this._setPlayPauseIcon(true); }
+      // Resuming re-anchors the live drift guard: the pause gap is deliberate
+      // viewer delay, not connection drift — don't let it trigger a reconnect.
+      if (this._nativePaused) { nativePlayCtl(); this._nativePaused = false; this._nativeDriftAnchor = null; this._setPlayPauseIcon(true); }
       else { nativePauseCtl(); this._nativePaused = true; this._setPlayPauseIcon(false); }
       return;
     }
@@ -2450,6 +2626,24 @@ export class VideoPlayer {
     }
   }
 
+  // Remote MENU key → treat the control bar as the options menu: toggle it,
+  // hold it longer than the mouse-hover timeout, and drop D-pad focus on the
+  // most useful action (record on live; tracks / play otherwise).
+  openRemoteOptions() {
+    const visible = this.controls &&
+      this.controls.style.visibility !== 'hidden' && this.controls.style.opacity === '1';
+    if (visible) { this.hideControls(); return; }
+    this.showControlsTemporarily();
+    clearTimeout(this.controlsTimeout);
+    this.controlsTimeout = setTimeout(() => this.hideControls(), 8000);
+    if (document.body.classList.contains('tv-layout')) {
+      const target = ['player-record-btn', 'player-cc-btn', 'player-play-pause-btn']
+        .map((id) => document.getElementById(id))
+        .find((el) => el && el.offsetParent);
+      if (target) navigation.setFocus('player', target);
+    }
+  }
+
   toggleCaptions() {
     if (this.hls) {
       const tracks = this.video.textTracks;
@@ -2709,6 +2903,10 @@ export class VideoPlayer {
     if (this._onFullscreenChange) {
       document.removeEventListener('fullscreenchange', this._onFullscreenChange);
       this._onFullscreenChange = null;
+    }
+    if (this._onHotkey) {
+      document.removeEventListener('keydown', this._onHotkey, true);
+      this._onHotkey = null;
     }
     // Cancel any pending retry timer
     clearTimeout(this._retryTimer);

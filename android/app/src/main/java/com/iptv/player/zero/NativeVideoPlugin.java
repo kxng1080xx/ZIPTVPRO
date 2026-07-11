@@ -125,11 +125,11 @@ public class NativeVideoPlugin extends Plugin {
 
         ArrayList<String> opts = new ArrayList<>();
         opts.add("--http-user-agent=" + UA);
-        // Playback buffer before video starts. 1500ms was safe but adds 1.5s of
-        // live latency; 800ms keeps live noticeably closer to the edge while
-        // still absorbing normal network jitter. Raise back toward 1500 if flaky
-        // connections start buffering.
-        opts.add("--network-caching=800");
+        // Base playback buffer. Live overrides this per-media (:network-caching
+        // in load()), so this value only governs VOD — where latency is
+        // irrelevant and a thin buffer just stalls big HEVC titles on jittery
+        // connections. 3s start-delay on a movie is imperceptible.
+        opts.add("--network-caching=3000");
         opts.add("--no-drop-late-frames");
         opts.add("--no-skip-frames");
         libVLC = new LibVLC(getContext(), opts);
@@ -250,7 +250,25 @@ public class NativeVideoPlugin extends Plugin {
                     lengthMs = 0;
                     Media media = new Media(libVLC, android.net.Uri.parse(url));
                     media.addOption(":http-user-agent=" + UA);
-                    if (isLive) media.addOption(":network-caching=2500");
+                    // VOD ONLY: reconnect the HTTP input in-place on a dropped socket
+                    // (resumes at the same byte offset — seamless for a file).
+                    // NEVER for live: panels replay a burst of ring-buffer history on
+                    // every new connection, so an access-layer reconnect splices 10-30s
+                    // of ALREADY-PLAYED stream into the running input — playback visibly
+                    // skips backwards and permanently falls that much further behind
+                    // live on every drop. A dead live socket must instead surface as
+                    // EOF/EndReached fast so player.js reopens fresh at the live edge.
+                    if (!isLive) media.addOption(":http-reconnect");
+                    if (isLive) {
+                        // 2.5s jitter buffer: stability beats shaving latency the provider
+                        // chain (encoder → origin → CDN) already dwarfs.
+                        media.addOption(":network-caching=2500");
+                        // IPTV TS streams routinely carry broken PCR/PTS timestamps; the
+                        // default clock resampling reacts to that jitter with stutters and
+                        // stalls. 0 = let the buffer absorb it instead.
+                        media.addOption(":clock-jitter=0");
+                        media.addOption(":clock-synchro=0");
+                    }
                     player.setMedia(media);
                     media.release();
                     player.play();

@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #04060b; overflow: hidden; }
+  * { box-sizing: border-box; }
+  *::-webkit-scrollbar { display: none; }
+  * { scrollbar-width: none; }
+  [data-nav] { outline: none; cursor: pointer; }
+  a { color: #7dd3fc; text-decoration: none; }
+  a:hover { color: #bae6fd; }
+  @keyframes livepulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+</style>
+</helmet>
+
+<div style="width: 100vw; height: 100vh; position: relative; background: #04060b; font-family: 'Manrope', system-ui, sans-serif; color: #e8ecf5; overflow: hidden;">
+  <div ref="{{ stageRef }}" data-screen-label="TV Stage" style="width: 1920px; height: 1080px; position: absolute; left: 50%; top: 50%; overflow: hidden; background: #060911; transform: translate(-50%, -50%) scale({{ scale }}); transform-origin: center center;">
+
+    <!-- ambient glows -->
+    <div style="position: absolute; inset: 0; pointer-events: none; background: radial-gradient(1400px 800px at 92% -15%, rgba(37, 99, 235, 0.14), transparent 60%), radial-gradient(1100px 800px at -12% 112%, rgba(6, 182, 212, 0.10), transparent 60%);"></div>
+
+    <!-- ============ HOME LAUNCHER ============ -->
+    <sc-if value="{{ isHome }}" hint-placeholder-val="{{ true }}">
+      <div data-screen-label="Home" style="position: absolute; inset: 0; display: flex; flex-direction: column; padding: 64px 90px 48px;">
+
+        <div style="display: flex; align-items: center; gap: 40px;">
+          <div style="display: flex; align-items: center; gap: 18px;">
+            <div style="width: 56px; height: 56px; border-radius: 15px; background: linear-gradient(140deg, var(--acc, #38bdf8), #2563eb); display: grid; place-items: center;">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#06131f" stroke-width="2.4" stroke-linecap="round"><rect x="3" y="8" width="18" height="12" rx="2.5"></rect><line x1="8" y1="3" x2="12" y2="8"></line><line x1="16" y1="3" x2="12" y2="8"></line></svg>
+            </div>
+            <div style="font-size: 36px; font-weight: 800; letter-spacing: 0.02em;">ZIP<span style="color: var(--acc, #38bdf8);">TV</span><span style="font-weight: 500; opacity: 0.55; font-size: 26px; margin-left: 10px;">Pro</span></div>
+          </div>
+
+          <div tabindex="0" data-nav onClick="{{ goSearch }}" style="flex: 0 0 560px; display: flex; align-items: center; gap: 16px; height: 62px; padding: 0 28px; border-radius: 999px; background: rgba(255, 255, 255, 0.055); border: 1px solid rgba(255, 255, 255, 0.07); transition: transform 0.15s ease, box-shadow 0.15s ease;" style-focus="box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent); transform: scale(1.02);">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.65)" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg>
+            <span style="font-size: 25px; color: rgba(255, 255, 255, 0.45); font-weight: 500;">Search channels, movies, series…</span>
+          </div>
+
+          <div style="flex: 1;"></div>
+
+          <div tabindex="0" data-nav style="width: 62px; height: 62px; border-radius: 50%; background: rgba(255, 255, 255, 0.055); border: 1px solid rgba(255, 255, 255, 0.07); display: grid; place-items: center; transition: transform 0.15s ease, box-shadow 0.15s ease;" style-focus="box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent); transform: scale(1.06);">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2.2" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"></line><line x1="4" y1="12" x2="20" y2="12"></line><line x1="4" y1="18" x2="20" y2="18"></line><circle cx="9" cy="6" r="2.4" fill="#0d1220"></circle><circle cx="15" cy="12" r="2.4" fill="#0d1220"></circle><circle cx="7" cy="18" r="2.4" fill="#0d1220"></circle></svg>
+          </div>
+          <div tabindex="0" data-nav style="width: 62px; height: 62px; border-radius: 50%; background: linear-gradient(140deg, #7c5cff, #2563eb); display: grid; place-items: center; font-size: 24px; font-weight: 800; color: #fff; transition: transform 0.15s ease, box-shadow 0.15s ease;" style-focus="box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent); transform: scale(1.06);">Z</div>
+        </div>
+
+        <div style="flex: 1; display: flex; align-items: center; gap: 60px;">
+          <div style="display: flex; gap: 36px;">
+
+            <div tabindex="0" data-nav data-autofocus onClick="{{ goLive }}" style="width: 305px; height: 470px; border-radius: 26px; background: linear-gradient(175deg, rgba(38, 50, 78, 0.55), rgba(13, 18, 32, 0.9)); border: 1px solid rgba(255, 255, 255, 0.08); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 30px; position: relative; transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;" style-focus="transform: scale(1.05) translateY(-8px); border-color: rgba(255, 255, 255, 0.9); box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent), 0 30px 70px rgba(0, 0, 0, 0.6);">
+              <span style="position: absolute; top: 22px; left: 22px; font-size: 19px; font-weight: 600; color: rgba(255, 255, 255, 0.45);">Updated 2 hours ago</span>
+              <div style="width: 108px; height: 108px; border-radius: 50%; background: rgba(255, 255, 255, 0.07); display: grid; place-items: center;">
+                <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="var(--acc, #38bdf8)" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="8" width="18" height="12" rx="2.5"></rect><line x1="8" y1="3" x2="12" y2="8"></line><line x1="16" y1="3" x2="12" y2="8"></line></svg>
+              </div>
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                <span style="font-size: 40px; font-weight: 800;">Live TV</span>
+                <span style="font-size: 24px; font-weight: 500; color: rgba(255, 255, 255, 0.5);">312 channels</span>
+              </div>
+            </div>
+
+            <div tabindex="0" data-nav onClick="{{ goMovies }}" style="width: 305px; height: 470px; border-radius: 26px; background: linear-gradient(175deg, rgba(38, 50, 78, 0.55), rgba(13, 18, 32, 0.9)); border: 1px solid rgba(255, 255, 255, 0.08); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 30px; position: relative; transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;" style-focus="transform: scale(1.05) translateY(-8px); border-color: rgba(255, 255, 255, 0.9); box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent), 0 30px 70px rgba(0, 0, 0, 0.6);">
+              <div style="width: 108px; height: 108px; border-radius: 50%; background: rgba(255, 255, 255, 0.07); display: grid; place-items: center;">
+                <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="var(--acc, #38bdf8)" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="2.5"></rect><polygon points="10,9 15.5,12 10,15" fill="var(--acc, #38bdf8)" stroke="none"></polygon></svg>
+              </div>
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                <span style="font-size: 40px; font-weight: 800;">Movies</span>
+                <span style="font-size: 24px; font-weight: 500; color: rgba(255, 255, 255, 0.5);">1,240 titles</span>
+              </div>
+            </div>
+
+            <div tabindex="0" data-nav onClick="{{ goSeries }}" style="width: 305px; height: 470px; border-radius: 26px; background: linear-gradient(175deg, rgba(38, 50, 78, 0.55), rgba(13, 18, 32, 0.9)); border: 1px solid rgba(255, 255, 255, 0.08); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 30px; position: relative; transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;" style-focus="transform: scale(1.05) translateY(-8px); border-color: rgba(255, 255, 255, 0.9); box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent), 0 30px 70px rgba(0, 0, 0, 0.6);">
+              <div style="width: 108px; height: 108px; border-radius: 50%; background: rgba(255, 255, 255, 0.07); display: grid; place-items: center;">
+                <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="var(--acc, #38bdf8)" stroke-width="1.8" stroke-linecap="round"><rect x="6" y="3" width="14" height="10" rx="2"></rect><rect x="4" y="11" width="14" height="10" rx="2" fill="#0d1220"></rect></svg>
+              </div>
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                <span style="font-size: 40px; font-weight: 800;">Series</span>
+                <span style="font-size: 24px; font-weight: 500; color: rgba(255, 255, 255, 0.5);">486 shows</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="flex: 1;"></div>
+
+          <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px; padding-right: 10px;">
+            <span style="font-size: 26px; font-weight: 600; color: rgba(255, 255, 255, 0.6); display: flex; align-items: center; gap: 12px;">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"></circle><line x1="12" y1="2" x2="12" y2="5"></line><line x1="12" y1="19" x2="12" y2="22"></line><line x1="2" y1="12" x2="5" y2="12"></line><line x1="19" y1="12" x2="22" y2="12"></line></svg>
+              24°
+            </span>
+            <span style="font-size: 132px; font-weight: 800; line-height: 1; letter-spacing: -0.02em;">{{ clockTime }}</span>
+            <span style="font-size: 32px; font-weight: 500; color: rgba(255, 255, 255, 0.55);">{{ clockDate }}</span>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: center;">
+          <span style="font-size: 22px; font-weight: 500; color: rgba(255, 255, 255, 0.35);">Arrow keys to move · OK / Enter to select · Back / Esc to return</span>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ============ LIVE TV ============ -->
+    <sc-if value="{{ isLive }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Live TV" style="position: absolute; inset: 0; display: flex;">
+
+        <!-- category rail -->
+        <div style="flex: 0 0 400px; display: flex; flex-direction: column; padding: 56px 0 40px 56px;">
+          <div style="display: flex; align-items: center; gap: 22px; padding-right: 32px;">
+            <div tabindex="0" data-nav onClick="{{ goHome }}" style="width: 62px; height: 62px; border-radius: 50%; background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.08); display: grid; place-items: center; flex-shrink: 0; transition: box-shadow 0.15s ease;" style-focus="box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent);">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="14,6 8,12 14,18"></polyline></svg>
+            </div>
+            <span style="font-size: 40px; font-weight: 800;">Live TV</span>
+          </div>
+
+          <div data-scrollcol style="flex: 1; overflow-y: auto; margin-top: 36px; display: flex; flex-direction: column; gap: 6px; padding: 10px 32px 10px 0;">
+            <sc-for list="{{ categories }}" as="cat" hint-placeholder-count="7">
+              <div tabindex="0" data-nav onClick="{{ cat.onSelect }}" style="display: flex; align-items: center; gap: 20px; padding: 12px 16px; border-radius: 18px; background: {{ cat.rowBg }}; transition: box-shadow 0.15s ease, background 0.15s ease;" style-focus="box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent);">
+                <div style="width: 58px; height: 58px; border-radius: 50%; background: {{ cat.tileBg }}; display: grid; place-items: center; font-size: 22px; font-weight: 800; color: rgba(255, 255, 255, 0.92); flex-shrink: 0;">{{ cat.initial }}</div>
+                <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+                  <span style="font-size: 27px; font-weight: 700; white-space: nowrap;">{{ cat.name }}</span>
+                  <span style="font-size: 21px; font-weight: 500; color: rgba(255, 255, 255, 0.45);">{{ cat.count }} channels</span>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <!-- channel list -->
+        <div data-scrollcol style="flex: 0 0 620px; overflow-y: auto; padding: 56px 12px 56px 24px; display: flex; flex-direction: column; gap: 20px;">
+          <sc-for list="{{ channels }}" as="ch" hint-placeholder-count="5">
+            <div tabindex="0" data-nav onClick="{{ ch.onOpen }}" onFocus="{{ ch.onFocus }}" style="display: flex; align-items: center; gap: 24px; padding: 20px; border-radius: 22px; background: rgba(255, 255, 255, 0.045); border: 1px solid rgba(255, 255, 255, 0.06); flex-shrink: 0; transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;" style-focus="background: rgba(255, 255, 255, 0.09); transform: scale(1.02); box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent), 0 20px 50px rgba(0, 0, 0, 0.5);">
+              <div style="width: 168px; height: 106px; border-radius: 14px; background: {{ ch.tileBg }}; display: grid; place-items: center; flex-shrink: 0;">
+                <span style="font-size: 34px; font-weight: 800; letter-spacing: 0.04em; color: rgba(255, 255, 255, 0.92);">{{ ch.mono }}</span>
+              </div>
+              <div style="flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0;">
+                <span style="font-size: 29px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ ch.name }}</span>
+                <span style="font-size: 22px; font-weight: 500; color: rgba(255, 255, 255, 0.5);">{{ ch.views }} views</span>
+                <div style="display: flex; gap: 8px;">
+                  <sc-for list="{{ ch.badges }}" as="b" hint-placeholder-count="2">
+                    <span style="font-size: 17px; font-weight: 800; letter-spacing: 0.06em; padding: 4px 10px; border-radius: 6px; background: rgba(255, 255, 255, 0.12); color: rgba(255, 255, 255, 0.85);">{{ b }}</span>
+                  </sc-for>
+                </div>
+              </div>
+              <span style="font-size: 30px; color: {{ ch.starColor }}; flex-shrink: 0; padding-right: 6px;">★</span>
+            </div>
+          </sc-for>
+        </div>
+
+        <!-- now playing panel -->
+        <div style="flex: 1; position: relative; overflow: hidden;">
+          <div style="position: absolute; inset: 0; background: {{ nowPlaying.backdrop }};"></div>
+          <div style="position: absolute; inset: 0; background: linear-gradient(90deg, #060911 0%, rgba(6, 9, 17, 0.55) 30%, transparent 65%), linear-gradient(0deg, rgba(4, 6, 11, 0.92) 0%, transparent 55%);"></div>
+
+          <div style="position: absolute; top: 52px; right: 64px; display: flex; align-items: center; gap: 26px;">
+            <span style="font-size: 28px; font-weight: 700;">{{ clockTime }}</span>
+            <span style="font-size: 24px; font-weight: 600; color: rgba(255, 255, 255, 0.65);">24°</span>
+            <div tabindex="0" data-nav style="width: 58px; height: 58px; border-radius: 50%; background: rgba(6, 9, 17, 0.5); border: 1px solid rgba(255, 255, 255, 0.12); display: grid; place-items: center; transition: box-shadow 0.15s ease;" style-focus="box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent);">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg>
+            </div>
+            <div style="width: 58px; height: 58px; border-radius: 50%; background: linear-gradient(140deg, #7c5cff, #2563eb); display: grid; place-items: center; font-size: 22px; font-weight: 800;">Z</div>
+          </div>
+
+          <div style="position: absolute; left: 64px; right: 64px; bottom: 64px; display: flex; flex-direction: column; gap: 18px;">
+            <span style="font-size: 22px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(255, 255, 255, 0.55);">Now Playing</span>
+            <span style="font-size: 54px; font-weight: 800; line-height: 1.1; letter-spacing: -0.01em;">{{ nowPlaying.title }}</span>
+            <span style="font-size: 24px; font-weight: 500; line-height: 1.55; color: rgba(255, 255, 255, 0.7); max-width: 560px; text-wrap: pretty;">{{ nowPlaying.desc }}</span>
+            <div style="max-width: 560px; display: flex; flex-direction: column; gap: 12px; margin-top: 10px;">
+              <div style="height: 6px; border-radius: 99px; background: rgba(255, 255, 255, 0.18); overflow: hidden;">
+                <div style="height: 100%; border-radius: 99px; background: var(--acc, #38bdf8); width: {{ nowPlaying.pct }};"></div>
+              </div>
+              <div style="display: flex; justify-content: space-between; font-size: 22px; font-weight: 600; color: rgba(255, 255, 255, 0.65);">
+                <span>{{ nowPlaying.elapsed }}</span>
+                <span>{{ nowPlaying.duration }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ============ PLAYER ============ -->
+    <sc-if value="{{ isPlayer }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Player" style="position: absolute; inset: 0;">
+        <div style="position: absolute; inset: 0; background: {{ playing.backdrop }};"></div>
+        <div style="position: absolute; inset: 0; display: grid; place-items: center;">
+          <span style="font-size: 26px; font-weight: 600; letter-spacing: 0.1em; color: rgba(255, 255, 255, 0.28); font-family: monospace;">[ live video ]</span>
+        </div>
+        <div style="position: absolute; inset: 0; background: linear-gradient(0deg, rgba(3, 5, 9, 0.85) 0%, transparent 32%), linear-gradient(180deg, rgba(3, 5, 9, 0.6) 0%, transparent 22%);"></div>
+
+        <div style="position: absolute; top: 48px; left: 64px; display: flex; align-items: center; gap: 20px;">
+          <div style="width: 96px; height: 62px; border-radius: 12px; background: {{ playing.tileBg }}; display: grid; place-items: center;">
+            <span style="font-size: 22px; font-weight: 800; color: rgba(255, 255, 255, 0.92);">{{ playing.mono }}</span>
+          </div>
+          <span style="font-size: 26px; font-weight: 700; color: rgba(255, 255, 255, 0.85);">{{ playing.name }}</span>
+        </div>
+        <div style="position: absolute; top: 52px; right: 64px; display: flex; align-items: center; gap: 22px;">
+          <span style="font-size: 28px; font-weight: 700;">{{ clockTime }}</span>
+          <span style="font-size: 24px; font-weight: 600; color: rgba(255, 255, 255, 0.7);">24°</span>
+        </div>
+
+        <div style="position: absolute; left: 64px; bottom: 64px; display: flex; flex-direction: column; gap: 14px;">
+          <span style="align-self: flex-start; font-size: 20px; font-weight: 800; letter-spacing: 0.08em; padding: 5px 14px; border-radius: 7px; background: #e11d48; color: #fff; animation: livepulse 2.4s ease-in-out infinite;">LIVE</span>
+          <span style="font-size: 46px; font-weight: 800; letter-spacing: -0.01em;">{{ playing.program }}</span>
+          <span style="font-size: 25px; font-weight: 600; color: rgba(255, 255, 255, 0.65);">{{ playing.name }}</span>
+          <span style="font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums; color: rgba(255, 255, 255, 0.85); margin-top: 8px;">{{ playerClock }}</span>
+        </div>
+
+        <div style="position: absolute; left: 50%; bottom: 76px; transform: translateX(-50%); display: flex; align-items: center; gap: 34px;">
+          <div tabindex="0" data-nav style="width: 74px; height: 74px; border-radius: 50%; background: rgba(255, 255, 255, 0.1); display: grid; place-items: center; transition: box-shadow 0.15s ease, transform 0.15s ease;" style-focus="box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent); transform: scale(1.08);">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="#fff" stroke="none"><rect x="5" y="5" width="3" height="14" rx="1"></rect><polygon points="19,5 9,12 19,19"></polygon></svg>
+          </div>
+          <div tabindex="0" data-nav data-autofocus onClick="{{ togglePause }}" style="width: 100px; height: 100px; border-radius: 50%; background: rgba(255, 255, 255, 0.95); display: grid; place-items: center; transition: box-shadow 0.15s ease, transform 0.15s ease;" style-focus="box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.5), 0 0 0 9px color-mix(in srgb, var(--acc, #38bdf8) 55%, transparent); transform: scale(1.08);">
+            <sc-if value="{{ paused }}" hint-placeholder-val="{{ false }}">
+              <svg width="42" height="42" viewBox="0 0 24 24" fill="#0a0f1a" stroke="none"><polygon points="8,4.5 20,12 8,19.5"></polygon></svg>
+            </sc-if>
+            <sc-if value="{{ notPaused }}" hint-placeholder-val="{{ true }}">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="#0a0f1a" stroke="none"><rect x="6" y="4.5" width="4.4" height="15" rx="1.4"></rect><rect x="13.6" y="4.5" width="4.4" height="15" rx="1.4"></rect></svg>
+            </sc-if>
+          </div>
+          <div tabindex="0" data-nav style="width: 74px; height: 74px; border-radius: 50%; background: rgba(255, 255, 255, 0.1); display: grid; place-items: center; transition: box-shadow 0.15s ease, transform 0.15s ease;" style-focus="box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent); transform: scale(1.08);">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="#fff" stroke="none"><polygon points="5,5 15,12 5,19"></polygon><rect x="16" y="5" width="3" height="14" rx="1"></rect></svg>
+          </div>
+        </div>
+
+        <div style="position: absolute; right: 64px; bottom: 84px; display: flex; align-items: center; gap: 26px;">
+          <div tabindex="0" data-nav style="height: 58px; padding: 0 18px; border-radius: 12px; background: rgba(255, 255, 255, 0.1); display: grid; place-items: center; font-size: 21px; font-weight: 800; letter-spacing: 0.06em; transition: box-shadow 0.15s ease;" style-focus="box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent);">CC</div>
+          <div tabindex="0" data-nav style="width: 58px; height: 58px; border-radius: 50%; background: rgba(255, 255, 255, 0.1); display: grid; place-items: center; font-size: 26px; color: var(--acc, #38bdf8); transition: box-shadow 0.15s ease;" style-focus="box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent);">★</div>
+          <div tabindex="0" data-nav style="width: 58px; height: 58px; border-radius: 50%; background: rgba(255, 255, 255, 0.1); display: grid; place-items: center; transition: box-shadow 0.15s ease;" style-focus="box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent);">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"></line><line x1="4" y1="12" x2="20" y2="12"></line><line x1="4" y1="17" x2="20" y2="17"></line><circle cx="9" cy="7" r="2.2" fill="#0a0f1a"></circle><circle cx="15" cy="12" r="2.2" fill="#0a0f1a"></circle><circle cx="7" cy="17" r="2.2" fill="#0a0f1a"></circle></svg>
+          </div>
+        </div>
+
+        <div tabindex="0" data-nav onClick="{{ back }}" style="position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 8px 20px; border-radius: 999px; color: rgba(255, 255, 255, 0.5); font-size: 21px; font-weight: 600; transition: box-shadow 0.15s ease, color 0.15s ease;" style-focus="box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95); color: #fff;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,10 12,16 18,10"></polyline></svg>
+          Back to channels
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ============ MOVIES / SERIES BROWSE ============ -->
+    <sc-if value="{{ isBrowse }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Browse" style="position: absolute; inset: 0; display: flex; flex-direction: column;">
+
+        <div style="position: absolute; top: 0; right: 0; width: 64%; height: 60%; background: {{ hero.backdrop }};"></div>
+        <div style="position: absolute; top: 0; right: 0; width: 64%; height: 60%; background: linear-gradient(90deg, #060911 0%, rgba(6, 9, 17, 0.4) 40%, transparent 75%), linear-gradient(0deg, #060911 4%, transparent 60%);"></div>
+
+        <div style="position: relative; display: flex; align-items: center; gap: 30px; padding: 44px 80px 0;">
+          <div style="display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 999px; background: rgba(13, 18, 32, 0.75); border: 1px solid rgba(255, 255, 255, 0.08);">
+            <div tabindex="0" data-nav onClick="{{ goHome }}" style="width: 56px; height: 56px; border-radius: 50%; background: rgba(255, 255, 255, 0.08); display: grid; place-items: center; transition: box-shadow 0.15s ease;" style-focus="box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 6px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent);">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4,11 12,4 20,11"></polyline><rect x="7" y="11" width="10" height="9"></rect></svg>
+            </div>
+            <span style="font-size: 27px; font-weight: 800; padding: 0 16px;">ZIP<span style="color: var(--acc, #38bdf8);">TV</span></span>
+            <div tabindex="0" data-nav onClick="{{ goLive }}" style="padding: 12px 26px; border-radius: 999px; font-size: 25px; font-weight: 700; color: rgba(255, 255, 255, 0.7); transition: box-shadow 0.15s ease;" style-focus="box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 6px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent);">Live TV</div>
+            <div tabindex="0" data-nav onClick="{{ goMovies }}" style="padding: 12px 26px; border-radius: 999px; font-size: 25px; font-weight: 700; background: {{ tabMoviesBg }}; color: {{ tabMoviesColor }}; transition: box-shadow 0.15s ease;" style-focus="box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 6px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent);">Movies</div>
+            <div tabindex="0" data-nav onClick="{{ goSeries }}" style="padding: 12px 26px; border-radius: 999px; font-size: 25px; font-weight: 700; background: {{ tabSeriesBg }}; color: {{ tabSeriesColor }}; transition: box-shadow 0.15s ease;" style-focus="box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 6px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent);">Series</div>
+          </div>
+
+          <div style="flex: 1;"></div>
+          <span style="font-size: 25px; font-weight: 600; color: rgba(255, 255, 255, 0.65);">{{ clockDate }}</span>
+          <div tabindex="0" data-nav style="width: 56px; height: 56px; border-radius: 50%; background: rgba(13, 18, 32, 0.75); border: 1px solid rgba(255, 255, 255, 0.1); display: grid; place-items: center; transition: box-shadow 0.15s ease;" style-focus="box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95), 0 0 0 6px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent);">
+            <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg>
+          </div>
+          <div style="width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(140deg, #7c5cff, #2563eb); display: grid; place-items: center; font-size: 21px; font-weight: 800;">Z</div>
+        </div>
+
+        <div style="position: relative; margin-left: 52%; padding: 34px 90px 0 0; display: flex; flex-direction: column; gap: 14px; min-height: 240px;">
+          <span style="font-size: 24px; font-weight: 600; color: rgba(255, 255, 255, 0.6);">{{ hero.genres }}</span>
+          <span style="font-size: 54px; font-weight: 800; line-height: 1.08; letter-spacing: -0.01em; text-wrap: pretty;">{{ hero.title }}</span>
+          <span style="font-size: 23px; font-weight: 500; line-height: 1.55; color: rgba(255, 255, 255, 0.7); max-width: 700px; text-wrap: pretty;">{{ hero.desc }}</span>
+        </div>
+
+        <div style="position: relative; flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; padding: 0 0 34px 80px; min-height: 0;">
+          <span style="font-size: 30px; font-weight: 800;">{{ rowTitle }}</span>
+          <div data-scrollrow style="display: flex; gap: 26px; overflow-x: auto; padding: 22px 80px 10px 6px;">
+            <sc-for list="{{ browseItems }}" as="mv" hint-placeholder-count="8">
+              <div tabindex="0" data-nav onClick="{{ mv.onOpen }}" onFocus="{{ mv.onFocus }}" style="flex-shrink: 0; width: 216px; display: flex; flex-direction: column; gap: 14px; transition: transform 0.16s ease;" style-focus="transform: scale(1.06);">
+                <div style="width: 216px; height: 316px; border-radius: 16px; background: {{ mv.poster }}; position: relative; overflow: hidden; border: 3px solid {{ mv.borderColor }}; box-shadow: {{ mv.shadow }}; transition: border-color 0.16s ease;">
+                  <div style="position: absolute; inset: 0; background: linear-gradient(0deg, rgba(4, 6, 11, 0.85) 0%, transparent 45%);"></div>
+                  <span style="position: absolute; left: 18px; right: 18px; bottom: 16px; font-size: 25px; font-weight: 800; line-height: 1.2; text-wrap: pretty;">{{ mv.short }}</span>
+                </div>
+                <span style="font-size: 23px; font-weight: 600; color: {{ mv.labelColor }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center;">{{ mv.title }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;accent&quot;: {&quot;editor&quot;: &quot;color&quot;, &quot;default&quot;: &quot;#38bdf8&quot;, &quot;options&quot;: [&quot;#38bdf8&quot;, &quot;#f97316&quot;, &quot;#34d399&quot;, &quot;#a78bfa&quot;], &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Theme&quot;}, &quot;startScreen&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;home&quot;, &quot;options&quot;: [&quot;home&quot;, &quot;live&quot;, &quot;movies&quot;, &quot;series&quot;, &quot;player&quot;], &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Preview&quot;}}">
+class Component extends DCLogic {
+  state = {
+    screen: null,
+    now: new Date(),
+    catIdx: 0,
+    nowIdx: 3,
+    heroIdx: 0,
+    focusIdx: -1,
+    paused: false,
+    playerSec: 2537,
+    scale: Math.min(window.innerWidth / 1920, window.innerHeight / 1080)
+  };
+
+  stageRef = React.createRef();
+
+  grad(h1, h2) {
+    return "linear-gradient(150deg, oklch(0.48 0.11 " + h1 + "), oklch(0.24 0.07 " + h2 + "))";
+  }
+  bdrop(h) {
+    return "radial-gradient(120% 130% at 78% 18%, oklch(0.42 0.09 " + h + "), oklch(0.16 0.04 " + (h + 40) + ") 62%, #05070d 100%)";
+  }
+
+  categories = [
+    { name: "All Channels", count: 312, hue: 250 },
+    { name: "Favorites", count: 18, hue: 85 },
+    { name: "Sports", count: 54, hue: 145 },
+    { name: "News", count: 41, hue: 25 },
+    { name: "Movies", count: 63, hue: 300 },
+    { name: "Kids", count: 27, hue: 55 },
+    { name: "Music", count: 22, hue: 330 },
+    { name: "Documentary", count: 33, hue: 190 }
+  ];
+
+  channels = [
+    { name: "Apex Sports HD", mono: "APX", views: "8.2M", badges: ["HD", "EPG"], fav: true, hue: 145,
+      program: "Championship Night", elapsed: "01:12:04", duration: "02:30:00", pct: "48%",
+      desc: "Live coverage of the quarter-final decider, with studio analysis before kickoff and full-time reaction from the panel." },
+    { name: "Nova News 24", mono: "N24", views: "3.1M", badges: ["HD", "EPG"], fav: false, hue: 25,
+      program: "The Evening Desk", elapsed: "00:22:41", duration: "01:00:00", pct: "38%",
+      desc: "Rolling headlines and in-depth reporting on the stories shaping the day, with correspondents live from four continents." },
+    { name: "Cinema One", mono: "C1", views: "1.7M", badges: ["4K", "EPG"], fav: true, hue: 300,
+      program: "The Last Meridian", elapsed: "00:58:19", duration: "02:14:00", pct: "43%",
+      desc: "A retired cartographer is pulled back into service when a survey ship vanishes beyond the charted edge of the southern ocean." },
+    { name: "Wild Earth HD", mono: "WE", views: "2.4M", badges: ["HD", "EPG"], fav: true, hue: 190,
+      program: "Savanna Kings", elapsed: "00:42:27", duration: "01:52:00", pct: "38%",
+      desc: "Wildlife filmmaker Boone Carter follows a pride of lions across the dry season, capturing the rivalries and alliances that decide who rules the savanna." },
+    { name: "Kids Planet", mono: "KP", views: "950K", badges: ["HD"], fav: false, hue: 55,
+      program: "Rocket Crew", elapsed: "00:09:12", duration: "00:25:00", pct: "36%",
+      desc: "The crew builds a moon garden and learns why plants grow differently in low gravity. A cheerful science adventure for young explorers." },
+    { name: "Music Box", mono: "MBX", views: "620K", badges: ["HD"], fav: false, hue: 330,
+      program: "Late Sessions", elapsed: "00:31:55", duration: "01:00:00", pct: "53%",
+      desc: "An intimate hour of live studio performances, stripped-back arrangements, and conversations with the artists behind them." },
+    { name: "Docu Prime", mono: "DP", views: "1.1M", badges: ["4K"], fav: false, hue: 210,
+      program: "Steel Horizons", elapsed: "00:17:48", duration: "00:55:00", pct: "32%",
+      desc: "Inside the engineering of the world's longest sea bridge — the tides, the typhoons, and the ten thousand people who built it." },
+    { name: "City Live", mono: "CTY", views: "480K", badges: ["HD", "EPG"], fav: false, hue: 250,
+      program: "Metro Tonight", elapsed: "00:05:33", duration: "00:45:00", pct: "12%",
+      desc: "Local stories, weather, and what's on across the city this weekend, live from the downtown studio." }
+  ];
+
+  movies = [
+    { title: "Iron Tide", genres: "Action, Thriller", hue: 235, desc: "A salvage crew races a storm front to reach a stranded destroyer before the cargo in its hold falls into the wrong hands." },
+    { title: "The Last Meridian", genres: "Adventure, Drama", hue: 300, desc: "A retired cartographer is pulled back into service when a survey ship vanishes beyond the charted edge of the southern ocean." },
+    { title: "Paper Moons", genres: "Romance, Drama", hue: 60, desc: "Two rival street artists spend one summer painting over each other's work — and slowly falling for the person behind the paint." },
+    { title: "Neon District", genres: "Sci-Fi, Noir", hue: 330, desc: "In a city that never powers down, a memory broker takes one last job that leads straight back to her own erased past." },
+    { title: "Northbound", genres: "Thriller", hue: 200, desc: "A night train through the arctic circle, eleven passengers, and one of them is not who their ticket says they are." },
+    { title: "Glass Harbor", genres: "Mystery", hue: 175, desc: "A lighthouse keeper's journal surfaces thirty years after the town's most famous disappearance — and it names names." },
+    { title: "The Quiet Season", genres: "Drama", hue: 90, desc: "After the orchard's worst harvest in decades, three siblings return home to decide whether to sell the family land." },
+    { title: "Solstice", genres: "Fantasy, Adventure", hue: 265, desc: "Once a generation the longest night opens a road that isn't on any map, and this year two children find it first." }
+  ];
+
+  series = [
+    { title: "Ashfall County", genres: "Crime, Drama", hue: 30, desc: "A new sheriff inherits a county ledger full of debts nobody wants collected. Season 3 now airing." },
+    { title: "The Long Static", genres: "Sci-Fi, Mystery", hue: 250, desc: "A remote radio observatory keeps receiving the same broadcast — dated three days in the future." },
+    { title: "Harbor Lights", genres: "Drama", hue: 195, desc: "Four families, one fishing town, and the offshore wind farm that promises to change everything." },
+    { title: "Midnight Cartographers", genres: "Adventure, Fantasy", hue: 300, desc: "They map the places that only exist after dark. Their newest apprentice keeps drawing places that don't exist yet." },
+    { title: "Second Service", genres: "Comedy", hue: 60, desc: "A washed-up tennis pro coaches at the country club that banned him. The members are worse than the memories." },
+    { title: "Cold Ledger", genres: "Crime, Thriller", hue: 210, desc: "A forensic accountant reopens the one audit her firm buried — the one with her father's signature on it." },
+    { title: "The Greenhouse", genres: "Drama, Romance", hue: 140, desc: "An inherited botanical garden comes with a condition: the two heirs must run it together for a full year." },
+    { title: "Signal Fires", genres: "Post-Apocalyptic", hue: 20, desc: "Ten years after the grid failed, a rider carries messages between mountain settlements — and a secret that could reconnect them." }
+  ];
+
+  componentDidMount() {
+    this._onResize = () => this.setState({ scale: Math.min(window.innerWidth / 1920, window.innerHeight / 1080) });
+    window.addEventListener("resize", this._onResize);
+    this._onKey = (e) => this.handleKey(e);
+    window.addEventListener("keydown", this._onKey);
+    this._clock = setInterval(() => this.setState({ now: new Date() }), 10000);
+    this._tick = setInterval(() => {
+      if (this.getScreen() === "player" && !this.state.paused) {
+        this.setState((s) => ({ playerSec: s.playerSec + 1 }));
+      }
+    }, 1000);
+    this.applyAccent();
+    this.focusAuto();
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener("resize", this._onResize);
+    window.removeEventListener("keydown", this._onKey);
+    clearInterval(this._clock);
+    clearInterval(this._tick);
+  }
+
+  componentDidUpdate(prevProps, prevState) {
+    this.applyAccent();
+    if (prevState && prevState.screen !== this.state.screen) this.focusAuto();
+  }
+
+  getScreen() {
+    return this.state.screen ?? (this.props.startScreen ?? "home");
+  }
+
+  applyAccent() {
+    const el = this.stageRef.current;
+    if (el) el.style.setProperty("--acc", this.props.accent ?? "#38bdf8");
+  }
+
+  focusAuto() {
+    requestAnimationFrame(() => {
+      const st = this.stageRef.current;
+      if (!st) return;
+      const el = Array.from(st.querySelectorAll("[data-nav]")).find((n) => n.hasAttribute("data-autofocus") && n.offsetParent) ||
+                 Array.from(st.querySelectorAll("[data-nav]")).find((n) => n.offsetParent);
+      if (el) { el.focus({ preventScroll: true }); this.ensureVisible(el); }
+    });
+  }
+
+  go(screen) {
+    this.setState({ screen });
+  }
+
+  back() {
+    const s = this.getScreen();
+    if (s === "player") this.go("live");
+    else if (s !== "home") this.go("home");
+  }
+
+  handleKey(e) {
+    const k = e.key;
+    if (k === "ArrowUp" || k === "ArrowDown" || k === "ArrowLeft" || k === "ArrowRight") {
+      e.preventDefault();
+      this.move(k.replace("Arrow", "").toLowerCase());
+    } else if (k === "Enter" || k === " ") {
+      const a = document.activeElement;
+      if (a && a.hasAttribute("data-nav")) { e.preventDefault(); a.click(); }
+    } else if (k === "Escape" || k === "Backspace") {
+      e.preventDefault();
+      this.back();
+    }
+  }
+
+  move(dir) {
+    const st = this.stageRef.current;
+    if (!st) return;
+    const all = Array.from(st.querySelectorAll("[data-nav]")).filter((n) => n.offsetParent);
+    if (!all.length) return;
+    const cur = document.activeElement;
+    if (!cur || !all.includes(cur)) { this.focusAuto(); return; }
+    const cr = cur.getBoundingClientRect();
+    const cx = cr.left + cr.width / 2, cy = cr.top + cr.height / 2;
+    let best = null, bestScore = Infinity;
+    for (const el of all) {
+      if (el === cur) continue;
+      const r = el.getBoundingClientRect();
+      const ex = r.left + r.width / 2, ey = r.top + r.height / 2;
+      let primary, orth;
+      if (dir === "right") { primary = ex - cx; orth = Math.abs(ey - cy); }
+      else if (dir === "left") { primary = cx - ex; orth = Math.abs(ey - cy); }
+      else if (dir === "down") { primary = ey - cy; orth = Math.abs(ex - cx); }
+      else { primary = cy - ey; orth = Math.abs(ex - cx); }
+      if (primary < 4) continue;
+      const score = primary + orth * 2.2;
+      if (score < bestScore) { bestScore = score; best = el; }
+    }
+    if (best) {
+      best.focus({ preventScroll: true });
+      this.ensureVisible(best);
+    }
+  }
+
+  ensureVisible(el) {
+    const st = this.stageRef.current;
+    const s = this.state.scale || 1;
+    let p = el.parentElement;
+    while (p && p !== st) {
+      const scrollV = p.scrollHeight > p.clientHeight + 4;
+      const scrollH = p.scrollWidth > p.clientWidth + 4;
+      if (scrollV || scrollH) {
+        const pr = p.getBoundingClientRect();
+        const er = el.getBoundingClientRect();
+        const pad = 40 * s;
+        if (scrollV) {
+          if (er.top < pr.top + pad) p.scrollTop -= (pr.top + pad - er.top) / s;
+          else if (er.bottom > pr.bottom - pad) p.scrollTop += (er.bottom - (pr.bottom - pad)) / s;
+        }
+        if (scrollH) {
+          if (er.left < pr.left + pad) p.scrollLeft -= (pr.left + pad - er.left) / s;
+          else if (er.right > pr.right - pad) p.scrollLeft += (er.right - (pr.right - pad)) / s;
+        }
+      }
+      p = p.parentElement;
+    }
+  }
+
+  fmtSec(sec) {
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s2 = sec % 60;
+    const pad = (n) => String(n).padStart(2, "0");
+    return pad(h) + ":" + pad(m) + ":" + pad(s2);
+  }
+
+  renderVals() {
+    const screen = this.getScreen();
+    const now = this.state.now;
+    const browseTab = screen === "series" ? "series" : "movies";
+    const acc = this.props.accent ?? "#38bdf8";
+
+    const categories = this.categories.map((c, i) => ({
+      name: c.name,
+      count: c.count,
+      initial: c.name.slice(0, 2).toUpperCase(),
+      tileBg: this.grad(c.hue, c.hue + 30),
+      rowBg: i === this.state.catIdx ? "rgba(255, 255, 255, 0.08)" : "transparent",
+      onSelect: () => this.setState({ catIdx: i })
+    }));
+
+    const channels = this.channels.map((c, i) => ({
+      name: c.name,
+      mono: c.mono,
+      views: c.views,
+      badges: c.badges,
+      tileBg: this.grad(c.hue, c.hue - 25),
+      starColor: c.fav ? acc : "rgba(255, 255, 255, 0.22)",
+      onOpen: () => this.setState({ nowIdx: i, screen: "player", playerSec: 2537, paused: false }),
+      onFocus: () => { if (this.state.nowIdx !== i) this.setState({ nowIdx: i }); }
+    }));
+
+    const nowCh = this.channels[this.state.nowIdx] || this.channels[0];
+    const nowPlaying = {
+      title: nowCh.program,
+      desc: nowCh.desc,
+      pct: nowCh.pct,
+      elapsed: nowCh.elapsed,
+      duration: nowCh.duration,
+      backdrop: this.bdrop(nowCh.hue)
+    };
+
+    const playing = {
+      name: nowCh.name,
+      mono: nowCh.mono,
+      program: nowCh.program,
+      tileBg: this.grad(nowCh.hue, nowCh.hue - 25),
+      backdrop: this.bdrop(nowCh.hue)
+    };
+
+    const list = browseTab === "series" ? this.series : this.movies;
+    const heroIdx = Math.min(this.state.heroIdx, list.length - 1);
+    const browseItems = list.map((m, i) => ({
+      title: m.title,
+      short: m.title,
+      poster: this.grad(m.hue, m.hue + 45),
+      borderColor: i === heroIdx ? "rgba(255, 255, 255, 0.9)" : "transparent",
+      shadow: i === heroIdx ? "0 0 0 4px color-mix(in srgb, " + acc + " 45%, transparent), 0 24px 55px rgba(0, 0, 0, 0.55)" : "0 14px 34px rgba(0, 0, 0, 0.45)",
+      labelColor: i === heroIdx ? "#ffffff" : "rgba(255, 255, 255, 0.55)",
+      onFocus: () => { if (this.state.heroIdx !== i) this.setState({ heroIdx: i }); },
+      onOpen: () => {}
+    }));
+    const heroItem = list[heroIdx];
+    const hero = {
+      title: heroItem.title,
+      genres: heroItem.genres,
+      desc: heroItem.desc,
+      backdrop: this.bdrop(heroItem.hue)
+    };
+
+    return {
+      stageRef: this.stageRef,
+      scale: this.state.scale,
+      isHome: screen === "home",
+      isLive: screen === "live",
+      isPlayer: screen === "player",
+      isBrowse: screen === "movies" || screen === "series",
+      paused: this.state.paused,
+      notPaused: !this.state.paused,
+      clockTime: now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      clockDate: now.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" }),
+      playerClock: this.fmtSec(this.state.playerSec),
+      categories,
+      channels,
+      nowPlaying,
+      playing,
+      browseItems,
+      hero,
+      rowTitle: browseTab === "series" ? "Latest series" : "Latest added",
+      tabMoviesBg: browseTab === "movies" ? "rgba(255, 255, 255, 0.92)" : "transparent",
+      tabMoviesColor: browseTab === "movies" ? "#0a0f1a" : "rgba(255, 255, 255, 0.7)",
+      tabSeriesBg: browseTab === "series" ? "rgba(255, 255, 255, 0.92)" : "transparent",
+      tabSeriesColor: browseTab === "series" ? "#0a0f1a" : "rgba(255, 255, 255, 0.7)",
+      goHome: () => this.go("home"),
+      goLive: () => this.go("live"),
+      goMovies: () => this.setState({ screen: "movies", heroIdx: 0 }),
+      goSeries: () => this.setState({ screen: "series", heroIdx: 0 }),
+      goSearch: () => {},
+      back: () => this.back(),
+      togglePause: () => this.setState((s) => ({ paused: !s.paused }))
+    };
+  }
+}
+</script>
+</body>
+</html>

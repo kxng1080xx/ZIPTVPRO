@@ -90,6 +90,19 @@ ipcMain.handle('startup:set', (_e, opts = {}) => {
   return getStartupState();
 });
 
+// --- TV interface (7.0) window controls --------------------------------------
+// The 10-foot UI runs borderless fullscreen; the renderer toggles it when the
+// user switches Desktop ↔ TV interface, and can quit the app from the TV shell
+// (the tray "close to tray" behavior must not swallow an explicit TV exit).
+ipcMain.handle('window:set-fullscreen', (_e, on) => {
+  try { if (mainWindow) mainWindow.setFullScreen(!!on); } catch (e) {}
+  return { ok: true };
+});
+ipcMain.handle('app:quit', () => {
+  isQuitting = true; // bypass close-to-tray: this is an explicit user exit
+  app.quit();
+});
+
 // Open download/update links in the user's default browser, not a child window.
 ipcMain.handle('open-external', (_e, url) => {
   if (typeof url === 'string' && /^https?:\/\//i.test(url)) {

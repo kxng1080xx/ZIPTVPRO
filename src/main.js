@@ -38,6 +38,7 @@ import { isNativeAvailable, nativeIsTv } from './components/native-player.js';
 import { getDeviceCode, syncDevice, readCachedState, clearCachedState, isStateExpired } from './components/cloud-sync.js';
 import { initWebTabs, openWebTab, openManageTabs, toggleAdblock, isAdblockOn, applyHiddenTabs } from './components/web-tabs.js';
 import { renderHome } from './components/home.js';
+import { getStoredUiMode, setStoredUiMode, showDeviceChooser, initTvNative, enterTvNative, exitTvNative } from './components/tv-native.js';
 
 // Cloud sync (ZIPTV Pro 5.0): device + playlist state lives in Supabase, managed
 // from the /connect dashboard and pulled via the serverless /api/device endpoint.
@@ -89,6 +90,70 @@ let lastProgressSave = 0;      // throttle progress writes
 // Clock update timer
 let clockInterval = null;
 let progressInterval = null;
+
+// ==========================================================================
+// 7.0 NATIVE TV SHELL — handlers injected into the 10-foot interface so it
+// drives the existing data/playback machinery (libVLC, timeshift, fallbacks)
+// instead of reimplementing it. See src/components/tv-native.js.
+// ==========================================================================
+const tvNativeHandlers = {
+  playChannel: (channel, program) => selectAndPlayChannel(channel, program),
+  playVod: (id, type, name, logo, desc, ext, resume, backdrop) =>
+    playVODStream(id, type, name, logo, desc, ext, resume, backdrop),
+  resumeCw: (item) => resumeContinueWatching(item),
+  toggleFavorite: (type, id) => toggleChannelFavorite(type, id),
+  isFavorite: (type, id) => state.favorites[type]?.includes(String(id)) || false,
+  getViewCount: (id) => getChannelViewCounts()[String(id)] || 0,
+  switchPlaylist: (id) => switchToPlaylist(id),
+  resync: () => triggerFullSync(),
+  checkUpdate: () => checkForUpdate({ manual: true, onStatus: (m) => showToast(m, 'info') }),
+  // Account status ("Active - Unlimited" / "Expires Jan 5, 2027" / "3 days
+  // left" / "Expired") — same precedence as the desktop profile card: the
+  // admin-set device expiry first, then the provider's Xtream exp_date.
+  accountStatus: () => {
+    const fmt = (expDate) => {
+      const diffDays = Math.ceil((expDate - Date.now()) / (1000 * 60 * 60 * 24));
+      if (diffDays <= 0) return { text: 'Expired', danger: true };
+      if (diffDays <= 7) return { text: `${diffDays} days left`, danger: true };
+      return { text: `Expires ${expDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`, danger: false };
+    };
+    try {
+      const deviceExpiry = localStorage.getItem(DEVICE_EXPIRY_KEY);
+      if (deviceExpiry) return fmt(new Date(deviceExpiry));
+      const info = state.user && state.user.user_info;
+      if (!info) return null;
+      if (info.exp_date === null || info.exp_date === undefined || info.exp_date === '0') {
+        return { text: 'Active - Unlimited', danger: false };
+      }
+      return fmt(new Date(parseInt(info.exp_date) * 1000));
+    } catch (e) { return null; }
+  },
+  addPlaylist: () => {
+    try { playerInstance.stop(); } catch (e) {}
+    exitTvNative();
+    showAddPlaylist();
+  },
+  // The channel still playing under the shell (Back from fullscreen keeps the
+  // stream running) — lets the Live screen offer a "return to player" jump.
+  nowPlayingChannel: () =>
+    (playerInstance && playerInstance.hasStream &&
+     !document.body.classList.contains('vod-mode') && state.activeChannel)
+      ? state.activeChannel : null,
+  returnToPlayer: () => { try { playerInstance.autoFullscreen(); } catch (e) {} },
+  logout: async () => {
+    try { playerInstance.stop(); } catch (e) {}
+    await logout();
+    state.user = null;
+    exitTvNative();
+    try {
+      const { playlists } = await getPlaylists();
+      if (playlists && playlists.length > 0) showPlaylistSelect(playlists);
+      else showLogin();
+    } catch (err) {
+      showLogin();
+    }
+  }
+};
 
 // Document Ready
 // Global crash reporter: if anything in the renderer throws uncaught (which on
@@ -156,10 +221,32 @@ async function initApp() {
     if (!isTV && Capacitor.isNativePlatform()) {
       try { isTV = await nativeIsTv(); } catch (e) {}
     }
-    if (isTvPath || tvParam === 'true' || tvParam === '1' || isTV) {
+
+    // 7.0: resolve the interface (Mobile vs the native TV shell).
+    //  - explicit /tv path or ?tv= override always wins (Electron TV mode,
+    //    "open on your TV" links);
+    //  - then the user's stored choice (Settings can flip it any time);
+    //  - first APK boot asks the user before login, pre-selecting whatever
+    //    the device detection says;
+    //  - web/TV webviews with no stored choice auto-select by detection.
+    let uiMode = null;
+    if (isTvPath || tvParam === 'true' || tvParam === '1') uiMode = 'tv';
+    if (!uiMode) uiMode = getStoredUiMode();
+    if (!uiMode && Capacitor.isNativePlatform()) {
+      uiMode = await showDeviceChooser(isTV);
+    }
+    if (!uiMode) uiMode = isTV ? 'tv' : 'mobile';
+
+    if (uiMode === 'tv') {
       document.body.classList.add('tv-layout');
       document.documentElement.classList.add('tv-layout');
       window.__TV_PREVIEW__ = true;
+
+      // Register the native TV shell (renders after login via showDashboard).
+      initTvNative(tvNativeHandlers);
+
+      // Desktop app in TV mode = 10-foot experience: borderless fullscreen.
+      try { window.appHost?.setFullscreen?.(true); } catch (e) {}
 
       // Resolution-proof 10-foot rendering: pin the layout viewport to 1920
       // CSS px. TV webviews at 720p (1280×720) or with DPR-scaled CSS
@@ -1225,8 +1312,13 @@ async function selectAndPlayChannel(channel, programBlock) {
     const usingExternalPlayer = (() => {
       try { return localStorage.getItem('electronEngine') === 'external'; } catch (e) { return false; }
     })();
+    // DIAGNOSTIC (7.0 skip-back hunt): timeshift/replay is OPT-IN for now —
+    // live always plays direct unless localStorage 'timeshift' is set to 'on'.
+    // The DVR buffer (hls.js error-recovery re-seeking into it) is the prime
+    // suspect for live playback skipping backwards. Revert to `!== 'off'`
+    // once the culprit is confirmed.
     const wantTimeshift = (window.appHost || window.electronCast)
-      && localStorage.getItem('timeshift') !== 'off'
+      && localStorage.getItem('timeshift') === 'on'
       && !usingExternalPlayer;
     if (wantTimeshift) {
       // Paint the player shell now (synchronously) so autoFullscreen() below has
@@ -1814,6 +1906,9 @@ async function toggleChannelFavorite(type, id) {
 
 function playNextChannel() {
   if (!state.activeChannel) return;
+  // 7.0 TV shell: zap within the channel list the shell played from (the
+  // legacy EPG-grid rows below aren't rendered under the shell).
+  if (window.__tvNativeZap && window.__tvNativeZap(1)) return;
   const list = epgGridInstance.channels;
   const currentIndex = list.findIndex(c => String(c.stream_id) === String(state.activeChannel.stream_id));
   if (currentIndex !== -1 && currentIndex < list.length - 1) {
@@ -1825,6 +1920,7 @@ function playNextChannel() {
 
 function playPreviousChannel() {
   if (!state.activeChannel) return;
+  if (window.__tvNativeZap && window.__tvNativeZap(-1)) return;
   const list = epgGridInstance.channels;
   const currentIndex = list.findIndex(c => String(c.stream_id) === String(state.activeChannel.stream_id));
   if (currentIndex > 0) {
@@ -2636,6 +2732,9 @@ function exitVodPlayer() {
   playerInstance.stop();
   currentVodItem = null;
   refreshContinueWatching();
+
+  // 7.0 TV shell: hand the screen back to the 10-foot UI instead of the grid.
+  if (window.__tvNativeOnPlayerExit && window.__tvNativeOnPlayerExit()) return;
   navigation.focusDefault('grid');
 }
 
@@ -3347,6 +3446,15 @@ function bindGlobalEvents() {
   // --- Tile: Updates ---
   document.getElementById('tile-update')?.addEventListener('click', () => {
     checkForUpdate({ manual: true, onStatus: (m) => showToast(m, 'info', 4000) });
+  });
+
+  // --- Tile: TV Interface (7.0) — switch this device to the 10-foot UI. On
+  // the desktop app it also goes borderless fullscreen; a reload boots the
+  // native TV shell (Settings → "Switch to Desktop/Mobile interface" undoes it).
+  document.getElementById('tile-tv-ui')?.addEventListener('click', () => {
+    setStoredUiMode('tv');
+    try { window.appHost?.setFullscreen?.(true); } catch (e) {}
+    window.location.reload();
   });
 
   // --- Settings category menu: switch the visible pane ---
@@ -4260,6 +4368,13 @@ function showDashboard() {
 
   // Update TV Connection IP badge in the top header
   updateHeaderTvIpBadge(state.user);
+
+  // 7.0 native TV shell: in TV mode the launcher takes over the screen once
+  // the session is live (the legacy layout stays underneath for playback).
+  if (document.body.classList.contains('tv-native')) {
+    enterTvNative();
+    return;
+  }
 
   // TV preview (?tv=true): drop initial D-pad focus into the categories column
   // so arrow-key navigation is immediately live without a first "priming" press.
