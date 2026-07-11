@@ -124,6 +124,7 @@
             <input type="text" id="f-pass" placeholder="Password" />
           </div>
           <button class="btn" id="f-save" style="justify-content:center;">Add playlist</button>
+          <div class="topbar-note" style="margin-top:6px; text-align:center;">Next: pick which tabs &amp; categories sync to the device</div>
         </div>
       </div>
 
@@ -684,18 +685,52 @@
       const p = parseM3u($('f-m3u').value);
       if (p) { $('f-server').value = p.host; $('f-user').value = p.user; $('f-pass').value = p.pass; }
     });
+    // Add-playlist flow: credentials → pick what to sync → create. The
+    // visibility drawer opens BEFORE the playlist exists so the device never
+    // mirrors the full library only to have categories stripped afterwards.
+    async function createPlaylist(extra = {}) {
+      if (!pendingAdd) return;
+      await api('add-playlist', { method: 'POST', body: { ...pendingAdd, ...extra } });
+      ['f-m3u', 'f-name', 'f-server', 'f-user', 'f-pass'].forEach(id => $(id).value = '');
+      pendingAdd = null;
+      toast('Playlist added'); load();
+    }
     $('f-save').addEventListener('click', async () => {
       const d = byId(openId); if (!d) return;
       const server = $('f-server').value.trim(), user = $('f-user').value.trim(), pass = $('f-pass').value.trim();
       if (!server || !user || !pass) return toast('Need server, username & password (or paste an M3U URL).', true);
+      pendingAdd = {
+        device_id: d.device_id, name: $('f-name').value.trim() || hostName(server),
+        type: 'xtream', server_url: server, username: user, password: pass
+      };
+      const btn = $('f-save');
+      // Second click after a failed category fetch = add with the full library.
+      if (btn.dataset.armed) {
+        delete btn.dataset.armed; btn.classList.remove('btn-confirm'); btn.textContent = 'Add playlist';
+        try { await createPlaylist(); } catch (e) { toast(e.message, true); }
+        return;
+      }
+      btn.disabled = true; btn.textContent = 'Fetching categories…';
       try {
-        await api('add-playlist', { method: 'POST', body: {
-          device_id: d.device_id, name: $('f-name').value.trim() || hostName(server),
-          type: 'xtream', server_url: server, username: user, password: pass
+        const cats = await api('preview-categories', { method: 'POST', body: {
+          server_url: server, username: user, password: pass
         }});
-        ['f-m3u', 'f-name', 'f-server', 'f-user', 'f-pass'].forEach(id => $(id).value = '');
-        toast('Playlist added'); load();
-      } catch (e) { toast(e.message, true); }
+        btn.textContent = 'Add playlist';
+        if (!(cats.live || []).length && !(cats.movie || []).length && !(cats.series || []).length) {
+          throw new Error('No categories returned — check the credentials.');
+        }
+        openVisDrawerForAdd(cats);
+      } catch (e) {
+        // Couldn't reach the provider from here — let the admin add anyway.
+        toast(e.message, true);
+        btn.dataset.armed = '1';
+        btn.classList.add('btn-confirm');
+        btn.textContent = 'Add anyway (full library)?';
+        clearTimeout(confirmTimer);
+        confirmTimer = setTimeout(() => {
+          delete btn.dataset.armed; btn.classList.remove('btn-confirm'); btn.textContent = 'Add playlist';
+        }, 5000);
+      } finally { btn.disabled = false; }
     });
 
     $('d-archive').addEventListener('click', async () => {
@@ -717,20 +752,26 @@
     });
 
     // ---------------------------- visibility drawer ----------------------------
-    let activePl = null;
+    let activePl = null;         // playlist being edited (edit mode)
+    let pendingAdd = null;       // credentials awaiting creation (add mode)
+    let visAddMode = false;      // drawer confirm = create playlist instead of update
     let loadedCategories = null;
     let currentCatTab = 'live';
     let hiddenCategoriesSet = new Set();
 
     function closeVis() {
       $('vis-drawer').classList.remove('show');
+      visAddMode = false;
       if (!openId) $('scrim').classList.remove('show');
     }
 
     function openVisDrawer(p) {
       activePl = p;
+      visAddMode = false;
+      $('vis-save').textContent = 'Save Visibility';
+      $('vis-btn-load').style.display = '';
       $('vis-pl-name').textContent = `${p.name || 'Playlist'} (${p.username})`;
-      
+
       const hiddenTabs = p.hidden_tabs || [];
       $('tab-live').checked = !hiddenTabs.includes('live');
       $('tab-movies').checked = !hiddenTabs.includes('movies');
@@ -743,7 +784,33 @@
       $('vis-cats-container').style.display = 'none';
       $('vis-cats-status').style.display = '';
       $('vis-cats-status').textContent = 'Categories not loaded yet. Click "Load Categories".';
-      
+
+      closeDrawer();
+      $('scrim').classList.add('show');
+      $('vis-drawer').classList.add('show');
+    }
+
+    // Pre-add picker: categories are already fetched from the entered
+    // credentials; everything starts visible and the confirm button creates
+    // the playlist with the chosen visibility baked in.
+    function openVisDrawerForAdd(cats) {
+      activePl = null;
+      visAddMode = true;
+      $('vis-save').textContent = 'Add playlist';
+      $('vis-btn-load').style.display = 'none';
+      $('vis-pl-name').textContent = `New: ${pendingAdd.name} (${pendingAdd.username}) — choose what to sync`;
+
+      $('tab-live').checked = true;
+      $('tab-movies').checked = true;
+      $('tab-series').checked = true;
+      hiddenCategoriesSet = new Set();
+      loadedCategories = { live: cats.live || [], movie: cats.movie || [], series: cats.series || [] };
+      $('vis-cats-search').value = '';
+
+      $('vis-cats-status').style.display = 'none';
+      $('vis-cats-container').style.display = '';
+      switchCatTab('live');
+
       closeDrawer();
       $('scrim').classList.add('show');
       $('vis-drawer').classList.add('show');
@@ -849,14 +916,29 @@
     });
 
     $('vis-save').addEventListener('click', async () => {
-      if (!activePl) return;
       const hidden_tabs = [];
       if (!$('tab-live').checked) hidden_tabs.push('live');
       if (!$('tab-movies').checked) hidden_tabs.push('movies');
       if (!$('tab-series').checked) hidden_tabs.push('series');
-      
+
       const hidden_categories = Array.from(hiddenCategoriesSet);
-      
+
+      // Add mode: create the playlist with visibility baked in.
+      if (visAddMode) {
+        const btn = $('vis-save');
+        btn.disabled = true; btn.textContent = 'Adding…';
+        try {
+          await createPlaylist({ hidden_tabs, hidden_categories });
+          closeVis();
+        } catch (e) {
+          toast(e.message, true);
+        } finally {
+          btn.disabled = false; btn.textContent = 'Add playlist';
+        }
+        return;
+      }
+
+      if (!activePl) return;
       try {
         await api('update-playlist', {
           method: 'POST',

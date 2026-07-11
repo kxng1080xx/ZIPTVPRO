@@ -7,7 +7,8 @@
  *   POST /api/admin?action=login            { password } -> { token }
  *   GET  /api/admin?action=devices          [&archived=1] -> { devices: [...] }
  *   POST /api/admin?action=update-device    { device_id, label?, expires_at?, archived? }
- *   POST /api/admin?action=add-playlist     { device_id, name, type, server_url, username, password }
+ *   POST /api/admin?action=add-playlist     { device_id, name, type, server_url, username, password, hidden_tabs?, hidden_categories? }
+ *   POST /api/admin?action=preview-categories { server_url, username, password } -> { live, movie, series }
  *   POST /api/admin?action=remove-playlist  { id }
  *   POST /api/admin?action=delete-device    { device_id }
  *   GET  /api/admin?action=config           -> { config }
@@ -76,6 +77,10 @@ export default async function handler(req, res) {
         username: b.username,
         password: b.password
       };
+      // Pre-add visibility: the admin picked what to sync before creating the
+      // playlist, so the device never mirrors the full library first.
+      if (Array.isArray(b.hidden_tabs)) row.hidden_tabs = b.hidden_tabs;
+      if (Array.isArray(b.hidden_categories)) row.hidden_categories = b.hidden_categories;
       const created = await sb('/playlists', { method: 'POST', body: row, prefer: 'return=representation' });
       // Promote a brand-new device from 'pending' to 'active' so the app begins
       // mirroring (including removals). Best-effort — don't fail the add on this.
@@ -113,26 +118,27 @@ export default async function handler(req, res) {
     if (action === 'playlist-categories' && req.method === 'GET') {
       const id = req.query.id;
       if (!id) return res.status(400).json({ error: 'id required' });
-      
+
       const rows = await sb(`/playlists?id=eq.${encodeURIComponent(id)}&select=*`);
       const pl = rows && rows[0];
       if (!pl) return res.status(404).json({ error: 'Playlist not found' });
-      
-      const fetchCats = async (act) => {
-        const url = `${pl.server_url}/player_api.php?username=${encodeURIComponent(pl.username)}&password=${encodeURIComponent(pl.password)}&action=${act}`;
-        const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
-        if (!response.ok) throw new Error(`Xtream status ${response.status}`);
-        const data = await response.json();
-        return Array.isArray(data) ? data : [];
-      };
-      
+
       try {
-        const [live, movie, series] = await Promise.all([
-          fetchCats('get_live_categories').catch(() => []),
-          fetchCats('get_vod_categories').catch(() => []),
-          fetchCats('get_series_categories').catch(() => [])
-        ]);
-        return res.status(200).json({ live, movie, series });
+        return res.status(200).json(await fetchXtreamCategories(pl.server_url, pl.username, pl.password));
+      } catch (err) {
+        return res.status(500).json({ error: `Failed to fetch categories: ${err.message}` });
+      }
+    }
+
+    // ---- Fetch categories from raw credentials (pre-add visibility picker) ----
+    // POST so the password travels in the body, not in a logged query string.
+    if (action === 'preview-categories' && req.method === 'POST') {
+      const b = await readBody(req);
+      if (!b.server_url || !b.username || !b.password) {
+        return res.status(400).json({ error: 'server_url, username, password required' });
+      }
+      try {
+        return res.status(200).json(await fetchXtreamCategories(normalizeHost(b.server_url), b.username, b.password));
       } catch (err) {
         return res.status(500).json({ error: `Failed to fetch categories: ${err.message}` });
       }
@@ -166,6 +172,24 @@ export default async function handler(req, res) {
   } catch (err) {
     return res.status(err.status || 500).json({ error: err.message || 'Server error' });
   }
+}
+
+// Xtream categories for all three tabs, in parallel. A tab whose call fails
+// comes back empty rather than failing the whole request.
+async function fetchXtreamCategories(serverUrl, username, password) {
+  const fetchCats = async (act) => {
+    const url = `${serverUrl}/player_api.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&action=${act}`;
+    const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!response.ok) throw new Error(`Xtream status ${response.status}`);
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
+  };
+  const [live, movie, series] = await Promise.all([
+    fetchCats('get_live_categories').catch(() => []),
+    fetchCats('get_vod_categories').catch(() => []),
+    fetchCats('get_series_categories').catch(() => [])
+  ]);
+  return { live, movie, series };
 }
 
 function normalizeHost(h) {
