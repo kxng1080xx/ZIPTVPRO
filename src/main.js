@@ -100,6 +100,9 @@ const tvNativeHandlers = {
   playChannel: (channel, program) => selectAndPlayChannel(channel, program),
   playVod: (id, type, name, logo, desc, ext, resume, backdrop) =>
     playVODStream(id, type, name, logo, desc, ext, resume, backdrop),
+  playEpisode: (seriesItem, info, seasonNum, epIndex, resumeTime, backdrop) =>
+    playSeriesEpisodeTv(seriesItem, info, seasonNum, epIndex, resumeTime, backdrop),
+  resumeEpisode: (item) => resumeSeriesEpisodeTv(item),
   resumeCw: (item) => resumeContinueWatching(item),
   toggleFavorite: (type, id) => toggleChannelFavorite(type, id),
   isFavorite: (type, id) => state.favorites[type]?.includes(String(id)) || false,
@@ -2305,6 +2308,71 @@ async function playSeriesEpisode(epStreamId, epName, logo, plot, epExt, epIndex,
   }
 }
 
+// 7.0 TV shell: play a series episode with full series context (auto-advance
+// on end, remote >>/<< episode zap) but WITHOUT the legacy series page — the
+// shell has no catalog behind the player, so it runs in the same vod-mode
+// overlay movies use. Handlers are restored on exit so live-channel zapping
+// and movie playback aren't left pointing at a dead series session.
+async function playSeriesEpisodeTv(seriesItem, info, seasonNum, epIndex, resumeTime = 0, backdrop = '') {
+  const episodes = (info?.episodes || {})[String(seasonNum)] || [];
+  const ep = episodes[epIndex];
+  if (!ep || !playerInstance) return;
+
+  // Series metadata for Continue Watching entries (playSeriesEpisode reads it).
+  state.currentSeriesMeta = {
+    id: seriesItem.series_id,
+    name: info.info?.name || seriesItem.name || 'Series',
+    cover: info.info?.cover || seriesItem.cover || seriesItem.stream_icon || '',
+    backdrop
+  };
+
+  // Same overlay environment playVODStream sets up.
+  document.body.classList.add('vod-mode');
+  document.querySelector('.sidebar')?.classList.add('hidden');
+  document.querySelector('.top-header')?.classList.add('hidden');
+  document.querySelector('.epg-section-container')?.classList.add('hidden');
+  document.querySelector('.program-details-panel')?.classList.add('hidden');
+
+  playerInstance.setOnPrevChannel(() => playPreviousEpisode());
+  playerInstance.setOnNextChannel(() => playNextEpisode());
+  playerInstance.onVideoEnded = () => playNextEpisode();
+  playerInstance.onExitVod = () => {
+    playerInstance.setOnPrevChannel(() => playPreviousChannel());
+    playerInstance.setOnNextChannel(() => playNextChannel());
+    playerInstance.onVideoEnded = null;
+    playerInstance.onExitVod = exitVodPlayer;
+    state.seriesPlayback = null;
+    exitVodPlayer();
+  };
+
+  const epExt = ep.container_extension || ep.info?.container_extension || '';
+  const epName = `${state.currentSeriesMeta.name} - S${seasonNum}E${ep.episode_num}: ${ep.title || ''}`;
+  await playSeriesEpisode(ep.id, epName, state.currentSeriesMeta.cover, ep.info?.plot || '', epExt, epIndex, episodes, seasonNum, info, resumeTime);
+}
+
+// 7.0 TV shell: resume a series episode from Continue Watching without
+// opening the legacy series dashboard (which would bleed the old UI through
+// under the shell).
+async function resumeSeriesEpisodeTv(item) {
+  try {
+    const info = await getStreamInfo(item.seriesId, 'series');
+    const episodesMap = info?.episodes || {};
+    const season = episodesMap[String(item.season)] ? String(item.season) : Object.keys(episodesMap)[0];
+    const eps = episodesMap[season] || [];
+    let idx = eps.findIndex(e => String(e.id) === String(item.id));
+    let resume = item.position || 0;
+    if (idx === -1) { idx = 0; resume = 0; } // episode gone from provider — start at S1E1 of that season
+    if (!eps.length) throw new Error('No episodes');
+    await playSeriesEpisodeTv(
+      { series_id: item.seriesId, name: item.seriesName, cover: item.logo },
+      info, season, idx, resume, item.backdrop || ''
+    );
+  } catch (err) {
+    console.error('TV resume failed:', err);
+    showToast('Failed to resume episode', 'error');
+  }
+}
+
 async function playNextEpisode() {
   if (!state.seriesPlayback || !state.seriesPlayback.seriesInfo) return;
   
@@ -2682,6 +2750,11 @@ async function playVODStream(streamId, type, name, logo, description, containerE
   // Track this movie for Continue Watching.
   currentVodItem = { id: String(streamId), type: type || 'movie', name, cardTitle: name, logo, containerExtension, backdrop };
   lastProgressSave = 0;
+
+  // Clear stale series auto-advance wiring — a previous series session would
+  // otherwise auto-play ITS next episode when this stream ends.
+  state.seriesPlayback = null;
+  if (playerInstance) playerInstance.onVideoEnded = null;
 
   // VOD plays in its own full-screen player overlay (movies/series), NOT the
   // Live-TV layout. We don't switch tabs — the overlay sits over the catalog.

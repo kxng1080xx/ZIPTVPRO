@@ -963,7 +963,13 @@ async function screenBrowse(params) {
         const item = { name: it.cardTitle || it.name, stream_icon: it.logo, stream_id: it.id, series_id: it.seriesId };
         const card = posterCard(item, `cw-${i}`,
           pct ? `<div class="tvn-poster-progress"><div style="width:${pct}%"></div></div>` : '');
-        card.onclick = () => { hideForPlayback(); H.resumeCw(it); };
+        card.onclick = () => {
+          hideForPlayback();
+          // Series resume must stay in the shell (H.resumeCw opens the legacy
+          // series dashboard, which bleeds the old UI through under TV mode).
+          if (it.type === 'series' && H.resumeEpisode) H.resumeEpisode(it);
+          else H.resumeCw(it);
+        };
         row.appendChild(card);
       });
     }
@@ -1117,10 +1123,10 @@ async function screenDetails(params) {
               <span class="tvn-ep-meta">${esc(ep.info?.duration || '')}</span>
             </button>`);
           card.onclick = () => {
-            const epExt = ep.container_extension || ep.info?.container_extension || '';
-            const epName = `${info?.info?.name || item.name} - S${sn}E${ep.episode_num}: ${ep.title || ''}`;
             hideForPlayback();
-            H.playVod(ep.id, 'series', epName, info?.info?.cover || art, ep.info?.plot || '', epExt, 0, backdrop);
+            // Full series context (auto-next on end, >>/<< episode zap) —
+            // NOT the generic movie path, which can't advance episodes.
+            H.playEpisode(item, info, sn, i, 0, backdrop);
           };
           epsEl.appendChild(card);
         });
