@@ -1344,3 +1344,94 @@ body.tv-native .live-badge {
   letter-spacing: 0.08em;
   animation: tvn-livepulse 2.4s ease-in-out infinite;
 }
+
+/* --------------------------------------------------------------------------
+   Popout menu (#tvn-popup) — centered list picker over the current screen
+   (playlist switcher etc.). Lives inside the stage so it scales with the UI;
+   the D-pad engine confines focus to it while open (see navRootEl).
+   -------------------------------------------------------------------------- */
+#tvn-popup {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: rgba(5, 8, 15, 0.62);
+  backdrop-filter: blur(10px);
+  animation: tvn-fadein 0.15s ease;
+}
+body.perf-lite #tvn-popup { backdrop-filter: none; background: rgba(5, 8, 15, 0.82); }
+body.perf-lite #tvn-popup { animation: none; }
+.tvn-popup-panel {
+  width: 620px;
+  max-height: 72%;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 34px 30px 30px;
+  border-radius: 26px;
+  background: linear-gradient(175deg, rgba(38, 50, 78, 0.55), rgba(13, 18, 32, 0.97));
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.55);
+}
+.tvn-popup-title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  padding-left: 8px;
+}
+.tvn-popup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  padding: 4px;
+}
+.tvn-popup-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 20px 26px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: inherit;
+  text-align: left;
+  font-family: inherit;
+}
+.tvn-popup-row.tvn-sel {
+  background: color-mix(in srgb, var(--acc, #38bdf8) 14%, rgba(255, 255, 255, 0.03));
+  border-color: color-mix(in srgb, var(--acc, #38bdf8) 40%, transparent);
+}
+.tvn-popup-row-txt {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tvn-popup-row-title {
+  font-size: 25px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tvn-popup-row-sub {
+  font-size: 20px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.5);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tvn-popup-row-sub:empty { display: none; }
+.tvn-popup-row-sub.tvn-danger-txt { color: #f87171; }
+.tvn-popup-check {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--acc, #38bdf8);
+}

@@ -83,6 +83,7 @@ let sawPlayback = false;
 let restoreFallbackTimer = null;
 let lastFocusKey = {}; // per-screen focus memory
 let zapList = [];      // channel list the last live playback started from (>> / << zapping)
+let popupEl = null;    // #tvn-popup (popout list picker — confines D-pad nav while open)
 
 // per-session caches
 const epgCache = new Map();      // streamId -> { at, listings }
@@ -229,8 +230,9 @@ function progressPct(p) {
 // Spatial D-pad navigation (from the design prototype)
 // ==========================================================================
 function navRootEl() {
-  // the chooser (pre-login) and the shell share the engine
-  return document.getElementById('tvn-chooser') || root;
+  // the chooser (pre-login), an open popout, and the shell share the engine;
+  // while a popout is up it owns the D-pad so focus can't wander behind it
+  return document.getElementById('tvn-chooser') || popupEl || root;
 }
 
 function focusables() {
@@ -337,6 +339,8 @@ function onKeyDown(e) {
     else focusAuto();
   } else if (k === 'Escape' || k === 'Backspace' || k === 'GoBack' || k === 'BrowserBack') {
     if (document.getElementById('tvn-chooser')) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+    // an open popout swallows Back — close it, stay on the screen
+    if (popupEl) { e.preventDefault(); e.stopImmediatePropagation(); closePopup(); return; }
     // On the search screen, Backspace deletes a character while there is one.
     if (k === 'Backspace' && current && current.name === 'search' &&
         window.__tvnQueryDel && window.__tvnQueryDel()) {
@@ -348,6 +352,52 @@ function onKeyDown(e) {
     e.stopImmediatePropagation();
     goBack();
   }
+}
+
+// ==========================================================================
+// Popout menu — centered list picker over the current screen. D-pad nav is
+// confined to it (see navRootEl); Back/Esc or a backdrop click closes it.
+// ==========================================================================
+function closePopup(refocus = true) {
+  if (!popupEl) return false;
+  const returnTo = popupEl._returnFocus;
+  popupEl.remove();
+  popupEl = null;
+  if (refocus && returnTo && document.contains(returnTo)) {
+    returnTo.focus({ preventScroll: true });
+  }
+  return true;
+}
+
+/** items: [{ id, title, sub, selected, danger }] — onPick(item, rowEl) */
+function openPopup({ title, items, onPick }) {
+  closePopup(false);
+  const pop = el(`
+    <div id="tvn-popup">
+      <div class="tvn-popup-panel">
+        <span class="tvn-popup-title">${esc(title)}</span>
+        <div class="tvn-popup-list"></div>
+      </div>
+    </div>`);
+  const listBox = pop.querySelector('.tvn-popup-list');
+  (items || []).forEach((it) => {
+    const row = el(`
+      <button class="tvn-popup-row tvn-focable ${it.selected ? 'tvn-sel' : ''}" data-nav ${it.selected ? 'data-autofocus' : ''} data-fkey="pop-${esc(it.id)}">
+        <span class="tvn-popup-row-txt">
+          <span class="tvn-popup-row-title">${esc(it.title)}</span>
+          <span class="tvn-popup-row-sub ${it.danger ? 'tvn-danger-txt' : ''}">${esc(it.sub || '')}</span>
+        </span>
+        <span class="tvn-popup-check">${it.selected ? '✓' : ''}</span>
+      </button>`);
+    row.onclick = () => onPick(it, row);
+    listBox.appendChild(row);
+  });
+  // mouse users: clicking the dimmed backdrop dismisses
+  pop.addEventListener('mousedown', (e) => { if (e.target === pop) closePopup(); });
+  pop._returnFocus = document.activeElement;
+  popupEl = pop;
+  stage.appendChild(pop);
+  focusAuto();
 }
 
 // ==========================================================================
@@ -381,6 +431,7 @@ function goBack() {
 
 function renderCurrent() {
   if (!root || !current) return;
+  closePopup(false); // never carry a popout across a screen change
   if (progressTimer) { clearInterval(progressTimer); progressTimer = null; }
   window.__tvnQueryDel = null;
   stage.innerHTML = '<div class="tvn-ambient"></div>';
@@ -1299,7 +1350,7 @@ async function screenSettings(params = {}) {
   // --- Playback / performance ---
   const gPerf = group('Playback');
   const perfTile = tile(gPerf, {
-    icon: I.zap(30), title: 'Performance mode', sub: `Lite effects for weak devices · ${perfLabel}`, fkey: 'perf'
+    icon: I.zap(30), title: 'Performance mode', sub: perfLabel, fkey: 'perf'
   });
   perfTile.onclick = () => {
     // cycle Auto → On → Off
@@ -1307,7 +1358,7 @@ async function screenSettings(params = {}) {
     const next = cur === null ? 'on' : cur === 'on' ? 'off' : null;
     if (window.setPerfLite) window.setPerfLite(next === null ? null : next === 'on');
     const label = next === 'on' ? 'On' : next === 'off' ? 'Off' : 'Auto';
-    perfTile.querySelector('.tvn-set-tile-sub').textContent = `Lite effects for weak devices · ${label}`;
+    perfTile.querySelector('.tvn-set-tile-sub').textContent = label;
   };
 
   // --- Player engine (mirror of the mobile/desktop Settings tile) ---
@@ -1346,27 +1397,45 @@ async function screenSettings(params = {}) {
   try {
     const { playlists, activeId } = await getPlaylists();
     const acct = H.accountStatus ? H.accountStatus() : null;
-    (playlists || []).forEach(p => {
-      const isActive = String(p.id) === String(activeId);
-      const t = tile(gPl, {
-        icon: I.list(30),
-        title: p.name || p.playlistName || 'Playlist',
-        sub: isActive
-          ? `Current playlist${acct ? ` · ${acct.text}` : ''}`
-          : 'Switch to this playlist',
-        fkey: `pl-${p.id}`,
-        autofocus: params.section === 'playlists' && isActive
-      });
-      if (isActive) t.querySelector('.tvn-set-tile-icon').style.color = 'var(--acc)';
-      if (isActive && acct && acct.danger) t.querySelector('.tvn-set-tile-sub').style.color = '#f87171';
-      t.onclick = async () => {
-        if (isActive) return;
-        t.querySelector('.tvn-set-tile-sub').textContent = 'Switching…';
-        try { await H.switchPlaylist(p.id); } catch (e) {
-          t.querySelector('.tvn-set-tile-sub').textContent = 'Failed — try again';
-        }
-      };
+    const plName = (p) => (p && (p.name || p.playlistName)) || 'Playlist';
+    const active = (playlists || []).find(p => String(p.id) === String(activeId));
+    // One tile — the full list lives in a popout so a long playlist collection
+    // doesn't crowd the settings grid.
+    const swTile = tile(gPl, {
+      icon: I.list(30),
+      title: 'Switch playlist',
+      sub: `${plName(active)}${acct ? ` · ${acct.text}` : ''}`,
+      fkey: 'switchpl',
+      autofocus: params.section === 'playlists'
     });
+    swTile.querySelector('.tvn-set-tile-icon').style.color = 'var(--acc)';
+    if (acct && acct.danger) swTile.querySelector('.tvn-set-tile-sub').style.color = '#f87171';
+    swTile.onclick = () => {
+      let switching = false;
+      openPopup({
+        title: 'Switch playlist',
+        items: (playlists || []).map(p => ({
+          id: p.id,
+          title: plName(p),
+          sub: String(p.id) === String(activeId)
+            ? `Current playlist${acct ? ` · ${acct.text}` : ''}` : '',
+          selected: String(p.id) === String(activeId),
+          danger: String(p.id) === String(activeId) && !!(acct && acct.danger)
+        })),
+        onPick: async (it, row) => {
+          if (String(it.id) === String(activeId)) { closePopup(); return; }
+          if (switching) return;
+          switching = true;
+          row.querySelector('.tvn-popup-row-sub').textContent = 'Switching…';
+          try {
+            await H.switchPlaylist(it.id); // re-enters the shell on success
+          } catch (e) {
+            switching = false;
+            row.querySelector('.tvn-popup-row-sub').textContent = 'Failed — try again';
+          }
+        }
+      });
+    };
   } catch (e) {}
   const addPlTile = tile(gPl, { icon: I.plus(30), title: 'Add playlist', sub: 'Connect a new source', fkey: 'addpl' });
   addPlTile.onclick = () => { try { if (H.addPlaylist) H.addPlaylist(); } catch (e) {} };
