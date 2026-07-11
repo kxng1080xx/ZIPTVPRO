@@ -7368,11 +7368,38 @@ body.native-video-active #main-video-player { display: none !important; }
   }
 }
 /* Same immersive fullscreen, but for the plain HTML5 <video> path (native
-   playback unavailable/disabled/fell back). No libVLC surface behind the
-   WebView here, so a plain display:none on the app shell is enough — none of
-   the visibility/transparency punch-through tricks above are needed. */
+   playback unavailable/disabled/fell back).
+
+   NOT display:none on the app shell: #video-container lives INSIDE
+   #app-container, so display:none would kill its layout — and on Android a
+   PLAYING <video> is a hardware overlay that keeps painting at its last
+   layout rect anyway, leaving the video stuck at the old boxed position
+   while the app chrome shows around it ("blue background over the player").
+   Instead: visibility-hide the chrome, punch the player subtree back
+   through, and give the video a real fullscreen layout rect to follow. */
 @media (orientation: landscape) {
-  body.app-native.player-fs:not(.native-video-active) #app-container { display: none !important; }
+  body.app-native.player-fs:not(.native-video-active) #app-container { visibility: hidden !important; }
+  body.app-native.player-fs:not(.native-video-active) #video-container,
+  body.app-native.player-fs:not(.native-video-active) #video-container * { visibility: visible !important; }
+  /* Neutralize transforms/filters on the ancestor chain — any of them turns
+     the ancestor into the containing block for position:fixed and traps the
+     player inside the page layout instead of the viewport. */
+  body.app-native.player-fs:not(.native-video-active) #app-container,
+  body.app-native.player-fs:not(.native-video-active) .app-layout,
+  body.app-native.player-fs:not(.native-video-active) .content-viewport,
+  body.app-native.player-fs:not(.native-video-active) .view-panel,
+  body.app-native.player-fs:not(.native-video-active) .live-top-row,
+  body.app-native.player-fs:not(.native-video-active) .series-top-row,
+  body.app-native.player-fs:not(.native-video-active) .player-wrapper,
+  body.app-native.player-fs:not(.native-video-active) .series-player-wrapper,
+  body.app-native.player-fs:not(.native-video-active) .player-stage {
+    transform: none !important;
+    filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    perspective: none !important;
+    will-change: auto !important;
+  }
   body.app-native.player-fs:not(.native-video-active) #video-container {
     position: fixed !important;
     inset: 0 !important;

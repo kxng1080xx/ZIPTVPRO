@@ -1315,6 +1315,23 @@ body.perf-lite #tvn-root .tvn-home-bg i { transition: none; }
 body.tv-native.tvn-playing:not(.native-video-active) #live-view.view-panel {
   display: block !important;
 }
+/* Any transform/filter on an ancestor would become the containing block for
+   the position:fixed cover and trap the player inside the page layout
+   (video pinned at the top, UI showing around it). */
+body.tv-native.tvn-playing:not(.native-video-active) #app-container,
+body.tv-native.tvn-playing:not(.native-video-active) .app-layout,
+body.tv-native.tvn-playing:not(.native-video-active) .content-viewport,
+body.tv-native.tvn-playing:not(.native-video-active) .view-panel,
+body.tv-native.tvn-playing:not(.native-video-active) .live-top-row,
+body.tv-native.tvn-playing:not(.native-video-active) .player-wrapper,
+body.tv-native.tvn-playing:not(.native-video-active) .player-stage {
+  transform: none !important;
+  filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  perspective: none !important;
+  will-change: auto !important;
+}
 body.tv-native.tvn-playing:not(.native-video-active) .video-container {
   position: fixed !important;
   inset: 0 !important;
