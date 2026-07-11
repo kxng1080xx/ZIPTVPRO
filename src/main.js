@@ -106,6 +106,14 @@ const tvNativeHandlers = {
   resumeCw: (item) => resumeContinueWatching(item),
   toggleFavorite: (type, id) => toggleChannelFavorite(type, id),
   isFavorite: (type, id) => state.favorites[type]?.includes(String(id)) || false,
+  // Pinning (7.0.4) — same localStorage stores as the legacy UI, so pins made
+  // in either interface show up in both.
+  pinnedCats: (tab) => getPinnedForTab(tab),
+  isCatPinned: (id, tab) => isCategoryPinned(id, tab),
+  togglePinCat: (id, name, tab) => togglePinCategory(id, name, tab),
+  pinnedChs: () => getPinnedChannels(),
+  isChPinned: (id) => isChannelPinned(id),
+  togglePinCh: (id, name) => togglePinChannel(id, name),
   getViewCount: (id) => getChannelViewCounts()[String(id)] || 0,
   switchPlaylist: (id) => switchToPlaylist(id),
   resync: () => triggerFullSync(),

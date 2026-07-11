@@ -119,7 +119,8 @@ const I = {
   logout: (s = 30, c = 'currentColor') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>`,
   monitor: (s = 30, c = 'currentColor') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>`,
   zap: (s = 30, c = 'currentColor') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>`,
-  info: (s = 30, c = 'currentColor') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`
+  info: (s = 30, c = 'currentColor') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`,
+  pin: (s = 17, c = 'var(--acc, #38bdf8)') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:7px;flex:none"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>`
 };
 
 // ==========================================================================
@@ -337,6 +338,16 @@ function onKeyDown(e) {
     const a = document.activeElement;
     if (inShell && a && a.hasAttribute('data-nav')) a.click();
     else focusAuto();
+  } else if (k === 'ContextMenu' ||
+             (e.keyCode === 82 && (!e.key || k === 'Unidentified' || k === 'ContextMenu'))) {
+    // Remote MENU (Android KEYCODE_MENU = 82 with an Unidentified key — never
+    // a PC keyboard's plain "r") on a pinnable row → Pin/Unpin popout.
+    const t = pinTargetOf(document.activeElement);
+    if (t && inShell && !popupEl) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      openPinMenuFor(t);
+    }
   } else if (k === 'Escape' || k === 'Backspace' || k === 'GoBack' || k === 'BrowserBack') {
     if (document.getElementById('tvn-chooser')) { e.preventDefault(); e.stopImmediatePropagation(); return; }
     // an open popout swallows Back — close it, stay on the screen
@@ -352,6 +363,59 @@ function onKeyDown(e) {
     e.stopImmediatePropagation();
     goBack();
   }
+}
+
+// ==========================================================================
+// Pin to top (7.0.4) — remote MENU key or right-click on a category/channel
+// row opens a popout with Pin/Unpin. Rows opt in via data-pinnable/-pin-id/
+// -pin-name; pins persist in the legacy stores (shared with the old UI).
+// ==========================================================================
+function pinTargetOf(el) {
+  return el && el.closest ? el.closest('[data-pinnable]') : null;
+}
+
+// Pinned-first ordering (stable within both groups, pins in pin order).
+function sortPinnedCats(list) {
+  const order = ((H && H.pinnedCats) ? H.pinnedCats('live') : []).map(p => String(p.id));
+  if (!order.length) return list;
+  const pinned = [], rest = [];
+  list.forEach(c => (order.includes(String(c.category_id)) ? pinned : rest).push(c));
+  pinned.sort((a, b) => order.indexOf(String(a.category_id)) - order.indexOf(String(b.category_id)));
+  return [...pinned, ...rest];
+}
+function sortPinnedChannels(list) {
+  const order = ((H && H.pinnedChs) ? H.pinnedChs() : []).map(String);
+  if (!order.length) return list;
+  const pinned = [], rest = [];
+  list.forEach(c => (order.includes(String(c.stream_id)) ? pinned : rest).push(c));
+  pinned.sort((a, b) => order.indexOf(String(a.stream_id)) - order.indexOf(String(b.stream_id)));
+  return [...pinned, ...rest];
+}
+
+function openPinMenuFor(t) {
+  if (!t || !H) return;
+  const kind = t.dataset.pinnable;            // 'cat' | 'ch'
+  const id = t.dataset.pinId;
+  const name = t.dataset.pinName || (kind === 'cat' ? 'Category' : 'Channel');
+  const fkey = t.dataset.fkey;
+  if (!id) return;
+  const pinned = kind === 'cat'
+    ? !!(H.isCatPinned && H.isCatPinned(id, 'live'))
+    : !!(H.isChPinned && H.isChPinned(id));
+  openPopup({
+    title: name,
+    items: [{ id: 'toggle', title: pinned ? 'Unpin from top' : 'Pin to top' }],
+    onPick: () => {
+      try {
+        if (kind === 'cat') { if (H.togglePinCat) H.togglePinCat(id, name, 'live'); }
+        else if (H.togglePinCh) H.togglePinCh(id, name);
+      } catch (e) {}
+      closePopup(false);
+      // Re-render so the list re-sorts; focus lands back on the same row.
+      if (current && fkey) lastFocusKey[current.name] = fkey;
+      renderCurrent();
+    }
+  });
 }
 
 // ==========================================================================
@@ -686,7 +750,7 @@ async function screenLive(params) {
       { category_id: 'all', category_name: 'All Channels', count: totalsCache?.live || null },
       { category_id: 'favorites', category_name: 'Favorites', count: r?.counts?.favorites ?? null },
       { category_id: 'recently_viewed', category_name: 'Recently Viewed', count: r?.counts?.recently_viewed ?? null },
-      ...((r && r.categories) || []).filter(c => c.category_id !== 'all')
+      ...sortPinnedCats(((r && r.categories) || []).filter(c => c.category_id !== 'all'))
     ];
   } catch (e) {
     catBox.innerHTML = '<div class="tvn-note">No categories yet — the playlist may still be syncing.</div>';
@@ -697,11 +761,14 @@ async function screenLive(params) {
     catBox.innerHTML = '';
     cats.forEach(c => {
       const hue = hashHue(c.category_name);
+      const reserved = ['all', 'favorites', 'recently_viewed'].includes(String(c.category_id));
+      const catPinned = !reserved && H.isCatPinned && H.isCatPinned(c.category_id, 'live');
       const row = el(`
-        <button class="tvn-cat-row tvn-focable ${String(c.category_id) === String(selCatId) ? 'tvn-sel' : ''}" data-nav data-fkey="cat-${esc(c.category_id)}">
+        <button class="tvn-cat-row tvn-focable ${String(c.category_id) === String(selCatId) ? 'tvn-sel' : ''}" data-nav data-fkey="cat-${esc(c.category_id)}"
+          ${reserved ? '' : `data-pinnable="cat" data-pin-id="${esc(c.category_id)}" data-pin-name="${esc(c.category_name)}"`}>
           <div class="tvn-mono tvn-cat-tile" style="background:${grad(hue, hue + 30)}"><span>${esc(String(c.category_name || '?').slice(0, 2).toUpperCase())}</span></div>
           <div class="tvn-cat-txt">
-            <span class="tvn-cat-name">${esc(c.category_name)}</span>
+            <span class="tvn-cat-name">${catPinned ? I.pin() : ''}${esc(c.category_name)}</span>
             <span class="tvn-cat-count">${c.count != null ? `${fmtNum(c.count)} channels` : ''}</span>
           </div>
         </button>`);
@@ -781,11 +848,13 @@ async function screenLive(params) {
       const idx = rendered + i;
       const views = H.getViewCount ? H.getViewCount(ch.stream_id) : 0;
       const fav = H.isFavorite ? H.isFavorite('live', ch.stream_id) : false;
+      const chPinned = H.isChPinned && H.isChPinned(ch.stream_id);
       const row = el(`
-        <button class="tvn-ch-row tvn-focable" data-nav data-fkey="ch-${esc(ch.stream_id)}">
+        <button class="tvn-ch-row tvn-focable" data-nav data-fkey="ch-${esc(ch.stream_id)}"
+          data-pinnable="ch" data-pin-id="${esc(ch.stream_id)}" data-pin-name="${esc(ch.name)}">
           ${tileHtml(ch.name, ch.stream_icon, 'tvn-ch-tile')}
           <div class="tvn-ch-txt">
-            <span class="tvn-ch-name">${esc(ch.name)}</span>
+            <span class="tvn-ch-name">${chPinned ? I.pin() : ''}${esc(ch.name)}</span>
             <span class="tvn-ch-sub">${views ? `${fmtNum(views)} view${views === 1 ? '' : 's'}` : '&nbsp;'}</span>
             <div class="tvn-ch-badges">${badgeRow(ch)}</div>
           </div>
@@ -830,7 +899,7 @@ async function screenLive(params) {
     try {
       const r = await getStreams({ type: 'live', categoryId: catId, page: 1, limit: 2000 });
       if (loadedCatId !== catId) return;
-      channels = (r && r.items) || [];
+      channels = sortPinnedChannels((r && r.items) || []);
       rendered = 0;
       chBox.innerHTML = channels.length ? '' : '<div class="tvn-note">No channels in this category.</div>';
       appendRows();
@@ -1171,7 +1240,7 @@ async function screenGuide(params) {
     cats = [
       { category_id: 'all', category_name: 'All Channels' },
       { category_id: 'favorites', category_name: 'Favorites' },
-      ...((catCache.data && catCache.data.categories) || []).filter(c => c.category_id !== 'all')
+      ...sortPinnedCats(((catCache.data && catCache.data.categories) || []).filter(c => c.category_id !== 'all'))
     ];
   } catch (e) {}
 
@@ -1179,10 +1248,13 @@ async function screenGuide(params) {
   catBox.innerHTML = '';
   cats.forEach(c => {
     const hue = hashHue(c.category_name);
+    const reserved = ['all', 'favorites'].includes(String(c.category_id));
+    const catPinned = !reserved && H.isCatPinned && H.isCatPinned(c.category_id, 'live');
     const row = el(`
-      <button class="tvn-cat-row tvn-focable ${String(c.category_id) === String(selCatId) ? 'tvn-sel' : ''}" data-nav data-fkey="gcat-${esc(c.category_id)}">
+      <button class="tvn-cat-row tvn-focable ${String(c.category_id) === String(selCatId) ? 'tvn-sel' : ''}" data-nav data-fkey="gcat-${esc(c.category_id)}"
+        ${reserved ? '' : `data-pinnable="cat" data-pin-id="${esc(c.category_id)}" data-pin-name="${esc(c.category_name)}"`}>
         <div class="tvn-mono tvn-cat-tile" style="background:${grad(hue, hue + 30)}"><span>${esc(String(c.category_name || '?').slice(0, 2).toUpperCase())}</span></div>
-        <div class="tvn-cat-txt"><span class="tvn-cat-name">${esc(c.category_name)}</span></div>
+        <div class="tvn-cat-txt"><span class="tvn-cat-name">${catPinned ? I.pin() : ''}${esc(c.category_name)}</span></div>
       </button>`);
     row.onclick = () => {
       current.params = { ...current.params, catId: c.category_id };
@@ -1200,7 +1272,7 @@ async function screenGuide(params) {
     let channels = [];
     try {
       const r = await getStreams({ type: 'live', categoryId: catId, page: 1, limit: 2000 });
-      channels = (r && r.items) || [];
+      channels = sortPinnedChannels((r && r.items) || []);
     } catch (e) {}
     if (seq !== loadSeq) return;
     rowsBox.innerHTML = channels.length ? '' : '<div class="tvn-note">No channels in this category.</div>';
@@ -1758,6 +1830,17 @@ export function initTvNative(handlers) {
       t.focus({ preventScroll: true });
     }
   });
+
+  // Right-click on a pinnable row (mouse users) → Pin/Unpin popout.
+  window.addEventListener('contextmenu', (e) => {
+    if (!shellHasKeys()) return;
+    const t = pinTargetOf(e.target);
+    const r = navRootEl();
+    if (!t || !r || !r.contains(t)) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    openPinMenuFor(t);
+  }, true);
 
   // True while the shell is the visible surface — the legacy D-pad
   // coordinator uses this to keep its hands off focus (it re-focuses its own
