@@ -697,13 +697,14 @@ function openPopup({ title, items, onPick }) {
   pop._returnFocus = document.activeElement;
   popupEl = pop;
   // While the shell is the visible surface the popout lives in the scaled
-  // stage; over playback (OSD options) the stage is hidden, so pin it to the
-  // viewport instead.
+  // stage; over playback (OSD options) it must live INSIDE #video-container —
+  // during OS fullscreen only descendants of the fullscreen element render,
+  // so a body-level popout would paint behind the player.
   if (root && !root.classList.contains('tvn-hidden')) {
     stage.appendChild(pop);
   } else {
     pop.classList.add('tvn-popup-fixed');
-    document.body.appendChild(pop);
+    (document.fullscreenElement || document.getElementById('video-container') || document.body).appendChild(pop);
   }
   focusAuto();
 }
