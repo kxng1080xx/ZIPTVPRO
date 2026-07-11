@@ -84,6 +84,14 @@ let restoreFallbackTimer = null;
 let lastFocusKey = {}; // per-screen focus memory
 let zapList = [];      // channel list the last live playback started from (>> / << zapping)
 let popupEl = null;    // #tvn-popup (popout list picker — confines D-pad nav while open)
+// 7.1 live-playback OSD (the shell's own player chrome)
+let osdEl = null;
+let osdHideTimer = null;
+let osdTickTimer = null;
+let osdChannel = null;   // channel currently playing (set via the H.playChannel wrap)
+let osdProgram = null;   // current EPG programme for it (title / start / end)
+let osdPaused = false;
+let osdFetchSeq = 0;
 
 // per-session caches
 const epgCache = new Map();      // streamId -> { at, listings }
@@ -120,7 +128,11 @@ const I = {
   monitor: (s = 30, c = 'currentColor') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>`,
   zap: (s = 30, c = 'currentColor') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>`,
   info: (s = 30, c = 'currentColor') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`,
-  pin: (s = 17, c = 'var(--acc, #38bdf8)') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:7px;flex:none"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>`
+  pin: (s = 17, c = 'var(--acc, #38bdf8)') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:7px;flex:none"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>`,
+  pause: (s = 34, c = '#0a0f1a') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="${c}" stroke="none"><rect x="6.5" y="4.5" width="4" height="15" rx="1.2"></rect><rect x="13.5" y="4.5" width="4" height="15" rx="1.2"></rect></svg>`,
+  skipPrev: (s = 26, c = '#fff') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="${c}" stroke="none"><polygon points="18,4.5 8,12 18,19.5"></polygon><rect x="5" y="4.5" width="2.6" height="15" rx="1"></rect></svg>`,
+  skipNext: (s = 26, c = '#fff') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="${c}" stroke="none"><polygon points="6,4.5 16,12 6,19.5"></polygon><rect x="16.4" y="4.5" width="2.6" height="15" rx="1"></rect></svg>`,
+  sliders: (s = 24, c = '#fff') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2.2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"></line><line x1="4" y1="12" x2="20" y2="12"></line><line x1="4" y1="17" x2="20" y2="17"></line><circle cx="9" cy="7" r="2.2" fill="#0d1220"></circle><circle cx="15" cy="12" r="2.2" fill="#0d1220"></circle><circle cx="7" cy="17" r="2.2" fill="#0d1220"></circle></svg>`
 };
 
 // ==========================================================================
@@ -231,9 +243,14 @@ function progressPct(p) {
 // Spatial D-pad navigation (from the design prototype)
 // ==========================================================================
 function navRootEl() {
-  // the chooser (pre-login), an open popout, and the shell share the engine;
-  // while a popout is up it owns the D-pad so focus can't wander behind it
-  return document.getElementById('tvn-chooser') || popupEl || root;
+  // the chooser (pre-login), an open popout, the playback OSD, and the shell
+  // share the engine; whichever is the visible surface owns the D-pad so
+  // focus can't wander behind it
+  const chooser = document.getElementById('tvn-chooser');
+  if (chooser) return chooser;
+  if (popupEl) return popupEl;
+  if (root && root.classList.contains('tvn-hidden') && osdVisible()) return osdEl;
+  return root;
 }
 
 function focusables() {
@@ -310,6 +327,7 @@ function ensureVisible(el) {
 // never while video chrome, a legacy modal, or the TV keyboard is on top.
 function shellHasKeys() {
   if (document.getElementById('tvn-chooser')) return true;
+  if (popupEl) return true; // a popout owns keys even over playback (OSD options)
   if (!root || root.classList.contains('tvn-hidden')) return false;
   if (document.fullscreenElement) return false;
   if (document.body.classList.contains('player-fs')) return false;
@@ -320,6 +338,35 @@ function shellHasKeys() {
 }
 
 function onKeyDown(e) {
+  // Live-playback OSD: while the shell has handed the screen to the player,
+  // the OSD owns the D-pad — any nav key summons it, arrows move within it,
+  // Back dismisses it (Back with the OSD hidden falls through to the normal
+  // exit-to-shell flow, media keys/letters always pass to the player).
+  if (osdActive() && !popupEl &&
+      !document.querySelector('.tvk-overlay, .tvsort-overlay, #update-modal-overlay, .modal-overlay:not(.hidden)')) {
+    const kk = e.key;
+    if (kk === 'ArrowUp' || kk === 'ArrowDown' || kk === 'ArrowLeft' || kk === 'ArrowRight' ||
+        kk === 'Enter' || kk === ' ') {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (!osdVisible()) { osdShow(); return; }
+      osdBump();
+      if (kk === 'Enter' || kk === ' ') {
+        const a = document.activeElement;
+        if (osdEl.contains(a) && a.hasAttribute('data-nav')) a.click();
+        else osdShow();
+      } else {
+        move(kk.replace('Arrow', '').toLowerCase());
+      }
+      return;
+    }
+    if ((kk === 'Escape' || kk === 'Backspace' || kk === 'GoBack' || kk === 'BrowserBack') && osdVisible()) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      osdHide();
+      return;
+    }
+  }
   if (!shellHasKeys()) return;
   const k = e.key;
   // While the shell is the visible surface it owns the remote outright:
@@ -362,6 +409,195 @@ function onKeyDown(e) {
     e.preventDefault();
     e.stopImmediatePropagation();
     goBack();
+  }
+}
+
+// ==========================================================================
+// Live playback OSD (7.1) — the shell's own player chrome, per the design
+// mockup: channel chip + clock up top; LIVE badge, programme title, elapsed
+// time, transport (prev/pause/next) and actions (CC/star/options) down low,
+// with a "Back to channels" hint. Purely presentational — every control
+// proxies the legacy player's buttons so playback logic stays in player.js.
+// Lives INSIDE #video-container so it renders under OS fullscreen and gets
+// the native-compositing visibility punch-through for free.
+// ==========================================================================
+function osdActive() {
+  return document.body.classList.contains('tvn-playing') &&
+    !document.body.classList.contains('vod-mode') &&
+    !!root && root.classList.contains('tvn-hidden');
+}
+function osdVisible() {
+  return !!osdEl && osdEl.classList.contains('tvn-osd-show') && osdActive();
+}
+const legacyClick = (id) => { const b = document.getElementById(id); if (b) b.click(); };
+
+function ensureOsd() {
+  const host = document.getElementById('video-container');
+  if (!host) return null;
+  if (osdEl && osdEl.parentElement === host) return osdEl;
+  if (osdEl) osdEl.remove();
+  osdEl = el(`
+    <div id="tvn-osd">
+      <div class="tvn-osd-scrim tvn-osd-scrim-top"></div>
+      <div class="tvn-osd-scrim tvn-osd-scrim-bottom"></div>
+      <div class="tvn-osd-top">
+        <div class="tvn-osd-chip" data-osd-tile></div>
+        <span class="tvn-osd-chname" data-osd-chname></span>
+        <div style="flex:1"></div>
+        <span class="tvn-osd-clock" data-osd-clock></span>
+      </div>
+      <div class="tvn-osd-bottom">
+        <div class="tvn-osd-info">
+          <span class="tvn-osd-live">LIVE</span>
+          <span class="tvn-osd-title" data-osd-title></span>
+          <span class="tvn-osd-sub" data-osd-sub></span>
+          <span class="tvn-osd-elapsed" data-osd-elapsed></span>
+        </div>
+        <div class="tvn-osd-controls">
+          <div class="tvn-osd-center">
+            <button class="tvn-osd-btn tvn-focable" data-nav data-osd="prev" data-fkey="osd-prev" title="Previous channel">${I.skipPrev()}</button>
+            <button class="tvn-osd-btn tvn-osd-play tvn-focable" data-nav data-autofocus data-osd="play" data-fkey="osd-play" title="Play / Pause">${I.pause()}</button>
+            <button class="tvn-osd-btn tvn-focable" data-nav data-osd="next" data-fkey="osd-next" title="Next channel">${I.skipNext()}</button>
+          </div>
+          <div class="tvn-osd-right">
+            <button class="tvn-osd-btn tvn-osd-sm tvn-focable" data-nav data-osd="cc" data-fkey="osd-cc" title="Audio &amp; subtitles"><span class="tvn-osd-cctxt">CC</span></button>
+            <button class="tvn-osd-btn tvn-osd-sm tvn-focable" data-nav data-osd="fav" data-fkey="osd-fav" title="Favorite"><span class="tvn-osd-star" data-osd-star>${I.star}</span></button>
+            <button class="tvn-osd-btn tvn-osd-sm tvn-focable" data-nav data-osd="opts" data-fkey="osd-opts" title="Options">${I.sliders()}</button>
+          </div>
+        </div>
+        <button class="tvn-osd-hint" data-nav data-fkey="osd-back">⌄&nbsp;&nbsp;Back to channels</button>
+      </div>
+    </div>`);
+  osdEl.querySelector('[data-osd="prev"]').onclick = () => { osdBump(); legacyClick('player-prev-btn'); };
+  osdEl.querySelector('[data-osd="next"]').onclick = () => { osdBump(); legacyClick('player-next-btn'); };
+  osdEl.querySelector('[data-osd="play"]').onclick = () => {
+    osdBump();
+    legacyClick('player-play-pause-btn');
+    osdPaused = !osdPaused;
+    osdEl.querySelector('[data-osd="play"]').innerHTML = osdPaused ? I.play(34) : I.pause();
+  };
+  osdEl.querySelector('[data-osd="cc"]').onclick = () => { osdBump(); legacyClick('player-cc-btn'); };
+  osdEl.querySelector('[data-osd="fav"]').onclick = async () => {
+    osdBump();
+    if (!osdChannel || !H.toggleFavorite) return;
+    try { await H.toggleFavorite('live', osdChannel.stream_id); } catch (e) {}
+    catCache = null; // Favorites rail count changed
+    osdRefreshFav();
+  };
+  osdEl.querySelector('[data-osd="opts"]').onclick = () => {
+    osdBump();
+    openPopup({
+      title: (osdChannel && osdChannel.name) || 'Options',
+      items: [
+        { id: 'tracks', title: 'Audio & subtitles' },
+        { id: 'info', title: 'Channel info' },
+        { id: 'stop', title: 'Stop playback' }
+      ],
+      onPick: (it) => {
+        closePopup(false);
+        if (it.id === 'tracks') legacyClick('player-cc-btn');
+        else if (it.id === 'info') legacyClick('player-info-btn');
+        else if (it.id === 'stop') legacyClick('player-stop-btn');
+      }
+    });
+  };
+  osdEl.querySelector('[data-fkey="osd-back"]').onclick = () => {
+    osdHide();
+    if (H.exitPlayerFs) H.exitPlayerFs();
+  };
+  host.appendChild(osdEl);
+  return osdEl;
+}
+
+function osdRefreshFav() {
+  if (!osdEl || !osdChannel) return;
+  const on = H.isFavorite && H.isFavorite('live', osdChannel.stream_id);
+  const star = osdEl.querySelector('[data-osd-star]');
+  if (star) star.classList.toggle('tvn-fav', !!on);
+}
+
+function fmtElapsed(s) {
+  s = Math.max(0, Math.floor(s));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(x).padStart(2, '0')}`;
+}
+
+function osdRender() {
+  if (!ensureOsd()) return;
+  const ch = osdChannel || window.state?.activeChannel || {};
+  osdEl.querySelector('[data-osd-tile]').innerHTML = tileHtml(ch.name || '', ch.stream_icon, 'tvn-osd-tile');
+  osdEl.querySelector('[data-osd-chname]').textContent = ch.name || '';
+  osdEl.querySelector('[data-osd-sub]').textContent = ch.name || '';
+  osdEl.querySelector('[data-osd-title]').textContent = (osdProgram && osdProgram.title) || ch.name || 'Live TV';
+  osdRefreshFav();
+  osdTick();
+}
+
+function osdTick() {
+  if (!osdEl) return;
+  const elp = osdEl.querySelector('[data-osd-elapsed]');
+  if (osdProgram && osdProgram.start_timestamp) {
+    elp.textContent = fmtElapsed(Date.now() / 1000 - Number(osdProgram.start_timestamp));
+    // rolled past the end of the programme → pull the next one
+    if (osdProgram.end_timestamp && Date.now() / 1000 > Number(osdProgram.end_timestamp)) osdFetchProgram();
+  } else {
+    elp.textContent = '';
+  }
+  osdEl.querySelector('[data-osd-clock]').textContent = fmtTime();
+}
+
+async function osdFetchProgram() {
+  if (!osdChannel) return;
+  const seq = ++osdFetchSeq;
+  try {
+    const listings = await epgFor(osdChannel.stream_id);
+    if (seq !== osdFetchSeq) return;
+    const { current: cur } = nowNextOf(listings);
+    if (cur && cur !== osdProgram) { osdProgram = cur; if (osdVisible()) osdRender(); }
+  } catch (e) {}
+}
+
+function osdSetNowPlaying(ch, prog) {
+  osdChannel = ch || null;
+  osdProgram = prog || null;
+  osdPaused = false;
+  if (osdEl) {
+    const p = osdEl.querySelector('[data-osd="play"]');
+    if (p) p.innerHTML = I.pause();
+  }
+  if (!prog) osdFetchProgram();
+  // surface the OSD briefly on every channel start / zap — after the legacy
+  // play path has done its own focusDefault('player'), so ours wins
+  setTimeout(() => { if (osdActive()) osdShow(); }, 650);
+}
+
+function osdShow() {
+  if (!osdActive() || !ensureOsd()) return;
+  osdRender();
+  osdEl.classList.add('tvn-osd-show');
+  if (!osdEl.contains(document.activeElement)) {
+    const play = osdEl.querySelector('[data-osd="play"]');
+    if (play) play.focus({ preventScroll: true });
+  }
+  osdBump();
+  if (osdTickTimer) clearInterval(osdTickTimer);
+  osdTickTimer = setInterval(osdTick, 1000);
+}
+
+function osdBump() {
+  clearTimeout(osdHideTimer);
+  osdHideTimer = setTimeout(osdHide, 5000);
+}
+
+function osdHide() {
+  clearTimeout(osdHideTimer);
+  osdHideTimer = null;
+  if (osdTickTimer) { clearInterval(osdTickTimer); osdTickTimer = null; }
+  if (!osdEl) return;
+  osdEl.classList.remove('tvn-osd-show');
+  // release focus so a hidden button can't swallow the next Enter
+  if (osdEl.contains(document.activeElement)) {
+    try { document.activeElement.blur(); } catch (e) {}
   }
 }
 
@@ -460,7 +696,15 @@ function openPopup({ title, items, onPick }) {
   pop.addEventListener('mousedown', (e) => { if (e.target === pop) closePopup(); });
   pop._returnFocus = document.activeElement;
   popupEl = pop;
-  stage.appendChild(pop);
+  // While the shell is the visible surface the popout lives in the scaled
+  // stage; over playback (OSD options) the stage is hidden, so pin it to the
+  // viewport instead.
+  if (root && !root.classList.contains('tvn-hidden')) {
+    stage.appendChild(pop);
+  } else {
+    pop.classList.add('tvn-popup-fixed');
+    document.body.appendChild(pop);
+  }
   focusAuto();
 }
 
@@ -1747,6 +1991,7 @@ function restoreShell() {
   hiddenForPlayback = false;
   sawPlayback = false;
   clearTimeout(restoreFallbackTimer);
+  osdHide();
   document.body.classList.remove('tvn-playing');
   root.classList.remove('tvn-hidden');
   renderCurrent();
@@ -1791,6 +2036,15 @@ export function initTvNative(handlers) {
   ensureFont();
   document.body.classList.add('tv-native');
 
+  // Every live start/zap flows through H.playChannel — feed the playback OSD.
+  const origPlayChannel = H.playChannel;
+  if (origPlayChannel) {
+    H.playChannel = (ch, prog) => {
+      osdSetNowPlaying(ch, prog);
+      return origPlayChannel(ch, prog);
+    };
+  }
+
   // ---- Mouse support -------------------------------------------------------
   // TV mode hides the cursor for the D-pad experience (style.css keys off
   // body.tv-mouse). Any mouse movement shows it; it re-hides after a few
@@ -1805,6 +2059,8 @@ export function initTvNative(handlers) {
     document.body.classList.add('tv-mouse');
     if (mouseTimer) clearTimeout(mouseTimer);
     mouseTimer = setTimeout(mouseOff, 4000);
+    // mouse users get the playback OSD on movement, like the remote does
+    if (osdActive() && !popupEl) { if (osdVisible()) osdBump(); else osdShow(); }
   };
   window.addEventListener('mousemove', mouseOn, { passive: true });
   window.addEventListener('wheel', mouseOn, { passive: true });
@@ -1889,6 +2145,13 @@ export function initTvNative(handlers) {
 /** Build (or rebuild) the shell and land on the launcher. Call after login. */
 export function enterTvNative() {
   if (!H) return;
+  // Fresh session data: entering the shell happens after login OR a playlist
+  // switch — never serve the previous playlist's categories/EPG/details.
+  catCache = null;
+  totalsCache = null;
+  epgCache.clear();
+  infoCache.clear();
+  zapList = [];
   if (!root) {
     root = document.createElement('div');
     root.id = 'tvn-root';
@@ -1910,6 +2173,9 @@ export function exitTvNative() {
   if (clockTimer) clearInterval(clockTimer);
   if (progressTimer) clearInterval(progressTimer);
   clockTimer = progressTimer = null;
+  osdHide();
+  if (osdEl) { osdEl.remove(); osdEl = null; }
+  osdChannel = osdProgram = null;
   document.body.classList.remove('tvn-playing');
   if (root) root.remove();
   root = stage = null;

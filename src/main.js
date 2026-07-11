@@ -151,6 +151,9 @@ const tvNativeHandlers = {
      !document.body.classList.contains('vod-mode') && state.activeChannel)
       ? state.activeChannel : null,
   returnToPlayer: () => { try { playerInstance.autoFullscreen(); } catch (e) {} },
+  // 7.1 shell OSD "Back to channels": drop out of fullscreen playback — the
+  // playback-state observer then restores the shell (stream keeps running).
+  exitPlayerFs: () => { try { playerInstance.exitFullscreen(); } catch (e) {} },
   logout: async () => {
     try { playerInstance.stop(); } catch (e) {}
     await logout();

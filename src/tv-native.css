@@ -1480,3 +1480,148 @@ body.perf-lite #tvn-popup { animation: none; }
   font-weight: 800;
   color: var(--acc, #38bdf8);
 }
+
+/* --------------------------------------------------------------------------
+   Live playback OSD (7.1, #tvn-osd) — the shell's own player chrome per the
+   design mockup. Replaces the legacy overlay/banners while the shell owns a
+   LIVE session (VOD keeps the legacy chrome for its seek bar). Lives inside
+   #video-container so it renders under OS fullscreen and inherits the
+   native-compositing visibility punch-through.
+   -------------------------------------------------------------------------- */
+body.tv-native.tvn-playing:not(.vod-mode) .player-controls-overlay,
+body.tv-native.tvn-playing:not(.vod-mode) .channel-info-banner,
+body.tv-native.tvn-playing:not(.vod-mode) .now-next-bar,
+body.tv-native.tvn-playing:not(.vod-mode) .player-quality-badge,
+body.tv-native.tvn-playing:not(.vod-mode) .player-channel-logo-watermark {
+  display: none !important;
+}
+
+#tvn-osd {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  font-family: 'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif;
+  color: #fff;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+#tvn-osd.tvn-osd-show { opacity: 1; }
+#tvn-osd.tvn-osd-show [data-nav] { pointer-events: auto; cursor: pointer; }
+#tvn-osd * { box-sizing: border-box; }
+#tvn-osd [data-nav] { outline: none; }
+
+.tvn-osd-scrim { position: absolute; left: 0; right: 0; pointer-events: none; }
+.tvn-osd-scrim-top { top: 0; height: 24%; background: linear-gradient(180deg, rgba(0,0,0,0.72), transparent); }
+.tvn-osd-scrim-bottom { bottom: 0; height: 42%; background: linear-gradient(0deg, rgba(0,0,0,0.82), transparent); }
+body.perf-lite .tvn-osd-scrim-top { background: rgba(0,0,0,0.5); height: 14%; }
+body.perf-lite .tvn-osd-scrim-bottom { background: rgba(0,0,0,0.6); height: 30%; }
+
+.tvn-osd-top {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 42px 56px 0;
+}
+.tvn-osd-chip { width: 74px; height: 52px; flex: none; }
+.tvn-osd-chip .tvn-osd-tile {
+  width: 100%; height: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: rgba(255,255,255,0.08);
+  font-weight: 800;
+  font-size: 20px;
+}
+.tvn-osd-chip .tvn-osd-tile img { width: 100%; height: 100%; object-fit: contain; }
+.tvn-osd-chname { font-size: 28px; font-weight: 700; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+.tvn-osd-clock { font-size: 32px; font-weight: 800; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+
+.tvn-osd-bottom {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 0 56px 26px;
+}
+.tvn-osd-info { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-bottom: 18px; }
+.tvn-osd-live {
+  background: #e11d48;
+  border-radius: 8px;
+  padding: 5px 14px;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  animation: tvn-livepulse 2.4s ease-in-out infinite;
+}
+.tvn-osd-title {
+  font-size: 46px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  text-shadow: 0 2px 16px rgba(0,0,0,0.65);
+  max-width: 70%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tvn-osd-sub { font-size: 24px; font-weight: 500; color: rgba(255,255,255,0.72); }
+.tvn-osd-elapsed { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; color: rgba(255,255,255,0.9); }
+.tvn-osd-elapsed:empty { display: none; }
+
+.tvn-osd-controls {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
+}
+.tvn-osd-center { display: flex; align-items: center; gap: 26px; }
+.tvn-osd-right {
+  position: absolute;
+  right: 0; top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.tvn-osd-btn {
+  width: 68px; height: 68px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(20, 24, 36, 0.72);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-family: inherit;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+body.perf-lite .tvn-osd-btn { transition: none; }
+.tvn-osd-play {
+  width: 92px; height: 92px;
+  background: #fff;
+  border-color: #fff;
+  color: #0a0f1a;
+}
+.tvn-osd-sm { width: 60px; height: 60px; }
+.tvn-osd-cctxt { font-size: 21px; font-weight: 800; letter-spacing: 0.04em; }
+.tvn-osd-star { font-size: 27px; color: rgba(255,255,255,0.85); }
+.tvn-osd-star.tvn-fav { color: var(--acc, #38bdf8); }
+#tvn-osd .tvn-focable:focus {
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95),
+              0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent);
+}
+.tvn-osd-hint {
+  display: block;
+  margin: 20px auto 0;
+  background: none;
+  border: none;
+  border-radius: 12px;
+  padding: 8px 18px;
+  font-family: inherit;
+  font-size: 22px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.62);
+}
+#tvn-osd .tvn-osd-hint:focus { color: #fff; }
+
+/* popout pinned to the viewport (OSD options — the scaled stage is hidden) */
+#tvn-popup.tvn-popup-fixed { position: fixed; z-index: 10050; }
