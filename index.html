@@ -361,8 +361,14 @@
                       <button class="player-control-icon" id="player-stop-btn" title="Stop"><i data-lucide="square"></i></button>
                       <button class="player-control-icon" id="player-info-btn" title="Channel Info"><i data-lucide="info"></i></button>
                       <button class="player-control-icon" id="player-cc-btn" title="Audio &amp; Subtitles"><i data-lucide="subtitles"></i></button>
-                      <button class="player-control-icon" id="player-volume-btn" title="Mute"><i data-lucide="volume-2"></i></button>
-                      <input type="range" class="player-volume-slider" id="player-volume-slider" min="0" max="1" step="0.05" value="0.8">
+                      <div class="player-volume-wrap">
+                        <button class="player-control-icon" id="player-volume-btn" title="Mute"><i data-lucide="volume-2"></i></button>
+                        <div class="player-volume-flyout">
+                          <div class="player-volume-panel">
+                            <input type="range" class="player-volume-slider" id="player-volume-slider" min="0" max="1" step="0.05" value="0.8">
+                          </div>
+                        </div>
+                      </div>
                       <button class="player-control-icon" id="player-pip-btn" title="Picture in Picture"><i data-lucide="picture-in-picture"></i></button>
                       <button class="player-control-icon cast-only" id="player-cast-btn" title="Cast to TV" style="display:none;"><i data-lucide="cast"></i></button>
                       <button class="player-control-icon" id="player-fullscreen-btn" title="Fullscreen"><i data-lucide="maximize"></i></button>

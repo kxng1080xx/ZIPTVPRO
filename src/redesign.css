@@ -246,6 +246,10 @@ body.vod-mode .app-main { margin-left: 0; }
 .side-rail .profile-info {
   display: flex;
   flex-direction: column;
+  /* base .profile-info right-aligns (flex-end) — in the rail the name must
+     start at the LEFT, on the same edge as the expiry line below it */
+  align-items: flex-start;
+  text-align: left;
   gap: 2px;
   min-width: 0;
 }
@@ -957,9 +961,8 @@ body.ts-at-live #player-seek { background: var(--rd-accent-solid) !important; }
   justify-self: center;
 }
 
-/* Volume: slimmer */
+/* Volume: slimmer (length stays in style.css — it's the vertical extent now) */
 .player-volume-slider {
-  width: 72px;
   height: 3px;
   border-radius: 99px;
 }
@@ -1253,7 +1256,7 @@ body.tv-layout .player-control-icon { width: 3rem; height: 3rem; }
 body.tv-layout .player-control-icon i { width: 1.4rem; height: 1.4rem; }
 body.tv-layout .player-play-btn { width: 4rem; height: 4rem; }
 body.tv-layout .player-skip-btn { width: 3rem; height: 3rem; }
-body.tv-layout .player-volume-slider { display: none; } /* D-pad uses TV volume */
+body.tv-layout .player-volume-flyout { display: none; } /* D-pad uses TV volume */
 
 /* ---- Channel cards under the player: rem-scaled 4-up grid ---- */
 body.tv-layout .epg-controls-header { height: 3.75rem; padding: 0 1.25rem; }
@@ -1669,12 +1672,22 @@ body.webtab-tab #mobile-menu-btn {
   width: min(30%, 240px);
   max-height: 64%;
   object-fit: contain;
+  /* Above the scrim (DOM order put the scrim on top and dimmed it), and on a
+     soft glass chip so DARK channel logos stay visible on the dark hero. */
+  z-index: 1;
+  padding: 18px 22px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
   filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.6));
 }
 .home-hero-live .home-hero-scrim {
   background: linear-gradient(90deg, rgba(4, 6, 11, 0.96) 0%, rgba(4, 6, 11, 0.72) 50%, rgba(4, 6, 11, 0.30) 100%);
 }
-.home-hero-live-badge {
+/* Doubled class beats .home-badge (defined LATER in this file — equal
+   specificity let its position:absolute win and park the badge on top of
+   the greeting kicker). */
+.home-badge.home-hero-live-badge {
   position: static; /* .home-badge is absolute inside tiles; inline here */
   align-self: flex-start;
   font-size: 0.7rem;

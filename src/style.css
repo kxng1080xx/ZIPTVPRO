@@ -2213,13 +2213,59 @@ body.vod-mode .now-next-bar {
   gap: 12px;
 }
 
+/* Volume: vertical slider in a flyout above the speaker icon (PC UI).
+   The input keeps its native horizontal value axis and is rotated -90°, so
+   dragging up = louder; all existing JS (value/input events) is untouched. */
+.player-volume-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* Hover zone: flush against the icon (bottom padding bridges the visual gap
+   so the pointer never leaves :hover on the way up to the slider). */
+.player-volume-flyout {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding-bottom: 8px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition-normal);
+}
+
+.player-volume-panel {
+  position: relative;
+  width: 36px;
+  height: 116px;
+  background: rgba(13, 17, 27, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+.player-volume-wrap:hover .player-volume-flyout,
+.player-volume-wrap:focus-within .player-volume-flyout {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .player-volume-slider {
-  width: 80px;
+  /* Hard-centered in the panel: the rotated 88px layout box overflows the
+     36px panel, and flex/grid centering of an overflowing item is what put
+     the slider BESIDE the panel. translate(-50%,-50%) from the panel center
+     is geometry-proof. */
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 88px;
   height: 4px;
+  margin: 0;
   background: rgba(255,255,255,0.2);
   border-radius: 2px;
   -webkit-appearance: none;
   cursor: pointer;
+  transform: translate(-50%, -50%) rotate(-90deg);
 }
 
 .player-volume-slider::-webkit-slider-thumb {
@@ -2236,7 +2282,7 @@ body.vod-mode .now-next-bar {
    on stylus devices like Samsung S-Pen) to hide it and tighten the bar so the
    right-hand buttons always fit. Hardware buttons handle volume on these. */
 @media (max-width: 1024px) {
-  .player-volume-slider {
+  .player-volume-flyout {
     display: none;
   }
 
