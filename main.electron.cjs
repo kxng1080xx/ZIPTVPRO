@@ -102,6 +102,21 @@ ipcMain.handle('app:quit', () => {
   isQuitting = true; // bypass close-to-tray: this is an explicit user exit
   app.quit();
 });
+// TV shell power button (and anything else that wants "close" semantics):
+// stop all playback in the renderer, then hide to the tray — same as the X.
+ipcMain.handle('app:hide-to-tray', () => {
+  hideToTray();
+  return { ok: true };
+});
+
+// Hide the window to the tray, telling the renderer FIRST to stop all
+// playback (video player, custom web tabs). Without the stop event a hidden
+// window keeps playing audio in the background — the tray is for keeping
+// recordings alive, not the stream you were watching.
+function hideToTray() {
+  try { if (mainWindow) mainWindow.webContents.send('app:hide-to-tray'); } catch (e) {}
+  try { if (mainWindow) mainWindow.hide(); } catch (e) {}
+}
 
 // Open download/update links in the user's default browser, not a child window.
 ipcMain.handle('open-external', (_e, url) => {
@@ -328,7 +343,7 @@ function createWindow() {
   mainWindow.on('close', (e) => {
     if (!isQuitting) {
       e.preventDefault();
-      mainWindow.hide();
+      hideToTray(); // stop renderer playback, then hide — no ghost audio
     }
   });
 

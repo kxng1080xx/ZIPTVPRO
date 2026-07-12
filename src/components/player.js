@@ -22,6 +22,17 @@ function liveSyncEnabled() {
   try { return localStorage.getItem('liveSync') === 'on'; } catch (e) { return false; }
 }
 
+// Providers whose panel hard-closes every live session on a short timer
+// (token-TTL panels — measured ~25s on some; the stream itself is fine and a
+// fresh request through the portal URL always works). Detected at runtime from
+// back-to-back provider-side drops and remembered per host for the session, so
+// every later channel on that provider starts in resilient mode instead of
+// re-learning it (= two stutters per channel change).
+const shortCycleHosts = new Set();
+function isShortCycleHost(url) {
+  try { return shortCycleHosts.has(new URL(url).host); } catch (e) { return false; }
+}
+
 function getQualityTag(name) {
   const n = String(name).toLowerCase();
   if (n.includes('4k') || n.includes('uhd')) return '4K';
@@ -949,6 +960,13 @@ export class VideoPlayer {
     this._lastNativeCur = 0;
     this._streamUrl = url;
     this._streamIsVod = isVod;
+    // Short-cycle provider handling (see _noteShortCycleDrop): pre-arm
+    // resilient mode on hosts this session already identified.
+    this._resilientLive = !isVod && isShortCycleHost(url);
+    this._lastShortCycleDrop = 0;
+    this._needsEngineRebuild = false;
+    this._hlsHadData = false;
+    this._nativeReconnectToastShown = false;
     this._lastLoadMeta = { name, logo, epg: currentEpg }; // for background-resume snapshot
     this._triedMpegtsOriginal = false;
     this._triedHlsOriginal = false;
@@ -1207,7 +1225,13 @@ export class VideoPlayer {
     }
     const pos = isVod ? (this._lastNativeCur || 0) : 0;
     console.warn(`[native] ${fromError ? 'error' : 'stall'} — reconnect attempt ${this._nativeRecoverCount} at ${pos.toFixed(0)}s`);
-    if (window.showToast && this._nativeRecoverCount === 1) window.showToast('Connection dropped — reconnecting…', 'info', 2500);
+    // Once per stream: the 15s-progress budget refund resets the count, so on
+    // short-cycle providers (~25s session TTL) a count-based toast would nag
+    // every single cycle.
+    if (window.showToast && this._nativeRecoverCount === 1 && !this._nativeReconnectToastShown) {
+      this._nativeReconnectToastShown = true;
+      window.showToast('Connection dropped — reconnecting…', 'info', 2500);
+    }
     this._showNativeStatus('Reconnecting…');
     this._stopNativeStallWatch();
     this._stopRectSync();
@@ -1393,6 +1417,26 @@ export class VideoPlayer {
   // because for many providers this is normal ~60s behaviour. A rapid-loop guard
   // bails to the fallback path if reconnects fire back-to-back (a stream that
   // genuinely won't play, rather than one that just needs re-opening).
+  // Called whenever the PROVIDER terminates a healthy live session (mpegts
+  // EOF, hls.js playlist 403/404 after playback had started). Two of those
+  // within 75s = a session-TTL panel that kills every connection on a timer:
+  // flip this stream — and every future stream on this host — into resilient
+  // mode. Resilient mode keeps a much deeper live buffer (the panel's backlog
+  // burst on reconnect refills it), so playback rides straight through the
+  // ~1-3s reconnect gap instead of stuttering every cycle.
+  _noteShortCycleDrop() {
+    const now = Date.now();
+    const prev = this._lastShortCycleDrop || 0;
+    this._lastShortCycleDrop = now;
+    if (this._resilientLive || this._streamIsVod) return;
+    if (now - prev < 75000) {
+      this._resilientLive = true;
+      this._needsEngineRebuild = true; // next reconnect applies the deeper-buffer config
+      try { shortCycleHosts.add(new URL(this._streamUrl).host); } catch (e) {}
+      console.warn('[live] provider closes sessions on a short timer — enabling resilient buffering');
+    }
+  }
+
   _reconnectLive() {
     if (this._castMode) return; // casting — local playback is intentionally stopped
     if (this._streamIsVod) return;
@@ -1426,7 +1470,13 @@ export class VideoPlayer {
       // moment instead of going black. The LOADING_COMPLETE listener stays bound,
       // so the next ~60s cycle reconnects the same way. Fall back to a full
       // rebuild only if the player is gone or the light path throws.
-      const p = this.mpegtsPlayer;
+      // Short-cycle providers always take the full rebuild: the light
+      // unload()/load() path flushes the MSE buffer and then re-downloads the
+      // panel's backlog at ~1x while the no-skip guard holds position — a
+      // measured 30s+ freeze. A rebuild restarts on a fresh timeline in ~3s.
+      // (When streams are proxied, the server-side splice makes provider EOFs
+      // invisible and none of this fires at all.)
+      const p = (this._needsEngineRebuild || this._resilientLive) ? null : this.mpegtsPlayer;
       if (p) {
         try {
           p.unload();
@@ -1437,6 +1487,8 @@ export class VideoPlayer {
           console.warn('Light live reconnect failed, rebuilding player:', err);
         }
       }
+      this._needsEngineRebuild = false;
+      this.destroyHls();
       this.destroyMpegts();
       this._startPlayback(this._streamUrl, this._streamIsVod);
     }, 200);
@@ -1479,6 +1531,7 @@ export class VideoPlayer {
       // (armed in _startPlayback for every live engine, not just hls.js).
 
       this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        this._hlsHadData = true; // stream was reachable — later 403s are token expiry, not a bad URL
         this.video.play().catch(err => console.log('Playback auto-play blocked:', err));
         this.hideSpinner();
       });
@@ -1493,9 +1546,23 @@ export class VideoPlayer {
           data.details === Hls.ErrorDetails.MANIFEST_PARSING_ERROR;
 
         if (isManifestFailure || httpCode === 403 || httpCode === 401 || httpCode === 404) {
+          // Live token-TTL providers: the tokenized playlist URL starts 403ing
+          // ~30s after issue even though the stream is fine. If playback had
+          // already started, rebuild from the ORIGINAL portal URL (fresh
+          // redirect = fresh token) instead of killing the stream. Retrying
+          // the expired URL never works — measured on such a panel: 0/20
+          // same-URL retries vs 20/20 portal re-resolves.
+          if (!isVod && this._hlsHadData) {
+            console.warn(`[live] playlist ${httpCode || data.details} after healthy playback — re-resolving via portal URL`);
+            this._noteShortCycleDrop();
+            this.destroyHls();
+            this._needsEngineRebuild = true; // force full rebuild (fresh manifest fetch)
+            this._reconnectLive();
+            return;
+          }
           console.error('HLS manifest could not be loaded:', data);
           this.destroyHls();
-          
+
           if (isVod) {
             this._handleVodPlaybackFallback({ code: 4, message: `HLS manifest failed (HTTP ${httpCode || 'unknown'})` });
           } else {
@@ -1508,7 +1575,10 @@ export class VideoPlayer {
           case Hls.ErrorTypes.NETWORK_ERROR:
             console.warn('Fatal HLS network error, scheduling retry…', data);
             this.destroyHls();
-            this._retryStream();
+            // Live mid-playback drops reconnect fast + silently; the 3s
+            // "Retrying…" overlay path is for streams that never started.
+            if (!isVod && this._hlsHadData) { this._needsEngineRebuild = true; this._reconnectLive(); }
+            else this._retryStream();
             break;
           case Hls.ErrorTypes.MEDIA_ERROR: {
             // Throttle recovery. Unthrottled recoverMediaError() on a stream the
@@ -1590,7 +1660,11 @@ export class VideoPlayer {
         // because it thinks it's behind" behavior.
         liveBufferLatencyChasing:         !isVod && liveSyncEnabled(),
         liveBufferLatencyChasingOnPaused: false,
-        liveBufferLatencyMaxLatency:      3.0,  // seconds behind edge before chasing
+        // Resilient mode (short-cycle providers): allow a ~12s cushion behind
+        // the edge instead of 3s. The panel bursts its backlog on every
+        // reconnect, refilling the cushion, so the recurring ~1-3s reconnect
+        // gap plays through from buffer instead of freezing the picture.
+        liveBufferLatencyMaxLatency:      this._resilientLive ? 12.0 : 3.0,
         liveBufferLatencyMinRemain:       0.8,  // don't chase past this safety margin
       });
       this.mpegtsPlayer.attachMediaElement(this.video);
@@ -1617,6 +1691,7 @@ export class VideoPlayer {
       if (!isVod) {
         this.mpegtsPlayer.on(mpegts.Events.LOADING_COMPLETE, () => {
           console.warn('Live stream ended (provider closed connection) — reconnecting…');
+          this._noteShortCycleDrop();
           this._reconnectLive();
         });
       }
@@ -1641,6 +1716,13 @@ export class VideoPlayer {
   // Internal: set up the HLS / MPEG-TS / native player for a given URL.
   // Called by loadStream(), _retryStream() and _reconnectLive().
   _startPlayback(url, isVod) {
+    // Every (re)build attaches a fresh engine/MediaSource whose timeline
+    // restarts near 0. A _lastPlayTime carried over from the previous timeline
+    // would read as a giant "backward seek" to the anti-jump guard, which then
+    // restores currentTime to a position with no data — a permanent freeze.
+    // Reset here (not just loadStream) so reconnect rebuilds start clean.
+    this._lastPlayTime = NaN;
+    this._expectSeek = false;
     // Watch for silent mid-playback stalls (server dropping the connection
     // without an error event) and auto-reconnect. Separate watchdogs: VOD
     // resumes at the stalled file position, live rejoins the stream edge.

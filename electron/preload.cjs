@@ -64,5 +64,16 @@ contextBridge.exposeInMainWorld('appHost', {
   // TV interface (7.0): borderless fullscreen for the 10-foot UI + explicit
   // app exit from the TV shell (bypasses close-to-tray).
   setFullscreen: (on) => ipcRenderer.invoke('window:set-fullscreen', on),
-  quitApp: () => ipcRenderer.invoke('app:quit')
+  quitApp: () => ipcRenderer.invoke('app:quit'),
+
+  // Close-to-tray with playback stopped (TV power button / programmatic close).
+  hideToTray: () => ipcRenderer.invoke('app:hide-to-tray'),
+  // Fires whenever the window is being hidden to the tray (X button or
+  // hideToTray). The renderer must stop the player and silence web tabs so
+  // nothing keeps playing in the background. Returns an unsubscribe function.
+  onHideToTray: (cb) => {
+    const handler = () => cb();
+    ipcRenderer.on('app:hide-to-tray', handler);
+    return () => ipcRenderer.removeListener('app:hide-to-tray', handler);
+  }
 });

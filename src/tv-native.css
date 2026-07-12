@@ -1511,6 +1511,19 @@ body.tv-native.tvn-playing:not(.vod-mode) .player-channel-logo-watermark {
 #tvn-osd * { box-sizing: border-box; }
 #tvn-osd [data-nav] { outline: none; }
 
+/* Virtual 1920×1080-metric canvas: the OSD sits outside the scaled stage, so
+   it compensates with the same factor (--tvn-scale, set by applyScale). On a
+   1920×1080 viewport this is a no-op; on a 960×540 TV WebView it lays out at
+   1920×1080 and scales down to fit, keeping control sizes as designed. */
+.tvn-osd-canvas {
+  position: absolute;
+  top: 0; left: 0;
+  width: calc(100% / var(--tvn-scale, 1));
+  height: calc(100% / var(--tvn-scale, 1));
+  transform: scale(var(--tvn-scale, 1));
+  transform-origin: top left;
+}
+
 .tvn-osd-scrim { position: absolute; left: 0; right: 0; pointer-events: none; }
 .tvn-osd-scrim-top { top: 0; height: 24%; background: linear-gradient(180deg, rgba(0,0,0,0.72), transparent); }
 .tvn-osd-scrim-bottom { bottom: 0; height: 42%; background: linear-gradient(0deg, rgba(0,0,0,0.82), transparent); }
@@ -1610,7 +1623,9 @@ body.perf-lite .tvn-osd-btn { transition: none; }
               0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent);
 }
 .tvn-osd-hint {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin: 20px auto 0;
   background: none;
   border: none;
@@ -1623,5 +1638,10 @@ body.perf-lite .tvn-osd-btn { transition: none; }
 }
 #tvn-osd .tvn-osd-hint:focus { color: #fff; }
 
-/* popout pinned to the viewport (OSD options — the scaled stage is hidden) */
+/* popout pinned to the viewport (OSD options — the scaled stage is hidden).
+   Outside the stage nothing scales it, so compensate like the OSD canvas. */
 #tvn-popup.tvn-popup-fixed { position: fixed; z-index: 10050; }
+#tvn-popup.tvn-popup-fixed .tvn-popup-panel {
+  transform: scale(var(--tvn-scale, 1));
+  transform-origin: center;
+}

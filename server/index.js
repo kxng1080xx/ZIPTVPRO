@@ -540,6 +540,15 @@ app.get('/api/proxy', (req, res) => {
   // a second decodeURIComponent corrupts HLS segment URLs whose tokens contain
   // percent-encoded characters (e.g. base64 "==" arrives as "%3D%3D" and a second
   // decode turns it into "==", producing a 404 from the provider's CDN).
+
+  // Live Xtream TS goes through the continuous splice proxy: session-TTL
+  // panels hard-close every connection on a timer (some as short as ~25s).
+  // proxyLiveStream reconnects upstream and PTS-splices the sessions, so the
+  // player sees ONE unbroken stream — its buffer survives, nothing replays,
+  // and the drop never reaches the screen.
+  if (/\/live\/[^?]*\.ts(\?|$)/i.test(url)) {
+    return proxyLiveStream(url, req, res, { contentType: 'video/mpeg' });
+  }
   proxyStream(url, req, res);
 });
 
@@ -681,23 +690,54 @@ function fetchUpstreamLength(url, cb, redirects = 0) {
   r.setTimeout(8000, () => { try { r.destroy(); } catch (e) {} finish(null); });
 }
 
-// Continuous live proxy: keeps one client connection open and transparently
-// reconnects to the provider whenever it drops the source, so a cast receiver
-// sees an unbroken stream. A tight-loop guard bails if the source keeps dying.
-function proxyLiveStream(targetUrl, req, res, opts) {
-  res.status(200);
-  res.setHeader('Content-Type', opts.contentType || 'video/mpeg');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Accept-Ranges', 'none');
-  if (opts.dlnaContentFeatures) {
-    res.setHeader('transferMode.dlna.org', 'Streaming');
-    res.setHeader('contentFeatures.dlna.org', opts.dlnaContentFeatures);
-  }
+// --- MPEG-TS PES PTS extraction (for splice-on-reconnect) -------------------
+// Returns the 33-bit PTS if this 188-byte packet starts a VIDEO PES with a
+// PTS, else null. Used to find where a reconnected session's backlog overlaps
+// content we already forwarded.
+function tsVideoPts(pkt) {
+  if (pkt[0] !== 0x47) return null;
+  if (!(pkt[1] & 0x40)) return null;              // payload_unit_start only
+  const afc = (pkt[3] >> 4) & 0x3;
+  let off = 4;
+  if (afc === 2) return null;                     // adaptation field only
+  if (afc === 3) off = 5 + pkt[4];
+  if (off + 14 > 188) return null;
+  if (pkt[off] !== 0x00 || pkt[off + 1] !== 0x00 || pkt[off + 2] !== 0x01) return null;
+  const sid = pkt[off + 3];
+  if (sid < 0xE0 || sid > 0xEF) return null;      // video stream ids
+  if (!((pkt[off + 7] >> 6) & 0x2)) return null;  // PTS_DTS_flags: PTS present
+  const p = off + 9;
+  return ((pkt[p] >> 1) & 0x07) * 2 ** 30 +
+         (((pkt[p + 1] << 7) | (pkt[p + 2] >> 1)) & 0x7FFF) * 2 ** 15 +
+         (((pkt[p + 3] << 7) | (pkt[p + 4] >> 1)) & 0x7FFF);
+}
+// a >= b in wrapped 33-bit PTS space (window = half the range)
+function ptsAtOrAfter(a, b) { return ((a - b + 2 ** 33) % 2 ** 33) < 2 ** 32; }
 
+// Continuous live proxy: keeps one client connection open and transparently
+// reconnects to the provider whenever it drops the source (session-TTL panels
+// cut EVERY connection on a timer — measured ~25s on some providers), so the
+// player sees an unbroken stream. On reconnect the panel bursts ~10-20s of
+// backlog it already sent us; forwarding that verbatim would make the client
+// replay it and drift further behind live every cycle. Instead we PTS-splice:
+// drop backlog packets until the new session's video PTS passes the last PTS
+// we forwarded, then resume at that PES boundary — byte-continuous for the
+// demuxer, no replay, no drift. A tight-loop guard bails if the source keeps
+// dying immediately; a first-connect failure mirrors the provider's status to
+// the client so dead channels still error out fast.
+function proxyLiveStream(targetUrl, req, res, opts) {
   let upstream = null;
   let closed = false;
   let recentReconnects = 0;
   let lastConnectAt = 0;
+  let firstConnect = true;
+
+  // splice state
+  let lastVideoPts = null;   // newest video PTS forwarded to the client
+  let skipping = false;      // dropping reconnect backlog until PTS catches up
+  let skipped = 0;           // bytes dropped this splice (safety-capped)
+  let carry = Buffer.alloc(0); // partial TS packet between chunks
+  const MAX_SKIP = 48 * 1024 * 1024; // never skip forever (~2 min at 3 Mbps)
 
   const stop = () => {
     closed = true;
@@ -706,6 +746,62 @@ function proxyLiveStream(targetUrl, req, res, opts) {
   res.on('close', stop);
   req.on('close', stop);
 
+  const sendHeaders = () => {
+    if (res.headersSent) return;
+    res.status(200);
+    res.setHeader('Content-Type', opts.contentType || 'video/mpeg');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Accept-Ranges', 'none');
+    if (opts.dlnaContentFeatures) {
+      res.setHeader('transferMode.dlna.org', 'Streaming');
+      res.setHeader('contentFeatures.dlna.org', opts.dlnaContentFeatures);
+    }
+  };
+
+  const writeOut = (buf, up) => {
+    if (closed || !buf.length) return;
+    if (!res.write(buf)) { up.pause(); res.once('drain', () => { try { up.resume(); } catch (e) {} }); }
+  };
+
+  // Align to 188-byte packets (resyncing on corruption), track the forwarded
+  // video PTS, and while `skipping` drop everything until the overlap ends.
+  const processChunk = (chunk, up) => {
+    let buf = carry.length ? Buffer.concat([carry, chunk]) : chunk;
+    let start = 0;
+    if (buf[0] !== 0x47) {
+      const idx = buf.indexOf(0x47);
+      if (idx < 0) { carry = Buffer.alloc(0); return; }
+      start = idx;
+    }
+    const whole = Math.floor((buf.length - start) / 188) * 188;
+    carry = Buffer.from(buf.subarray(start + whole));
+    if (!whole) return;
+    const body = buf.subarray(start, start + whole);
+
+    let fwdFrom = 0;
+    if (skipping) {
+      fwdFrom = -1;
+      for (let i = 0; i < body.length; i += 188) {
+        const pts = tsVideoPts(body.subarray(i, i + 188));
+        if (pts != null && (lastVideoPts == null || ptsAtOrAfter(pts, lastVideoPts))) {
+          fwdFrom = i; // resume exactly at the first new video PES
+          break;
+        }
+      }
+      skipped += (fwdFrom === -1 ? body.length : fwdFrom);
+      if (fwdFrom === -1 && skipped > MAX_SKIP) fwdFrom = 0; // safety valve
+      if (fwdFrom === -1) return;
+      skipping = false;
+      console.log(`[live-proxy] spliced session (skipped ${(skipped / 1024 / 1024).toFixed(1)} MB of backlog overlap)`);
+    }
+    const out = body.subarray(fwdFrom);
+    for (let i = 0; i < out.length; i += 188) {
+      const pts = tsVideoPts(out.subarray(i, i + 188));
+      if (pts != null) lastVideoPts = pts;
+    }
+    writeOut(out, up);
+  };
+
   const connect = (url, redirects = 0) => {
     if (closed) return;
 
@@ -713,7 +809,7 @@ function proxyLiveStream(targetUrl, req, res, opts) {
     if (now - lastConnectAt < 1000) recentReconnects++; else recentReconnects = 0;
     lastConnectAt = now;
     if (recentReconnects > 6) { // source is dying immediately — give up cleanly
-      try { res.end(); } catch (e) {}
+      try { res.headersSent ? res.end() : res.status(502).end(); } catch (e) {}
       return;
     }
 
@@ -726,20 +822,36 @@ function proxyLiveStream(targetUrl, req, res, opts) {
         return connect(loc, redirects + 1);
       }
       if (up.statusCode !== 200 && up.statusCode !== 206) {
+        up.resume();
+        // First attempt failing = channel is actually bad: tell the client the
+        // truth so the app errors fast instead of hanging on an empty stream.
+        if (firstConnect && !res.headersSent) {
+          try { res.status(up.statusCode).end(); } catch (e) {}
+          closed = true;
+          return;
+        }
         if (!closed) setTimeout(() => connect(targetUrl), 800); // retry original
         return;
       }
 
+      if (firstConnect) { sendHeaders(); firstConnect = false; }
+      // Reconnected session: drop the panel's backlog burst up to what the
+      // client already has (splice), unless we never forwarded video yet.
+      skipping = lastVideoPts != null;
+      skipped = 0;
+      carry = Buffer.alloc(0);
+
       upstream = up;
-      up.on('data', (chunk) => {
-        if (closed) return;
-        if (!res.write(chunk)) { up.pause(); res.once('drain', () => up.resume()); }
-      });
+      up.on('data', (chunk) => { if (!closed) processChunk(chunk, up); });
       // Provider closed the source → immediately reconnect to the original URL.
       up.on('end', () => { if (!closed) connect(targetUrl); });
       up.on('error', () => { if (!closed) setTimeout(() => connect(targetUrl), 500); });
     });
-    upReq.on('error', () => { if (!closed) setTimeout(() => connect(targetUrl), 500); });
+    upReq.on('error', () => {
+      if (closed) return;
+      if (firstConnect && !res.headersSent) { try { res.status(502).end(); } catch (e) {} closed = true; return; }
+      setTimeout(() => connect(targetUrl), 500);
+    });
   };
 
   connect(targetUrl);

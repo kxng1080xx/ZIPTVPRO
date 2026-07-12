@@ -348,6 +348,19 @@ async function initApp() {
   try { playerInstance.restoreUpscalerPref(); } catch (e) {}
   updateRecordingsCount();
 
+  // Electron close-to-tray: the window keeps running in the tray (recordings),
+  // but nothing the USER was watching may keep playing — stop the player and
+  // silence every custom web tab the moment the window hides.
+  if (window.appHost && window.appHost.onHideToTray) {
+    window.appHost.onHideToTray(() => {
+      // Exception: an active cast plays on the TV, not here — leave it alone
+      // (player.stop() while casting would end the cast session).
+      const casting = !!(window.castControls && window.castControls.isActive && window.castControls.isActive());
+      if (!casting) { try { playerInstance.stop(); } catch (e) {} }
+      try { if (window.stopAllWebtabPlayback) window.stopAllWebtabPlayback(); } catch (e) {}
+    });
+  }
+
   // Set player skip handlers
   playerInstance.setOnPrevChannel(() => playPreviousChannel());
   playerInstance.setOnNextChannel(() => playNextChannel());
@@ -663,21 +676,25 @@ function renderCategoriesList(categories) {
   const container = document.getElementById('categories-list');
   container.innerHTML = '';
 
-  // Add "All" node
-  const allNode = document.createElement('div');
-  allNode.className = `category-item ${state.activeCategory === 'all' ? 'active' : ''}`;
-  allNode.dataset.category = 'all';
-  allNode.setAttribute('role', 'button');
-  allNode.tabIndex = 0;
-  
-  let totalStreams = 0;
-  categories.forEach(c => totalStreams += (c.count || 0));
+  // Add "All" node — movies/series only. Live gets no "All channels": with
+  // thousands of channels it's useless noise, the provider categories cover
+  // everything already.
+  if (state.activeTab !== 'live') {
+    const allNode = document.createElement('div');
+    allNode.className = `category-item ${state.activeCategory === 'all' ? 'active' : ''}`;
+    allNode.dataset.category = 'all';
+    allNode.setAttribute('role', 'button');
+    allNode.tabIndex = 0;
 
-  allNode.innerHTML = `
-    <span class="cat-label">All ${state.activeTab === 'live' ? 'channels' : state.activeTab === 'movies' ? 'movies' : 'series'}</span>
-    <span class="cat-count">${totalStreams}</span>
-  `;
-  container.appendChild(allNode);
+    let totalStreams = 0;
+    categories.forEach(c => totalStreams += (c.count || 0));
+
+    allNode.innerHTML = `
+      <span class="cat-label">All ${state.activeTab === 'movies' ? 'movies' : 'series'}</span>
+      <span class="cat-count">${totalStreams}</span>
+    `;
+    container.appendChild(allNode);
+  }
 
   // Apply the chosen sort (the "All" node always stays pinned at the top).
   const sorted = sortCategories(categories, state.categorySort);

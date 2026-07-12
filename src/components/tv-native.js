@@ -46,6 +46,20 @@ export function setStoredUiMode(mode) {
   try { localStorage.setItem(UI_MODE_KEY, mode); } catch (e) {}
 }
 
+// Leave the TV shell for the classic desktop/mobile UI and reload. Shared by
+// the home-screen "Switch UI" card and the Settings > System tile.
+function switchOutOfTvMode() {
+  setStoredUiMode('mobile');
+  try { if (window.appHost && window.appHost.setFullscreen) window.appHost.setFullscreen(false); } catch (e) {}
+  // strip any /tv or ?tv override so the reload actually lands in the other UI
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('tv');
+    url.pathname = url.pathname.replace(/\/tv\/?$/i, '/');
+    window.location.href = url.toString();
+  } catch (e) { window.location.reload(); }
+}
+
 function getAccent() {
   try {
     const v = localStorage.getItem(ACCENT_KEY);
@@ -440,6 +454,7 @@ function ensureOsd() {
     <div id="tvn-osd">
       <div class="tvn-osd-scrim tvn-osd-scrim-top"></div>
       <div class="tvn-osd-scrim tvn-osd-scrim-bottom"></div>
+      <div class="tvn-osd-canvas">
       <div class="tvn-osd-top">
         <div class="tvn-osd-chip" data-osd-tile></div>
         <span class="tvn-osd-chname" data-osd-chname></span>
@@ -465,7 +480,8 @@ function ensureOsd() {
             <button class="tvn-osd-btn tvn-osd-sm tvn-focable" data-nav data-osd="opts" data-fkey="osd-opts" title="Options">${I.sliders()}</button>
           </div>
         </div>
-        <button class="tvn-osd-hint" data-nav data-fkey="osd-back">⌄&nbsp;&nbsp;Back to channels</button>
+        <button class="tvn-osd-hint" data-nav data-fkey="osd-back"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 9l8 7 8-7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Back to channels</span></button>
+      </div>
       </div>
     </div>`);
   osdEl.querySelector('[data-osd="prev"]').onclick = () => { osdBump(); legacyClick('player-prev-btn'); };
@@ -476,7 +492,7 @@ function ensureOsd() {
     osdPaused = !osdPaused;
     osdEl.querySelector('[data-osd="play"]').innerHTML = osdPaused ? I.play(34) : I.pause();
   };
-  osdEl.querySelector('[data-osd="cc"]').onclick = () => { osdBump(); legacyClick('player-cc-btn'); };
+  osdEl.querySelector('[data-osd="cc"]').onclick = () => { osdBump(); openTracksPopup(); };
   osdEl.querySelector('[data-osd="fav"]').onclick = async () => {
     osdBump();
     if (!osdChannel || !H.toggleFavorite) return;
@@ -495,7 +511,7 @@ function ensureOsd() {
       ],
       onPick: (it) => {
         closePopup(false);
-        if (it.id === 'tracks') legacyClick('player-cc-btn');
+        if (it.id === 'tracks') openTracksPopup();
         else if (it.id === 'info') legacyClick('player-info-btn');
         else if (it.id === 'stop') legacyClick('player-stop-btn');
       }
@@ -507,6 +523,41 @@ function ensureOsd() {
   };
   host.appendChild(osdEl);
   return osdEl;
+}
+
+// Audio & subtitle picker as a SHELL popout. The legacy player-cc-btn menu is
+// a desktop-UI panel: during OS fullscreen it paints behind the video (not a
+// descendant of the fullscreen element) and its rows carry no data-nav, so
+// the D-pad can't reach it. openPopup solves both (video-container mount +
+// navigable rows).
+function openTracksPopup() {
+  const p = window.playerInstance;
+  const menu = p && typeof p.getTrackMenu === 'function' ? p.getTrackMenu() : null;
+  const items = [];
+  if (menu) {
+    if ((menu.audio || []).length > 1) {
+      menu.audio.forEach(a => items.push({ id: a.id, title: `Audio: ${a.label}`, selected: !!a.active }));
+    }
+    if ((menu.subs || []).length > 1) {
+      menu.subs.forEach(s => items.push({
+        id: s.id,
+        title: s.id === 'sub:off' ? 'Subtitles: Off' : `Subtitle: ${s.label}`,
+        selected: !!s.active
+      }));
+    }
+  }
+  if (!items.length) {
+    if (window.showToast) window.showToast('No alternate audio or subtitle tracks', 'info', 3000);
+    return;
+  }
+  openPopup({
+    title: 'Audio & subtitles',
+    items,
+    onPick: (it) => {
+      closePopup(false);
+      try { p.applyTrack(it.id); } catch (e) {}
+    }
+  });
 }
 
 function osdRefreshFav() {
@@ -819,7 +870,7 @@ async function screenHome() {
         <span>Search channels, movies, series…</span>
       </button>
       <div style="flex:1"></div>
-      <button class="tvn-iconbtn tvn-focable" data-nav data-fkey="menu" title="Settings">${I.menu()}</button>
+      <button class="tvn-iconbtn tvn-focable" data-nav data-fkey="uimode" title="${isElectron ? 'Switch to Desktop interface' : 'Switch to Mobile interface'}">${I.monitor(26)}</button>
       <button class="tvn-avatar tvn-focable" data-nav data-fkey="profile" title="Playlists">${esc(profileInitials())}</button>
       ${canExit ? `<button class="tvn-iconbtn tvn-focable" data-nav data-fkey="power" title="Exit app">${I.power()}</button>` : ''}
     </div>
@@ -871,7 +922,7 @@ async function screenHome() {
   stage.appendChild(scr);
 
   scr.querySelector('[data-fkey="search"]').onclick = () => setScreen('search');
-  scr.querySelector('[data-fkey="menu"]').onclick = () => setScreen('settings');
+  scr.querySelector('[data-fkey="uimode"]').onclick = switchOutOfTvMode;
   scr.querySelector('[data-fkey="profile"]').onclick = () => setScreen('settings', { section: 'playlists' });
   scr.querySelector('[data-fkey="live"]').onclick = () => setScreen('live');
   scr.querySelector('[data-fkey="movies"]').onclick = () => setScreen('browse', { type: 'movie' });
@@ -879,7 +930,7 @@ async function screenHome() {
   scr.querySelector('[data-fkey="guide"]').onclick = () => setScreen('guide');
   scr.querySelector('[data-fkey="settings"]').onclick = () => setScreen('settings');
   const powerBtn = scr.querySelector('[data-fkey="power"]');
-  if (powerBtn) powerBtn.onclick = exitApp;
+  if (powerBtn) powerBtn.onclick = powerToTray;
 
   // ambient backdrop follows the focused card
   const bgBox = scr.querySelector('[data-home-bg]');
@@ -923,6 +974,16 @@ function exitApp() {
     if (window.appHost && window.appHost.quitApp) { window.appHost.quitApp(); return; }
   } catch (e) {}
   try { window.close(); } catch (e) {}
+}
+
+// Home power button: on Electron this means "close" — stop all playback and
+// park in the tray (recordings keep running), exactly like the window X.
+// True quit stays available via Settings > Exit app and the tray menu.
+function powerToTray() {
+  try {
+    if (window.appHost && window.appHost.hideToTray) { window.appHost.hideToTray(); return; }
+  } catch (e) {}
+  exitApp();
 }
 
 // ==========================================================================
@@ -991,8 +1052,9 @@ async function screenLive(params) {
       catCache = { at: Date.now(), data: r };
     }
     const r = catCache.data;
+    // No "All Channels" pseudo-category: with thousands of channels it's
+    // useless noise — the provider's own categories cover everything.
     cats = [
-      { category_id: 'all', category_name: 'All Channels', count: totalsCache?.live || null },
       { category_id: 'favorites', category_name: 'Favorites', count: r?.counts?.favorites ?? null },
       { category_id: 'recently_viewed', category_name: 'Recently Viewed', count: r?.counts?.recently_viewed ?? null },
       ...sortPinnedCats(((r && r.categories) || []).filter(c => c.category_id !== 'all'))
@@ -1001,7 +1063,10 @@ async function screenLive(params) {
     catBox.innerHTML = '<div class="tvn-note">No categories yet — the playlist may still be syncing.</div>';
   }
 
-  const selCatId = params.catId || (cats[0] && cats[0].category_id) || 'all';
+  // Default to the first real provider category (Favorites/Recently Viewed
+  // lead the rail but are often empty — a bad landing spot).
+  const firstRealCat = cats.find(c => !['favorites', 'recently_viewed'].includes(String(c.category_id)));
+  const selCatId = params.catId || (firstRealCat && firstRealCat.category_id) || (cats[0] && cats[0].category_id) || 'favorites';
   if (cats.length) {
     catBox.innerHTML = '';
     cats.forEach(c => {
@@ -1483,13 +1548,14 @@ async function screenGuide(params) {
       catCache = { at: Date.now(), data: await getCategories('live') };
     }
     cats = [
-      { category_id: 'all', category_name: 'All Channels' },
       { category_id: 'favorites', category_name: 'Favorites' },
       ...sortPinnedCats(((catCache.data && catCache.data.categories) || []).filter(c => c.category_id !== 'all'))
     ];
   } catch (e) {}
 
-  const selCatId = params.catId || 'all';
+  // No "All Channels" here either — land on the first provider category.
+  const gFirstReal = cats.find(c => String(c.category_id) !== 'favorites');
+  const selCatId = params.catId || (gFirstReal && gFirstReal.category_id) || 'favorites';
   catBox.innerHTML = '';
   cats.forEach(c => {
     const hue = hashHue(c.category_name);
@@ -1790,17 +1856,7 @@ async function screenSettings(params = {}) {
     sub: 'Leave TV mode and reload',
     fkey: 'uimode'
   });
-  uiTile.onclick = () => {
-    setStoredUiMode('mobile');
-    try { if (window.appHost && window.appHost.setFullscreen) window.appHost.setFullscreen(false); } catch (e) {}
-    // strip any /tv or ?tv override so the reload actually lands in the other UI
-    try {
-      const url = new URL(window.location.href);
-      url.searchParams.delete('tv');
-      url.pathname = url.pathname.replace(/\/tv\/?$/i, '/');
-      window.location.href = url.toString();
-    } catch (e) { window.location.reload(); }
-  };
+  uiTile.onclick = switchOutOfTvMode;
   const outTile = tile(gSys, { icon: I.logout(30), title: 'Sign out', sub: 'Disconnect this playlist', fkey: 'logout', danger: true });
   outTile.onclick = async () => {
     outTile.querySelector('.tvn-set-tile-sub').textContent = 'Signing out…';
@@ -2021,6 +2077,13 @@ function applyScale() {
   if (!stage) return;
   scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
   stage.style.transform = `translate(-50%, -50%) scale(${scale})`;
+  // The playback OSD lives OUTSIDE the stage (inside #video-container, so it
+  // paints during OS fullscreen) and doesn't inherit the stage transform. Its
+  // px sizes are designed for the same 1920×1080 canvas — publish the factor
+  // as a root var so the OSD canvas (and viewport-pinned popouts) can match.
+  // Without this, a TV WebView reporting e.g. 960×540 CSS px renders the OSD
+  // at double size ("huge play button").
+  try { document.documentElement.style.setProperty('--tvn-scale', String(scale)); } catch (e) {}
 }
 
 // ==========================================================================
