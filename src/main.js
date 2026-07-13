@@ -195,11 +195,13 @@ function isBenignError(r) {
   if (!r) return false;
   if (r.name === 'AbortError' || r.name === 'NotAllowedError') return true;
   const msg = String((r && (r.message || r.reason)) || r || '');
-  // mpegts.js teardown race: destroy() nulls its internal _emitter while
-  // already-queued Promise.resolve() callbacks still fire → TypeError
-  // "Cannot read properties of null (reading 'emit')". The player is already
+  // mpegts.js teardown race: destroy() nulls its internals (_emitter,
+  // _loading_controller) while already-queued Promise/event callbacks still
+  // fire → TypeError "Cannot read properties of null (reading 'emit')"
+  // (7.1.2) or "... (reading 'notifyBufferedPositionChanged')" and friends —
+  // the loading-controller notify* methods (7.1.5). The player is already
   // torn down (engine switch / channel zap) — nothing is actually broken.
-  if (/reading\s+'emit'|null.*\.emit\b/i.test(msg)) return true;
+  if (/reading\s+'(emit|notify\w+)'|null.*\.emit\b/i.test(msg)) return true;
   return /play\(\)\s*request|interrupted by a new load|request was interrupted|media was removed|removed from the document|The operation was aborted/i.test(msg);
 }
 window.addEventListener('error', (e) => {
