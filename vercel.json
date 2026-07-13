@@ -12,6 +12,9 @@
     },
     "api/device.js": {
       "maxDuration": 15
+    },
+    "api/watch.js": {
+      "maxDuration": 15
     }
   },
   "headers": [

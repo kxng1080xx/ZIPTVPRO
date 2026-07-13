@@ -139,6 +139,18 @@ function getCredentialsLocal() {
   return list.find(p => p.id === activeId) || list[0];
 }
 
+// The active subscription's identity, as `host|username` — the same normalisation
+// reconcilePlaylists() in main.js uses to decide whether two playlist records are
+// "the same playlist". Watch Together hashes this to check that two devices are on
+// the same subscription without either of them sending credentials anywhere.
+// Returns null when no playlist is configured.
+export function getActiveSubscriptionKey() {
+  const c = getCredentialsLocal();
+  if (!c || !c.server_url) return null;
+  const host = String(c.server_url).trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  return `${host}|${String(c.username || '').toLowerCase()}`;
+}
+
 // Add a new playlist (or update an existing one with the same server+user) and
 // make it the active playlist.
 function saveCredentialsLocal(creds) {

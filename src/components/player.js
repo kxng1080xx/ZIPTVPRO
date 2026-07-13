@@ -148,6 +148,7 @@ export class VideoPlayer {
     this.onVodProgress = null; // VOD/series: (currentTime, duration) for Continue Watching
     this.pendingSeek = 0; // resume position to seek to once metadata loads
     this.isVodActive = false;
+    this.transportLocked = false; // Watch Together guest: host owns play/pause/seek
     if (this.seek) {
       this.updateSeekBackground();
     }
@@ -1959,37 +1960,48 @@ export class VideoPlayer {
     return null;
   }
 
-  // Skip relative seconds (+forward / -back). Clamps to the seekable bounds:
-  // the timeshift DVR window for live, or [0, duration] for VOD. Transcoded VOD
-  // isn't byte-seekable, so it re-requests at the new offset.
-  skipBy(secs) {
-    // Native (libVLC): the <video> element is a dummy — seek through the
-    // plugin using its own progress clock. (Also makes the remote's >>/<<
-    // and the TV-shell OSD ±10s work during native VOD playback.)
+  // Seek to an absolute position, in the same logical scale getClock()/_currentTime()
+  // report (so: seconds into the title for VOD, seconds into the DVR window for
+  // timeshift). Engine-aware, because each backend seeks differently:
+  //   - native (libVLC): the <video> element is a dummy — go through the plugin.
+  //   - transcoded VOD:  not byte-seekable, so re-request the transcode at the offset.
+  //   - everything else: move the element's clock.
+  // Clamps to the seekable bounds. Watch Together drives this directly.
+  seekTo(absSec) {
+    const target = Math.max(0, Number(absSec) || 0);
+
     if (this._nativeActive) {
       const d = this._nativeDuration || 0;
-      if (d > 0) nativeSeek(Math.max(0, Math.min(d, (this._lastNativeCur || 0) + secs)));
+      nativeSeek(d > 0 ? Math.min(d, target) : target);
       return;
     }
     if (this._transcodeActive) {
       const d = this._totalDuration();
-      let t = this._currentTime() + secs;
-      if (isFinite(d)) t = Math.min(d, t);
-      this._seekTranscode(Math.max(0, t));
+      this._seekTranscode(isFinite(d) ? Math.min(d, target) : target);
       return;
     }
-    let lo = 0, hi = Infinity;
+
+    let lo = 0, hi = Infinity, t = target;
     if (this._timeshiftActive) {
       const w = this._tsWindow();
-      if (w) { lo = w.start; hi = w.end; }
-      // Skipping back is a deliberate exit from live — disarm the drift guard.
-      if (secs < 0) this._wantLive = false;
+      // Logical (0 = window start) back to element time.
+      if (w) { lo = w.start; hi = w.end; t = w.start + target; }
     } else {
       const d = this._totalDuration();
       if (isFinite(d)) hi = d;
     }
     this._expectSeek = true;
-    try { this.video.currentTime = Math.max(lo, Math.min(hi, (this.video.currentTime || 0) + secs)); } catch (e) {}
+    try { this.video.currentTime = Math.max(lo, Math.min(hi, t)); } catch (e) {}
+  }
+
+  // Skip relative seconds (+forward / -back), from whatever the active engine
+  // reports as "now". (Drives the remote's >>/<< and the TV-shell OSD ±10s.)
+  skipBy(secs) {
+    if (this.transportLocked) return;   // Watch Together guest — the host drives
+    // Skipping back is a deliberate exit from live — disarm the drift guard
+    // before the seek lands.
+    if (this._timeshiftActive && secs < 0) this._wantLive = false;
+    this.seekTo((this.getClock().cur || 0) + secs);
   }
 
   // Engine-aware position/length/paused snapshot for external chrome (the
@@ -2225,7 +2237,28 @@ export class VideoPlayer {
     try { lucide.createIcons({ attrs: { class: 'play-icon' }, nameList: [name], scope: this.playPauseBtn }); } catch (e) {}
   }
 
+  // Watch Together: a guest follows the host, so their own transport controls go
+  // inert. The sync loop bypasses this via setPaused() / seekTo(), which is why
+  // the lock lives on the user-facing entry points rather than on the primitives.
+  setTransportLocked(on) {
+    this.transportLocked = !!on;
+    document.body.classList.toggle('wt-guest', !!on);
+    if (this.seek) this.seek.disabled = !!on;
+  }
+
+  // Engine-aware absolute pause/resume, bypassing the guest lock. This is what
+  // the Watch Together sync loop applies the host's state with.
+  setPaused(paused) {
+    if (!!this.getClock().paused === !!paused) return;
+    this._togglePlayNow();
+  }
+
   togglePlay() {
+    if (this.transportLocked) return;   // Watch Together guest — the host drives
+    this._togglePlayNow();
+  }
+
+  _togglePlayNow() {
     // While casting, the control bar drives the TV, not the local <video>.
     if (this._castMode && window.castControls && window.castControls.isActive()) {
       window.castControls.playPause();

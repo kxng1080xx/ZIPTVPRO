@@ -212,6 +212,9 @@
         <button class="header-icon-btn" id="global-search-btn" title="Search" style="display: none;">
           <i data-lucide="search"></i>
         </button>
+        <button class="header-icon-btn" id="watch-join-btn" title="Join a Watch Together session">
+          <i data-lucide="users"></i>
+        </button>
         <div class="header-clock">
           <span id="current-time">12:19 PM</span>
           <span id="current-date">June 15, 2026</span>
@@ -742,6 +745,9 @@
           <button class="vod-play-btn-large" id="vod-modal-play-btn">
             <i data-lucide="play-circle"></i> Play Now
           </button>
+          <button class="vod-watch-together-btn" id="vod-modal-wt-btn">
+            <i data-lucide="users"></i> Watch Together
+          </button>
         </div>
         <div class="vod-modal-right">
           <div class="vod-modal-title-row">
@@ -779,6 +785,16 @@
           </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ==================== WATCH TOGETHER MODAL ====================
+       One overlay, three states (host lobby / guest code entry / guest lobby).
+       The body is rendered by renderWatchModal() in main.js. -->
+  <div id="watch-modal" class="modal-overlay hidden">
+    <div class="watch-modal-content">
+      <button class="modal-close-btn" id="watch-modal-close"><i data-lucide="x"></i></button>
+      <div id="watch-modal-body"></div>
     </div>
   </div>
 

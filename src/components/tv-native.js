@@ -107,6 +107,7 @@ let osdHideTimer = null;
 let osdTickTimer = null;
 let osdChannel = null;   // live channel currently playing (set via the H.playChannel wrap)
 let osdProgram = null;   // current EPG programme for it (title / start / end)
+let osdProgramNext = null; // the one after it (the OSD's "Playing Next" box)
 let osdVod = null;       // VOD meta while a movie/episode plays { top, title, sub, next, logo } (set via window.__tvnOsdVod)
 let osdPaused = false;
 let osdFetchSeq = 0;
@@ -152,8 +153,17 @@ const I = {
   skipNext: (s = 26, c = '#fff') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="${c}" stroke="none"><polygon points="6,4.5 16,12 6,19.5"></polygon><rect x="16.4" y="4.5" width="2.6" height="15" rx="1"></rect></svg>`,
   sliders: (s = 24, c = '#fff') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2.2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"></line><line x1="4" y1="12" x2="20" y2="12"></line><line x1="4" y1="17" x2="20" y2="17"></line><circle cx="9" cy="7" r="2.2" fill="#0d1220"></circle><circle cx="15" cy="12" r="2.2" fill="#0d1220"></circle><circle cx="7" cy="17" r="2.2" fill="#0d1220"></circle></svg>`,
   rew10: (s = 26, c = '#fff') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4v5.5H8"></path><path d="M4.6 14.5a8 8 0 1 0 1.7-8.2L2.5 9.5"></path><text x="12.4" y="17" text-anchor="middle" font-size="7.6" font-weight="800" fill="${c}" stroke="none">10</text></svg>`,
-  fwd10: (s = 26, c = '#fff') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 4v5.5H16"></path><path d="M19.4 14.5a8 8 0 1 1-1.7-8.2l3.8 3.2"></path><text x="11.6" y="17" text-anchor="middle" font-size="7.6" font-weight="800" fill="${c}" stroke="none">10</text></svg>`
+  fwd10: (s = 26, c = '#fff') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 4v5.5H16"></path><path d="M19.4 14.5a8 8 0 1 1-1.7-8.2l3.8 3.2"></path><text x="11.6" y="17" text-anchor="middle" font-size="7.6" font-weight="800" fill="${c}" stroke="none">10</text></svg>`,
+  users: (s = 40, c = 'var(--acc, #38bdf8)') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>`
 };
+
+// Watch Together: a guest follows the host, so their transport is inert.
+// player.js already no-ops togglePlay()/skipBy() for them (which covers the
+// remote and the keyboard); this stops the OSD from optimistically flipping its
+// own play icon on a press that does nothing.
+function wtGuestLocked() {
+  return document.body.classList.contains('wt-guest');
+}
 
 // ==========================================================================
 // Small utils
@@ -449,8 +459,9 @@ function onKeyDown(e) {
     if (document.getElementById('tvn-chooser')) { e.preventDefault(); e.stopImmediatePropagation(); return; }
     // an open popout swallows Back — close it, stay on the screen
     if (popupEl) { e.preventDefault(); e.stopImmediatePropagation(); closePopup(); return; }
-    // On the search screen, Backspace deletes a character while there is one.
-    if (k === 'Backspace' && current && current.name === 'search' &&
+    // On a text-entry screen (search query, Watch Together code), Backspace
+    // deletes a character while there is one, instead of navigating back.
+    if (k === 'Backspace' && current && (current.name === 'search' || current.name === 'watch') &&
         window.__tvnQueryDel && window.__tvnQueryDel()) {
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -504,11 +515,25 @@ function ensureOsd() {
       </div>
       <div class="tvn-osd-bottom">
         <div class="tvn-osd-info">
-          <span class="tvn-osd-live">LIVE</span>
-          <span class="tvn-osd-title" data-osd-title></span>
-          <span class="tvn-osd-sub" data-osd-sub></span>
-          <span class="tvn-osd-elapsed" data-osd-elapsed></span>
-          <span class="tvn-osd-next" data-osd-next></span>
+          <div class="tvn-osd-labelrow">
+            <div class="tvn-osd-liverow">
+              <span class="tvn-osd-live">LIVE</span>
+              <span class="tvn-osd-nowlab">Playing Now</span>
+            </div>
+            <span class="tvn-osd-nextlab" data-osd-nextlab hidden>Playing Next</span>
+          </div>
+          <div class="tvn-osd-detailrow">
+            <div class="tvn-osd-info-main">
+              <span class="tvn-osd-title" data-osd-title></span>
+              <span class="tvn-osd-sub" data-osd-sub></span>
+              <span class="tvn-osd-elapsed" data-osd-elapsed></span>
+              <span class="tvn-osd-next" data-osd-next></span>
+            </div>
+            <div class="tvn-osd-upnext" data-osd-upnext hidden>
+              <span class="tvn-osd-nexttitle" data-osd-nexttitle></span>
+              <span class="tvn-osd-nexttime" data-osd-nexttime></span>
+            </div>
+          </div>
         </div>
         <div class="tvn-osd-seek">
           <span class="tvn-osd-time" data-osd-cur>--:--</span>
@@ -537,17 +562,20 @@ function ensureOsd() {
   osdEl.querySelector('[data-osd="next"]').onclick = () => { osdBump(); legacyClick('player-next-btn'); };
   osdEl.querySelector('[data-osd="play"]').onclick = () => {
     osdBump();
+    if (wtGuestLocked()) return;
     legacyClick('player-play-pause-btn');
     osdPaused = !osdPaused;
     osdEl.querySelector('[data-osd="play"]').innerHTML = osdPaused ? I.play(34) : I.pause();
   };
   osdEl.querySelector('[data-osd="rew"]').onclick = () => {
     osdBump();
+    if (wtGuestLocked()) return;
     try { window.playerInstance.skipBy(-10); } catch (e) {}
     osdTick();
   };
   osdEl.querySelector('[data-osd="fwd"]').onclick = () => {
     osdBump();
+    if (wtGuestLocked()) return;
     try { window.playerInstance.skipBy(10); } catch (e) {}
     osdTick();
   };
@@ -558,6 +586,7 @@ function ensureOsd() {
   const seekBar = osdEl.querySelector('[data-osd-bar]');
   seekBar.onclick = (e) => {
     osdBump();
+    if (wtGuestLocked()) return;
     if (!e.isTrusted || (!e.clientX && !e.clientY)) {
       const play = osdEl.querySelector('[data-osd="play"]');
       if (play) play.click();
@@ -687,6 +716,8 @@ function osdRender() {
   osdEl.querySelector('[data-osd="prev"]').title = vod ? 'Previous episode' : 'Previous channel';
   osdEl.querySelector('[data-osd="next"]').title = vod ? 'Next episode' : 'Next channel';
   osdEl.querySelector('[data-osd-hintlabel]').textContent = vod ? 'Back to browse' : 'Back to channels';
+  const upnextBox = osdEl.querySelector('[data-osd-upnext]');
+  const nextLab = osdEl.querySelector('[data-osd-nextlab]');
   if (vod) {
     const m = osdVod || {};
     // Top row shows the ← Back pill in VOD (CSS hides the chip + name there);
@@ -696,6 +727,8 @@ function osdRender() {
     osdEl.querySelector('[data-osd-title]').textContent = m.title || 'Now playing';
     osdEl.querySelector('[data-osd-sub]').textContent = m.sub || '';
     osdEl.querySelector('[data-osd-next]').textContent = m.next ? `Up next: ${m.next}` : '';
+    upnextBox.hidden = true;
+    nextLab.hidden = true;
   } else {
     const ch = osdChannel || window.state?.activeChannel || {};
     osdEl.querySelector('[data-osd-tile]').innerHTML = tileHtml(ch.name || '', ch.stream_icon, 'tvn-osd-tile');
@@ -703,6 +736,19 @@ function osdRender() {
     osdEl.querySelector('[data-osd-sub]').textContent = ch.name || '';
     osdEl.querySelector('[data-osd-title]').textContent = (osdProgram && osdProgram.title) || ch.name || 'Live TV';
     osdEl.querySelector('[data-osd-next]').textContent = '';
+    // "Playing Next" (opposite side, same label line): the following EPG
+    // programme, when known. Label + detail box toggle together.
+    if (osdProgramNext && osdProgramNext.title) {
+      upnextBox.hidden = false;
+      nextLab.hidden = false;
+      osdEl.querySelector('[data-osd-nexttitle]').textContent = osdProgramNext.title;
+      osdEl.querySelector('[data-osd-nexttime]').textContent = osdProgramNext.start_timestamp
+        ? `${fmtClockTs(osdProgramNext.start_timestamp)}${osdProgramNext.end_timestamp ? ' – ' + fmtClockTs(osdProgramNext.end_timestamp) : ''}`
+        : '';
+    } else {
+      upnextBox.hidden = true;
+      nextLab.hidden = true;
+    }
   }
   osdRefreshFav();
   osdTick();
@@ -751,21 +797,26 @@ async function osdFetchProgram() {
   try {
     const listings = await epgFor(osdChannel.stream_id);
     if (seq !== osdFetchSeq) return;
-    const { current: cur } = nowNextOf(listings);
-    if (cur && cur !== osdProgram) { osdProgram = cur; if (osdVisible()) osdRender(); }
+    const { current: cur, upcoming } = nowNextOf(listings);
+    osdProgramNext = (upcoming && upcoming[0]) || null;
+    if (cur && cur !== osdProgram) osdProgram = cur;
+    if (osdVisible()) osdRender();
   } catch (e) {}
 }
 
 function osdSetNowPlaying(ch, prog) {
   osdChannel = ch || null;
   osdProgram = prog || null;
+  osdProgramNext = null;
   osdVod = null;
   osdPaused = false;
   if (osdEl) {
     const p = osdEl.querySelector('[data-osd="play"]');
     if (p) p.innerHTML = I.pause();
   }
-  if (!prog) osdFetchProgram();
+  // Always fetch — even with a current programme in hand, the "Playing Next"
+  // box needs the following one (epgFor is session-cached, so zaps stay cheap).
+  osdFetchProgram();
   // surface the OSD briefly on every channel start / zap — after the legacy
   // play path has done its own focusDefault('player'), so ours wins
   setTimeout(() => { if (osdActive()) osdShow(); }, 650);
@@ -1021,7 +1072,7 @@ async function screenHome() {
   const scr = el(`
   <div class="tvn-screen tvn-home">
     <div class="tvn-home-bg" aria-hidden="true" data-home-bg>
-      <i data-bg="live" class="on"></i><i data-bg="movies"></i><i data-bg="series"></i><i data-bg="guide"></i><i data-bg="settings"></i>
+      <i data-bg="live" class="on"></i><i data-bg="movies"></i><i data-bg="series"></i><i data-bg="guide"></i><i data-bg="settings"></i><i data-bg="watch"></i>
     </div>
     <div class="tvn-home-top">
       <div class="tvn-logo">
@@ -1067,6 +1118,10 @@ async function screenHome() {
             <div class="tvn-card-icon">${I.guide()}</div>
             <div class="tvn-card-txt"><span class="tvn-card-title">Guide</span></div>
           </button>
+          <button class="tvn-card tvn-card-half tvn-focable" data-nav data-fkey="watch">
+            <div class="tvn-card-icon">${I.users()}</div>
+            <div class="tvn-card-txt"><span class="tvn-card-title">Join Watch Session</span></div>
+          </button>
           <button class="tvn-card tvn-card-half tvn-focable" data-nav data-fkey="settings">
             <div class="tvn-card-icon">${I.gear()}</div>
             <div class="tvn-card-txt"><span class="tvn-card-title">Settings</span></div>
@@ -1092,6 +1147,7 @@ async function screenHome() {
   scr.querySelector('[data-fkey="movies"]').onclick = () => setScreen('browse', { type: 'movie' });
   scr.querySelector('[data-fkey="series"]').onclick = () => setScreen('browse', { type: 'series' });
   scr.querySelector('[data-fkey="guide"]').onclick = () => setScreen('guide');
+  scr.querySelector('[data-fkey="watch"]').onclick = () => setScreen('watch');
   scr.querySelector('[data-fkey="settings"]').onclick = () => setScreen('settings');
   const powerBtn = scr.querySelector('[data-fkey="power"]');
   if (powerBtn) powerBtn.onclick = powerToTray;
@@ -1642,6 +1698,26 @@ async function screenDetails(params) {
       };
       actions.appendChild(restart);
     }
+
+    // Watch Together: open a session for this title, then show the lobby with the
+    // code. The session carries identifiers only — the guest's device rebuilds
+    // the stream URL from its own credentials.
+    const wtBtn = el(`<button class="tvn-btn tvn-focable" data-nav data-fkey="wt">${I.users(24, '#fff')} Watch Together</button>`);
+    wtBtn.onclick = async () => {
+      wtBtn.disabled = true;
+      const code = await window.__wtHost({
+        type: 'movie',
+        streamId: String(queryId),
+        ext,
+        name: item.name,
+        logo: art || '',
+        backdrop: backdrop || ''
+      });
+      wtBtn.disabled = false;
+      if (code) setScreen('watch', { mode: 'host' });
+    };
+    actions.appendChild(wtBtn);
+
     actions.appendChild(favBtn);
   } else {
     actions.appendChild(favBtn);
@@ -2171,6 +2247,159 @@ async function screenSearch() {
   });
 }
 
+// ==========================================================================
+// Watch Together — the 10-foot lobby
+// ==========================================================================
+// The session itself (transport, clock skew, host authority) lives in
+// watch-together.js and main.js; this screen is only its TV-shaped face. It's a
+// normal screen rather than an overlay on purpose — staying inside the router
+// means navRootEl() and shellHasKeys() need no special-casing for it.
+//
+//   mode 'join' (default): A-Z key grid → 4 letters → auto-join → lobby.
+//   mode 'host':           the code + a live guest list + Start.
+async function screenWatch(params = {}) {
+  const mode = params.mode === 'host' ? 'host' : 'join';
+  const S = () => window.__wtSession;
+
+  const scr = el(`
+  <div class="tvn-screen tvn-watch">
+    <div class="tvn-rail-head">
+      <button class="tvn-iconbtn tvn-focable" data-nav data-fkey="back" style="background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.08)">${I.back()}</button>
+      <span class="tvn-rail-title">Watch Together</span>
+    </div>
+    <div class="tvn-watch-body" data-wt></div>
+  </div>`);
+  stage.appendChild(scr);
+  scr.querySelector('[data-fkey="back"]').onclick = () => leaveAndBack();
+
+  const box = scr.querySelector('[data-wt]');
+  let code = '';
+  let err = '';
+  let busy = false;
+
+  function leaveAndBack() {
+    try { window.__wtLeave(); } catch (e) {}
+    goBack();
+  }
+
+  function type_(chr) {
+    if (busy) return;
+    if (chr === 'DEL') code = code.slice(0, -1);
+    else if (chr === 'CLR') code = '';
+    else if (code.length < 4) code += chr;
+    err = '';
+    render();
+    if (code.length === 4) submit();
+  }
+
+  async function submit() {
+    busy = true;
+    render();
+    const r = await window.__wtJoin(code);
+    busy = false;
+    // A join into an already-playing session hands off to the player, which tears
+    // this screen down — render() no-ops once that's happened.
+    if (r !== true) { err = r.message; code = ''; }
+    render();
+  }
+
+  // Physical Backspace deletes a letter instead of navigating back.
+  window.__tvnQueryDel = () => {
+    if (mode !== 'join' || !code || busy) return false;
+    type_('DEL');
+    return true;
+  };
+
+  // The session polls in the background; main.js pings this on every change.
+  window.__tvnWatchUpdate = render;
+
+  function render() {
+    if (!scr.isConnected) return;   // screen was torn down (e.g. playback started)
+    const keep = document.activeElement && document.activeElement.dataset
+      ? document.activeElement.dataset.fkey : null;
+    const s = S();
+
+    if (mode === 'host') {
+      const n = ((s && s.guests) || []).length;
+      box.innerHTML = `
+        <div class="tvn-wt-card">
+          <p class="tvn-wt-sub">${esc((s && s.content && s.content.name) || '')}</p>
+          <div class="tvn-wt-code">${esc((s && s.code) || '····')}</div>
+          <p class="tvn-wt-hint">Share this code. They'll need to be on the same subscription.</p>
+          <div class="tvn-wt-status ${n ? 'is-ready' : ''}">${n ? `${n} guest${n > 1 ? 's' : ''} joined` : 'Waiting for guests…'}</div>
+          <div class="tvn-wt-actions" data-acts></div>
+        </div>`;
+      const acts = box.querySelector('[data-acts]');
+      const start = el(`<button class="tvn-btn tvn-btn-primary tvn-focable" data-nav data-autofocus data-fkey="wt-start" ${n ? '' : 'disabled'}>${I.play(26)} Start</button>`);
+      start.onclick = () => { if (!n) return; hideForPlayback(); window.__wtStart(); };
+      acts.appendChild(start);
+      const cancel = el(`<button class="tvn-btn tvn-focable" data-nav data-fkey="wt-cancel">Cancel</button>`);
+      cancel.onclick = () => leaveAndBack();
+      acts.appendChild(cancel);
+      restore(keep);
+      return;
+    }
+
+    if (s && s.active) {
+      // Guest, joined, waiting for the host.
+      box.innerHTML = `
+        <div class="tvn-wt-card">
+          <p class="tvn-wt-sub">${esc((s.content && s.content.name) || '')}</p>
+          <div class="tvn-wt-status">Waiting for host to start…</div>
+          <div class="tvn-wt-actions" data-acts></div>
+        </div>`;
+      const leave = el(`<button class="tvn-btn tvn-focable" data-nav data-autofocus data-fkey="wt-leave">Leave</button>`);
+      leave.onclick = () => leaveAndBack();
+      box.querySelector('[data-acts]').appendChild(leave);
+      restore(keep);
+      return;
+    }
+
+    // Code entry.
+    const slots = [0, 1, 2, 3]
+      .map(i => `<span class="tvn-wt-slot ${i === code.length && !busy ? 'on' : ''}">${esc(code[i] || '')}</span>`)
+      .join('');
+    box.innerHTML = `
+      <div class="tvn-wt-card">
+        <p class="tvn-wt-hint">Enter the 4-letter code from the host.</p>
+        <div class="tvn-wt-slots">${slots}</div>
+        <div class="tvn-wt-status ${err ? 'is-err' : ''}">${busy ? 'Joining…' : esc(err)}&nbsp;</div>
+        <div class="tvn-keys" data-keys></div>
+      </div>`;
+    const keysEl = box.querySelector('[data-keys]');
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach((k, i) => {
+      const b = el(`<button class="tvn-key tvn-focable" data-nav data-fkey="k-${k}" ${i === 0 ? 'data-autofocus' : ''}>${k}</button>`);
+      b.onclick = () => type_(k);
+      keysEl.appendChild(b);
+    });
+    [['DEL', '⌫ Delete'], ['CLR', 'Clear']].forEach(([c, label]) => {
+      const b = el(`<button class="tvn-key tvn-key-wide tvn-focable" data-nav data-fkey="k-${c}" style="font-size:22px">${label}</button>`);
+      b.onclick = () => type_(c);
+      keysEl.appendChild(b);
+    });
+    restore(keep);
+  }
+
+  // Every keypress rebuilds the grid, so put focus back where it was — otherwise
+  // typing a code walks the focus ring back to 'A' after each letter.
+  function restore(keep) {
+    const back = keep && scr.querySelector(`[data-fkey="${keep}"]:not([disabled])`);
+    if (back) back.focus();
+    else focusAuto();
+  }
+
+  // Physical keyboard (desktop /tv mode) types straight into the code.
+  scr.addEventListener('keydown', (e) => {
+    if (mode !== 'join') return;
+    if (e.key.length === 1 && /[a-zA-Z]/.test(e.key)) {
+      e.stopPropagation();
+      type_(e.key.toUpperCase());
+    }
+  });
+
+  render();
+}
+
 const SCREENS = {
   home: screenHome,
   live: screenLive,
@@ -2178,7 +2407,8 @@ const SCREENS = {
   details: screenDetails,
   guide: screenGuide,
   settings: screenSettings,
-  search: screenSearch
+  search: screenSearch,
+  watch: screenWatch
 };
 
 // ==========================================================================

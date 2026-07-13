@@ -7654,3 +7654,153 @@ body.tv-layout .epg-section-container.timeline-hidden .epg-channel-row-fav {
   right: 14px !important;
 }
 
+
+/* ==========================================================================
+   WATCH TOGETHER (7.2)
+   ========================================================================== */
+
+.vod-watch-together-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 12px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary, #fff);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+.vod-watch-together-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+.vod-watch-together-btn i { width: 18px; height: 18px; }
+
+.watch-modal-content {
+  position: relative;
+  width: min(460px, 92vw);
+  padding: 34px 30px 26px;
+  border-radius: 16px;
+  background: var(--bg-elevated, #16181d);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+  text-align: center;
+}
+
+.wt-heading { margin: 0 0 6px; font-size: 1.35rem; font-weight: 700; }
+.wt-sub { margin: 0 0 18px; color: var(--text-secondary, #9aa0a6); font-size: 0.95rem; }
+.wt-hint { margin: 10px 0 0; color: var(--text-secondary, #9aa0a6); font-size: 0.85rem; }
+.wt-title { margin: 0 0 6px; font-weight: 600; }
+
+/* The code is the whole point of the host screen — make it unmistakable and
+   trivially readable aloud over a phone. */
+.wt-code {
+  margin: 6px 0 2px;
+  font-size: 3.4rem;
+  font-weight: 800;
+  letter-spacing: 0.42em;
+  text-indent: 0.42em;   /* letter-spacing pads the right — recentre it */
+  color: var(--accent, #4da3ff);
+  font-variant-numeric: tabular-nums;
+}
+
+.wt-guests {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 20px 0 4px;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary, #9aa0a6);
+  font-size: 0.9rem;
+}
+.wt-guests.is-ready { color: #4ade80; background: rgba(74, 222, 128, 0.1); }
+.wt-guests i { width: 16px; height: 16px; }
+.wt-guests:not(.is-ready) i { animation: wt-spin 1.4s linear infinite; }
+
+.wt-joined { display: flex; align-items: center; gap: 14px; margin: 16px 0; text-align: left; }
+.wt-poster { width: 64px; border-radius: 8px; flex-shrink: 0; }
+.wt-waiting {
+  display: flex; align-items: center; gap: 7px; margin: 0;
+  color: var(--text-secondary, #9aa0a6); font-size: 0.88rem;
+}
+.wt-waiting i { width: 15px; height: 15px; animation: wt-spin 1.4s linear infinite; }
+
+@keyframes wt-spin { to { transform: rotate(360deg); } }
+
+.wt-code-input {
+  width: 100%;
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--text-primary, #fff);
+  font-size: 2.1rem;
+  font-weight: 700;
+  letter-spacing: 0.5em;
+  text-indent: 0.5em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.wt-code-input:focus { outline: none; border-color: var(--accent, #4da3ff); }
+
+.wt-error { margin: 12px 0 0; color: #f87171; font-size: 0.88rem; min-height: 1em; }
+
+.wt-actions { display: flex; gap: 10px; margin-top: 22px; }
+.wt-btn {
+  flex: 1;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary, #fff);
+  font-size: 0.95rem; font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.18s ease, background 0.18s ease;
+}
+.wt-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); }
+.wt-btn-primary { background: var(--accent, #4da3ff); border-color: transparent; color: #06121f; }
+.wt-btn-primary:hover:not(:disabled) { filter: brightness(1.1); background: var(--accent, #4da3ff); }
+.wt-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.wt-btn i { width: 17px; height: 17px; }
+
+/* --- Guest lock ---------------------------------------------------------
+   The host owns the transport. player.js already makes togglePlay()/skipBy()
+   inert for a guest (so the keyboard and the remote are covered too); this is
+   the visual half — the controls must LOOK unavailable, not just act that way. */
+body.wt-guest #player-play-pause-btn,
+body.wt-guest #player-rewind-10,
+body.wt-guest #player-forward-10,
+body.wt-guest #player-seek-wrap {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+body.wt-guest #video-container::after {
+  content: "Host is in control";
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}

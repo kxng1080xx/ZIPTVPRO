@@ -39,6 +39,7 @@ import { getDeviceCode, syncDevice, readCachedState, clearCachedState, isStateEx
 import { initWebTabs, openWebTab, openManageTabs, toggleAdblock, isAdblockOn, applyHiddenTabs } from './components/web-tabs.js';
 import { renderHome } from './components/home.js';
 import { getStoredUiMode, setStoredUiMode, showDeviceChooser, initTvNative, enterTvNative, exitTvNative, isTvNativeActive } from './components/tv-native.js';
+import { watchTogether } from './components/watch-together.js';
 
 // Cloud sync (ZIPTV Pro 5.0): device + playlist state lives in Supabase, managed
 // from the /connect dashboard and pulled via the serverless /api/device endpoint.
@@ -371,6 +372,7 @@ async function initApp() {
   playerInstance.setOnNextChannel(() => playNextChannel());
   playerInstance.onExitVod = exitVodPlayer;
   playerInstance.onVodProgress = saveCurrentProgress;
+  initWatchTogether();
 
   epgGridInstance = new EPGGrid(
     (channel, program) => {
@@ -2665,6 +2667,7 @@ async function openVODDetailsModal(vodData, type, resumeTime = 0) {
   const director = document.getElementById('vod-modal-director');
   const cast = document.getElementById('vod-modal-cast');
   const playBtn = document.getElementById('vod-modal-play-btn');
+  const wtBtn = document.getElementById('vod-modal-wt-btn');
   const seriesEpisodesContainer = document.getElementById('vod-series-episodes-container');
 
   // Clear modal values first
@@ -2679,6 +2682,7 @@ async function openVODDetailsModal(vodData, type, resumeTime = 0) {
   cast.textContent = 'Loading...';
 
   playBtn.classList.remove('hidden');
+  wtBtn.classList.add('hidden');   // movies only — shown once the metadata lands
   seriesEpisodesContainer.classList.add('hidden');
   modal.classList.remove('hidden');
   navigation.focusDefault('modal');
@@ -2708,17 +2712,33 @@ async function openVODDetailsModal(vodData, type, resumeTime = 0) {
         ? `<i data-lucide="play-circle"></i> Resume playing · ${formatClock(resumeTime)}`
         : `<i data-lucide="play-circle"></i> Play Now`;
       lucide.createIcons({ scope: playBtn });
+
+      const resolveBackdrop = () => {
+        const b = infoMeta.backdrop_path;
+        if (Array.isArray(b) && b.length > 0) return b[0];
+        if (typeof b === 'string') return b;
+        return '';
+      };
+
       playBtn.onclick = async () => {
         modal.classList.add('hidden');
-        let backdrop = '';
-        if (infoMeta.backdrop_path) {
-          if (Array.isArray(infoMeta.backdrop_path) && infoMeta.backdrop_path.length > 0) {
-            backdrop = infoMeta.backdrop_path[0];
-          } else if (typeof infoMeta.backdrop_path === 'string') {
-            backdrop = infoMeta.backdrop_path;
-          }
-        }
-        await playVODStream(queryId, 'movie', vodData.name, vodData.stream_icon, plot.textContent, movieExt, resumeTime, backdrop);
+        await playVODStream(queryId, 'movie', vodData.name, vodData.stream_icon, plot.textContent, movieExt, resumeTime, resolveBackdrop());
+      };
+
+      // Watch Together. The session carries identifiers only — every device
+      // rebuilds its own stream URL from its own credentials.
+      wtBtn.classList.remove('hidden');
+      lucide.createIcons({ scope: wtBtn });
+      wtBtn.onclick = async () => {
+        modal.classList.add('hidden');
+        await hostWatchSession({
+          type: 'movie',
+          streamId: String(queryId),
+          ext: movieExt,
+          name: vodData.name,
+          logo: vodData.stream_icon || '',
+          backdrop: resolveBackdrop()
+        });
       };
     } else if (type === 'series') {
       // It's a Series, hide direct play button and show Episode Lists
@@ -2880,10 +2900,320 @@ function exitVodPlayer() {
   currentVodItem = null;
   refreshContinueWatching();
 
+  // Leaving the player leaves the watch session — otherwise a host who backs out
+  // would keep broadcasting a dead position at their guests.
+  if (watchTogether.active) leaveWatchSession();
+
   // 7.0 TV shell: hand the screen back to the 10-foot UI instead of the grid.
   if (window.__tvNativeOnPlayerExit && window.__tvNativeOnPlayerExit()) return;
   navigation.focusDefault('grid');
 }
+
+// ==========================================================================
+// WATCH TOGETHER (7.2)
+// ==========================================================================
+// The host opens a title, gets a 4-letter code, and guests on the same
+// subscription join with it. The host is authoritative: their pause/seek is
+// broadcast; guests apply it and have their own transport controls locked.
+//
+// Session transport and clock-skew correction live in watch-together.js. This is
+// the bridge between that and the player — plus the PC/phone modal. The TV shell
+// drives the same functions through the window.__wt* hooks at the bottom.
+
+// How far a guest may drift from the host before we hard-seek them. Below this,
+// leave it alone: continuous micro-seeks judder far worse than being a second off.
+const WT_DRIFT_TOLERANCE = 2;
+
+// Set while we're applying state that came FROM the host. The local 'pause' /
+// 'seeked' events that our own calls raise must not be broadcast back, or the two
+// devices bounce events off each other forever.
+let wtApplyingRemote = false;
+let wtHostTick = null;
+let wtSeekDebounce = null;
+let wtLastSent = null;         // {cur, paused, at} — what the guests believe
+let wtSettleUntil = 0;         // guest: skip drift checks while a seek/load settles
+let wtBoundPlayer = false;
+
+function initWatchTogether() {
+  watchTogether.onGuestsChanged = () => renderWatchModal();
+  watchTogether.onStateChanged = (s) => {
+    if (s === 'playing' && watchTogether.isGuest) startGuestPlayback();
+    else if (s === 'ended' && watchTogether.isGuest) endWatchSession('The host ended the session.');
+    else renderWatchModal();
+  };
+  watchTogether.onRemoteState = applyRemoteState;
+  bindHostPlayerEvents();
+}
+
+/* -------------------------------------------------------------- host: send */
+
+/**
+ * Broadcast the host's transport state. The 1s tick is the backbone — it's the
+ * only thing that works on the native (libVLC) path, where the <video> element is
+ * a dummy that fires no events at all. It sends only on a real change, plus a 3s
+ * heartbeat so a guest's projection can't drift indefinitely.
+ */
+function pushHostState(force = false) {
+  if (!watchTogether.isHost || watchTogether.state !== 'playing') return;
+  if (!playerInstance || !document.body.classList.contains('vod-mode')) return;
+
+  const { cur, paused } = playerInstance.getClock();
+  const now = Date.now();
+
+  if (!force && wtLastSent) {
+    const elapsed = (now - wtLastSent.at) / 1000;
+    // Where the guests currently think we are, if nothing unusual happened.
+    const projected = wtLastSent.paused ? wtLastSent.cur : wtLastSent.cur + elapsed;
+    const seeked = Math.abs((cur || 0) - projected) > 1;
+    const toggled = !!paused !== wtLastSent.paused;
+    const stale = elapsed >= 3;
+    if (!seeked && !toggled && !stale) return;
+  }
+
+  wtLastSent = { cur: cur || 0, paused: !!paused, at: now };
+  watchTogether.broadcast(cur || 0, !!paused).catch(() => {});
+}
+
+function startHostBroadcast() {
+  stopHostBroadcast();
+  wtLastSent = null;
+  wtHostTick = setInterval(() => pushHostState(), 1000);
+}
+
+function stopHostBroadcast() {
+  if (wtHostTick) clearInterval(wtHostTick);
+  wtHostTick = null;
+  clearTimeout(wtSeekDebounce);
+  wtSeekDebounce = null;
+  wtLastSent = null;
+}
+
+// Latency shortcut for the browser path: react to the host's own pause/seek the
+// moment it happens rather than waiting up to a second for the tick.
+function bindHostPlayerEvents() {
+  if (wtBoundPlayer || !playerInstance || !playerInstance.video) return;
+  wtBoundPlayer = true;
+  const v = playerInstance.video;
+
+  const immediate = () => { if (!wtApplyingRemote) pushHostState(true); };
+  v.addEventListener('play', immediate);
+  v.addEventListener('pause', immediate);
+
+  // A scrub fires a burst of 'seeked' events, and on PC a premium-VOD seek
+  // restarts the ffmpeg transcode — so an undebounced scrub would thrash every
+  // guest. Only the position they land on matters.
+  v.addEventListener('seeked', () => {
+    if (wtApplyingRemote) return;
+    clearTimeout(wtSeekDebounce);
+    wtSeekDebounce = setTimeout(() => pushHostState(true), 400);
+  });
+}
+
+/* ------------------------------------------------------------- guest: apply */
+
+/** Apply the host's transport state to this device. Guests only. */
+function applyRemoteState({ paused, expected }) {
+  if (!watchTogether.isGuest || !playerInstance) return;
+  if (!document.body.classList.contains('vod-mode')) return;   // not playing yet
+
+  wtApplyingRemote = true;
+  try {
+    playerInstance.setPaused(!!paused);
+
+    // While a seek or the initial load is still settling the clock reads 0 (or
+    // the old position), which looks like enormous drift and would trigger a
+    // seek storm. Let it settle first.
+    if (Date.now() < wtSettleUntil) return;
+    if (playerInstance.video && playerInstance.video.seeking) return;
+
+    const cur = playerInstance.getClock().cur || 0;
+    if (Math.abs(cur - expected) > WT_DRIFT_TOLERANCE) {
+      playerInstance.seekTo(expected);
+      wtSettleUntil = Date.now() + 4000;
+    }
+  } finally {
+    // Our own calls raise their events asynchronously, so the guard has to
+    // outlive this tick.
+    setTimeout(() => { wtApplyingRemote = false; }, 250);
+  }
+}
+
+/** Guest: the host pressed Start (or we joined a session already in progress). */
+async function startGuestPlayback() {
+  const c = watchTogether.content;
+  if (!c) return;
+  closeWatchModal();
+  wtSettleUntil = Date.now() + 6000;   // let the stream open before policing drift
+  playerInstance.setTransportLocked(true);
+  await playVODStream(c.streamId, c.type, c.name, c.logo, '', c.ext, watchTogether.expectedNow(), c.backdrop);
+}
+
+/* ----------------------------------------------------------- session control */
+
+/** Host: open a session for a title and show the code. `content` is the payload. */
+async function hostWatchSession(content) {
+  try {
+    const code = await watchTogether.host(content);
+    openWatchModal('host');
+    renderWatchModal();
+    return code;
+  } catch (err) {
+    showToast(err.message, 'error');
+    return null;
+  }
+}
+
+/** Guest: redeem a 4-letter code. Returns true on success. */
+async function joinWatchSession(code) {
+  try {
+    await watchTogether.join(code);
+    // Joining a session that's already playing skips the lobby entirely.
+    if (watchTogether.state === 'playing') startGuestPlayback();
+    else renderWatchModal();
+    return true;
+  } catch (err) {
+    return err;   // the caller renders it — the mismatch message is the point
+  }
+}
+
+/** Host: release the guests and start playing. */
+async function startWatchSession() {
+  const c = watchTogether.content;
+  if (!c || !watchTogether.isHost) return;
+  closeWatchModal();
+  await watchTogether.start(0);
+  startHostBroadcast();
+  await playVODStream(c.streamId, c.type, c.name, c.logo, '', c.ext, 0, c.backdrop);
+}
+
+/** Leave the session without tearing down playback. */
+function leaveWatchSession() {
+  stopHostBroadcast();
+  wtSettleUntil = 0;
+  if (playerInstance) playerInstance.setTransportLocked(false);
+  watchTogether.leave().catch(() => {});
+}
+
+/** Leave the session AND drop out of the player (used when the host ends it). */
+function endWatchSession(message) {
+  leaveWatchSession();
+  closeWatchModal();
+  if (message) showToast(message, 'info');
+  if (document.body.classList.contains('vod-mode')) exitVodPlayer();
+}
+
+/* ---------------------------------------------------------------- PC modal */
+
+let wtModalMode = null;   // 'host' | 'guest' | null
+let wtJoinError = '';
+
+// The TV shell has its own 10-foot lobby (screenWatch) and drives the session
+// through the __wt* hooks, so the mouse modal must stay out of its way — a
+// .modal-overlay left visible would also make shellHasKeys() surrender the D-pad.
+function openWatchModal(mode) {
+  if (isTvNativeActive()) return;
+  wtModalMode = mode;
+  wtJoinError = '';
+  document.getElementById('watch-modal')?.classList.remove('hidden');
+  renderWatchModal();
+  navigation.focusDefault('modal');
+}
+
+function closeWatchModal() {
+  if (isTvNativeActive()) return;
+  wtModalMode = null;
+  document.getElementById('watch-modal')?.classList.add('hidden');
+}
+
+function renderWatchModal() {
+  if (isTvNativeActive()) {
+    try { if (window.__tvnWatchUpdate) window.__tvnWatchUpdate(); } catch (e) {}
+    return;
+  }
+  const body = document.getElementById('watch-modal-body');
+  if (!body || !wtModalMode) return;
+
+  const c = watchTogether.content;
+  const guests = watchTogether.guests || [];
+
+  if (wtModalMode === 'host') {
+    const n = guests.length;
+    body.innerHTML = `
+      <h2 class="wt-heading">Watch Together</h2>
+      <p class="wt-sub">${escapeHtml(c?.name || '')}</p>
+      <div class="wt-code">${escapeHtml(watchTogether.code || '····')}</div>
+      <p class="wt-hint">Share this code. They'll need to be on the same subscription.</p>
+      <div class="wt-guests ${n ? 'is-ready' : ''}">
+        <i data-lucide="${n ? 'user-check' : 'loader'}"></i>
+        <span>${n ? `${n} guest${n > 1 ? 's' : ''} joined` : 'Waiting for guests…'}</span>
+      </div>
+      <div class="wt-actions">
+        <button class="wt-btn wt-btn-primary" id="wt-start-btn" ${n ? '' : 'disabled'}>
+          <i data-lucide="play"></i> Start
+        </button>
+        <button class="wt-btn" id="wt-cancel-btn">Cancel</button>
+      </div>`;
+    body.querySelector('#wt-start-btn').onclick = () => startWatchSession();
+    body.querySelector('#wt-cancel-btn').onclick = () => { leaveWatchSession(); closeWatchModal(); };
+  } else if (watchTogether.active) {
+    // Guest, joined, waiting in the lobby.
+    body.innerHTML = `
+      <h2 class="wt-heading">Watch Together</h2>
+      <div class="wt-joined">
+        ${c?.logo ? `<img class="wt-poster" src="${escapeHtml(proxifyImage(c.logo))}" alt="">` : ''}
+        <div>
+          <p class="wt-title">${escapeHtml(c?.name || '')}</p>
+          <p class="wt-waiting"><i data-lucide="loader"></i> Waiting for host to start…</p>
+        </div>
+      </div>
+      <div class="wt-actions">
+        <button class="wt-btn" id="wt-leave-btn">Leave</button>
+      </div>`;
+    body.querySelector('#wt-leave-btn').onclick = () => { leaveWatchSession(); closeWatchModal(); };
+  } else {
+    // Guest, entering a code.
+    body.innerHTML = `
+      <h2 class="wt-heading">Join Watch Session</h2>
+      <p class="wt-hint">Enter the 4-letter code from the host.</p>
+      <input id="wt-code-input" class="wt-code-input" type="text" maxlength="4"
+             autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD">
+      <p class="wt-error ${wtJoinError ? '' : 'hidden'}">${escapeHtml(wtJoinError)}</p>
+      <div class="wt-actions">
+        <button class="wt-btn wt-btn-primary" id="wt-join-btn">Join</button>
+        <button class="wt-btn" id="wt-cancel-btn">Cancel</button>
+      </div>`;
+
+    const input = body.querySelector('#wt-code-input');
+    const btn = body.querySelector('#wt-join-btn');
+    input.oninput = () => { input.value = input.value.toUpperCase().replace(/[^A-Z]/g, ''); };
+    input.onkeydown = (e) => { if (e.key === 'Enter') btn.click(); };
+    btn.onclick = async () => {
+      const code = input.value.trim().toUpperCase();
+      if (code.length !== 4) { wtJoinError = 'Enter all 4 letters.'; renderWatchModal(); return; }
+      btn.disabled = true;
+      const r = await joinWatchSession(code);
+      if (r !== true) { wtJoinError = r.message; renderWatchModal(); }
+    };
+    body.querySelector('#wt-cancel-btn').onclick = () => closeWatchModal();
+    setTimeout(() => input.focus(), 0);
+  }
+
+  lucide.createIcons({ scope: body });
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (ch) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+  ));
+}
+
+// Hooks the TV shell drives the same session through (tv-native.js has its own
+// 10-foot lobby UI, but the session logic is shared).
+window.__wtHost = hostWatchSession;
+window.__wtJoin = joinWatchSession;
+window.__wtStart = startWatchSession;
+window.__wtLeave = leaveWatchSession;
+window.__wtSession = watchTogether;
 
 // ==========================================================================
 // CONTINUE WATCHING
@@ -3671,6 +4001,15 @@ function bindGlobalEvents() {
   // Modal Closers
   document.getElementById('vod-modal-close').addEventListener('click', () => {
     document.getElementById('vod-modal').classList.add('hidden');
+  });
+
+  // Watch Together: the header icon is the guest's way in.
+  document.getElementById('watch-join-btn')?.addEventListener('click', () => openWatchModal('guest'));
+  document.getElementById('watch-modal-close')?.addEventListener('click', () => {
+    // Dismissing the lobby means leaving it — otherwise a host would sit there
+    // broadcasting an invisible session at their guests.
+    if (watchTogether.active) leaveWatchSession();
+    closeWatchModal();
   });
 
   // Close modals on background overlay click. Settings is exempt — it acts
