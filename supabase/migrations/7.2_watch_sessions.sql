@@ -3,16 +3,18 @@
 -- Run this in Supabase: SQL Editor → New query → paste → Run. Safe to re-run.
 --
 -- A session is a short-lived room: the host picks a VOD title, the app mints a
--- 4-letter code, and guests on the SAME subscription join with it. The row never
--- holds playlist credentials — only `sub_hash`, a fingerprint each client can
--- recompute locally. Content is carried as identifiers (stream id + container
--- extension), so every client rebuilds its own stream URL from its own creds.
+-- 4-letter code, and guests on the SAME provider join with it. The row never
+-- holds playlist credentials — only `sub_hash`, a fingerprint of the server host
+-- that each client can recompute locally. It is the SERVER, not server+username:
+-- one server issues many logins, and those users all resolve the same stream ids,
+-- so they can watch together. Content is carried as identifiers (stream id +
+-- container extension), so every client rebuilds its own stream URL from its own creds.
 -- ============================================================================
 
 create table if not exists public.watch_sessions (
   code            text primary key,                          -- 4 chars, A-Z
   host_device     text not null,                             -- devices.device_id of the host
-  sub_hash        text not null,                             -- sha256(norm(server_url)|lower(username))
+  sub_hash        text not null,                             -- sha256(normalised server host)
   content         jsonb not null,                            -- {type, streamId, ext, name, logo, backdrop}
   state           text not null default 'lobby',             -- 'lobby' | 'playing' | 'ended'
   position        double precision not null default 0,       -- host clock, seconds

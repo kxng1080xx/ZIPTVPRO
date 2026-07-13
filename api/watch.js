@@ -13,12 +13,16 @@
  * SECURITY. The device code is itself a credential (see api/device.js — knowing
  * it returns a playlist's server_url/username/password), so a watch session is
  * keyed by a SEPARATE, short-lived 4-letter code and never carries credentials.
- * Instead it stores `sub_hash`, a fingerprint of the subscription that every
- * client can recompute locally. A join only returns the content payload when the
- * caller's hash matches the host's, so a guessed code on a different
- * subscription reveals nothing. Content travels as identifiers (stream id +
- * container extension) and each client rebuilds the stream URL from its own
- * credentials.
+ * Instead it stores `sub_hash`, a fingerprint of the PROVIDER (a sha256 of the
+ * normalised server host) that every client can recompute locally. A join only
+ * returns the content payload when the caller's hash matches the host's, so a
+ * guessed code on a different provider reveals nothing. Content travels as
+ * identifiers (stream id + container extension) and each client rebuilds the
+ * stream URL from its own credentials.
+ *
+ * The fingerprint is the SERVER, not server+username, on purpose: one server
+ * issues many logins, and two people on the same provider with different
+ * credentials still resolve the same stream ids — so they can watch together.
  *
  * Host authority is enforced here, not just in the UI: `update` and `end` reject
  * any caller whose device_id is not the session's host_device.
@@ -129,7 +133,7 @@ async function join(req, res, b) {
   if (!s) return res.status(404).json({ error: 'not_found' });
 
   // The content payload is withheld on a mismatch, so a guessed code on a
-  // different subscription discloses nothing about what the host is watching.
+  // different provider discloses nothing about what the host is watching.
   if (s.sub_hash !== subHash) return res.status(403).json({ error: 'subscription_mismatch' });
 
   if (device !== s.host_device) {

@@ -27,6 +27,7 @@ import {
   proxifyImage,
   getLastSyncAge
 } from './xtream-api.js';
+import { getAboutRows, DEVELOPER } from './about.js';
 
 // --------------------------------------------------------------------------
 // UI-mode persistence (Mobile vs TV) — asked on first APK boot, before login.
@@ -957,6 +958,43 @@ function openPopup({ title, items, onPick }) {
     row.onclick = () => onPick(it, row);
     listBox.appendChild(row);
   });
+  mountPopup(pop);
+}
+
+/**
+ * About popout — app/device facts plus the support contact. Shares the #tvn-popup
+ * shell (so navRootEl traps the D-pad in it and Back closes it) but renders an
+ * info panel rather than a list. Rows come from about.js, the same source the PC
+ * settings modal uses.
+ */
+function openAboutPopup() {
+  closePopup(false);
+  const pop = el(`
+    <div id="tvn-popup">
+      <div class="tvn-popup-panel tvn-about-panel">
+        <span class="tvn-popup-title">About ZIPTV Pro</span>
+        <div class="tvn-about-rows">
+          ${getAboutRows().map(r => `
+            <div class="tvn-about-row">
+              <span class="tvn-about-k">${esc(r.label)}</span>
+              <span class="tvn-about-v">${esc(r.value)}</span>
+            </div>`).join('')}
+        </div>
+        <div class="tvn-about-dev">
+          <span class="tvn-about-dev-label">Developer &amp; Support</span>
+          <span class="tvn-about-dev-name">${esc(DEVELOPER.name)}</span>
+          <span class="tvn-about-dev-line">${esc(DEVELOPER.email)}</span>
+          <span class="tvn-about-dev-line">${esc(DEVELOPER.phone)}</span>
+        </div>
+        <button class="tvn-btn tvn-btn-primary tvn-focable tvn-about-close" data-nav data-autofocus data-fkey="about-close">Close</button>
+      </div>
+    </div>`);
+  pop.querySelector('[data-fkey="about-close"]').onclick = () => closePopup();
+  mountPopup(pop);
+}
+
+/** Shared tail of openPopup/openAboutPopup: backdrop dismiss, mount, focus. */
+function mountPopup(pop) {
   // mouse users: clicking the dimmed backdrop dismisses
   pop.addEventListener('mousedown', (e) => { if (e.target === pop) closePopup(); });
   pop._returnFocus = document.activeElement;
@@ -2143,7 +2181,7 @@ async function screenSettings(params = {}) {
   const exitTile = tile(gSys, { icon: I.power(30), title: 'Exit app', sub: isElectron ? 'Close ZIPTV Pro' : 'Leave the app', fkey: 'exit', danger: true });
   exitTile.onclick = exitApp;
 
-  tile(gSys, { icon: I.info(30), title: 'ZIPTV Pro', sub: version ? `Version ${version} · TV interface` : 'TV interface', fkey: 'about' }).onclick = () => {};
+  tile(gSys, { icon: I.info(30), title: 'ZIPTV Pro', sub: version ? `Version ${version} · TV interface` : 'TV interface', fkey: 'about' }).onclick = openAboutPopup;
 }
 
 // ==========================================================================
@@ -2361,7 +2399,7 @@ async function screenWatch(params = {}) {
         <div class="tvn-wt-card">
           <p class="tvn-wt-sub">${esc((s && s.content && s.content.name) || '')}</p>
           <div class="tvn-wt-code">${esc((s && s.code) || '····')}</div>
-          <p class="tvn-wt-hint">Share this code. They'll need to be on the same subscription.</p>
+          <p class="tvn-wt-hint">Share this code. They'll need to be on the same provider.</p>
           <div class="tvn-wt-status ${n ? 'is-ready' : ''}">${n ? `${n} guest${n > 1 ? 's' : ''} joined` : 'Waiting for guests…'}</div>
           <div class="tvn-wt-actions" data-acts></div>
         </div>`;

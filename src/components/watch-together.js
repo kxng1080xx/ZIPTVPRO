@@ -16,9 +16,12 @@
  *     off would desync permanently. Instead we track an offset to server time and
  *     project the host's position forward through that.
  *
- *  2. PRIVACY. The only thing identifying the subscription is a SHA-256 of
- *     `host|username`. Credentials never leave the device, and the session only
- *     carries stream identifiers — each client rebuilds its own URL.
+ *  2. PRIVACY. The only thing identifying the provider is a SHA-256 of the server
+ *     host. Credentials never leave the device, and the session only carries
+ *     stream identifiers — each client rebuilds its own URL from its own login.
+ *     Matching on the server rather than the login is deliberate: one server
+ *     issues many credentials, and two people on the same provider with separate
+ *     logins resolve the same stream ids, so they can watch together fine.
  *
  * This module does transport + timing only. Applying remote state to the player,
  * and the UI, live in main.js / tv-native.js.
@@ -225,8 +228,8 @@ class WatchTogether {
 /* -------------------------------------------------------------------- utils */
 
 /**
- * SHA-256 of the active subscription's `host|username`. This is the only thing
- * that identifies the subscription to the server — credentials stay local.
+ * SHA-256 of the active playlist's server host. This is the only thing that
+ * identifies the provider to the backend — credentials stay local.
  */
 async function subHash() {
   const key = await getActiveSubscriptionKey();
@@ -270,7 +273,7 @@ async function post(body) {
 function messageFor(code) {
   switch (code) {
     case 'not_found': return 'That code isn\'t valid — check it and try again.';
-    case 'subscription_mismatch': return 'Cannot join session — subscriptions differ.';
+    case 'subscription_mismatch': return 'Cannot join session — different provider.';
     case 'not_host': return 'Only the host can control this session.';
     case 'no_playlist': return 'No playlist is set up on this device.';
     default: return 'Something went wrong. Try again.';

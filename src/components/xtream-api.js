@@ -139,10 +139,13 @@ function getCredentialsLocal() {
   return list.find(p => p.id === activeId) || list[0];
 }
 
-// The active subscription's identity, as `host|username` — the same normalisation
-// reconcilePlaylists() in main.js uses to decide whether two playlist records are
-// "the same playlist". Watch Together hashes this to check that two devices are on
-// the same subscription without either of them sending credentials anywhere.
+// The active playlist's PROVIDER identity — the normalised server host, and
+// deliberately NOT the username. One server routinely issues many different
+// credentials (a household can hold several logins on the same provider), and
+// those people should still be able to watch together: what has to match is that
+// both devices can resolve the same stream ids, which is a property of the
+// server, not of the login. Watch Together hashes this so two devices can prove
+// they're on the same provider without either sending credentials anywhere.
 // Returns null when no playlist is configured.
 //
 // Goes through getPlaylists() rather than getCredentialsLocal() because it must
@@ -158,8 +161,9 @@ export async function getActiveSubscriptionKey() {
   }
   const p = (list || []).find(x => x.id === activeId) || (list || [])[0];
   if (!p || !p.server_url) return null;
-  const host = String(p.server_url).trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/+$/, '');
-  return `${host}|${String(p.username || '').toLowerCase()}`;
+  return String(p.server_url).trim().toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/\/+$/, '');
 }
 
 // Add a new playlist (or update an existing one with the same server+user) and

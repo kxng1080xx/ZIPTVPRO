@@ -788,6 +788,15 @@
     </div>
   </div>
 
+  <!-- ==================== ABOUT MODAL ====================
+       Body rendered by renderAboutModal() in main.js from about.js. -->
+  <div id="about-modal" class="modal-overlay hidden">
+    <div class="about-modal-content">
+      <button class="modal-close-btn" id="about-modal-close"><i data-lucide="x"></i></button>
+      <div id="about-modal-body"></div>
+    </div>
+  </div>
+
   <!-- ==================== WATCH TOGETHER MODAL ====================
        One overlay, three states (host lobby / guest code entry / guest lobby).
        The body is rendered by renderWatchModal() in main.js. -->
@@ -910,6 +919,11 @@
               <div class="settings-tile-icon"><i data-lucide="tv"></i></div>
               <div class="settings-tile-title">TV Interface</div>
               <div class="settings-tile-sub" id="tile-tv-ui-val">Switch to the 10-foot TV experience</div>
+            </button>
+            <button class="settings-tile" id="tile-about" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="info"></i></div>
+              <div class="settings-tile-title">About</div>
+              <div class="settings-tile-sub" id="tile-about-val">Version &amp; support contact</div>
             </button>
           </section>
 

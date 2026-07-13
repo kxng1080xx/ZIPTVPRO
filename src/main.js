@@ -40,6 +40,10 @@ import { initWebTabs, openWebTab, openManageTabs, toggleAdblock, isAdblockOn, ap
 import { renderHome } from './components/home.js';
 import { getStoredUiMode, setStoredUiMode, showDeviceChooser, initTvNative, enterTvNative, exitTvNative, isTvNativeActive } from './components/tv-native.js';
 import { watchTogether } from './components/watch-together.js';
+import { getAboutRows, DEVELOPER } from './components/about.js';
+// Imported (not a literal "/src/assets/..." path) so Vite rewrites it to the
+// hashed build URL — a raw path injected from JS isn't processed and 404s.
+import logoUrl from './assets/logo.png';
 
 // Cloud sync (ZIPTV Pro 5.0): device + playlist state lives in Supabase, managed
 // from the /connect dashboard and pulled via the serverless /api/device endpoint.
@@ -2913,7 +2917,7 @@ function exitVodPlayer() {
 // WATCH TOGETHER (7.2)
 // ==========================================================================
 // The host opens a title, gets a 4-letter code, and guests on the same
-// subscription join with it. The host is authoritative: their pause/seek is
+// provider join with it. The host is authoritative: their pause/seek is
 // broadcast; guests apply it and have their own transport controls locked.
 //
 // Session transport and clock-skew correction live in watch-together.js. This is
@@ -3142,7 +3146,7 @@ function renderWatchModal() {
       <h2 class="wt-heading">Watch Together</h2>
       <p class="wt-sub">${escapeHtml(c?.name || '')}</p>
       <div class="wt-code">${escapeHtml(watchTogether.code || '····')}</div>
-      <p class="wt-hint">Share this code. They'll need to be on the same subscription.</p>
+      <p class="wt-hint">Share this code. They'll need to be on the same provider.</p>
       <div class="wt-guests ${n ? 'is-ready' : ''}">
         <i data-lucide="${n ? 'user-check' : 'loader'}"></i>
         <span>${n ? `${n} guest${n > 1 ? 's' : ''} joined` : 'Waiting for guests…'}</span>
@@ -3205,6 +3209,52 @@ function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (ch) => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
   ));
+}
+
+// ==========================================================================
+// ABOUT
+// ==========================================================================
+// App/device facts plus the support contact. The rows come from about.js so the
+// PC modal and the TV shell's popout can never drift out of sync.
+
+function openAboutModal() {
+  const modal = document.getElementById('about-modal');
+  const body = document.getElementById('about-modal-body');
+  if (!modal || !body) return;
+
+  body.innerHTML = `
+    <div class="about-head">
+      <img src="${logoUrl}" alt="" class="about-logo">
+      <div>
+        <h2 class="about-title">ZIPTV Pro</h2>
+        <p class="about-tagline">Premium IPTV Player</p>
+      </div>
+    </div>
+    <dl class="about-rows">
+      ${getAboutRows().map(r => `
+        <div class="about-row">
+          <dt>${escapeHtml(r.label)}</dt>
+          <dd>${escapeHtml(r.value)}</dd>
+        </div>`).join('')}
+    </dl>
+    <div class="about-dev">
+      <span class="about-dev-label">Developer &amp; Support</span>
+      <p class="about-dev-name">${escapeHtml(DEVELOPER.name)}</p>
+      <a class="about-dev-line" href="mailto:${escapeHtml(DEVELOPER.email)}">
+        <i data-lucide="mail"></i> ${escapeHtml(DEVELOPER.email)}
+      </a>
+      <a class="about-dev-line" href="tel:${escapeHtml(DEVELOPER.phone.replace(/\s/g, ''))}">
+        <i data-lucide="phone"></i> ${escapeHtml(DEVELOPER.phone)}
+      </a>
+    </div>`;
+
+  modal.classList.remove('hidden');
+  lucide.createIcons({ scope: body });
+  navigation.focusDefault('modal');
+}
+
+function closeAboutModal() {
+  document.getElementById('about-modal')?.classList.add('hidden');
 }
 
 // Hooks the TV shell drives the same session through (tv-native.js has its own
@@ -4002,6 +4052,12 @@ function bindGlobalEvents() {
   document.getElementById('vod-modal-close').addEventListener('click', () => {
     document.getElementById('vod-modal').classList.add('hidden');
   });
+
+  document.getElementById('tile-about')?.addEventListener('click', () => {
+    if (window.closeSettingsPanel) window.closeSettingsPanel();
+    openAboutModal();
+  });
+  document.getElementById('about-modal-close')?.addEventListener('click', closeAboutModal);
 
   // Watch Together: the header icon is the guest's way in.
   document.getElementById('watch-join-btn')?.addEventListener('click', () => openWatchModal('guest'));

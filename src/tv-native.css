@@ -1800,8 +1800,11 @@ body.perf-lite .tvn-osd-btn { transition: none; }
   place-items: center;
   padding-bottom: 20px;
 }
+/* Shrink-wrap the card: the widest thing in it is the 6-column key grid (~500px),
+   so a fixed 960px left a lot of dead space around the content. */
 .tvn-wt-card {
-  width: 960px;
+  width: fit-content;
+  min-width: 520px;
   max-width: 90vw;
   padding: 40px 48px;
   border-radius: 26px;
@@ -1867,3 +1870,42 @@ body.perf-lite .tvn-osd-btn { transition: none; }
 body.wt-guest .tvn-osd-play,
 body.wt-guest .tvn-osd-vodonly,
 body.wt-guest .tvn-osd-bar { opacity: 0.35; }
+
+/* ==========================================================================
+   ABOUT POPOUT (TV)
+   ========================================================================== */
+.tvn-about-panel { width: 720px; padding-bottom: 28px; }
+
+.tvn-about-rows { padding: 0 8px; }
+.tvn-about-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 14px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.tvn-about-row:last-child { border-bottom: none; }
+.tvn-about-k { font-size: 24px; color: rgba(255, 255, 255, 0.55); }
+.tvn-about-v { font-size: 24px; font-weight: 700; color: #e8ecf5; text-align: right; }
+
+.tvn-about-dev {
+  margin: 20px 8px 0;
+  padding: 20px 22px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tvn-about-dev-label {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  margin-bottom: 6px;
+}
+.tvn-about-dev-name { font-size: 26px; font-weight: 800; color: #e8ecf5; }
+.tvn-about-dev-line { font-size: 23px; color: var(--acc, #38bdf8); }
+
+.tvn-about-close { margin: 24px 8px 0; width: calc(100% - 16px); justify-content: center; }

@@ -7804,3 +7804,61 @@ body.wt-guest #video-container::after {
   letter-spacing: 0.02em;
   pointer-events: none;
 }
+
+/* ==========================================================================
+   ABOUT MODAL
+   ========================================================================== */
+.about-modal-content {
+  position: relative;
+  width: min(440px, 92vw);
+  padding: 30px 30px 26px;
+  border-radius: 16px;
+  background: var(--bg-elevated, #16181d);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+}
+
+.about-head { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+.about-logo { width: 52px; height: 52px; border-radius: 12px; }
+.about-title { margin: 0; font-size: 1.3rem; font-weight: 700; }
+.about-tagline { margin: 2px 0 0; font-size: 0.85rem; color: var(--text-secondary, #9aa0a6); }
+
+.about-rows { margin: 0; padding: 0; }
+.about-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.about-row:last-child { border-bottom: none; }
+.about-row dt { color: var(--text-secondary, #9aa0a6); font-size: 0.88rem; }
+.about-row dd { margin: 0; font-weight: 600; font-size: 0.88rem; text-align: right; }
+
+.about-dev {
+  margin-top: 22px;
+  padding: 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.about-dev-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary, #9aa0a6);
+}
+.about-dev-name { margin: 0 0 10px; font-size: 1rem; font-weight: 700; }
+.about-dev-line {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 0;
+  color: var(--accent, #4da3ff);
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+.about-dev-line:hover { text-decoration: underline; }
+.about-dev-line i { width: 16px; height: 16px; flex: none; }
