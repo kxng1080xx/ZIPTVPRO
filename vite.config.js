@@ -6,7 +6,10 @@ const pkg = JSON.parse(readFileSync('./package.json', 'utf8'));
 
 export default defineConfig({
   define: {
-    __APP_VERSION__: JSON.stringify(pkg.version)
+    __APP_VERSION__: JSON.stringify(pkg.version),
+    // TV-only build (tv.apk): boots straight into the native TV shell, no
+    // mobile/desktop UI and no way to switch out. Set TV_ONLY=true at build.
+    __TV_ONLY__: JSON.stringify(process.env.TV_ONLY === 'true')
   },
   server: {
     port: 5673,

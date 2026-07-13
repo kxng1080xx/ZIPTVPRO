@@ -38,7 +38,7 @@ import { isNativeAvailable, nativeIsTv } from './components/native-player.js';
 import { getDeviceCode, syncDevice, readCachedState, clearCachedState, isStateExpired } from './components/cloud-sync.js';
 import { initWebTabs, openWebTab, openManageTabs, toggleAdblock, isAdblockOn, applyHiddenTabs } from './components/web-tabs.js';
 import { renderHome } from './components/home.js';
-import { getStoredUiMode, setStoredUiMode, showDeviceChooser, initTvNative, enterTvNative, exitTvNative } from './components/tv-native.js';
+import { getStoredUiMode, setStoredUiMode, showDeviceChooser, initTvNative, enterTvNative, exitTvNative, isTvNativeActive } from './components/tv-native.js';
 
 // Cloud sync (ZIPTV Pro 5.0): device + playlist state lives in Supabase, managed
 // from the /connect dashboard and pulled via the serverless /api/device endpoint.
@@ -249,7 +249,10 @@ async function initApp() {
     //    the device detection says;
     //  - web/TV webviews with no stored choice auto-select by detection.
     let uiMode = null;
-    if (isTvPath || tvParam === 'true' || tvParam === '1') uiMode = 'tv';
+    // TV-only build (tv.apk): always the native TV shell — ignore stored
+    // choice, URL overrides and the first-boot chooser.
+    if (typeof __TV_ONLY__ !== 'undefined' && __TV_ONLY__) uiMode = 'tv';
+    if (!uiMode && (isTvPath || tvParam === 'true' || tvParam === '1')) uiMode = 'tv';
     if (!uiMode) uiMode = getStoredUiMode();
     if (!uiMode && Capacitor.isNativePlatform()) {
       uiMode = await showDeviceChooser(isTV);
@@ -456,6 +459,12 @@ async function initApp() {
 // TABS & VIEW ROUTER
 // ==========================================================================
 async function switchTab(tabId) {
+  // TV shell active: it renders its own screens from the cache, so building
+  // the legacy tab UI underneath it is pure hidden work (DOM + poster fetches
+  // on every boot) that crawls on weak TV devices. Data sync still runs; only
+  // the invisible render is skipped. Leaving the shell always reloads the
+  // page, so the legacy UI never misses a paint it actually needs.
+  if (isTvNativeActive()) { state.activeTab = tabId; return; }
   if (tabId !== 'series' || state.activeTab === 'series') {
     exitSeriesPlaybackDashboard();
   }
@@ -515,6 +524,8 @@ async function switchTab(tabId) {
 }
 
 async function loadTabCategoriesAndContent() {
+  // See switchTab: no legacy sidebar/grid renders while the TV shell is up.
+  if (isTvNativeActive()) return;
   try {
     // 1. Fetch categories for tab
     const res = await getCategories(state.activeTab);
@@ -2298,6 +2309,22 @@ async function playSeriesEpisode(epStreamId, epName, logo, plot, epExt, epIndex,
   };
   lastProgressSave = 0;
 
+  // Feed the TV-shell playback OSD (no-op outside the shell). Done here — not
+  // in the shell's own handlers — because auto-next on episode end and >>/<<
+  // episode zapping also funnel through this function, keeping the OSD title
+  // card and its "Up next" line fresh on every episode change.
+  try {
+    if (typeof window.__tvnOsdVod === 'function') {
+      const nx = episodesListForSeason[epIndex + 1];
+      window.__tvnOsdVod({
+        title: ep.title || `Episode ${ep.episode_num || epIndex + 1}`,
+        sub: `${sm.name || seriesInfo.info?.name || 'Series'} · Season ${seasonNum} · Episode ${ep.episode_num || (epIndex + 1)}`,
+        next: nx ? (nx.title || `Episode ${nx.episode_num || (epIndex + 2)}`) : '',
+        logo: sm.cover || logo || ''
+      });
+    }
+  } catch (e) {}
+
   try {
     let playUrl;
     if (getIsServerMode()) {
@@ -2783,6 +2810,18 @@ async function playVODStream(streamId, type, name, logo, description, containerE
   // Track this movie for Continue Watching.
   currentVodItem = { id: String(streamId), type: type || 'movie', name, cardTitle: name, logo, containerExtension, backdrop };
   lastProgressSave = 0;
+
+  // Feed the TV-shell playback OSD (no-op outside the shell).
+  try {
+    if (typeof window.__tvnOsdVod === 'function') {
+      window.__tvnOsdVod({
+        title: name || 'Now playing',
+        sub: (type || 'movie') === 'series' ? 'Series' : 'Movie',
+        next: '',
+        logo: logo || ''
+      });
+    }
+  } catch (e) {}
 
   // Clear stale series auto-advance wiring — a previous series session would
   // otherwise auto-play ITS next episode when this stream ends.

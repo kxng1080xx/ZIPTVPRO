@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run build && cp app.apk dist/ && cp cast.apk dist/",
+  "buildCommand": "npm run build && cp app.apk dist/ && cp cast.apk dist/ && cp tv.apk dist/",
   "outputDirectory": "dist",
   "framework": "vite",
   "functions": {
@@ -30,6 +30,13 @@
       ]
     },
     {
+      "source": "/tv.apk",
+      "headers": [
+        { "key": "Content-Type", "value": "application/vnd.android.package-archive" },
+        { "key": "Content-Disposition", "value": "attachment; filename=\"tv.apk\"" }
+      ]
+    },
+    {
       "source": "/version.json",
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "*" },
@@ -46,6 +53,6 @@
   ],
   "rewrites": [
     { "source": "/connect", "destination": "/connect.html" },
-    { "source": "/((?!api/|app.apk|cast.apk|latest.exe|version.json|connect).*)", "destination": "/index.html" }
+    { "source": "/((?!api/|app.apk|cast.apk|tv.apk|latest.exe|version.json|connect).*)", "destination": "/index.html" }
   ]
 }

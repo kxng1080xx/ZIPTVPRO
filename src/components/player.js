@@ -1963,6 +1963,14 @@ export class VideoPlayer {
   // the timeshift DVR window for live, or [0, duration] for VOD. Transcoded VOD
   // isn't byte-seekable, so it re-requests at the new offset.
   skipBy(secs) {
+    // Native (libVLC): the <video> element is a dummy — seek through the
+    // plugin using its own progress clock. (Also makes the remote's >>/<<
+    // and the TV-shell OSD ±10s work during native VOD playback.)
+    if (this._nativeActive) {
+      const d = this._nativeDuration || 0;
+      if (d > 0) nativeSeek(Math.max(0, Math.min(d, (this._lastNativeCur || 0) + secs)));
+      return;
+    }
     if (this._transcodeActive) {
       const d = this._totalDuration();
       let t = this._currentTime() + secs;
@@ -1982,6 +1990,21 @@ export class VideoPlayer {
     }
     this._expectSeek = true;
     try { this.video.currentTime = Math.max(lo, Math.min(hi, (this.video.currentTime || 0) + secs)); } catch (e) {}
+  }
+
+  // Engine-aware position/length/paused snapshot for external chrome (the
+  // TV-shell OSD seek bar): the native plugin's clock, the probed transcode
+  // length, else the element's own time.
+  getClock() {
+    if (this._nativeActive) {
+      return { cur: this._lastNativeCur || 0, dur: this._nativeDuration || 0, paused: !!this._nativePaused };
+    }
+    const d = this._totalDuration();
+    return {
+      cur: this._currentTime() || 0,
+      dur: (d && isFinite(d)) ? d : 0,
+      paused: !!(this.video && this.video.paused)
+    };
   }
 
   // Jump to the live edge of the timeshift buffer. Don't park on the very edge:

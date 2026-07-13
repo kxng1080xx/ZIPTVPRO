@@ -79,7 +79,11 @@ body.perf-lite #tvn-root .tvn-screen { animation: none; }
 }
 body.perf-lite #tvn-root .tvn-focable { transition: none; }
 #tvn-root .tvn-focable:focus,
-#tvn-chooser .tvn-focable:focus {
+#tvn-chooser .tvn-focable:focus,
+#tvn-popup .tvn-focable:focus {
+  /* #tvn-popup included on its own: over playback the popout mounts OUTSIDE
+     the stage (#tvn-popup.tvn-popup-fixed inside #video-container), where the
+     #tvn-root-scoped ring never matched — D-pad focus moved invisibly. */
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95),
               0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent);
 }
@@ -1482,17 +1486,18 @@ body.perf-lite #tvn-popup { animation: none; }
 }
 
 /* --------------------------------------------------------------------------
-   Live playback OSD (7.1, #tvn-osd) — the shell's own player chrome per the
-   design mockup. Replaces the legacy overlay/banners while the shell owns a
-   LIVE session (VOD keeps the legacy chrome for its seek bar). Lives inside
-   #video-container so it renders under OS fullscreen and inherits the
-   native-compositing visibility punch-through.
+   Playback OSD (7.1 live, 7.2 VOD — #tvn-osd) — the shell's own player
+   chrome per the design mockup. Replaces the legacy overlay/banners for both
+   live and VOD while the shell owns the session (the OSD carries its own
+   seek bar and the series "Up next" line, so the legacy chrome and now/next
+   bar stay hidden). Lives inside #video-container so it renders under OS
+   fullscreen and inherits the native-compositing visibility punch-through.
    -------------------------------------------------------------------------- */
-body.tv-native.tvn-playing:not(.vod-mode) .player-controls-overlay,
-body.tv-native.tvn-playing:not(.vod-mode) .channel-info-banner,
-body.tv-native.tvn-playing:not(.vod-mode) .now-next-bar,
-body.tv-native.tvn-playing:not(.vod-mode) .player-quality-badge,
-body.tv-native.tvn-playing:not(.vod-mode) .player-channel-logo-watermark {
+body.tv-native.tvn-playing .player-controls-overlay,
+body.tv-native.tvn-playing .channel-info-banner,
+body.tv-native.tvn-playing .now-next-bar,
+body.tv-native.tvn-playing .player-quality-badge,
+body.tv-native.tvn-playing .player-channel-logo-watermark {
   display: none !important;
 }
 
@@ -1577,8 +1582,87 @@ body.perf-lite .tvn-osd-scrim-bottom { background: rgba(0,0,0,0.6); height: 30%;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .tvn-osd-sub { font-size: 24px; font-weight: 500; color: rgba(255,255,255,0.72); }
+.tvn-osd-sub:empty { display: none; }
 .tvn-osd-elapsed { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; color: rgba(255,255,255,0.9); }
 .tvn-osd-elapsed:empty { display: none; }
+.tvn-osd-next { font-size: 22px; font-weight: 600; color: rgba(255,255,255,0.55); }
+.tvn-osd-next:empty { display: none; }
+
+/* VOD top row: a ← Back pill replaces the channel chip + name, and it also
+   replaces the bottom "Back to browse" hint (one Back affordance, not two). */
+#tvn-osd .tvn-osd-backtop { display: none; }
+#tvn-osd.tvn-osd-vod .tvn-osd-backtop {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 26px 12px 20px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(20, 24, 36, 0.72);
+  color: #fff;
+  font-family: inherit;
+  font-size: 24px;
+  font-weight: 700;
+}
+#tvn-osd.tvn-osd-vod .tvn-osd-chip,
+#tvn-osd.tvn-osd-vod .tvn-osd-chname,
+#tvn-osd.tvn-osd-vod .tvn-osd-hint { display: none; }
+
+/* Mode switches: VOD swaps the LIVE badge + elapsed for a seek bar and ±10s,
+   and drops favorites (a live-channel concept). Episode prev/next only in
+   series playback. */
+#tvn-osd .tvn-osd-seek { display: none; }
+#tvn-osd.tvn-osd-vod .tvn-osd-live,
+#tvn-osd.tvn-osd-vod .tvn-osd-elapsed,
+#tvn-osd.tvn-osd-vod [data-osd="fav"],
+#tvn-osd.tvn-osd-vod .tvn-osd-next:empty { display: none; }
+#tvn-osd .tvn-osd-vodonly { display: none; }
+#tvn-osd.tvn-osd-vod .tvn-osd-vodonly { display: grid; }
+#tvn-osd.tvn-osd-vod [data-osd="prev"],
+#tvn-osd.tvn-osd-vod [data-osd="next"] { display: none; }
+#tvn-osd.tvn-osd-vod.tvn-osd-series [data-osd="prev"],
+#tvn-osd.tvn-osd-vod.tvn-osd-series [data-osd="next"] { display: grid; }
+
+/* VOD seek bar: position · progress track · duration */
+#tvn-osd.tvn-osd-vod .tvn-osd-seek {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+.tvn-osd-time {
+  font-size: 24px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255,255,255,0.9);
+  flex: none;
+  min-width: 86px;
+}
+.tvn-osd-time:last-child { text-align: right; }
+.tvn-osd-bar {
+  position: relative;
+  flex: 1;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.18);
+  overflow: hidden;
+  cursor: pointer;
+  outline: none;
+  transition: height 0.12s ease;
+}
+/* D-pad focus: the shared ring (tvn-focable) plus a thicker track — it's a
+   scrub target now, Left/Right seek ±10s while it holds focus. */
+#tvn-osd .tvn-osd-bar:focus { height: 16px; }
+body.perf-lite .tvn-osd-bar { transition: none; }
+.tvn-osd-bar i {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 0%;
+  border-radius: 999px;
+  background: var(--acc, #38bdf8);
+  transition: width 0.4s linear;
+}
+body.perf-lite .tvn-osd-bar i { transition: none; }
 
 .tvn-osd-controls {
   position: relative;

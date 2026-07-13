@@ -11,6 +11,7 @@ dist-electron/
 # …but the published download must be committed so Vercel can serve it.
 !app.apk
 !cast.apk
+!tv.apk
 latest.exe
 
 # Secrets — GitHub token for `npm run release`, etc. Never commit.
