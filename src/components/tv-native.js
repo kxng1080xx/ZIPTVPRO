@@ -615,18 +615,22 @@ function ensureOsd() {
             </div>
             <span class="tvn-osd-nextlab" data-osd-nextlab hidden>Playing Next</span>
           </div>
+          <!-- Now / Next are mirror images: label, title, one meta line. The
+               elapsed timer sits BELOW the pair rather than inside the Now
+               column — as a third line it made that column taller than the Next
+               column, which is what knocked the two titles out of line. -->
           <div class="tvn-osd-detailrow">
             <div class="tvn-osd-info-main">
               <span class="tvn-osd-title" data-osd-title></span>
               <span class="tvn-osd-sub" data-osd-sub></span>
-              <span class="tvn-osd-elapsed" data-osd-elapsed></span>
-              <span class="tvn-osd-next" data-osd-next></span>
             </div>
             <div class="tvn-osd-upnext" data-osd-upnext hidden>
               <span class="tvn-osd-nexttitle" data-osd-nexttitle></span>
               <span class="tvn-osd-nexttime" data-osd-nexttime></span>
             </div>
           </div>
+          <span class="tvn-osd-elapsed" data-osd-elapsed></span>
+          <span class="tvn-osd-next" data-osd-next></span>
         </div>
         <div class="tvn-osd-seek">
           <span class="tvn-osd-time" data-osd-cur>--:--</span>

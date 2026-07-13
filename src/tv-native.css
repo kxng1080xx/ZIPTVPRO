@@ -1574,9 +1574,14 @@ body.perf-lite .tvn-osd-scrim-bottom { background: rgba(0,0,0,0.6); height: 30%;
    right, always on the SAME row), then the detail columns beneath it. */
 .tvn-osd-info { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
 .tvn-osd-labelrow { display: flex; align-items: center; justify-content: space-between; gap: 48px; }
+/* Now and Next are mirror images of each other — label, title, one meta line —
+   so their titles print on the same line, just at opposite ends. Top-aligned
+   rather than bottom-aligned: bottom-aligning lines up the columns' LAST lines,
+   which knocks the titles out of line the moment the two columns differ in
+   height. (The elapsed timer used to be a third line here; it now sits below.) */
 .tvn-osd-detailrow {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 48px;
 }
@@ -1636,9 +1641,10 @@ body.perf-lite .tvn-osd-scrim-bottom { background: rgba(0,0,0,0.6); height: 30%;
 }
 .tvn-osd-sub { font-size: 24px; font-weight: 500; color: rgba(255,255,255,0.72); }
 .tvn-osd-sub:empty { display: none; }
-.tvn-osd-elapsed { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; color: rgba(255,255,255,0.9); }
+/* Below the Now/Next pair, not inside either column — see .tvn-osd-detailrow. */
+.tvn-osd-elapsed { align-self: flex-start; font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; color: rgba(255,255,255,0.9); }
 .tvn-osd-elapsed:empty { display: none; }
-.tvn-osd-next { font-size: 22px; font-weight: 600; color: rgba(255,255,255,0.55); }
+.tvn-osd-next { align-self: flex-start; font-size: 22px; font-weight: 600; color: rgba(255,255,255,0.55); }
 .tvn-osd-next:empty { display: none; }
 
 /* VOD top row: a ← Back pill replaces the channel chip + name, and it also
