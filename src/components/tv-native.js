@@ -1626,6 +1626,72 @@ async function screenBrowse(params) {
     return row;
   }
 
+  /**
+   * A poster row that pages in more titles as you approach its end, instead of
+   * being capped at a fixed slice.
+   *
+   * getStreams only takes page+limit (the offset is derived as (page-1)*limit),
+   * so the limit MUST stay constant across a row's fetches — asking for 15 then
+   * 10 would re-serve items already on screen. Hence one chunk size, with the
+   * first fill just pulling two chunks so the row doesn't start out sparse.
+   */
+  function pagedRow(row, fkeyPrefix, fetchPage) {
+    const CHUNK = 10;
+    const PREFILL = 2;    // first paint = 20 posters
+    const NEAR_END = 4;   // start fetching this many cards from the end
+
+    const st = { page: 0, n: 0, loading: false, done: false, total: null };
+    const seen = new Set();
+
+    async function loadMore() {
+      if (st.loading || st.done) return;
+      st.loading = true;
+      try {
+        const r = await fetchPage(st.page + 1, CHUNK);
+        if (!row.isConnected) { st.done = true; return; }
+        const items = (r && r.items) || [];
+        const total = r && r.pagination && r.pagination.total;
+        if (!items.length) { st.done = true; return; }
+        st.page += 1;
+        append(items);
+        if (typeof total === 'number' && st.n >= total) st.done = true;
+      } catch (e) {
+        st.done = true;   // a failing endpoint must not be hammered on every focus
+      } finally {
+        st.loading = false;
+      }
+    }
+
+    function append(items) {
+      for (const item of items) {
+        const id = String(item.stream_id ?? item.series_id ?? item.name);
+        if (seen.has(id)) continue;   // belt and braces against overlapping pages
+        seen.add(id);
+        const idx = st.n++;
+        const card = posterCard(item, `${fkeyPrefix}-${idx}`);
+        // D-pad: nearing the end of what's loaded pulls the next chunk in.
+        card.addEventListener('focus', () => {
+          if (idx >= st.n - NEAR_END) loadMore();
+        });
+        row.appendChild(card);
+      }
+    }
+
+    // Mouse/touch: scrolling toward the right edge pulls the next chunk in too.
+    row.addEventListener('scroll', () => {
+      if (row.scrollWidth - row.scrollLeft - row.clientWidth < 600) loadMore();
+    });
+
+    return {
+      state: st,
+      loadMore,
+      async fill() {
+        for (let i = 0; i < PREFILL && !st.done; i++) await loadMore();
+        return st.n;
+      }
+    };
+  }
+
   // Continue watching row
   try {
     const cw = getContinueWatching(type === 'movie' ? 'movie' : 'series').slice(0, 15);
@@ -1652,30 +1718,38 @@ async function screenBrowse(params) {
   const latestRow = addRow(type === 'series' ? 'Latest series' : 'Latest added');
   latestRow.innerHTML = '<div class="tvn-note">Loading…</div>';
   try {
-    const r = await getStreams({ type, categoryId: 'all', page: 1, limit: 20, sort: 'added' });
-    const items = (r && r.items) || [];
-    latestRow.innerHTML = items.length ? '' : '<div class="tvn-note">Nothing here yet — still syncing?</div>';
-    items.forEach((item, i) => {
-      const card = posterCard(item, `latest-${i}`);
-      if (i === 0) card.setAttribute('data-autofocus', '');
-      latestRow.appendChild(card);
-    });
-    if (items[0]) reflectHeroDebounced(items[0]);
-    focusAuto();
+    const pager = pagedRow(latestRow, 'latest',
+      (page, limit) => getStreams({ type, categoryId: 'all', page, limit, sort: 'added' }));
+    const note = latestRow.firstElementChild;
+    const n = await pager.fill();
+    if (note) note.remove();
+    if (!n) {
+      latestRow.innerHTML = '<div class="tvn-note">Nothing here yet — still syncing?</div>';
+    } else {
+      const first = latestRow.querySelector('.tvn-poster');
+      if (first) first.setAttribute('data-autofocus', '');
+      focusAuto();
+    }
   } catch (e) {
     latestRow.innerHTML = '<div class="tvn-note">Could not load titles.</div>';
   }
 
-  // Category rows (first 10, loaded lazily one after another)
+  // Category rows (first 10, loaded lazily one after another). Each row pages in
+  // more titles as you reach its end, so a category isn't capped at a fixed slice.
   try {
     const r = await getCategories(type);
     const cats = ((r && r.categories) || []).filter(c => c.category_id !== 'all').slice(0, 10);
     for (const c of cats) {
-      const rr = await getStreams({ type, categoryId: c.category_id, page: 1, limit: 15 }).catch(() => null);
-      const items = (rr && rr.items) || [];
-      if (!items.length) continue;
       const row = addRow(c.category_name);
-      items.forEach((item, i) => row.appendChild(posterCard(item, `cat${c.category_id}-${i}`)));
+      const pager = pagedRow(row, `cat${c.category_id}`,
+        (page, limit) => getStreams({ type, categoryId: c.category_id, page, limit }));
+      const n = await pager.fill();
+      // Nothing in this category — drop the row and its heading again.
+      if (!n) {
+        const heading = row.previousElementSibling;
+        row.remove();
+        if (heading && heading.classList.contains('tvn-row-title')) heading.remove();
+      }
       if (!root || !stage.contains(scr)) return; // user left the screen
     }
   } catch (e) {}
