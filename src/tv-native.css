@@ -1845,8 +1845,15 @@ body.perf-lite .tvn-osd-btn { transition: none; }
 .tvn-wt-status.is-err { color: #f87171; }
 
 .tvn-wt-actions { display: flex; justify-content: center; gap: 20px; margin-top: 26px; }
-.tvn-wt-card .tvn-keys { margin-top: 26px; }
 .tvn-wt-card .tvn-btn[disabled] { opacity: 0.4; }
+
+/* The key grid is a fixed 6-column track, so on its own it stretches to the card
+   and packs left. Shrink it to its content and centre it under the code slots. */
+.tvn-wt-card .tvn-keys {
+  margin: 26px auto 0;
+  width: fit-content;
+  justify-content: center;
+}
 
 /* Guest lock: the host owns the transport, so the OSD's play/seek controls are
    inert (enforced in player.js) — they must look it too. */

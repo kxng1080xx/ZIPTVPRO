@@ -1164,26 +1164,62 @@ async function screenHome() {
   const syncEl = scr.querySelector('[data-tvn-sync]');
   if (syncEl) syncEl.textContent = fmtAge(getLastSyncAge());
 
-  // counts (cached for 5 minutes)
+  // Counts (cached for 5 minutes). A zero total means the playlist cache hasn't
+  // been filled yet — that is NOT a real answer, so it must not be cached as one
+  // and the tiles must not be left on it. Booting mid-sync used to freeze the
+  // labels on "Syncing…" until the user navigated away and back AND the 5-minute
+  // cache expired; instead, keep re-checking in the background and fill the tiles
+  // in place the moment the numbers land.
   try {
-    if (!totalsCache || Date.now() - totalsCache.at > 5 * 60 * 1000) {
-      const [l, m, s] = await Promise.all(['live', 'movie', 'series'].map(t =>
-        getStreams({ type: t, categoryId: 'all', page: 1, limit: 1 }).catch(() => null)));
-      totalsCache = {
-        at: Date.now(),
-        live: l?.pagination?.total || 0,
-        movie: m?.pagination?.total || 0,
-        series: s?.pagination?.total || 0
-      };
+    if (!totalsCache || Date.now() - totalsCache.at > TOTALS_TTL_MS) {
+      totalsCache = await fetchTotals();
     }
-    const set = (k, txt) => {
-      const n = scr.querySelector(`[data-count="${k}"]`);
-      if (n) n.textContent = txt;
-    };
-    set('live', totalsCache.live ? `${fmtNum(totalsCache.live)} channels` : 'Syncing…');
-    set('movie', totalsCache.movie ? `${fmtNum(totalsCache.movie)} titles` : 'Syncing…');
-    set('series', totalsCache.series ? `${fmtNum(totalsCache.series)} shows` : 'Syncing…');
+    paintCounts(scr, totalsCache);
+
+    let tries = 0;
+    while (scr.isConnected && !totalsCache.settled && !totalsComplete(totalsCache)) {
+      // A playlist can legitimately have no movies or series, so give up after a
+      // while and say so, rather than claiming to sync forever.
+      if (++tries > TOTALS_POLL_MAX) { totalsCache.settled = true; break; }
+      await new Promise(r => setTimeout(r, TOTALS_POLL_MS));
+      if (!scr.isConnected) return;
+      totalsCache = await fetchTotals();
+      paintCounts(scr, totalsCache);
+    }
+    paintCounts(scr, totalsCache);
   } catch (e) {}
+}
+
+const TOTALS_TTL_MS = 5 * 60 * 1000;
+const TOTALS_POLL_MS = 4000;
+const TOTALS_POLL_MAX = 30;   // ~2 min, then accept the zeros as "empty"
+
+async function fetchTotals() {
+  const [l, m, s] = await Promise.all(['live', 'movie', 'series'].map(t =>
+    getStreams({ type: t, categoryId: 'all', page: 1, limit: 1 }).catch(() => null)));
+  return {
+    at: Date.now(),
+    live: l?.pagination?.total || 0,
+    movie: m?.pagination?.total || 0,
+    series: s?.pagination?.total || 0
+  };
+}
+
+function totalsComplete(t) {
+  return !!(t.live && t.movie && t.series);
+}
+
+function paintCounts(scr, t) {
+  if (!scr.isConnected) return;
+  // Once settled, a zero is the truth (an empty category), not a pending sync.
+  const label = (n, unit) => (n ? `${fmtNum(n)} ${unit}` : (t.settled ? 'None yet' : 'Syncing…'));
+  const set = (k, txt) => {
+    const n = scr.querySelector(`[data-count="${k}"]`);
+    if (n) n.textContent = txt;
+  };
+  set('live', label(t.live, 'channels'));
+  set('movie', label(t.movie, 'titles'));
+  set('series', label(t.series, 'shows'));
 }
 
 function exitApp() {
