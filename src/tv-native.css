@@ -1786,12 +1786,19 @@ body.perf-lite .tvn-osd-btn { transition: none; }
 /* ==========================================================================
    WATCH TOGETHER — 10-foot lobby (screenWatch)
    ========================================================================== */
-.tvn-watch { display: flex; flex-direction: column; }
+/* .tvn-rail-head carries no inset of its own — the screen container supplies it
+   (cf. .tvn-search-left). Match that 56px so the back button and title aren't
+   jammed into the corner. */
+.tvn-watch {
+  display: flex;
+  flex-direction: column;
+  padding: 56px 56px 40px;
+}
 .tvn-watch-body {
   flex: 1;
   display: grid;
   place-items: center;
-  padding: 20px 0 40px;
+  padding-bottom: 20px;
 }
 .tvn-wt-card {
   width: 960px;
