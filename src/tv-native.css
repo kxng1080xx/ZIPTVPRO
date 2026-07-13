@@ -1909,3 +1909,40 @@ body.wt-guest .tvn-osd-bar { opacity: 0.35; }
 .tvn-about-dev-line { font-size: 23px; color: var(--acc, #38bdf8); }
 
 .tvn-about-close { margin: 24px 8px 0; width: calc(100% - 16px); justify-content: center; }
+
+/* ==========================================================================
+   MARQUEE — rolling text for labels that don't fit
+   ==========================================================================
+   Applied by mqStart() in tv-native.js to the focused item's overflowing
+   labels. The ellipsis is dropped while rolling (you're being shown the full
+   text, so "…" would be a lie), and the inner span is what actually moves —
+   transform composites, whereas animating the text itself would relayout on
+   every frame. `alternate` rolls back to the start instead of snapping. */
+.tvn-mq {
+  text-overflow: clip;
+}
+.tvn-mq > .tvn-mq-inner {
+  display: inline-block;
+  white-space: nowrap;
+  will-change: transform;
+  animation: tvn-mq-roll var(--mq-dur, 6s) ease-in-out 0.55s infinite alternate;
+}
+@keyframes tvn-mq-roll {
+  0%, 14%   { transform: translateX(0); }
+  86%, 100% { transform: translateX(var(--mq-shift, 0)); }
+}
+
+/* perf-lite kills every animation in one shot (`body.perf-lite * { animation:
+   none !important }` in style.css), so the marquee has to opt back in the same
+   way the loading spinners do. That's deliberate: a 10-foot user on a Fire TV
+   needs to read a truncated title just as much as anyone, and this is a single
+   composited transform on a single element — not the sort of cost perf-lite
+   exists to cut. Reduced-motion users still opt out below. */
+body.perf-lite .tvn-mq > .tvn-mq-inner {
+  animation: tvn-mq-roll var(--mq-dur, 6s) ease-in-out 0.55s infinite alternate !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tvn-mq > .tvn-mq-inner { animation: none; }
+  .tvn-mq { text-overflow: ellipsis; }
+}

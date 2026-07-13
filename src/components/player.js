@@ -244,7 +244,10 @@ export class VideoPlayer {
 
     // ---- Global playback hotkeys + TV-remote media keys --------------------
     // Keyboard: M mute · F fullscreen · N / P next / previous channel (next /
-    // previous episode in series mode). Remote (Fire TV / Android TV):
+    // previous episode in series mode) · S stop · C captions & audio tracks.
+    // (The TV shell handles S / C itself while it owns playback — its OSD has its
+    // own controls, and the legacy bar these click is display:none under it.)
+    // Remote (Fire TV / Android TV):
     // Play/Pause toggles, >> / << zap channels live (seek ±10s in VOD), and
     // MENU pops the control bar as the options row (record, tracks, info, …).
     this._onHotkey = (e) => {
@@ -300,6 +303,8 @@ export class VideoPlayer {
       if (lk === 'f') return act(() => this.toggleFullscreen());
       if (lk === 'n') return act(() => { if (this.nextBtn) this.nextBtn.click(); });
       if (lk === 'p') return act(() => { if (this.prevBtn) this.prevBtn.click(); });
+      if (lk === 's') return act(() => { if (this.stopBtn) this.stopBtn.click(); });
+      if (lk === 'c') return act(() => { if (this.ccBtn) this.ccBtn.click(); });
     };
     document.addEventListener('keydown', this._onHotkey, true);
 

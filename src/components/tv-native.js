@@ -158,6 +158,76 @@ const I = {
   users: (s = 40, c = 'var(--acc, #38bdf8)') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>`
 };
 
+// ==========================================================================
+// Marquee — rolling text for labels that don't fit
+// ==========================================================================
+// Titles are ellipsised to fit their tile, so the end of a long name is simply
+// unreadable ("Cloudy with a Chance of Meatba…"). When an item takes focus, any
+// label inside it that overflows rolls right-to-left and back, so the whole thing
+// can be read.
+//
+// Only the FOCUSED item animates — rolling every visible label at once would be
+// visually chaotic and needlessly expensive. This deliberately still runs under
+// perf-lite: that kill-switch exists for the weak boxes (Fire TV, Tizen,
+// projectors) which are exactly where a 10-foot user most needs to read a
+// truncated title, and one composited transform on one element is cheap. Users
+// who ask the OS for less motion still get the plain ellipsis.
+const MQ_SEL = [
+  '.tvn-poster-label',      // movie / series posters
+  '.tvn-ch-name', '.tvn-ch-sub',   // live channel rows
+  '.tvn-cat-name',          // category list
+  '.tvn-ep-title',          // episodes
+  '.tvn-g-name', '.tvn-g-seg-title',   // guide
+  '.tvn-set-tile-title', '.tvn-set-tile-sub',
+  '.tvn-result-ch-name',    // search results
+  '.tvn-popup-row-title', '.tvn-popup-row-sub'
+].join(', ');
+
+const MQ_SPEED = 70;   // px per second — readable without being sluggish
+let mqActive = [];
+
+/** Unwrap whatever is currently rolling and put the label back as it was. */
+function mqStop() {
+  for (const n of mqActive) {
+    n.classList.remove('tvn-mq');
+    n.style.removeProperty('--mq-dur');
+    n.style.removeProperty('--mq-shift');
+    const inner = n.querySelector(':scope > .tvn-mq-inner');
+    if (!inner) continue;
+    // Move the children back rather than resetting textContent, so a label that
+    // holds markup (a badge, an icon) survives a marquee intact.
+    while (inner.firstChild) n.insertBefore(inner.firstChild, inner);
+    inner.remove();
+  }
+  mqActive = [];
+}
+
+/** Roll any overflowing label inside the newly focused element. */
+function mqStart(host) {
+  mqStop();
+  if (!host || !host.querySelectorAll) return;
+
+  const targets = [];
+  if (host.matches && host.matches(MQ_SEL)) targets.push(host);
+  targets.push(...host.querySelectorAll(MQ_SEL));
+
+  for (const n of targets) {
+    const overflow = n.scrollWidth - n.clientWidth;
+    if (overflow <= 2) continue;   // it fits — nothing to roll
+
+    const inner = document.createElement('span');
+    inner.className = 'tvn-mq-inner';
+    while (n.firstChild) inner.appendChild(n.firstChild);
+    n.appendChild(inner);
+
+    // Travel a little past the overflow so the last character clears the edge.
+    n.style.setProperty('--mq-shift', `${-(overflow + 8)}px`);
+    n.style.setProperty('--mq-dur', `${(overflow / MQ_SPEED + 1.2).toFixed(2)}s`);
+    n.classList.add('tvn-mq');
+    mqActive.push(n);
+  }
+}
+
 // Watch Together: a guest follows the host, so their transport is inert.
 // player.js already no-ops togglePlay()/skipBy() for them (which covers the
 // remote and the keyboard); this stops the OSD from optimistically flipping its
@@ -298,8 +368,12 @@ function focusAuto() {
     const key = current && lastFocusKey[current.name];
     let el = key ? all.find(n => n.dataset.fkey === key) : null;
     if (!el) el = all.find(n => n.hasAttribute('data-autofocus')) || all[0];
+    const wasFocused = document.activeElement === el;
     el.focus({ preventScroll: true });
     ensureVisible(el);
+    // focus() on the already-focused element raises no focusin, so the marquee
+    // would never start on whatever a screen autofocuses. Kick it directly.
+    if (wasFocused) mqStart(el);
   });
 }
 
@@ -388,6 +462,24 @@ function onKeyDown(e) {
       if (opts) opts.click();
       return;
     }
+    // Letter shortcuts during playback. These route to the OSD's own controls,
+    // not the legacy control bar — that bar is display:none under the shell, so
+    // clicking its buttons would open menus nobody can see.
+    const lk = (kk && kk.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) ? kk.toLowerCase() : '';
+    if (lk === 'c') {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      osdBump();
+      openTracksPopup();
+      return;
+    }
+    if (lk === 's') {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      legacyClick('player-stop-btn');
+      return;
+    }
+
     if (kk === 'ArrowUp' || kk === 'ArrowDown' || kk === 'ArrowLeft' || kk === 'ArrowRight' ||
         kk === 'Enter' || kk === ' ') {
       e.preventDefault();
@@ -1045,6 +1137,7 @@ function renderCurrent() {
   if (!root || !current) return;
   closePopup(false); // never carry a popout across a screen change
   if (progressTimer) { clearInterval(progressTimer); progressTimer = null; }
+  mqStop();          // don't hold references into a stage we're about to replace
   window.__tvnQueryDel = null;
   stage.innerHTML = '<div class="tvn-ambient"></div>';
   const fn = SCREENS[current.name] || SCREENS.home;
@@ -2685,6 +2778,13 @@ export function initTvNative(handlers) {
 
   window.addEventListener('keydown', onKeyDown, true);
   window.addEventListener('resize', applyScale);
+
+  // Rolling text: whatever takes focus gets its overflowing labels marqueed.
+  document.addEventListener('focusin', (e) => mqStart(e.target));
+  document.addEventListener('focusout', (e) => {
+    // Only tear down if focus is actually leaving (not moving inside the item).
+    if (!e.relatedTarget || !mqActive.some(n => n.contains(e.relatedTarget))) mqStop();
+  });
 
   // Hovering a focusable makes it the focused element, so the D-pad focus
   // ring doubles as the hover state (the shell has no :hover styling of its
