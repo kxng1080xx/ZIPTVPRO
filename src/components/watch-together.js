@@ -229,7 +229,7 @@ class WatchTogether {
  * that identifies the subscription to the server — credentials stay local.
  */
 async function subHash() {
-  const key = getActiveSubscriptionKey();
+  const key = await getActiveSubscriptionKey();
   if (!key) {
     const e = new Error('No playlist is set up on this device.');
     e.code = 'no_playlist';
