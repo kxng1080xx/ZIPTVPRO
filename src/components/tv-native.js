@@ -1953,10 +1953,15 @@ async function screenBrowse(params) {
           pct ? `<div class="tvn-poster-progress"><div style="width:${pct}%"></div></div>` : '');
         card.onclick = () => {
           hideForPlayback();
-          // Series resume must stay in the shell (H.resumeCw opens the legacy
-          // series dashboard, which bleeds the old UI through under TV mode).
+          // Resume must stay in the shell — H.resumeCw opens the legacy series
+          // dashboard / VOD modal, which bleeds the old UI through under TV mode.
+          // A continue-watching card is an explicit "carry on from here", so it
+          // goes straight to playback rather than to a detail screen.
           if (it.type === 'series' && H.resumeEpisode) H.resumeEpisode(it);
-          else H.resumeCw(it);
+          else if (H.playVod) {
+            H.playVod(it.id, 'movie', it.name, it.logo || '', '',
+              it.containerExtension || '', it.position || 0, it.backdrop || '');
+          } else H.resumeCw(it);
         };
         row.appendChild(card);
       });
