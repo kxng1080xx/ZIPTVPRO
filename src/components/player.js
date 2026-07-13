@@ -184,17 +184,7 @@ export class VideoPlayer {
     });
 
     // Volume change
-    this.volumeSlider.addEventListener('input', (e) => {
-      const vol = parseFloat(e.target.value);
-      this.video.volume = vol;
-      this.video.muted = vol === 0;
-      if (this._nativeActive) nativeSetVolume(vol);
-      // While casting, also drive the TV's volume.
-      if (this._castMode && window.castControls && window.castControls.isActive()) {
-        window.castControls.setVolume(vol);
-      }
-      this.updateVolumeIcon();
-    });
+    this.volumeSlider.addEventListener('input', (e) => this.setVolume(parseFloat(e.target.value)));
 
     this.volumeBtn.addEventListener('click', () => {
       if (this._castMode && window.castControls && window.castControls.isActive()) {
@@ -2650,6 +2640,28 @@ export class VideoPlayer {
   setCastOverlayDevice(name) {
     const el = document.getElementById('cast-overlay-device');
     if (el) el.textContent = name || '';
+  }
+
+  // Absolute volume (0..1), engine-aware. The single path every volume control
+  // goes through — the desktop slider, the TV-shell OSD flyout — so the native
+  // (libVLC) engine and an active cast stay in step with the <video> element.
+  setVolume(v) {
+    const vol = Math.max(0, Math.min(1, Number(v) || 0));
+    this.video.volume = vol;
+    this.video.muted = vol === 0;
+    if (this._nativeActive) nativeSetVolume(vol);
+    // While casting, also drive the TV's volume.
+    if (this._castMode && window.castControls && window.castControls.isActive()) {
+      window.castControls.setVolume(vol);
+    }
+    this.updateVolumeIcon();
+    return vol;
+  }
+
+  /** Current volume as 0..1 — muted reads as 0, whatever the underlying level. */
+  getVolume() {
+    if (!this.video) return 0;
+    return this.video.muted ? 0 : (this.video.volume || 0);
   }
 
   updateVolumeIcon() {

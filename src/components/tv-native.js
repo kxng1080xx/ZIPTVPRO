@@ -155,7 +155,16 @@ const I = {
   sliders: (s = 24, c = '#fff') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2.2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"></line><line x1="4" y1="12" x2="20" y2="12"></line><line x1="4" y1="17" x2="20" y2="17"></line><circle cx="9" cy="7" r="2.2" fill="#0d1220"></circle><circle cx="15" cy="12" r="2.2" fill="#0d1220"></circle><circle cx="7" cy="17" r="2.2" fill="#0d1220"></circle></svg>`,
   rew10: (s = 26, c = '#fff') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4v5.5H8"></path><path d="M4.6 14.5a8 8 0 1 0 1.7-8.2L2.5 9.5"></path><text x="12.4" y="17" text-anchor="middle" font-size="7.6" font-weight="800" fill="${c}" stroke="none">10</text></svg>`,
   fwd10: (s = 26, c = '#fff') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 4v5.5H16"></path><path d="M19.4 14.5a8 8 0 1 1-1.7-8.2l3.8 3.2"></path><text x="11.6" y="17" text-anchor="middle" font-size="7.6" font-weight="800" fill="${c}" stroke="none">10</text></svg>`,
-  users: (s = 40, c = 'var(--acc, #38bdf8)') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>`
+  users: (s = 40, c = 'var(--acc, #38bdf8)') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>`,
+  // level: 0 muted · 1 low · 2 high — the OSD swaps these as the volume moves.
+  vol: (level = 2, s = 26, c = '#fff') => {
+    const waves = level === 0
+      ? '<line x1="17" y1="9" x2="22" y2="14"></line><line x1="22" y1="9" x2="17" y2="14"></line>'
+      : level === 1
+        ? '<path d="M16.5 8.8a4.5 4.5 0 0 1 0 6.4"></path>'
+        : '<path d="M16.5 8.8a4.5 4.5 0 0 1 0 6.4"></path><path d="M19.5 6a8.5 8.5 0 0 1 0 12"></path>';
+    return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4z" fill="${c}" stroke-linejoin="round"></path>${waves}</svg>`;
+  }
 };
 
 // ==========================================================================
@@ -183,12 +192,23 @@ const MQ_SEL = [
   '.tvn-popup-row-title', '.tvn-popup-row-sub'
 ].join(', ');
 
-const MQ_SPEED = 70;   // px per second — readable without being sluggish
-let mqActive = [];
+// The playback OSD's programme titles. Separate list because these are not
+// focusable — they roll while the OSD is on screen, not while something is
+// focused. (The channel/sub line is included: it truncates the same way.)
+const MQ_OSD_SEL = '.tvn-osd-title, .tvn-osd-nexttitle, .tvn-osd-sub';
 
-/** Unwrap whatever is currently rolling and put the label back as it was. */
-function mqStop() {
-  for (const n of mqActive) {
+const MQ_SPEED = 70;   // px per second — readable without being sluggish
+
+// Two independent channels. 'focus' follows the focused item and is torn down
+// the moment focus moves. 'osd' holds the now/next programme titles, which are
+// NOT focusable — they roll for as long as the OSD is up, so they can't live in
+// the same bucket or a button taking focus would cancel them.
+const mqBuckets = new Map();
+
+/** Unwrap everything rolling in a channel and put the labels back as they were. */
+function mqStop(bucket = 'focus') {
+  const nodes = mqBuckets.get(bucket) || [];
+  for (const n of nodes) {
     n.classList.remove('tvn-mq');
     n.style.removeProperty('--mq-dur');
     n.style.removeProperty('--mq-shift');
@@ -199,17 +219,22 @@ function mqStop() {
     while (inner.firstChild) n.insertBefore(inner.firstChild, inner);
     inner.remove();
   }
-  mqActive = [];
+  mqBuckets.set(bucket, []);
 }
 
-/** Roll any overflowing label inside the newly focused element. */
-function mqStart(host) {
-  mqStop();
+function mqStopAll() {
+  for (const b of [...mqBuckets.keys()]) mqStop(b);
+}
+
+/** Roll any overflowing label inside `host`, on the given channel. */
+function mqStart(host, bucket = 'focus', sel = MQ_SEL) {
+  mqStop(bucket);
   if (!host || !host.querySelectorAll) return;
 
+  const active = [];
   const targets = [];
-  if (host.matches && host.matches(MQ_SEL)) targets.push(host);
-  targets.push(...host.querySelectorAll(MQ_SEL));
+  if (host.matches && host.matches(sel)) targets.push(host);
+  targets.push(...host.querySelectorAll(sel));
 
   for (const n of targets) {
     const overflow = n.scrollWidth - n.clientWidth;
@@ -224,8 +249,9 @@ function mqStart(host) {
     n.style.setProperty('--mq-shift', `${-(overflow + 8)}px`);
     n.style.setProperty('--mq-dur', `${(overflow / MQ_SPEED + 1.2).toFixed(2)}s`);
     n.classList.add('tvn-mq');
-    mqActive.push(n);
+    active.push(n);
   }
+  mqBuckets.set(bucket, active);
 }
 
 // Watch Together: a guest follows the host, so their transport is inert.
@@ -480,6 +506,17 @@ function onKeyDown(e) {
       return;
     }
 
+    // Volume: while the volume button holds focus its flyout is open, and Up/Down
+    // drive the level instead of moving focus. Left/Right fall through to the
+    // normal spatial move, which is how you leave the slider.
+    if ((kk === 'ArrowUp' || kk === 'ArrowDown') && osdVisible() && osdVolOpen() &&
+        document.activeElement === osdEl.querySelector('[data-osd="vol"]')) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      osdVolStep(kk === 'ArrowUp' ? 0.05 : -0.05);
+      return;
+    }
+
     if (kk === 'ArrowUp' || kk === 'ArrowDown' || kk === 'ArrowLeft' || kk === 'ArrowRight' ||
         kk === 'Enter' || kk === ' ') {
       e.preventDefault();
@@ -646,7 +683,19 @@ function ensureOsd() {
             <button class="tvn-osd-btn tvn-focable" data-nav data-osd="next" data-fkey="osd-next" title="Next channel">${I.skipNext()}</button>
           </div>
           <div class="tvn-osd-right">
-            <button class="tvn-osd-btn tvn-osd-sm tvn-focable" data-nav data-osd="cc" data-fkey="osd-cc" title="Audio &amp; subtitles"><span class="tvn-osd-cctxt">CC</span></button>
+            <!-- Volume. Focusing it (D-pad) or hovering it (mouse) reveals a
+                 vertical slider above the button: Up/Down adjust, Left/Right
+                 leave. Audio & subtitles moved to the Options popout, which
+                 already listed them, and the C hotkey still opens them. -->
+            <div class="tvn-osd-volwrap" data-osd-volwrap>
+              <div class="tvn-osd-volflyout" data-osd-volflyout aria-hidden="true">
+                <span class="tvn-osd-volpct" data-osd-volpct>0%</span>
+                <div class="tvn-osd-voltrack" data-osd-voltrack title="Volume">
+                  <i data-osd-volfill></i>
+                </div>
+              </div>
+              <button class="tvn-osd-btn tvn-osd-sm tvn-focable" data-nav data-osd="vol" data-fkey="osd-vol" title="Volume">${I.vol(2)}</button>
+            </div>
             <button class="tvn-osd-btn tvn-osd-sm tvn-focable" data-nav data-osd="fav" data-fkey="osd-fav" title="Favorite"><span class="tvn-osd-star" data-osd-star>${I.star}</span></button>
             <button class="tvn-osd-btn tvn-osd-sm tvn-focable" data-nav data-osd="opts" data-fkey="osd-opts" title="Options">${I.sliders()}</button>
           </div>
@@ -699,7 +748,48 @@ function ensureOsd() {
       osdTick();
     } catch (err) {}
   };
-  osdEl.querySelector('[data-osd="cc"]').onclick = () => { osdBump(); openTracksPopup(); };
+  // ---- Volume ------------------------------------------------------------
+  // The flyout is revealed by focus (D-pad) or hover (mouse). Up/Down adjust
+  // while the button holds focus — see the osd-vol branch in onKeyDown, which
+  // has to intercept those keys before the spatial focus engine treats them as
+  // a move. Left/Right are deliberately NOT handled there, so they fall through
+  // to normal navigation and thus "exit" the slider.
+  const volBtn = osdEl.querySelector('[data-osd="vol"]');
+  const volWrap = osdEl.querySelector('[data-osd-volwrap]');
+  volBtn.addEventListener('focus', () => osdVolShow());
+  volBtn.addEventListener('blur', () => osdVolHide());
+  volWrap.addEventListener('mouseenter', () => osdVolShow());
+  volWrap.addEventListener('mouseleave', () => { if (document.activeElement !== volBtn) osdVolHide(); });
+  // Clicking the button itself toggles mute (matches the desktop volume button).
+  volBtn.onclick = () => {
+    osdBump();
+    const p = window.playerInstance;
+    if (!p) return;
+    if (p.getVolume() > 0) { osdVolLast = p.getVolume(); p.setVolume(0); }
+    else p.setVolume(osdVolLast || 0.5);
+    osdVolSync();
+  };
+  // Mouse: click (or drag) anywhere on the track to set the level. The track is
+  // drawn bottom-up, so a click near the top is loud.
+  const volTrack = osdEl.querySelector('[data-osd-voltrack]');
+  const volFromEvent = (e) => {
+    const r = volTrack.getBoundingClientRect();
+    const v = 1 - (e.clientY - r.top) / r.height;
+    try { window.playerInstance.setVolume(Math.max(0, Math.min(1, v))); } catch (err) {}
+    osdVolSync();
+    osdBump();
+  };
+  volTrack.addEventListener('mousedown', (e) => {
+    volFromEvent(e);
+    const onMove = (ev) => volFromEvent(ev);
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  });
+
   osdEl.querySelector('[data-osd="fav"]').onclick = async () => {
     osdBump();
     if (!osdChannel || !H.toggleFavorite) return;
@@ -848,6 +938,17 @@ function osdRender() {
     }
   }
   osdRefreshFav();
+  osdVolSync();
+
+  // Roll the now/next programme titles if they're too long to fit — a truncated
+  // "The Twilight Saga: Breaking Da…" tells you nothing. These aren't focusable,
+  // so they get their own marquee channel and roll for as long as the OSD is up;
+  // sharing the focus channel would cancel them the moment a button took focus.
+  // Deferred a frame so the text we just wrote has been laid out and measured.
+  requestAnimationFrame(() => {
+    if (osdEl) mqStart(osdEl.querySelector('.tvn-osd-info'), 'osd', MQ_OSD_SEL);
+  });
+
   osdTick();
 }
 
@@ -951,10 +1052,61 @@ function osdBump() {
   osdHideTimer = setTimeout(osdHide, 5000);
 }
 
+// ---- OSD volume flyout ----------------------------------------------------
+// Shown while the volume button holds focus (D-pad) or the pointer (mouse).
+// Up/Down step it; Left/Right are left to the focus engine, so they just move on
+// — which is what "exit the slider" means here.
+let osdVolLast = 0.5;   // level to restore when un-muting via the button
+
+function osdVolShow() {
+  if (!osdEl) return;
+  osdVolSync();
+  const w = osdEl.querySelector('[data-osd-volwrap]');
+  if (w) w.classList.add('tvn-osd-volopen');
+}
+
+function osdVolHide() {
+  if (!osdEl) return;
+  const w = osdEl.querySelector('[data-osd-volwrap]');
+  if (w) w.classList.remove('tvn-osd-volopen');
+}
+
+function osdVolOpen() {
+  const w = osdEl && osdEl.querySelector('[data-osd-volwrap]');
+  return !!(w && w.classList.contains('tvn-osd-volopen'));
+}
+
+/** Push the player's current level into the flyout (fill, %, and the icon). */
+function osdVolSync() {
+  if (!osdEl) return;
+  let v = 0;
+  try { v = window.playerInstance ? window.playerInstance.getVolume() : 0; } catch (e) {}
+  const pct = Math.round(v * 100);
+  const fill = osdEl.querySelector('[data-osd-volfill]');
+  const label = osdEl.querySelector('[data-osd-volpct]');
+  const btn = osdEl.querySelector('[data-osd="vol"]');
+  if (fill) fill.style.height = `${pct}%`;
+  if (label) label.textContent = `${pct}%`;
+  if (btn) btn.innerHTML = I.vol(pct === 0 ? 0 : (pct < 40 ? 1 : 2));
+}
+
+/** Step the volume by ±delta (0..1 scale). */
+function osdVolStep(delta) {
+  const p = window.playerInstance;
+  if (!p) return;
+  const next = p.getVolume() + delta;
+  if (next > 0) osdVolLast = Math.min(1, next);
+  p.setVolume(next);
+  osdVolSync();
+  osdBump();
+}
+
 function osdHide() {
   clearTimeout(osdHideTimer);
   osdHideTimer = null;
   if (osdTickTimer) { clearInterval(osdTickTimer); osdTickTimer = null; }
+  mqStop('osd');     // nothing to read while the OSD is down
+  osdVolHide();
   if (!osdEl) return;
   osdEl.classList.remove('tvn-osd-show');
   // release focus so a hidden button can't swallow the next Enter
@@ -1141,7 +1293,7 @@ function renderCurrent() {
   if (!root || !current) return;
   closePopup(false); // never carry a popout across a screen change
   if (progressTimer) { clearInterval(progressTimer); progressTimer = null; }
-  mqStop();          // don't hold references into a stage we're about to replace
+  mqStop('focus');   // don't hold references into a stage we're about to replace
   window.__tvnQueryDel = null;
   stage.innerHTML = '<div class="tvn-ambient"></div>';
   const fn = SCREENS[current.name] || SCREENS.home;
@@ -2784,10 +2936,11 @@ export function initTvNative(handlers) {
   window.addEventListener('resize', applyScale);
 
   // Rolling text: whatever takes focus gets its overflowing labels marqueed.
-  document.addEventListener('focusin', (e) => mqStart(e.target));
+  document.addEventListener('focusin', (e) => mqStart(e.target, 'focus'));
   document.addEventListener('focusout', (e) => {
     // Only tear down if focus is actually leaving (not moving inside the item).
-    if (!e.relatedTarget || !mqActive.some(n => n.contains(e.relatedTarget))) mqStop();
+    const nodes = mqBuckets.get('focus') || [];
+    if (!e.relatedTarget || !nodes.some(n => n.contains(e.relatedTarget))) mqStop('focus');
   });
 
   // Hovering a focusable makes it the focused element, so the D-pad focus
