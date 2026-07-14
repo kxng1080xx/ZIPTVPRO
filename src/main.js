@@ -1030,7 +1030,7 @@ function refreshSettingsTiles() {
     desktopEngineTile.style.display = isElectronApp ? 'flex' : 'none';
     if (isElectronApp && desktopEngineValEl) {
       const saved = localStorage.getItem('electronEngine') || 'ffmpeg';
-      const labels = { ffmpeg: 'FFmpeg Transcode', external: 'External Player', html5: 'HTML5 Player' };
+      const labels = { ffmpeg: 'FFmpeg Transcode', external: 'External Player', html5: 'HTML5 Player', mpv: 'MPV Player' };
       desktopEngineValEl.textContent = labels[saved] || 'FFmpeg Transcode';
     }
   }
@@ -1361,11 +1361,12 @@ async function selectAndPlayChannel(channel, programBlock) {
     // spinner immediately, and we run the UI (fullscreen, banners) right away so
     // the click feels instant instead of waiting on ffmpeg's first segments.
     playerInstance.setSeriesMode(false);
-    // The external player manages its own buffering and needs the real upstream
-    // URL — never the app's local timeshift HLS buffer (which it can't open).
-    // So skip timeshift entirely when the Desktop Player is set to "external".
+    // The external and MPV players manage their own buffering and need the real
+    // upstream URL — never the app's local timeshift HLS buffer (which they open
+    // as a standalone process). So skip timeshift when the Desktop Player is set
+    // to "external" or "mpv".
     const usingExternalPlayer = (() => {
-      try { return localStorage.getItem('electronEngine') === 'external'; } catch (e) { return false; }
+      try { return ['external', 'mpv'].includes(localStorage.getItem('electronEngine')); } catch (e) { return false; }
     })();
     // DIAGNOSTIC (7.0 skip-back hunt): timeshift/replay is OPT-IN for now —
     // live always plays direct unless localStorage 'timeshift' is set to 'on'.
@@ -3876,14 +3877,15 @@ function bindGlobalEvents() {
       options: [
         { value: 'html5', label: 'HTML5 Player (Built-in)' },
         { value: 'ffmpeg', label: 'FFmpeg Transcode' },
+        { value: 'mpv', label: 'MPV Player (Hardware Decode)' },
         { value: 'external', label: 'External Player (default app)' }
       ],
-      current: ['html5', 'external'].includes(localStorage.getItem('electronEngine'))
+      current: ['html5', 'external', 'mpv'].includes(localStorage.getItem('electronEngine'))
         ? localStorage.getItem('electronEngine') : 'ffmpeg',
       onSelect: (v) => {
         localStorage.setItem('electronEngine', v);
         refreshSettingsTiles();
-        const labels = { ffmpeg: 'FFmpeg Transcode', external: 'External Player', html5: 'HTML5 Player' };
+        const labels = { ffmpeg: 'FFmpeg Transcode', external: 'External Player', html5: 'HTML5 Player', mpv: 'MPV Player' };
         const activeLabel = labels[v] || 'HTML5 Player';
         showToast(`Desktop player set to ${activeLabel}`, 'success');
         navigation.setFocus('modal', document.getElementById('tile-desktop-engine'));

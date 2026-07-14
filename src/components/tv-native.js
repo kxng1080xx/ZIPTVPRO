@@ -2466,10 +2466,11 @@ async function screenSettings(params = {}) {
       engTile.querySelector('.tvn-set-tile-sub').textContent = label(v);
     };
   } else if (isElectron) {
-    const order = ['ffmpeg', 'html5', 'external'];
+    const order = ['ffmpeg', 'html5', 'mpv', 'external'];
     const labels = {
       ffmpeg: 'FFmpeg transcode (recommended)',
       html5: 'HTML5 player (built-in)',
+      mpv: 'MPV player (hardware decode)',
       external: 'External player (default app)'
     };
     let idx = Math.max(0, order.indexOf(order.includes(lsGet('electronEngine')) ? lsGet('electronEngine') : 'ffmpeg'));

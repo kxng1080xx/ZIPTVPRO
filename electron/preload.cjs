@@ -36,6 +36,11 @@ contextBridge.exposeInMainWorld('appHost', {
   // opts: { url, title } → { ok, error? }.
   openInPlayer: (opts) => ipcRenderer.invoke('open-in-player', opts),
 
+  // MPV engine: play the stream in a standalone hardware-decoding mpv window
+  // (no server transcode — lightest path for weak PCs). opts: { url, title,
+  // isLive } → { ok, error? }.
+  playInMpv: (opts) => ipcRenderer.invoke('open-in-mpv', opts),
+
   // Built-in ad blocker (uBlock-style filter lists) for custom web tabs.
   // set → { ok, enabled, error? }; get → { enabled }.
   setAdblock: (enabled) => ipcRenderer.invoke('adblock:set', enabled),

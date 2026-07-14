@@ -1327,6 +1327,58 @@ function findFfmpeg() {
   return bin; // fall back to PATH
 }
 
+// Detect the best available H.264 hardware encoder once, caching the result.
+// Software libx264 can't sustain real-time encoding on weak CPUs — that's the
+// "significant video delay on slow PCs" symptom — so whenever we must re-encode
+// video (mode=full / deinterlace) we prefer a GPU encoder that offloads the work.
+// The probe runs a single `ffmpeg -encoders`; being *listed* doesn't guarantee
+// the encoder *initialises* (e.g. h264_nvenc is listed on a machine with no
+// NVIDIA GPU), so every re-encode path also carries a runtime fallback to
+// libx264 (see the transcode/timeshift exit handlers).
+let _hwEncoderCache; // undefined = not probed; null = none; string = encoder name
+function detectHwEncoder() {
+  if (_hwEncoderCache !== undefined) return _hwEncoderCache;
+  _hwEncoderCache = null;
+  try {
+    const out = spawnSync(findFfmpeg(), ['-hide_banner', '-encoders'], {
+      encoding: 'utf8', windowsHide: true, timeout: 8000
+    });
+    const text = `${out.stdout || ''}${out.stderr || ''}`;
+    // Preference order by typical throughput/availability on each platform.
+    const order = process.platform === 'darwin'
+      ? ['h264_videotoolbox']
+      : ['h264_nvenc', 'h264_qsv', 'h264_amf'];
+    for (const enc of order) {
+      if (new RegExp(`\\b${enc}\\b`).test(text)) { _hwEncoderCache = enc; break; }
+    }
+  } catch (e) {}
+  console.log(_hwEncoderCache
+    ? `[transcode] hardware H.264 encoder available: ${_hwEncoderCache}`
+    : '[transcode] no hardware H.264 encoder — using libx264 (software)');
+  return _hwEncoderCache;
+}
+
+// H.264 video-encode args. Prefers the detected hardware encoder; `soft` forces
+// software libx264 (used by the runtime fallback when a HW encoder won't start).
+// `lp` (low-power) picks the lightest software settings for weak CPUs. Callers
+// prepend any -vf filters (deinterlace / downscale) themselves.
+function h264EncodeArgs({ soft = false, lp = false } = {}) {
+  const hw = soft ? null : detectHwEncoder();
+  switch (hw) {
+    case 'h264_nvenc':
+      return ['-c:v', 'h264_nvenc', '-preset', 'p4', '-tune', 'll', '-rc', 'vbr', '-cq', '23', '-pix_fmt', 'yuv420p'];
+    case 'h264_qsv':
+      return ['-c:v', 'h264_qsv', '-preset', 'veryfast', '-global_quality', '23', '-pix_fmt', 'nv12'];
+    case 'h264_amf':
+      return ['-c:v', 'h264_amf', '-quality', 'speed', '-rc', 'cqp', '-qp_i', '23', '-qp_p', '23', '-pix_fmt', 'yuv420p'];
+    case 'h264_videotoolbox':
+      return ['-c:v', 'h264_videotoolbox', '-q:v', '55', '-pix_fmt', 'yuv420p'];
+    default:
+      // Software. Low-power trades quality for speed so a weak CPU keeps up.
+      return ['-c:v', 'libx264', '-preset', lp ? 'ultrafast' : 'veryfast', '-crf', lp ? '25' : '23', '-pix_fmt', 'yuv420p'];
+  }
+}
+
 // --- Child-process lifecycle ------------------------------------------------
 // The ffmpeg children spawned for transcode/probe must die with the app. On
 // Windows a child is NOT auto-killed when its parent (the Electron main process,
@@ -1376,9 +1428,11 @@ app.get('/api/transcode', (req, res) => {
   const mode = req.query.mode === 'full' ? 'full' : 'audio';
   const start = Math.max(0, parseInt(req.query.start, 10) || 0);
   const deint = req.query.deint === '1';
+  const lp = req.query.lp === '1'; // low-power: weak CPU (perf-lite) — lightest re-encode
+  const reEncode = deint || mode === 'full'; // paths that actually encode video
   const ffmpeg = findFfmpeg();
 
-  const buildArgs = (hvc1Tag) => {
+  const buildArgs = (hvc1Tag, forceSoft = false) => {
     const args = [];
     // Fast input seek (before -i) for resume / restart-at-offset.
     if (start > 0) args.push('-ss', String(start));
@@ -1398,21 +1452,24 @@ app.get('/api/transcode', (req, res) => {
       '-fflags', '+genpts',
       '-i', target
     );
-    if (deint) {
-      // Deinterlace + field-double: 1080i (30 frames / 60 fields) -> 1080p60 for
-      // smooth motion. bwdif=send_field emits one frame per field, doubling the
-      // rate. This needs a real video re-encode, so it overrides the copy-video tier.
-      args.push('-vf', 'bwdif=mode=send_field', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p');
-    } else if (mode === 'audio') {
-      // Keep the video as-is (Electron HW-decodes it). HEVC needs the hvc1 tag
-      // for Chromium — but the tag is fatal on non-HEVC sources ("Tag hvc1
-      // incompatible with codec id"), so the exit handler retries without it
-      // when the source turns out to be H.264 etc.
+    if (reEncode) {
+      // Compose the software video filter (runs in system memory before the
+      // encoder — hardware encoders upload from there). Deinterlace + field-
+      // double turns 1080i (30 frames / 60 fields) into 1080p60 for smooth
+      // motion; low-power also downscales to 720p to lighten the encode.
+      const vf = [];
+      if (deint) vf.push('bwdif=mode=send_field');
+      if (lp) vf.push('scale=-2:720');
+      if (vf.length) args.push('-vf', vf.join(','));
+      // Prefer a GPU encoder (offloads the CPU); fall back to libx264.
+      args.push(...h264EncodeArgs({ soft: forceSoft, lp }));
+    } else {
+      // Audio-only tier: keep the video as-is (Electron HW-decodes it). HEVC
+      // needs the hvc1 tag for Chromium — but the tag is fatal on non-HEVC
+      // sources ("Tag hvc1 incompatible with codec id"), so the exit handler
+      // retries without it when the source turns out to be H.264 etc.
       args.push('-c:v', 'copy');
       if (hvc1Tag) args.push('-tag:v', 'hvc1');
-    } else {
-      // Re-encode video for hardware that can't decode HEVC10.
-      args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p');
     }
     args.push(
       '-c:a', 'aac', '-b:a', '256k', '-ac', '2',
@@ -1432,18 +1489,22 @@ app.get('/api/transcode', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
 
   let proc = null;
-  let wroteData = false;   // any bytes reached the client?
-  let retriedTag = false;  // one-shot hvc1 → untagged retry
-  let closed = false;      // client went away — don't respawn
+  let wroteData = false;      // any bytes reached the client?
+  let retriedTag = false;     // one-shot hvc1 → untagged retry
+  let retriedSoftware = false;// one-shot hardware-encoder → libx264 retry
+  let closed = false;         // client went away — don't respawn
+  // True only while we're actually asking a HW encoder to run — so a fast,
+  // data-less failure can be retried once in software before giving up.
+  const usingHw = reEncode && !!detectHwEncoder();
 
   const kill = () => { closed = true; if (proc) { try { proc.kill('SIGKILL'); } catch (e) {} } };
   req.on('close', kill);
   res.on('close', kill);
 
-  const startProc = (hvc1Tag) => {
+  const startProc = (hvc1Tag, forceSoft = false) => {
     let stderrTail = '';
     try {
-      proc = trackChild(spawn(ffmpeg, buildArgs(hvc1Tag), { windowsHide: true }));
+      proc = trackChild(spawn(ffmpeg, buildArgs(hvc1Tag, forceSoft), { windowsHide: true }));
     } catch (err) {
       console.error('[transcode] ffmpeg spawn failed:', err);
       if (!res.headersSent) res.status(500);
@@ -1469,6 +1530,15 @@ app.get('/api/transcode', (req, res) => {
         retriedTag = true;
         console.warn('[transcode] source is not HEVC — retrying without hvc1 tag');
         startProc(false);
+        return;
+      }
+      // Hardware encoder was listed but wouldn't initialise (no matching GPU,
+      // driver too old, session limit) — it dies before writing a byte. Retry
+      // once in software so playback still works, just on the CPU.
+      if (!closed && !wroteData && !retriedSoftware && usingHw && !forceSoft && code && code !== 0) {
+        retriedSoftware = true;
+        console.warn('[transcode] hardware encoder failed to start — falling back to libx264 (software)');
+        startProc(hvc1Tag, true);
         return;
       }
       if (code && code !== 0 && code !== 255) {
@@ -1770,9 +1840,14 @@ function spawnTimeshiftProc(state) {
     '-fflags', '+genpts+discardcorrupt',
     '-i', state.url,
     // Deinterlace to 60fps (bwdif field-double) needs a video re-encode; otherwise
-    // stream-copy the video untouched (cheap). Live 1080p60 x264 is CPU-heavy.
+    // stream-copy the video untouched (cheap). The re-encode prefers a GPU
+    // encoder — live 1080p60 x264 in software is CPU-heavy — and drops to
+    // libx264 if the hardware encoder can't start (see the fast-fail below).
     ...(state.deint
-      ? ['-vf', 'bwdif=mode=send_field', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p']
+      ? [
+          '-vf', 'bwdif=mode=send_field' + (state.lp ? ',scale=-2:720' : ''),
+          ...h264EncodeArgs({ soft: state.forceSoftEncode, lp: state.lp })
+        ]
       : ['-c:v', 'copy']),
     '-c:a', 'aac', '-ac', '2', '-b:a', '256k',
     '-avoid_negative_ts', 'make_zero',
@@ -1795,6 +1870,10 @@ function spawnTimeshiftProc(state) {
   ];
   const proc = trackChild(spawn(findFfmpeg(), args, { windowsHide: true }));
   state.proc = proc;
+  // Note whether this attempt is riding a HW encoder and when it started, so a
+  // fast crash with no segments produced can flip to software on respawn.
+  state._encStart = Date.now();
+  state._encWasHw = state.deint && !state.forceSoftEncode && !!detectHwEncoder();
   // Keep the last bit of ffmpeg stderr so an unexpected exit is explainable.
   let errTail = '';
   proc.stderr.on('data', (d) => { errTail = (errTail + d).slice(-1500); });
@@ -1805,6 +1884,14 @@ function spawnTimeshiftProc(state) {
   });
   proc.on('exit', () => {
     if (state.stopped || activeTimeshift !== state) return; // deliberate / superseded
+    // If a HW-encoded attempt died within a few seconds without producing a
+    // single segment, the encoder never initialised — switch to software so the
+    // respawn actually plays instead of crash-looping.
+    if (state._encWasHw && !state.forceSoftEncode && state.lastSeq < 0 &&
+        Date.now() - state._encStart < 5000) {
+      state.forceSoftEncode = true;
+      console.warn('[timeshift] hardware encoder failed to start — falling back to libx264 (software)');
+    }
     // The provider dropped the connection — restart so the buffer (and the
     // viewer's playback) survives instead of freezing. Cap restarts so a dead
     // source doesn't get hammered: 6 within a rolling 60s window.
@@ -1863,13 +1950,14 @@ app.get('/api/timeshift/start', async (req, res) => {
   const url = req.query.url;
   const ch = sanitize(req.query.ch || 'live');
   const deint = req.query.deint === '1';
+  const lp = req.query.lp === '1'; // low-power (perf-lite): lightest deint re-encode
   if (!url || !/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'missing or invalid url' });
   // Already buffering this channel with the same deinterlace setting → reuse it.
   if (activeTimeshift && activeTimeshift.ch === ch && activeTimeshift.deint === deint && !activeTimeshift.stopped) {
     return res.json({ playlist: `/api/timeshift/${ch}/index.m3u8` });
   }
   stopTimeshift();   // also clears tsMem from any previous stream
-  const state = { ch, url, deint, proc: null, stopped: false, restarts: 0, windowStart: Date.now(), lastSeq: -1 };
+  const state = { ch, url, deint, lp, proc: null, stopped: false, restarts: 0, windowStart: Date.now(), lastSeq: -1 };
   activeTimeshift = state;
   try { spawnTimeshiftProc(state); }
   catch (e) { activeTimeshift = null; return res.status(500).json({ error: 'ffmpeg spawn failed' }); }

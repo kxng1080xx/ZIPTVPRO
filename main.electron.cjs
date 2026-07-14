@@ -143,6 +143,66 @@ ipcMain.handle('open-in-player', async (_e, opts = {}) => {
   }
 });
 
+// Locate an mpv binary: bundled (extraResources) → PATH → common install dirs.
+// Returns the plain name as a last resort so spawn surfaces ENOENT if absent.
+function resolveMpvBinary() {
+  const isWin = process.platform === 'win32';
+  const bin = isWin ? 'mpv.exe' : 'mpv';
+  const candidates = [];
+  if (process.resourcesPath) candidates.push(path.join(process.resourcesPath, 'bin', bin));
+  candidates.push(path.join(__dirname, 'extraResources', bin));
+  if (isWin) {
+    const LA = process.env.LOCALAPPDATA || '';
+    const UP = process.env.USERPROFILE || '';
+    candidates.push(
+      'C:\\Program Files\\mpv\\mpv.exe',
+      'C:\\Program Files (x86)\\mpv\\mpv.exe',
+      LA && path.join(LA, 'Programs', 'mpv', 'mpv.exe'),
+      LA && path.join(LA, 'mpv', 'mpv.exe'),
+      UP && path.join(UP, 'scoop', 'apps', 'mpv', 'current', 'mpv.exe')
+    );
+  }
+  for (const c of candidates) {
+    try { if (c && fs.existsSync(c)) return c; } catch (e) {}
+  }
+  return bin; // PATH fallback
+}
+
+// MPV engine: play the stream in a standalone mpv window with hardware decoding.
+// This bypasses the server ffmpeg transcode entirely — mpv decodes on the GPU —
+// which is the lightest path for weak PCs. opts: { url, title, isLive } →
+// { ok, error? }. A missing mpv binary reports back so the renderer can toast.
+ipcMain.handle('open-in-mpv', async (_e, opts = {}) => {
+  try {
+    const url = opts && typeof opts.url === 'string' ? opts.url : '';
+    if (!/^https?:\/\//i.test(url)) return { ok: false, error: 'invalid stream url' };
+    const title = String(opts.title || 'Stream').replace(/[\r\n"]+/g, ' ').slice(0, 200);
+    const isLive = !!opts.isLive;
+    const bin = resolveMpvBinary();
+    const args = [
+      '--hwdec=auto-safe',        // GPU decode — the whole point on slow PCs
+      '--force-window=yes',
+      '--no-terminal',
+      '--user-agent=VLC/3.0.20',  // match the rest of the app's provider UA
+      `--title=${title}`,
+      // Live wants low latency near the edge; VOD keeps a normal read-ahead cache.
+      ...(isLive ? ['--profile=low-latency', '--cache=yes'] : []),
+      url
+    ];
+    const { spawn } = require('child_process');
+    let failed = false;
+    const child = spawn(bin, args, { detached: true, stdio: 'ignore' });
+    child.on('error', (err) => { failed = true; console.error('[mpv] spawn failed:', err && err.message); });
+    child.unref(); // independent of the app lifecycle, like the External engine
+    // Brief pause so an ENOENT (mpv not installed) surfaces before we answer.
+    await new Promise((r) => setTimeout(r, 300));
+    if (failed) return { ok: false, error: 'MPV not found — install mpv or add it to PATH' };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message ? e.message : e) };
+  }
+});
+
 let mainWindow;
 let tray = null;
 let isQuitting = false;

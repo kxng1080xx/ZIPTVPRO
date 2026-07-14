@@ -870,7 +870,8 @@ export class VideoPlayer {
     const target = this._transcodeTarget(streamUrl);
     try {
       const deintQ = this._deinterlaceOn() ? '&deint=1' : '';
-      const r = await fetch(`/api/timeshift/start?url=${encodeURIComponent(target)}&ch=${encodeURIComponent(ch)}${deintQ}`);
+      const lpQ = this._lowPower() ? '&lp=1' : '';
+      const r = await fetch(`/api/timeshift/start?url=${encodeURIComponent(target)}&ch=${encodeURIComponent(ch)}${deintQ}${lpQ}`);
       if (!r.ok) return false;
       const { playlist } = await r.json();
       if (!playlist) return false;
@@ -1131,6 +1132,30 @@ export class VideoPlayer {
           })
           .catch((e) => {
             if (window.showToast) window.showToast("Couldn't open external player — playing in-app", 'error', 4000);
+            this._startPlayback(url, isVod);
+          });
+        return;
+      }
+
+      // MPV Player: hand the stream to a standalone hardware-decoding mpv window.
+      // No server transcode — mpv decodes on the GPU — so it's the lightest path
+      // for slow PCs. Works for live + VOD. Falls back in-app if mpv is missing.
+      if (desktopEngine === 'mpv' && !this._castMode &&
+          window.appHost && typeof window.appHost.playInMpv === 'function') {
+        const target = this._transcodeTarget(url); // unwrap /api/proxy → real upstream
+        Promise.resolve(window.appHost.playInMpv({ url: target, title: this.currentChannelName, isLive: !isVod }))
+          .then((r) => {
+            if (r && r.ok) {
+              if (window.showToast) window.showToast('Opening in MPV…', 'success', 3000);
+              this.stop();
+            } else {
+              const detail = r && r.error ? ` (${r.error})` : '';
+              if (window.showToast) window.showToast(`Couldn't open MPV${detail} — playing in-app`, 'error', 5000);
+              this._startPlayback(url, isVod);
+            }
+          })
+          .catch(() => {
+            if (window.showToast) window.showToast("Couldn't open MPV — playing in-app", 'error', 4000);
             this._startPlayback(url, isVod);
           });
         return;
@@ -1888,7 +1913,16 @@ export class VideoPlayer {
     const params = new URLSearchParams({ url: target, mode });
     if (start > 0) params.set('start', String(Math.floor(start)));
     if (this._deinterlaceOn()) params.set('deint', '1');
+    // Low-power hint: on weak devices (perf-lite) the server picks the lightest
+    // software re-encode (ultrafast + 720p) so a slow CPU can keep up.
+    if (this._lowPower()) params.set('lp', '1');
     return `/api/transcode?${params.toString()}`;
+  }
+
+  // Weak-device hint (perf-lite kill-switch). Drives the server's low-power
+  // re-encode settings so playback doesn't fall behind on slow CPUs.
+  _lowPower() {
+    try { return document.body.classList.contains('perf-lite'); } catch (e) { return false; }
   }
 
   // Deinterlace-to-60fps preference (desktop ffmpeg paths only).
