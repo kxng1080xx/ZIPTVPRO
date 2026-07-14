@@ -59,7 +59,9 @@ function send(channel, payload) {
 function shareUrl() {
   if (!tunnelUrl) return '';
   const token = cfg && cfg.getToken ? cfg.getToken() : '';
-  return token ? `${tunnelUrl}/?t=${encodeURIComponent(token)}` : tunnelUrl;
+  // `stk` (share token) — deliberately NOT `t`, which the app already uses as a
+  // cache-buster on /api/categories & /api/streams.
+  return token ? `${tunnelUrl}/?stk=${encodeURIComponent(token)}` : tunnelUrl;
 }
 
 function pushState() {

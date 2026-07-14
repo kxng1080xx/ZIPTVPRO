@@ -13,7 +13,9 @@ user's own home connection.
    `cloudflared tunnel --url http://127.0.0.1:<port>` and parses the assigned
    `https://<random>.trycloudflare.com` URL.
 3. The UI (`src/components/share-tunnel.js`) shows that URL with a Copy button,
-   appending the token: `https://<random>.trycloudflare.com/?t=<token>`.
+   appending the token: `https://<random>.trycloudflare.com/?stk=<token>`.
+   (The param is `stk`, not `t` — the app uses `t` as a cache-buster on
+   `/api/categories` & `/api/streams`, and a collision there 403'd content.)
 4. The phone opens it. The server's guard middleware only challenges requests that
    arrive **through the tunnel** (identified by Cloudflare's `cf-ray` /
    `cf-connecting-ip` headers) — desktop and LAN casting are never gated. A valid

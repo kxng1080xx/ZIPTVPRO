@@ -127,11 +127,15 @@ app.use(express.json());
 // with `cf-ray` / `cf-connecting-ip`; local desktop traffic and LAN casting have
 // neither, so they pass untouched — only tunnel visitors are gated.
 //
-// Token travels as `?t=<token>` on the first load (from the QR), then a cookie
-// carries it for playlist/segment requests. No token (web build / dev) = no gate.
+// Token travels as `?stk=<token>` on the first load, then a cookie carries it for
+// later requests. The param is `stk` (not `t`) on purpose — the app already uses
+// `t=<timestamp>` as a cache-buster on /api/categories & /api/streams, and a
+// collision there made the guard read the timestamp instead of the cookie and
+// 403 exactly those content endpoints. No token (web build / dev) = no gate.
 // ---------------------------------------------------------------------------
 const SHARE_TOKEN = process.env.SHARE_TOKEN || '';
 const SHARE_COOKIE = 'ziptv_share';
+const SHARE_PARAM = 'stk';
 
 function readCookie(req, name) {
   const raw = req.headers.cookie;
@@ -151,15 +155,20 @@ if (SHARE_TOKEN) {
     if (!viaTunnel) return next();
     if (req.method === 'OPTIONS') return next(); // let CORS preflight through
 
-    const provided = (req.query && req.query.t) || readCookie(req, SHARE_COOKIE);
+    // Cookie FIRST, then the share param. Never read `t` — the app uses `t` as a
+    // cache-buster on /api/categories & /api/streams, and reading it here 403'd
+    // exactly those content endpoints.
+    const stk = req.query && req.query[SHARE_PARAM];
+    const provided = readCookie(req, SHARE_COOKIE) || stk;
     if (provided === SHARE_TOKEN) {
       // Persist so subsequent same-origin requests (HLS segments, API) are authorized.
-      if (req.query && req.query.t) {
+      if (stk) {
         res.setHeader('Set-Cookie',
           `${SHARE_COOKIE}=${encodeURIComponent(SHARE_TOKEN)}; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=86400`);
       }
       return next();
     }
+    console.warn(`[share-guard] 403 ${req.method} ${req.path} (cookie=${!!readCookie(req, SHARE_COOKIE)} stk=${!!stk})`);
     res.status(403).type('text/plain').send('This ZIPTV share link is invalid or expired.');
   });
 }

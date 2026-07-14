@@ -188,8 +188,39 @@ function showFatalOverlay(label, detail) {
       el.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#0b0f19;color:#f3f4f6;' +
         'font:13px/1.5 monospace;padding:24px;overflow:auto;white-space:pre-wrap;';
       document.body.appendChild(el);
+
+      // The overlay must always be escapable — the app underneath may be fine.
+      // Dismiss via the button, Escape, or the hardware/Android back button
+      // (Capacitor routes hardware back to a popstate, so we push a history entry
+      // on open and pop it to close).
+      const onKey = (ev) => {
+        if (ev.key === 'Escape' || ev.key === 'Backspace' || ev.key === 'GoBack') dismissOverlay();
+      };
+      const onPop = () => dismissOverlay();
+      function dismissOverlay() {
+        try { document.removeEventListener('keydown', onKey, true); } catch (_) {}
+        try { window.removeEventListener('popstate', onPop); } catch (_) {}
+        try { el.remove(); } catch (_) {}
+      }
+      try { history.pushState({ fatalOverlay: 1 }, ''); } catch (_) {}
+      document.addEventListener('keydown', onKey, true);
+      window.addEventListener('popstate', onPop);
+
+      const btn = document.createElement('button');
+      btn.textContent = 'Dismiss';
+      btn.style.cssText = 'position:fixed;top:16px;right:16px;z-index:2147483647;background:#2b6fff;' +
+        'color:#fff;border:none;border-radius:8px;padding:8px 16px;font:600 13px system-ui;cursor:pointer;';
+      btn.addEventListener('click', dismissOverlay);
+      el.appendChild(btn);
     }
-    el.textContent = `ZIPTV Pro — startup error\n\n${label}\n${detail || ''}`.slice(0, 4000);
+    let pre = el.querySelector('.fatal-text');
+    if (!pre) {
+      pre = document.createElement('div');
+      pre.className = 'fatal-text';
+      pre.style.cssText = 'white-space:pre-wrap;';
+      el.appendChild(pre);
+    }
+    pre.textContent = `ZIPTV Pro — startup error\n\n${label}\n${detail || ''}`.slice(0, 4000);
   } catch (e) { /* nothing more we can do */ }
 }
 // Benign, non-fatal errors that must NOT trigger the full-screen crash overlay.
@@ -216,9 +247,16 @@ window.addEventListener('error', (e) => {
     (e.filename ? `${e.filename}:${e.lineno}:${e.colno}\n` : '') + (e.error && e.error.stack ? e.error.stack : ''));
 });
 window.addEventListener('unhandledrejection', (e) => {
+  // A background promise rejection (a fetch failing over a flaky mobile
+  // connection, etc.) must never cover the whole app. Log it for the console and
+  // move on — genuine boot failures are still surfaced by initApp()'s .catch and
+  // the uncaught-'error' handler below.
   const r = e.reason;
-  if (isBenignError(r)) { e.preventDefault(); return; } // ignore harmless media races
-  showFatalOverlay('Unhandled promise rejection', (r && r.stack) ? r.stack : String(r));
+  try {
+    const head = r ? ([r.name, r.message].filter(Boolean).join(': ') || String(r)) : String(r);
+    console.error('[unhandledrejection]', head, (r && r.stack) ? r.stack : '');
+  } catch (_) {}
+  e.preventDefault();
 });
 
 document.addEventListener('DOMContentLoaded', () => {
