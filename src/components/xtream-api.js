@@ -677,6 +677,20 @@ export function isCompleted(id) {
   return getCompletedIds().includes(String(id));
 }
 
+// One-stop watch state for a movie/episode id, for decorating tiles:
+//   { completed, pct, position, duration }
+// completed → show the dimmed "Watch again" state; otherwise pct (>0) drives the
+// "how far in" progress bar. Reads the same stores the UI already uses.
+export function getWatchInfo(id) {
+  const sid = String(id);
+  if (isCompleted(sid)) return { completed: true, pct: 100, position: 0, duration: 0 };
+  const it = getContinueWatching().find(i => String(i.id) === sid);
+  const position = (it && (it.position || it.currentTime)) || 0;
+  const duration = (it && it.duration) || 0;
+  const pct = (position && duration) ? Math.min(100, (position / duration) * 100) : 0;
+  return { completed: false, pct, position, duration };
+}
+
 export function markCompleted(item) {
   if (!item || item.id == null) return;
   const id = String(item.id);

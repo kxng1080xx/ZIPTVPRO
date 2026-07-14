@@ -825,7 +825,6 @@
           <button class="settings-menu-item" data-pane="network" tabindex="0"><i data-lucide="wifi"></i><span>Network</span></button>
           <button class="settings-menu-item" data-pane="webtabs" tabindex="0"><i data-lucide="layout-grid"></i><span>Web Tabs</span></button>
           <button class="settings-menu-item" data-pane="application" tabindex="0"><i data-lucide="app-window"></i><span>Application</span></button>
-          <button class="settings-menu-item" data-pane="general" tabindex="0"><i data-lucide="sliders"></i><span>General</span></button>
         </nav>
 
         <div class="settings-panes" id="settings-panes">
@@ -836,6 +835,11 @@
               <div class="settings-tile-icon"><i data-lucide="list"></i></div>
               <div class="settings-tile-title">Switch Playlist</div>
               <div class="settings-tile-sub" id="tile-switch-playlist-val">Change source</div>
+            </button>
+            <button class="settings-tile" id="tile-sync" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="refresh-cw"></i></div>
+              <div class="settings-tile-title">Sync &amp; Cache</div>
+              <div class="settings-tile-sub">Refresh all lists</div>
             </button>
             <button class="settings-tile settings-tile-danger" id="tile-logout" tabindex="0">
               <div class="settings-tile-icon"><i data-lucide="log-out"></i></div>
@@ -871,6 +875,11 @@
               <div class="settings-tile-title">Performance Mode</div>
               <div class="settings-tile-sub">For TVs / projectors: <span class="tile-badge" id="tile-perf-val">Auto</span></div>
             </button>
+            <button class="settings-tile" id="tile-sleep" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="moon"></i></div>
+              <div class="settings-tile-title">Sleep Timer</div>
+              <div class="settings-tile-sub" id="tile-sleep-val">Off</div>
+            </button>
           </section>
 
           <section class="settings-pane" data-pane="network">
@@ -903,6 +912,11 @@
 
           <section class="settings-pane" data-pane="application">
             <h3 class="settings-pane-title">Application</h3>
+            <button class="settings-tile" id="tile-theme" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="sun-moon"></i></div>
+              <div class="settings-tile-title">Appearance</div>
+              <div class="settings-tile-sub">Theme: <span class="tile-badge" id="tile-theme-val">Auto</span></div>
+            </button>
             <button class="settings-tile" id="tile-startup" tabindex="0">
               <div class="settings-tile-icon"><i data-lucide="power"></i></div>
               <div class="settings-tile-title">Run at Startup</div>
@@ -927,25 +941,6 @@
               <div class="settings-tile-icon"><i data-lucide="info"></i></div>
               <div class="settings-tile-title">About</div>
               <div class="settings-tile-sub" id="tile-about-val">Version &amp; support contact</div>
-            </button>
-          </section>
-
-          <section class="settings-pane" data-pane="general">
-            <h3 class="settings-pane-title">General</h3>
-            <button class="settings-tile" id="tile-theme" tabindex="0">
-              <div class="settings-tile-icon"><i data-lucide="sun-moon"></i></div>
-              <div class="settings-tile-title">Appearance</div>
-              <div class="settings-tile-sub">Theme: <span class="tile-badge" id="tile-theme-val">Auto</span></div>
-            </button>
-            <button class="settings-tile" id="tile-sleep" tabindex="0">
-              <div class="settings-tile-icon"><i data-lucide="moon"></i></div>
-              <div class="settings-tile-title">Sleep Timer</div>
-              <div class="settings-tile-sub" id="tile-sleep-val">Off</div>
-            </button>
-            <button class="settings-tile" id="tile-sync" tabindex="0">
-              <div class="settings-tile-icon"><i data-lucide="refresh-cw"></i></div>
-              <div class="settings-tile-title">Sync &amp; Cache</div>
-              <div class="settings-tile-sub">Refresh all lists</div>
             </button>
           </section>
 

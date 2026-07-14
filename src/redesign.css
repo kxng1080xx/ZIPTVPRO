@@ -1764,6 +1764,24 @@ body.webtab-tab #mobile-menu-btn {
   background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.55));
 }
 
+/* Completed movie tile — dim poster + centered "Watch again". */
+.home-poster-watched img { opacity: 0.32; filter: grayscale(0.35); }
+.home-watch-again {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  background: rgba(6, 12, 24, 0.28);
+}
+.home-watch-again i, .home-watch-again svg { width: 24px; height: 24px; }
+
 .home-chtile {
   position: relative;
   aspect-ratio: 16 / 9;

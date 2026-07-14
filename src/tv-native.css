@@ -846,6 +846,24 @@ body.perf-lite #tvn-root .tvn-home-bg i { transition: none; }
 }
 .tvn-poster-progress > div { height: 100%; background: var(--acc, #38bdf8); }
 
+/* Completed movie poster in the shell — dim + centered "Watch again". */
+.tvn-poster-watched .tvn-poster-art img { opacity: 0.34; filter: grayscale(0.35); }
+.tvn-watch-again {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #fff;
+  font-size: 22px;
+  font-weight: 700;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  background: rgba(4, 6, 11, 0.32);
+}
+.tvn-watch-again i, .tvn-watch-again svg { width: 44px; height: 44px; }
+
 /* --------------------------------------------------------------------------
    DETAILS (movie / series) — hero + actions + episodes
    -------------------------------------------------------------------------- */
@@ -946,6 +964,7 @@ body.perf-lite #tvn-root .tvn-home-bg i { transition: none; }
   flex-shrink: 0;
 }
 .tvn-ep-card {
+  position: relative;
   flex-shrink: 0;
   width: 420px;
   border-radius: 20px;
@@ -958,8 +977,24 @@ body.perf-lite #tvn-root .tvn-home-bg i { transition: none; }
   color: inherit;
   text-align: left;
   font-family: inherit;
+  overflow: hidden;
 }
 .tvn-ep-card:focus { background: rgba(255, 255, 255, 0.1); transform: scale(1.03); }
+
+/* "How far in" bar pinned to the bottom of an episode card (in-progress). */
+.tvn-ep-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.14);
+}
+.tvn-ep-progress > div { height: 100%; background: var(--acc, #38bdf8); }
+
+/* Completed episode card — dim it and tint the meta to read "Watched". */
+.tvn-ep-watched { opacity: 0.6; }
+.tvn-ep-watched .tvn-ep-meta { color: var(--acc, #38bdf8); font-weight: 700; }
 .tvn-ep-num {
   font-size: 19px;
   font-weight: 800;

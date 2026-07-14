@@ -27,7 +27,9 @@ import {
   removeSeriesWatchProgress,
   getPlaylists,
   proxifyImage,
-  getLastSyncAge
+  getLastSyncAge,
+  isCompleted,
+  getWatchInfo
 } from './xtream-api.js';
 import { getAboutRows, DEVELOPER } from './about.js';
 
@@ -1905,12 +1907,14 @@ async function screenBrowse(params) {
   function posterCard(item, fkey, extra = '') {
     const art = item.stream_icon || item.cover || '';
     const hue = hashHue(item.name);
+    const watched = type === 'movie' && isCompleted(item.stream_id ?? item.id);
     const card = el(`
-      <button class="tvn-poster tvn-focable" data-nav data-fkey="${esc(fkey)}">
+      <button class="tvn-poster tvn-focable${watched ? ' tvn-poster-watched' : ''}" data-nav data-fkey="${esc(fkey)}">
         <div class="tvn-poster-art" style="background:${grad(hue, hue + 45)}">
           ${art ? `<img src="${esc(proxifyImage(art))}" alt="" loading="lazy" onerror="this.remove()">` : ''}
           <div class="tvn-poster-scrim"></div>
           <span class="tvn-poster-name">${art ? '' : esc(item.name)}</span>
+          ${watched ? '<div class="tvn-watch-again"><i data-lucide="rotate-ccw"></i><span>Watch again</span></div>' : ''}
           ${extra}
         </div>
         <span class="tvn-poster-label">${esc(item.name)}</span>
@@ -1996,7 +2000,19 @@ async function screenBrowse(params) {
 
   // Continue watching row
   try {
-    const cw = getContinueWatching(type === 'movie' ? 'movie' : 'series').slice(0, 15);
+    let cw = getContinueWatching(type === 'movie' ? 'movie' : 'series');
+    // Series: collapse to one card per show (newest episode — list is already
+    // sorted by lastWatched), so a binged series shows once, not per-episode.
+    if (type !== 'movie') {
+      const seen = new Set();
+      cw = cw.filter((it) => {
+        const key = String(it.seriesId || it.seriesName || it.id);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+    cw = cw.slice(0, 15);
     if (cw.length) {
       const row = addRow('Continue watching');
       cw.forEach((it, i) => {
@@ -2010,13 +2026,21 @@ async function screenBrowse(params) {
         card.dataset.cwKey = String(it.seriesId || it.seriesName || it.id);
         card.dataset.cwName = it.cardTitle || it.name || 'Title';
         card.onclick = () => {
+          // Series CW cards are grouped (one per show), so a click opens the
+          // series details focused on the episode you left off — you pick up
+          // from the list rather than blind-playing. Movies (ungrouped) still
+          // resume straight into playback.
+          if (it.type === 'series') {
+            setScreen('details', {
+              item: { series_id: it.seriesId, name: it.seriesName || it.cardTitle || it.name, cover: it.logo, stream_icon: it.logo },
+              type: 'series',
+              focusEpisodeId: it.id,
+              focusSeason: it.season
+            });
+            return;
+          }
           hideForPlayback();
-          // Resume must stay in the shell — H.resumeCw opens the legacy series
-          // dashboard / VOD modal, which bleeds the old UI through under TV mode.
-          // A continue-watching card is an explicit "carry on from here", so it
-          // goes straight to playback rather than to a detail screen.
-          if (it.type === 'series' && H.resumeEpisode) H.resumeEpisode(it);
-          else if (H.playVod) {
+          if (H.playVod) {
             H.playVod(it.id, 'movie', it.name, it.logo || '', '',
               it.containerExtension || '', it.position || 0, it.backdrop || '');
           } else H.resumeCw(it);
@@ -2071,7 +2095,7 @@ async function screenBrowse(params) {
 // SCREEN: Details (movie / series)
 // ==========================================================================
 async function screenDetails(params) {
-  const { item, type } = params;
+  const { item, type, focusEpisodeId, focusSeason } = params;
   const art = item.stream_icon || item.cover || '';
   const hue = hashHue(item.name);
   const scr = el(`
@@ -2190,16 +2214,24 @@ async function screenDetails(params) {
     } else {
       seasonsEl.hidden = false;
       epsEl.hidden = false;
+      // Opening from Continue Watching focuses the season + episode left off on.
+      const initialSeason = (focusSeason != null && episodesMap[String(focusSeason)])
+        ? String(focusSeason) : seasons[0];
       const renderSeason = (sn) => {
         seasonsEl.querySelectorAll('.tvn-season-pill').forEach(p =>
           p.classList.toggle('tvn-sel', p.dataset.season === String(sn)));
         epsEl.innerHTML = '';
         (episodesMap[sn] || []).forEach((ep, i) => {
+          const w = getWatchInfo(ep.id);
+          const isFocus = focusEpisodeId != null
+            ? String(ep.id) === String(focusEpisodeId)
+            : (sn === initialSeason && i === 0);
           const card = el(`
-            <button class="tvn-ep-card tvn-focable" data-nav data-fkey="ep-${esc(sn)}-${i}" ${sn === seasons[0] && i === 0 ? 'data-autofocus' : ''}>
+            <button class="tvn-ep-card tvn-focable${w.completed ? ' tvn-ep-watched' : ''}" data-nav data-fkey="ep-${esc(sn)}-${i}" ${isFocus ? 'data-autofocus' : ''}>
               <span class="tvn-ep-num">Episode ${esc(ep.episode_num || i + 1)}</span>
               <span class="tvn-ep-title">${esc(ep.title || 'Episode')}</span>
-              <span class="tvn-ep-meta">${esc(ep.info?.duration || '')}</span>
+              <span class="tvn-ep-meta">${w.completed ? 'Watched' : esc(ep.info?.duration || '')}</span>
+              ${(!w.completed && w.pct > 0) ? `<div class="tvn-ep-progress"><div style="width:${w.pct}%"></div></div>` : ''}
             </button>`);
           card.onclick = () => {
             hideForPlayback();
@@ -2215,7 +2247,7 @@ async function screenDetails(params) {
         pill.onclick = () => renderSeason(sn);
         seasonsEl.appendChild(pill);
       });
-      renderSeason(seasons[0]);
+      renderSeason(initialSeason);
     }
   }
   focusAuto();

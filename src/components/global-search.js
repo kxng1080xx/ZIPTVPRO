@@ -10,7 +10,7 @@
  * also reacts, mirroring tv-search.js. No new navigation zone needed.
  */
 
-import { getStreams, proxifyImage } from './xtream-api.js';
+import { getStreams, proxifyImage, isCompleted } from './xtream-api.js';
 import { openSearchKeyboard, closeSearchKeyboard } from './tv-search.js';
 
 const PLACEHOLDER_SVG =
@@ -223,11 +223,13 @@ function renderResults({ live, movies, series, epg = [] }) {
       const name = type === 'live' ? (it.name || 'Unknown') : (it.name || it.title || 'Unknown');
       const img = proxifyImage(it.stream_icon || it.cover || it.cover_big || '');
       const meta = type === 'live' ? '' : esc(it.year || it.releaseDate || '');
+      const watched = type === 'movie' && isCompleted(it.stream_id);
       return `
         <button class="gsearch-item" data-type="${type}" data-id="${esc(it.stream_id || it.series_id || it.id || '')}">
-          <div class="gsearch-thumb ${type}">
+          <div class="gsearch-thumb ${type}${watched ? ' watched' : ''}">
             ${img ? `<img src="${esc(img)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${PLACEHOLDER_SVG}'">`
                   : `<i data-lucide="${type === 'live' ? 'tv' : type === 'series' ? 'clapperboard' : 'film'}"></i>`}
+            ${watched ? '<div class="gsearch-watch-again"><i data-lucide="rotate-ccw"></i></div>' : ''}
           </div>
           <span class="gsearch-item-title">${esc(name)}</span>
           ${meta ? `<span class="gsearch-item-meta">${meta}</span>` : ''}

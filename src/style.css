@@ -702,6 +702,19 @@ button {
 .gsearch-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .gsearch-thumb i { width: 28px; height: 28px; color: var(--text-muted); }
 
+/* Completed movie in search — dim thumbnail + "Watch again" corner marker. */
+.gsearch-thumb.watched img { opacity: 0.35; filter: grayscale(0.35); }
+.gsearch-watch-again {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 12, 24, 0.3);
+  color: #fff;
+}
+.gsearch-watch-again i, .gsearch-watch-again svg { width: 22px; height: 22px; }
+
 .gsearch-item-title {
   font-size: 0.85rem;
   line-height: 1.25;
@@ -5898,6 +5911,33 @@ body.epg-fullscreen-active .epg-section-container {
 .episode-row-watched svg {
   width: 15px;
   height: 15px;
+}
+
+/* "How far in" bar pinned to the bottom of an episode tile (in-progress only). */
+.episode-list-row,
+.episode-row {
+  position: relative;
+}
+
+.episode-row-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 0 0 var(--border-radius-sm) var(--border-radius-sm);
+  overflow: hidden;
+}
+
+.episode-row-progress > div {
+  height: 100%;
+  background: var(--accent-cyan, #22d3ee);
+}
+
+.episode-row.watched .episode-row-left,
+.episode-list-row.watched .episode-row-left-details {
+  opacity: 0.5;
 }
 
 .episode-list-row.active {

@@ -20,6 +20,7 @@ import {
   removeSeriesWatchProgress,
   markCompleted,
   isCompleted,
+  getWatchInfo,
   getIsServerMode,
   getStreamUrlSync,
   proxifyImage,
@@ -2074,6 +2075,7 @@ function renderMoviesCatalog(movies) {
   movies.forEach(movie => {
     const card = document.createElement('div');
     card.className = 'vod-card';
+    card.dataset.streamId = movie.stream_id;
 
     const rating = parseFloat(movie.rating) || 0;
     const year = movie.year || movie.releaseDate || 'N/A';
@@ -2226,6 +2228,7 @@ async function openSeriesPlaybackDashboard(series, resumeOpts = null) {
       exitSeriesPlaybackDashboard();
     };
     playerInstance.onVideoEnded = () => {
+      markCurrentWatched();
       playNextEpisode();
     };
   }
@@ -2282,16 +2285,19 @@ async function openSeriesPlaybackDashboard(series, resumeOpts = null) {
         const row = document.createElement('div');
         row.className = 'episode-list-row';
         row.dataset.episodeId = ep.id;
-        const epWatched = isCompleted(ep.id);
-        if (epWatched) row.classList.add('watched');
+        const epW = getWatchInfo(ep.id);
+        if (epW.completed) row.classList.add('watched');
         row.innerHTML = `
           <div class="episode-row-left-details">
             <span class="episode-row-title-text">Ep ${ep.episode_num || '0'}: ${ep.title || 'Episode'}</span>
             <span class="episode-row-duration-text">Duration: ${ep.info?.duration || 'N/A'}</span>
           </div>
-          ${epWatched
+          ${epW.completed
             ? '<span class="episode-row-watched"><i data-lucide="rotate-ccw"></i>Watch again</span>'
             : '<i data-lucide="play-circle" class="episode-row-play-icon"></i>'}
+          ${(!epW.completed && epW.pct > 0)
+            ? `<div class="episode-row-progress"><div style="width:${epW.pct}%"></div></div>`
+            : ''}
         `;
         
         row.addEventListener('click', async () => {
@@ -2315,23 +2321,22 @@ async function openSeriesPlaybackDashboard(series, resumeOpts = null) {
       select.onchange = (e) => loadSeasonEpisodes(e.target.value);
     }
 
-    // Resume a specific episode (from Continue Watching), else load season 1.
+    // Opened from Continue Watching → jump to that episode's season and
+    // highlight/focus it, but DON'T auto-play. A grouped CW card represents the
+    // series, so a click lands you in the detail screen on the episode you left
+    // off; you press play from there.
     if (resumeOpts && resumeOpts.episodeId) {
       const rSeason = episodesMap[resumeOpts.season] ? String(resumeOpts.season) : seasons[0];
       if (select) select.value = rSeason;
       loadSeasonEpisodes(rSeason);
-      const epsArr = episodesMap[rSeason] || [];
-      const idx = epsArr.findIndex(e => String(e.id) === String(resumeOpts.episodeId));
-      if (idx !== -1) {
-        const ep = epsArr[idx];
-        const epExt = ep.container_extension || ep.info?.container_extension || '';
-        const epName = `${infoMeta.name || series.name || 'Series'} - S${rSeason}E${ep.episode_num}: ${ep.title}`;
-        const targetRow = document.querySelector(`.episode-list-row[data-episode-id="${ep.id}"]`);
-        if (targetRow) {
-          document.querySelectorAll('.episode-list-row').forEach(r => r.classList.remove('active'));
-          targetRow.classList.add('active');
-        }
-        await playSeriesEpisode(ep.id, epName, infoMeta.cover, ep.info?.plot || '', epExt, idx, epsArr, rSeason, info, resumeOpts.position || 0);
+      const targetRow = document.querySelector(`.episode-list-row[data-episode-id="${resumeOpts.episodeId}"]`);
+      if (targetRow) {
+        document.querySelectorAll('.episode-list-row').forEach(r => r.classList.remove('active'));
+        targetRow.classList.add('active');
+        try { targetRow.scrollIntoView({ block: 'center' }); } catch (e) {}
+        try { navigation.setFocus('series-episodes', targetRow); } catch (e) {}
+      } else {
+        navigation.focusDefault('series-episodes');
       }
     } else {
       loadSeasonEpisodes(seasons[0]);
@@ -2464,7 +2469,7 @@ async function playSeriesEpisodeTv(seriesItem, info, seasonNum, epIndex, resumeT
 
   playerInstance.setOnPrevChannel(() => playPreviousEpisode());
   playerInstance.setOnNextChannel(() => playNextEpisode());
-  playerInstance.onVideoEnded = () => playNextEpisode();
+  playerInstance.onVideoEnded = () => { markCurrentWatched(); playNextEpisode(); };
   playerInstance.onExitVod = () => {
     playerInstance.setOnPrevChannel(() => playPreviousChannel());
     playerInstance.setOnNextChannel(() => playNextChannel());
@@ -2626,10 +2631,12 @@ function exitSeriesPlaybackDashboard() {
 
   if (playbackContainer && !playbackContainer.classList.contains('hidden')) {
     flushProgress();
+    const finishedId = currentVodItem?.id;
     currentVodItem = null;
     playbackContainer.classList.add('hidden');
     if (catalogContainer) catalogContainer.classList.remove('hidden');
     refreshContinueWatching();
+    reflectWatchInView(finishedId);
 
     if (playerInstance) {
       playerInstance.stop();
@@ -2855,12 +2862,20 @@ function renderSeriesSeasons(seriesInfo) {
     episodes.forEach(ep => {
       const row = document.createElement('div');
       row.className = 'episode-row';
+      row.dataset.episodeId = ep.id;
+      const epW = getWatchInfo(ep.id);
+      if (epW.completed) row.classList.add('watched');
       row.innerHTML = `
         <div class="episode-row-left">
           <span class="episode-title">Ep ${ep.episode_num || '0'}: ${ep.title || 'Episode'}</span>
           <span class="episode-meta">Duration: ${ep.info?.duration || 'N/A'}</span>
         </div>
-        <i data-lucide="play-circle" class="episode-play-icon"></i>
+        ${epW.completed
+          ? '<span class="episode-row-watched"><i data-lucide="rotate-ccw"></i>Watch again</span>'
+          : '<i data-lucide="play-circle" class="episode-play-icon"></i>'}
+        ${(!epW.completed && epW.pct > 0)
+          ? `<div class="episode-row-progress"><div style="width:${epW.pct}%"></div></div>`
+          : ''}
       `;
       row.addEventListener('click', async () => {
         document.getElementById('vod-modal').classList.add('hidden');
@@ -2911,9 +2926,10 @@ async function playVODStream(streamId, type, name, logo, description, containerE
   } catch (e) {}
 
   // Clear stale series auto-advance wiring — a previous series session would
-  // otherwise auto-play ITS next episode when this stream ends.
+  // otherwise auto-play ITS next episode when this stream ends. A movie that
+  // plays to the end is marked watched, then the player closes.
   state.seriesPlayback = null;
-  if (playerInstance) playerInstance.onVideoEnded = null;
+  if (playerInstance) playerInstance.onVideoEnded = () => { markCurrentWatched(); exitVodPlayer(); };
 
   // VOD plays in its own full-screen player overlay (movies/series), NOT the
   // Live-TV layout. We don't switch tabs — the overlay sits over the catalog.
@@ -2948,9 +2964,50 @@ async function playVODStream(streamId, type, name, logo, description, containerE
   }
 }
 
+// After playback, reflect a just-completed title in whatever screen the user
+// backs out to — the movie card greys out, the episode row flips to "Watch
+// again" — without waiting for a re-navigation. Also updates an in-progress
+// episode's bottom progress bar. DOM-surgical so it doesn't rebuild the grid.
+function reflectWatchInView(id) {
+  if (id == null) return;
+  const sid = String(id);
+  const info = getWatchInfo(sid);
+
+  // Movie catalog cards.
+  document.querySelectorAll(`.vod-card[data-stream-id="${sid}"]`).forEach(card => {
+    if (!info.completed || card.classList.contains('watched')) return;
+    card.classList.add('watched');
+    const wrap = card.querySelector('.vod-poster-wrapper');
+    if (wrap && !wrap.querySelector('.watch-again-badge')) {
+      wrap.insertAdjacentHTML('beforeend',
+        '<div class="watch-again-badge"><i data-lucide="rotate-ccw"></i><span>Watch again</span></div>');
+    }
+  });
+
+  // Episode rows (series detail + VOD-modal variants).
+  document.querySelectorAll(
+    `.episode-list-row[data-episode-id="${sid}"], .episode-row[data-episode-id="${sid}"]`
+  ).forEach(row => {
+    row.querySelector('.episode-row-progress')?.remove();
+    if (info.completed) {
+      row.classList.add('watched');
+      const icon = row.querySelector('.episode-row-play-icon, .episode-play-icon');
+      if (icon && !row.querySelector('.episode-row-watched')) {
+        icon.outerHTML = '<span class="episode-row-watched"><i data-lucide="rotate-ccw"></i>Watch again</span>';
+      }
+    } else if (info.pct > 0) {
+      row.insertAdjacentHTML('beforeend',
+        `<div class="episode-row-progress"><div style="width:${info.pct}%"></div></div>`);
+    }
+  });
+
+  if (window.lucide) { try { lucide.createIcons(); } catch (e) {} }
+}
+
 // Leave the VOD player overlay and return to the catalog grid.
 function exitVodPlayer() {
   flushProgress();
+  const finishedId = currentVodItem?.id;
   document.body.classList.remove('vod-mode');
 
   // Programmatically restore layout elements
@@ -2964,6 +3021,7 @@ function exitVodPlayer() {
   playerInstance.stop();
   currentVodItem = null;
   refreshContinueWatching();
+  reflectWatchInView(finishedId);
 
   // Leaving the player leaves the watch session — otherwise a host who backs out
   // would keep broadcasting a dead position at their guests.
@@ -3370,6 +3428,19 @@ function persistProgress(currentTime, duration) {
 function flushProgress() {
   if (!currentVodItem || !playerInstance || !playerInstance.video) return;
   persistProgress(playerInstance.video.currentTime, playerInstance.video.duration);
+}
+
+// Definitive "watched" signal: the video reached its end. The <5-min rule in
+// persistProgress depends on timeupdate firing near the end and a valid
+// duration; on natural end (and series auto-advance) that isn't guaranteed, so
+// the ended event marks it explicitly. Call BEFORE advancing to the next item,
+// while currentVodItem still points at the one that just finished.
+function markCurrentWatched() {
+  const it = currentVodItem;
+  if (!it || it.id == null) return;
+  const dur = playerInstance?.video?.duration;
+  removeWatchProgress(it.id);
+  markCompleted({ ...it, position: isFinite(dur) ? dur : (it.duration || 0), duration: isFinite(dur) ? dur : (it.duration || 0) });
 }
 
 function refreshContinueWatching() {

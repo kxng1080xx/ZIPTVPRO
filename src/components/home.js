@@ -7,7 +7,7 @@
 // D-pad: every tile is a .home-card inside a [data-hrow] row container —
 // tv-navigation.js's 'home' zone walks rows (UP/DOWN) and cards (LEFT/RIGHT).
 
-import { getStreams, getContinueWatching, proxifyImage, removeWatchProgress, removeSeriesWatchProgress } from './xtream-api.js';
+import { getStreams, getContinueWatching, proxifyImage, removeWatchProgress, removeSeriesWatchProgress, isCompleted } from './xtream-api.js';
 
 let handlers = null; // { onPlayChannel, onResumeItem, onOpenMovie, onOpenSeries, onGoTab }
 
@@ -38,14 +38,14 @@ function seriesCW() {
 }
 
 // ---- tile builders ----------------------------------------------------------
-function posterTile({ img, title, sub, badge, pct, removeId, removeType }) {
+function posterTile({ img, title, sub, badge, pct, removeId, removeType, watched }) {
   return `
-    <div class="home-poster">
+    <div class="home-poster${watched ? ' home-poster-watched' : ''}">
       ${img ? `<img src="${esc(img)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
       <div class="home-poster-shade"></div>
       ${badge ? `<span class="home-badge">${badge}</span>` : ''}
       ${removeId != null ? `<button class="home-cw-remove" data-remove-id="${esc(removeId)}" data-remove-type="${esc(removeType || '')}" title="Remove from Continue Watching" aria-label="Remove"><i data-lucide="x"></i></button>` : ''}
-      <div class="home-tile-play"><i data-lucide="play"></i></div>
+      ${watched ? '<div class="home-watch-again"><i data-lucide="rotate-ccw"></i><span>Watch again</span></div>' : '<div class="home-tile-play"><i data-lucide="play"></i></div>'}
       ${pct != null ? `<div class="home-progress"><div class="home-progress-fill" style="width:${pct}%"></div></div>` : ''}
     </div>
     <span class="home-tile-title">${esc(title)}</span>
@@ -195,7 +195,8 @@ export async function renderHome(h) {
         cards: newMovies.map((m) => card('home-card-vod', { act: 'movie', id: m.stream_id }, posterTile({
           img: m.stream_icon ? proxifyImage(m.stream_icon) : '',
           title: m.name,
-          sub: m.rating ? `★ ${m.rating}` : ''
+          sub: m.rating ? `★ ${m.rating}` : '',
+          watched: isCompleted(m.stream_id)
         })))
       })}
 
