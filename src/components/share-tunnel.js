@@ -27,7 +27,7 @@ function render() {
   const copyBtn = modalEl.querySelector('.st-copy');
 
   if (s.shareUrl) {
-    status.textContent = 'Live — copy this link and open it on your phone (keep this app open):';
+    status.textContent = 'Live — copy this link and open it in Safari on your iPhone (keep this app open):';
     urlBox.textContent = s.shareUrl;
     urlBox.style.display = 'block';
     copyBtn.style.display = 'inline-block';
@@ -38,7 +38,7 @@ function render() {
     copyBtn.style.display = 'none';
     toggle.textContent = 'Cancel';
   } else {
-    status.textContent = 'Get a private link to watch on your phone. Your computer stays on and streams to it directly.';
+    status.textContent = 'Get a private link to watch on your iPhone. Your computer stays on and streams to it directly in Safari — no App Store needed.';
     urlBox.style.display = 'none';
     copyBtn.style.display = 'none';
     toggle.textContent = 'Start sharing';
@@ -59,7 +59,7 @@ function buildModal() {
          border:1px solid #1e2740;border-radius:14px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.5);
          font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;text-align:center">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <strong style="font-size:16px">Watch on your phone</strong>
+        <strong style="font-size:16px">Watch on your iPhone</strong>
         <button class="st-close" aria-label="Close" style="background:none;border:none;color:#8b93a7;
                 font-size:20px;cursor:pointer;line-height:1">×</button>
       </div>
@@ -73,7 +73,7 @@ function buildModal() {
         <button class="st-toggle" style="background:#182036;color:#cfd6e6;border:1px solid #263254;
                 border-radius:9px;padding:9px 18px;font-size:14px;font-weight:600;cursor:pointer">Start sharing</button>
       </div>
-      <p style="font-size:11px;color:#6b7488;margin:14px 0 0">Link is private to you and changes each time. Streaming uses your own internet.</p>
+      <p style="font-size:11px;color:#6b7488;margin:14px 0 0">Tip: in Safari, tap Share → <strong>Add to Home Screen</strong> for an app-like icon. Link is private to you and changes each time; streaming uses your own internet.</p>
     </div>`;
 
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });

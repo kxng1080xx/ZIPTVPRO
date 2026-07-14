@@ -96,7 +96,13 @@ function ensureServerMode() {
 
 async function checkServerMode() {
   try {
-    const res = await fetch('/api/status', { signal: AbortSignal.timeout(1500) });
+    // /api/status may block on an upstream provider check (up to ~8s), so allow
+    // headroom — a too-short timeout makes REMOTE clients (phone over the
+    // Cloudflare tunnel, added LTE latency) abort and wrongly fall back to
+    // client mode with empty local storage → "0 channels". The web build has no
+    // /api/status route, so it returns HTML/404 fast and this still resolves
+    // quickly to false.
+    const res = await fetch('/api/status', { signal: AbortSignal.timeout(9000) });
     if (res.ok) {
       const contentType = res.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {

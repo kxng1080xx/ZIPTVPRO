@@ -4969,17 +4969,29 @@ async function loadLanInfo() {
   } catch (e) { /* no local server (e.g. hosted web build) */ }
 }
 
+// True when the app is being viewed from OUTSIDE the PC's local network — i.e.
+// a phone opening the Cloudflare tunnel URL (or the hosted web build). In that
+// case the server's LAN IPs (192.168.x, 10.x …) are unreachable, so we must not
+// surface them as "open on your TV" links — fall back to the current origin.
+function isRemoteAccess() {
+  const h = (window.location.hostname || '').toLowerCase();
+  if (!h || h === 'localhost' || h === '127.0.0.1' || h === '::1') return false;
+  if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h)) return false; // on the LAN
+  return true; // public host (tunnel / hosted build)
+}
+
 function getTvLinks() {
   const links = [];
   const seen = new Set();
   const add = (label, url) => { if (url && !seen.has(url)) { seen.add(url); links.push({ label, url }); } };
 
   const port = lanInfo.port || (state.user && state.user.server_port) || null;
-  const ips = (lanInfo.ips && lanInfo.ips.length)
+  const ips = isRemoteAccess() ? [] : ((lanInfo.ips && lanInfo.ips.length)
     ? lanInfo.ips
-    : ((state.user && state.user.local_ips) || []);
+    : ((state.user && state.user.local_ips) || []));
 
   // Preferred: real LAN IP(s) — reachable from a separate TV on the network.
+  // Skipped for remote access (the phone can't reach the PC's LAN IP over LTE).
   for (const ip of ips) {
     add(`${ip}:${port || 80}/tv`, `http://${ip}:${port || 80}/tv`);
   }
@@ -5019,9 +5031,11 @@ function updateHeaderTvIpBadge(status) {
   // reappeared when something flipped the app into server mode.
   let url = null;
   let label = null;
-  const lanIps = (status && status.local_ips && status.local_ips.length > 0)
+  // Remote (tunnel / hosted) viewers can't reach the PC's LAN IP, so ignore it
+  // and let the fallback below surface the current origin's /tv instead.
+  const lanIps = isRemoteAccess() ? [] : ((status && status.local_ips && status.local_ips.length > 0)
     ? status.local_ips
-    : (lanInfo.ips && lanInfo.ips.length > 0 ? lanInfo.ips : []);
+    : (lanInfo.ips && lanInfo.ips.length > 0 ? lanInfo.ips : []));
   if (lanIps.length > 0) {
     const ip = lanIps[0];
     const port = (status && status.server_port) || lanInfo.port || 3000;
