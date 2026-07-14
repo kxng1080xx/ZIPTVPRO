@@ -2727,6 +2727,36 @@ export class VideoPlayer {
     }
   }
 
+  // ---- Web/browser fullscreen (desktop browsers + iOS Safari) --------------
+  // iOS Safari does NOT support the Fullscreen API on arbitrary elements — only
+  // the <video> element can go fullscreen, via webkitEnterFullscreen(). So we try
+  // the standard element fullscreen first and fall back to the native video path,
+  // which is what makes fullscreen work over the phone tunnel.
+  _webFsEl() {
+    return document.fullscreenElement || document.webkitFullscreenElement || null;
+  }
+  _isVideoFs() {
+    return !!(this.video && this.video.webkitDisplayingFullscreen);
+  }
+  _enterWebFs() {
+    const container = this.video && this.video.parentElement;
+    if (container && container.requestFullscreen) {
+      container.requestFullscreen().catch(err => console.warn('fullscreen:', err && err.message));
+    } else if (container && container.webkitRequestFullscreen) {
+      container.webkitRequestFullscreen();
+    } else if (this.video && this.video.webkitEnterFullscreen) {
+      // iOS Safari — must be called on the <video> from a user gesture.
+      try { this.video.webkitEnterFullscreen(); } catch (e) {}
+    }
+  }
+  _exitWebFs() {
+    if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    else if (this.video && this.video.webkitExitFullscreen) {
+      try { this.video.webkitExitFullscreen(); } catch (e) {}
+    }
+  }
+
   // Rotate the device to drive fullscreen: portrait→landscape enters, landscape→
   // portrait exits. player-fs itself is applied by _applyFsForOrientation once the
   // orientation actually changes, so fullscreen never appears in portrait.
@@ -2762,13 +2792,11 @@ export class VideoPlayer {
       }
       return;
     }
-    const container = this.video.parentElement;
-    if (!document.fullscreenElement) {
-      container.requestFullscreen().catch(err => {
-        console.error(`Error entering fullscreen: ${err.message}`);
-      });
+    // Web / desktop browser + iOS Safari.
+    if (!this._webFsEl() && !this._isVideoFs()) {
+      this._enterWebFs();
     } else {
-      document.exitFullscreen();
+      this._exitWebFs();
     }
   }
 
@@ -2786,11 +2814,9 @@ export class VideoPlayer {
       }
       return;
     }
-    const container = this.video.parentElement;
-    if (!document.fullscreenElement) {
-      container.requestFullscreen().catch(err => {
-        console.warn(`Error entering fullscreen: ${err.message}`);
-      });
+    // Web / desktop browser + iOS Safari.
+    if (!this._webFsEl() && !this._isVideoFs()) {
+      this._enterWebFs();
     }
   }
 

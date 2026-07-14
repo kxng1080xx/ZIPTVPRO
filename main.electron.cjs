@@ -8,8 +8,10 @@ const { initTunnel, shutdown: shutdownTunnel } = require('./electron/tunnel-mana
 
 // Per-launch secret that authorizes phone access over the Cloudflare tunnel.
 // Requests arriving through the tunnel must carry this (see server/index.js);
-// desktop + LAN traffic is never gated. Regenerated every launch.
-const SHARE_TOKEN = crypto.randomBytes(16).toString('hex');
+// desktop + LAN traffic is never gated. Regenerated every launch. 8 bytes = 16
+// hex chars — short link, still 64-bit unguessable (and the random tunnel
+// subdomain is itself secret).
+const SHARE_TOKEN = crypto.randomBytes(8).toString('hex');
 
 // ---------------------------------------------------------------------------
 // AD BLOCKER (built-in "uBlock-style" engine for custom web tabs)
