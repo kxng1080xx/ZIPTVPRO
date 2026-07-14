@@ -1137,30 +1137,6 @@ export class VideoPlayer {
         return;
       }
 
-      // MPV Player: hand the stream to a standalone hardware-decoding mpv window.
-      // No server transcode — mpv decodes on the GPU — so it's the lightest path
-      // for slow PCs. Works for live + VOD. Falls back in-app if mpv is missing.
-      if (desktopEngine === 'mpv' && !this._castMode &&
-          window.appHost && typeof window.appHost.playInMpv === 'function') {
-        const target = this._transcodeTarget(url); // unwrap /api/proxy → real upstream
-        Promise.resolve(window.appHost.playInMpv({ url: target, title: this.currentChannelName, isLive: !isVod }))
-          .then((r) => {
-            if (r && r.ok) {
-              if (window.showToast) window.showToast('Opening in MPV…', 'success', 3000);
-              this.stop();
-            } else {
-              const detail = r && r.error ? ` (${r.error})` : '';
-              if (window.showToast) window.showToast(`Couldn't open MPV${detail} — playing in-app`, 'error', 5000);
-              this._startPlayback(url, isVod);
-            }
-          })
-          .catch(() => {
-            if (window.showToast) window.showToast("Couldn't open MPV — playing in-app", 'error', 4000);
-            this._startPlayback(url, isVod);
-          });
-        return;
-      }
-
       if (desktopEngine === 'ffmpeg' && isVod && !this._castMode) {
         this._triedTranscodeAudio = true;
         this._playViaTranscode('audio');
