@@ -1,7 +1,7 @@
 {
   "name": "iptv-player-zero",
   "productName": "ZIPTV Pro",
-  "version": "8.0.1",
+  "version": "8.1.0",
   "description": "Premium IPTV Player - ZIPTV Pro",
   "main": "main.electron.cjs",
   "type": "module",
@@ -22,9 +22,9 @@
     "apk:tv": "npm run bump -- --no-bump && set TV_ONLY=true&& node scripts/gen-version.mjs && vite build && npx cap sync android && cd android && .\\gradlew.bat assembleDebug && cd .. && copy /Y android\\app\\build\\outputs\\apk\\debug\\app-debug.apk tv.apk && echo TV-only APK ready: tv.apk"
   },
   "dependencies": {
-    "@ghostery/adblocker-electron": "^2.5.2",
     "@capacitor/app": "^8.1.0",
     "@capacitor/screen-orientation": "^8.0.1",
+    "@ghostery/adblocker-electron": "^2.5.2",
     "chromecasts": "^1.10.2",
     "cors": "^2.8.5",
     "dexie": "^4.4.3",
@@ -32,7 +32,8 @@
     "electron-updater": "^6.8.9",
     "express": "^4.21.2",
     "hls.js": "^1.5.15",
-    "mpegts.js": "^1.8.0"
+    "mpegts.js": "^1.8.0",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@capacitor/android": "^8.4.0",

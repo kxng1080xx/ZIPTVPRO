@@ -12,17 +12,24 @@ user's own home connection.
 2. When the user clicks **Start sharing**, `electron/tunnel-manager.cjs` spawns
    `cloudflared tunnel --url http://127.0.0.1:<port>` and parses the assigned
    `https://<random>.trycloudflare.com` URL.
-3. The UI (`src/components/share-tunnel.js`) shows that URL with a Copy button,
-   appending the token: `https://<random>.trycloudflare.com/?stk=<token>`.
-   (The param is `stk`, not `t` — the app uses `t` as a cache-buster on
-   `/api/categories` & `/api/streams`, and a collision there 403'd content.)
+3. The UI (`src/components/share-tunnel.js`) shows a locally-generated **QR code**
+   plus that URL with a Copy button, appending the token:
+   `https://<random>.trycloudflare.com/?stk=<token>`. (The param is `stk`, not `t` —
+   the app uses `t` as a cache-buster on `/api/categories` & `/api/streams`, and a
+   collision there 403'd content.) The QR is generated on-device via the `qrcode`
+   package — never sent to an online service, since the URL holds the token.
 4. The phone opens it. The server's guard middleware only challenges requests that
    arrive **through the tunnel** (identified by Cloudflare's `cf-ray` /
    `cf-connecting-ip` headers) — desktop and LAN casting are never gated. A valid
    token sets a cookie, so playlist/segment requests are authorized automatically.
 5. Closing the app (or **Stop sharing**) tears the tunnel down.
 
-## Before building: bundle the `cloudflared` binary
+## Before building: install deps + bundle the `cloudflared` binary
+
+Run `npm i` (the `qrcode` package is now in `package.json` — needed for the share
+QR; if missing at runtime the panel falls back to link-only).
+
+
 
 Drop the platform binary into `extraResources/` (already wired into the
 `electron-builder` filter, copied to `resources/bin/` at build time):

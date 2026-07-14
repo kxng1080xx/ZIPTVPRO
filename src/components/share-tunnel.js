@@ -18,6 +18,27 @@ function hasShare() {
   return !!(window.appHost && window.appHost.share);
 }
 
+// Render the share URL as a QR straight into the canvas. Generated locally (the
+// URL holds a secret token, so it must never be sent to an online QR service).
+// Uses the `qrcode` package; if it can't load, the canvas is hidden and the
+// copyable link below still works.
+let _qrShownFor = '';
+async function drawQr(canvas, text) {
+  if (!canvas || !text) return;
+  if (_qrShownFor === text) return; // already drawn for this URL
+  try {
+    const mod = await import('qrcode');
+    const QR = mod.default || mod;
+    await QR.toCanvas(canvas, text, {
+      width: 220, margin: 1, color: { dark: '#0b0f1a', light: '#ffffff' },
+    });
+    canvas.style.display = 'block';
+    _qrShownFor = text;
+  } catch (e) {
+    canvas.style.display = 'none'; // link + copy still work
+  }
+}
+
 function render() {
   if (!modalEl) return;
   const s = lastState;
@@ -25,22 +46,26 @@ function render() {
   const urlBox = modalEl.querySelector('.st-url');
   const toggle = modalEl.querySelector('.st-toggle');
   const copyBtn = modalEl.querySelector('.st-copy');
+  const qr = modalEl.querySelector('.st-qr');
 
   if (s.shareUrl) {
-    status.textContent = 'Live — copy this link and open it in Safari on your iPhone (keep this app open):';
+    status.textContent = 'Live — scan the QR, or copy the link and open it in Safari on your iPhone (keep this app open):';
     urlBox.textContent = s.shareUrl;
     urlBox.style.display = 'block';
     copyBtn.style.display = 'inline-block';
     toggle.textContent = 'Stop sharing';
+    drawQr(qr, s.shareUrl);
   } else if (s.connecting) {
     status.textContent = 'Starting tunnel…';
     urlBox.style.display = 'none';
     copyBtn.style.display = 'none';
+    if (qr) { qr.style.display = 'none'; _qrShownFor = ''; }
     toggle.textContent = 'Cancel';
   } else {
     status.textContent = 'Get a private link to watch on your iPhone. Your computer stays on and streams to it directly in Safari — no App Store needed.';
     urlBox.style.display = 'none';
     copyBtn.style.display = 'none';
+    if (qr) { qr.style.display = 'none'; _qrShownFor = ''; }
     toggle.textContent = 'Start sharing';
   }
 }
@@ -64,6 +89,8 @@ function buildModal() {
                 font-size:20px;cursor:pointer;line-height:1">×</button>
       </div>
       <p class="st-status" style="font-size:13px;color:#9aa3b8;margin:8px 0 14px"></p>
+      <canvas class="st-qr" width="220" height="220"
+              style="display:none;width:220px;height:220px;margin:0 auto 12px;border-radius:10px;background:#fff;padding:8px;box-sizing:content-box"></canvas>
       <div class="st-url" style="display:none;word-break:break-all;font-size:13px;color:#7fb2ff;
            background:#0e1424;border:1px solid #1e2740;border-radius:8px;padding:10px;margin-bottom:12px;
            user-select:all;cursor:text"></div>

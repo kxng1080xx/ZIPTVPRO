@@ -3,6 +3,7 @@
  * or querying the IPTV server directly (using client-side IndexedDB cache).
  */
 import { db } from './db.js';
+import { getDeviceCode, backupWatchHistory, deleteWatchHistory } from './cloud-sync.js';
 
 let isServerMode = false;
 let epgMemoryCache = {};
@@ -634,12 +635,80 @@ export function getContinueWatching(type = null) {
 
 export function saveWatchProgress(item) {
   if (!item || !item.id) return;
+  const entry = { ...item, lastWatched: Date.now() };
   let list = getContinueWatching();
   list = list.filter(i => String(i.id) !== String(item.id));
-  list.unshift({ ...item, lastWatched: Date.now() });
+  list.unshift(entry);
   if (list.length > 30) list = list.slice(0, 30);
   try {
     localStorage.setItem(cwKey(), JSON.stringify(list));
+  } catch (e) {}
+  // Re-watching a finished title puts it back "in progress" — clear its
+  // completed (dimmed "Watch again") state locally and in the cloud copy.
+  unmarkCompleted(item.id);
+  // Mirror to the cloud (best-effort, throttled, fire-and-forget). localStorage
+  // above stays the source of truth; this is just the backup for a later feature.
+  try { backupWatchHistory(getDeviceCode(), getActiveIdLocal(), entry); } catch (e) {}
+}
+
+// ---------------------------------------------------------------------------
+// Completed — movies/episodes watched to the end (auto-marked when <5 min
+// remain, see main.js persistProgress). Powers the dimmed "Watch again" tiles.
+// Stored per playlist like Continue Watching; ids are stream/episode ids.
+// ---------------------------------------------------------------------------
+const DONE_PREFIX = 'done_';
+
+function doneKey() {
+  return DONE_PREFIX + (getActiveIdLocal() || 'default');
+}
+
+export function getCompletedIds() {
+  try {
+    const raw = localStorage.getItem(doneKey());
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list.map(String) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+export function isCompleted(id) {
+  if (id == null) return false;
+  return getCompletedIds().includes(String(id));
+}
+
+export function markCompleted(item) {
+  if (!item || item.id == null) return;
+  const id = String(item.id);
+  const existing = getCompletedIds();
+  const already = existing.includes(id);
+  const ids = existing.filter(x => x !== id);
+  ids.unshift(id);
+  if (ids.length > 500) ids.length = 500;
+  try {
+    localStorage.setItem(doneKey(), JSON.stringify(ids));
+  } catch (e) {}
+  // Back up the completion exactly once (on the transition), pinning position to
+  // duration and flagging completed so a later feature can tell it apart.
+  if (!already) {
+    try {
+      backupWatchHistory(
+        getDeviceCode(),
+        getActiveIdLocal(),
+        { ...item, position: item.duration || item.position || 0, completed: true, lastWatched: Date.now() },
+        true
+      );
+    } catch (e) {}
+  }
+}
+
+export function unmarkCompleted(id) {
+  if (id == null) return;
+  const sid = String(id);
+  const current = getCompletedIds();
+  if (!current.includes(sid)) return;
+  try {
+    localStorage.setItem(doneKey(), JSON.stringify(current.filter(x => x !== sid)));
   } catch (e) {}
 }
 
@@ -648,16 +717,22 @@ export function removeWatchProgress(id) {
   try {
     localStorage.setItem(cwKey(), JSON.stringify(list));
   } catch (e) {}
+  try { deleteWatchHistory(getDeviceCode(), getActiveIdLocal(), id); } catch (e) {}
 }
 
 // Remove every Continue Watching entry belonging to a series (all episodes).
 // seriesKey matches the collapse key used by the CW rows: seriesId || seriesName || id.
 export function removeSeriesWatchProgress(seriesKey) {
-  const list = getContinueWatching().filter(
-    i => String(i.seriesId || i.seriesName || i.id) !== String(seriesKey)
-  );
+  const all = getContinueWatching();
+  const removed = all.filter(i => String(i.seriesId || i.seriesName || i.id) === String(seriesKey));
+  const list = all.filter(i => String(i.seriesId || i.seriesName || i.id) !== String(seriesKey));
   try {
     localStorage.setItem(cwKey(), JSON.stringify(list));
+  } catch (e) {}
+  try {
+    const code = getDeviceCode();
+    const pid = getActiveIdLocal();
+    removed.forEach(i => deleteWatchHistory(code, pid, i.id));
   } catch (e) {}
 }
 
@@ -1372,7 +1447,6 @@ export function getCatchupUrlSync(streamId, start, duration) {
   const targetUrl = `${creds.server_url}/streaming/timeshift.php`
     + `?username=${encodeURIComponent(creds.username)}`
     + `&password=${encodeURIComponent(creds.password)}`
-    + `&stream=${encodeURIComponent(streamId)}`
     + `&start=${encodeURIComponent(startStr)}`
     + `&duration=${dur}`;
   return proxify(targetUrl);

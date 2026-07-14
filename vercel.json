@@ -15,6 +15,9 @@
     },
     "api/watch.js": {
       "maxDuration": 15
+    },
+    "api/history.js": {
+      "maxDuration": 15
     }
   },
   "headers": [

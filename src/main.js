@@ -18,6 +18,8 @@ import {
   saveWatchProgress,
   removeWatchProgress,
   removeSeriesWatchProgress,
+  markCompleted,
+  isCompleted,
   getIsServerMode,
   getStreamUrlSync,
   proxifyImage,
@@ -2072,10 +2074,12 @@ function renderMoviesCatalog(movies) {
   movies.forEach(movie => {
     const card = document.createElement('div');
     card.className = 'vod-card';
-    
+
     const rating = parseFloat(movie.rating) || 0;
     const year = movie.year || movie.releaseDate || 'N/A';
     const logo = proxifyImage(movie.stream_icon || '');
+    const watched = isCompleted(movie.stream_id);
+    if (watched) card.classList.add('watched');
 
     card.innerHTML = `
       <div class="vod-poster-wrapper">
@@ -2084,6 +2088,7 @@ function renderMoviesCatalog(movies) {
           <span class="vod-card-year">${year}</span>
           ${rating > 0 ? `<span class="vod-rating-badge"><i data-lucide="star"></i>${rating.toFixed(1)}</span>` : ''}
         </div>
+        ${watched ? '<div class="watch-again-badge"><i data-lucide="rotate-ccw"></i><span>Watch again</span></div>' : ''}
       </div>
       <span class="vod-card-title">${movie.name}</span>
     `;
@@ -2277,12 +2282,16 @@ async function openSeriesPlaybackDashboard(series, resumeOpts = null) {
         const row = document.createElement('div');
         row.className = 'episode-list-row';
         row.dataset.episodeId = ep.id;
+        const epWatched = isCompleted(ep.id);
+        if (epWatched) row.classList.add('watched');
         row.innerHTML = `
           <div class="episode-row-left-details">
             <span class="episode-row-title-text">Ep ${ep.episode_num || '0'}: ${ep.title || 'Episode'}</span>
             <span class="episode-row-duration-text">Duration: ${ep.info?.duration || 'N/A'}</span>
           </div>
-          <i data-lucide="play-circle" class="episode-row-play-icon"></i>
+          ${epWatched
+            ? '<span class="episode-row-watched"><i data-lucide="rotate-ccw"></i>Watch again</span>'
+            : '<i data-lucide="play-circle" class="episode-row-play-icon"></i>'}
         `;
         
         row.addEventListener('click', async () => {
@@ -3341,15 +3350,20 @@ function saveCurrentProgress(currentTime, duration) {
 
 function persistProgress(currentTime, duration) {
   if (!currentVodItem || !currentTime || currentTime < 5) return;
-  // Finished (or nearly) → drop from Continue Watching.
-  if (duration && isFinite(duration) && currentTime / duration > 0.95) {
+  const dur = isFinite(duration) ? duration : 0;
+  // Finished → mark completed (dimmed "Watch again" tile) and drop from Continue
+  // Watching. "Finished" = under 5 minutes remaining (past the halfway point so a
+  // short clip isn't completed on contact), or effectively at the end (>95%).
+  const nearEnd = dur > 0 && (dur - currentTime) <= 300 && currentTime >= dur * 0.5;
+  if (dur > 0 && (nearEnd || currentTime / dur > 0.95)) {
     removeWatchProgress(currentVodItem.id);
+    markCompleted({ ...currentVodItem, position: dur, duration: dur });
     return;
   }
   saveWatchProgress({
     ...currentVodItem,
     position: currentTime,
-    duration: isFinite(duration) ? duration : 0
+    duration: dur
   });
 }
 
