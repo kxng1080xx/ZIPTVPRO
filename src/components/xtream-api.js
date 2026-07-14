@@ -52,6 +52,40 @@ export function proxifyImage(url) {
   return url;
 }
 
+// Providers prefix live-channel names with country/package tags in wildly
+// inconsistent shapes — "US: CNN", "USA : CNN", "[US] CNN", "|AR| beIN",
+// "PM : CA TCM", "UK MOVIES: SKY COMEDY", "US Cozi", flag emoji… Strip those
+// so every UI shows just the channel name. Runs a few passes because tags
+// stack ("PM : CA TCM" → "CA TCM" → "TCM").
+// NOTE: no "ID" (Investigation Discovery) or "AT" ("AT 5") — real channel
+// names that would be eaten if treated as country codes.
+const BARE_COUNTRY = /^(?:US|UK|GB|CA|AU|NZ|IE|AR|BR|MX|DE|FR|ES|IT|PT|NL|BE|CH|PL|TR|GR|RO|SE|NO|DK|FI|IN|PK|ZA|EG|SA|AE|QA|KW|IL|RU|UA|CZ|SK|HU|HR|RS|BG|PH|MY|SG|TH|VN|KR|JP|CN|HK|TW|CL|CO|PE|VE|EC|UY|PY|BO|CR|PA|DO|JM|TT)\s+(?=\S)/;
+export function cleanChannelName(raw) {
+  if (!raw) return raw || '';
+  let s = String(raw);
+  for (let i = 0; i < 4; i++) {
+    const before = s;
+    s = s.trimStart();
+    s = s.replace(/^[[({]\s*[^\])}]{1,12}\s*[\])}]\s*/, '');       // [US] (UK) {VIP}
+    s = s.replace(/^\|[^|]{1,12}\|\s*/, '');                       // |AR|
+    s = s.replace(/^[A-Z]{2,4}(?:\s[A-Z]{2,12}){0,2}\s*[:|]\s*/, ''); // "PM :", "USA:", "UK MOVIES:", "VIP| X"
+    s = s.replace(BARE_COUNTRY, '');                               // "US Cozi" (2-letter codes only)
+    // flag / pictographic emoji and variation selectors
+    s = s.replace(/^(?:[\u{1F1E6}-\u{1F1FF}\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]+\s*)+/u, '');
+    // stray separators left behind by a stripped tag (last, so it can't eat
+    // the opening "|" of a |XX| tag before the rule above sees it; a lone
+    // pipe only counts when followed by a space, so "|AR| x" stays intact)
+    s = s.replace(/^(?:\|\s+|[\s\-–—:•·.]+)+/, '');
+    if (s === before) break;
+  }
+  s = s.replace(/\s{2,}/g, ' ').trim();
+  return s || String(raw).trim(); // never clean a name into nothing
+}
+// Map live items to display shape (original name survives in the cache/DB).
+function cleanLiveItems(items) {
+  return items.map(it => it && it.name ? { ...it, name: cleanChannelName(it.name) } : it);
+}
+
 // Helper: Check if backend server is active. Memoized so the detection runs
 // (and is awaited) exactly once, including before the first playlist read on boot.
 let serverModePromise = null;
@@ -996,7 +1030,9 @@ export async function getStreams({ type, categoryId, page = 1, limit = 50, searc
     });
     const response = await fetch(`/api/streams?${params.toString()}`);
     if (!response.ok) throw new Error('Failed to fetch streams');
-    return response.json();
+    const data = await response.json();
+    if (normType === 'live' && Array.isArray(data.items)) data.items = cleanLiveItems(data.items);
+    return data;
   } else {
     // Client Mode getStreams
     let table = normType === 'live' ? db.live_streams : (normType === 'movie' ? db.vod_streams : db.series_streams);
@@ -1044,12 +1080,14 @@ export async function getStreams({ type, categoryId, page = 1, limit = 50, searc
       const startIndex = (page - 1) * limit;
       const paginatedItems = await collection.offset(startIndex).limit(limit).toArray();
       return {
-        items: paginatedItems,
+        items: normType === 'live' ? cleanLiveItems(paginatedItems) : paginatedItems,
         pagination: { total, page, limit, pages: Math.ceil(total / limit) }
       };
     }
 
     let items = await collection.toArray();
+    // Clean before search/sort so both operate on the displayed name.
+    if (normType === 'live') items = cleanLiveItems(items);
 
     // Filter out streams belonging to hidden categories
     if (hasHiddenCats) {

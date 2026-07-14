@@ -23,6 +23,8 @@ import {
   getEPG,
   getStreamInfo,
   getContinueWatching,
+  removeWatchProgress,
+  removeSeriesWatchProgress,
   getPlaylists,
   proxifyImage,
   getLastSyncAge
@@ -578,12 +580,14 @@ function onKeyDown(e) {
   } else if (k === 'ContextMenu' ||
              (e.keyCode === 82 && (!e.key || k === 'Unidentified' || k === 'ContextMenu'))) {
     // Remote MENU (Android KEYCODE_MENU = 82 with an Unidentified key — never
-    // a PC keyboard's plain "r") on a pinnable row → Pin/Unpin popout.
+    // a PC keyboard's plain "r") on a pinnable row → Pin/Unpin popout; on a
+    // Continue Watching card → Remove popout.
     const t = pinTargetOf(document.activeElement);
-    if (t && inShell && !popupEl) {
+    const cwT = t ? null : cwTargetOf(document.activeElement);
+    if ((t || cwT) && inShell && !popupEl) {
       e.preventDefault();
       e.stopImmediatePropagation();
-      openPinMenuFor(t);
+      if (t) openPinMenuFor(t); else openCwMenuFor(cwT);
     }
   } else if (k === 'Escape' || k === 'Backspace' || k === 'GoBack' || k === 'BrowserBack') {
     if (document.getElementById('tvn-chooser')) { e.preventDefault(); e.stopImmediatePropagation(); return; }
@@ -897,7 +901,10 @@ function fmtDur(s) {
 function osdRender() {
   if (!ensureOsd()) return;
   const vod = osdIsVod();
-  const series = vod && !!document.getElementById('video-container')?.classList.contains('series-mode');
+  // series-mode lands on the container only after the stream URL resolves, so
+  // also trust the explicit flag the series play path passes with its metadata.
+  const series = vod && (!!document.getElementById('video-container')?.classList.contains('series-mode') ||
+    !!(osdVod && osdVod.series));
   osdEl.classList.toggle('tvn-osd-vod', vod);
   osdEl.classList.toggle('tvn-osd-series', series);
   osdEl.querySelector('[data-osd="prev"]').title = vod ? 'Previous episode' : 'Previous channel';
@@ -1140,6 +1147,37 @@ function sortPinnedChannels(list) {
   list.forEach(c => (order.includes(String(c.stream_id)) ? pinned : rest).push(c));
   pinned.sort((a, b) => order.indexOf(String(a.stream_id)) - order.indexOf(String(b.stream_id)));
   return [...pinned, ...rest];
+}
+
+// Continue Watching rows opt into the same MENU/right-click popout via
+// data-cw-* attributes — the only way a 10-foot UI can offer removal.
+function cwTargetOf(el) {
+  return el && el.closest ? el.closest('[data-cw-id]') : null;
+}
+
+function openCwMenuFor(t) {
+  if (!t) return;
+  const { cwId, cwType, cwKey, cwName, fkey } = t.dataset;
+  if (!cwId) return;
+  openPopup({
+    title: cwName || 'Continue watching',
+    items: [{
+      id: 'remove',
+      title: 'Remove from Continue watching',
+      sub: cwType === 'series' ? 'Clears saved progress for every episode' : 'Clears the saved position',
+      danger: true
+    }],
+    onPick: () => {
+      try {
+        if (cwType === 'series') removeSeriesWatchProgress(cwKey);
+        else removeWatchProgress(cwId);
+      } catch (e) {}
+      closePopup(false);
+      // Re-render the screen so the row rebuilds without the entry.
+      if (current && fkey) lastFocusKey[current.name] = fkey;
+      renderCurrent();
+    }
+  });
 }
 
 function openPinMenuFor(t) {
@@ -1419,6 +1457,7 @@ async function screenHome() {
         <span class="tvn-clock-meta">${I.tv(24, 'rgba(255,255,255,0.6)', 2)} ${esc(playlistName())}</span>
         <span class="tvn-clock-time" data-tvn-bigtime></span>
         <span class="tvn-clock-date" data-tvn-date></span>
+        <span class="tvn-clock-exp" data-tvn-exp hidden></span>
       </div>
     </div>
 
@@ -1438,6 +1477,18 @@ async function screenHome() {
   scr.querySelector('[data-fkey="settings"]').onclick = () => setScreen('settings');
   const powerBtn = scr.querySelector('[data-fkey="power"]');
   if (powerBtn) powerBtn.onclick = powerToTray;
+
+  // Subscription status under the date — same source and precedence as the
+  // desktop profile card (/connect device expiry first, then Xtream exp_date).
+  try {
+    const acct = H.accountStatus ? H.accountStatus() : null;
+    if (acct && acct.text) {
+      const expEl = scr.querySelector('[data-tvn-exp]');
+      expEl.textContent = acct.text;
+      expEl.classList.toggle('tvn-exp-danger', !!acct.danger);
+      expEl.hidden = false;
+    }
+  } catch (e) {}
 
   // ambient backdrop follows the focused card
   const bgBox = scr.querySelector('[data-home-bg]');
@@ -1548,6 +1599,7 @@ async function screenLive(params) {
       <div class="tvn-now-scrim"></div>
       <div class="tvn-now-top">
         <span class="tvn-now-clock" data-tvn-time></span>
+        <button class="tvn-iconbtn tvn-focable" data-nav data-fkey="np-guide" title="Guide">${I.guide(24, '#fff')}</button>
         <button class="tvn-iconbtn tvn-focable" data-nav data-fkey="np-search">${I.search(24, '#fff')}</button>
         <div class="tvn-avatar">${esc(profileInitials())}</div>
       </div>
@@ -1568,6 +1620,7 @@ async function screenLive(params) {
   stage.appendChild(scr);
 
   scr.querySelector('[data-fkey="back"]').onclick = () => goBack();
+  scr.querySelector('[data-fkey="np-guide"]').onclick = () => setScreen('guide');
   scr.querySelector('[data-fkey="np-search"]').onclick = () => setScreen('search');
 
   const catBox = scr.querySelector('[data-cats]');
@@ -1951,6 +2004,11 @@ async function screenBrowse(params) {
         const item = { name: it.cardTitle || it.name, stream_icon: it.logo, stream_id: it.id, series_id: it.seriesId };
         const card = posterCard(item, `cw-${i}`,
           pct ? `<div class="tvn-poster-progress"><div style="width:${pct}%"></div></div>` : '');
+        // Remote MENU / right-click opens "Remove from Continue watching".
+        card.dataset.cwId = String(it.id);
+        card.dataset.cwType = it.type || (type === 'movie' ? 'movie' : 'series');
+        card.dataset.cwKey = String(it.seriesId || it.seriesName || it.id);
+        card.dataset.cwName = it.cardTitle || it.name || 'Title';
         card.onclick = () => {
           hideForPlayback();
           // Resume must stay in the shell — H.resumeCw opens the legacy series
@@ -2963,15 +3021,18 @@ export function initTvNative(handlers) {
     }
   });
 
-  // Right-click on a pinnable row (mouse users) → Pin/Unpin popout.
+  // Right-click on a pinnable row (mouse users) → Pin/Unpin popout; on a
+  // Continue Watching card → Remove popout.
   window.addEventListener('contextmenu', (e) => {
     if (!shellHasKeys()) return;
     const t = pinTargetOf(e.target);
+    const cwT = t ? null : cwTargetOf(e.target);
     const r = navRootEl();
-    if (!t || !r || !r.contains(t)) return;
+    const target = t || cwT;
+    if (!target || !r || !r.contains(target)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
-    openPinMenuFor(t);
+    if (t) openPinMenuFor(t); else openCwMenuFor(cwT);
   }, true);
 
   // True while the shell is the visible surface — the legacy D-pad

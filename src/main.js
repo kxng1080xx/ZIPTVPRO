@@ -2328,7 +2328,8 @@ async function playSeriesEpisode(epStreamId, epName, logo, plot, epExt, epIndex,
         title: ep.title || `Episode ${ep.episode_num || epIndex + 1}`,
         sub: `${sm.name || seriesInfo.info?.name || 'Series'} · Season ${seasonNum} · Episode ${ep.episode_num || (epIndex + 1)}`,
         next: nx ? (nx.title || `Episode ${nx.episode_num || (epIndex + 2)}`) : '',
-        logo: sm.cover || logo || ''
+        logo: sm.cover || logo || '',
+        series: true // OSD shows prev/next episode without waiting for series-mode
       });
     }
   } catch (e) {}

@@ -549,6 +549,13 @@ app.get('/api/proxy', (req, res) => {
   if (/\/live\/[^?]*\.ts(\?|$)/i.test(url)) {
     return proxyLiveStream(url, req, res, { contentType: 'video/mpeg' });
   }
+  // VOD (movie/series) files are finite and byte-seekable, so they get the
+  // resumable proxy: when the provider or network drops the connection
+  // mid-file, we reconnect with a Range request at the exact byte we last
+  // forwarded — the player's buffer keeps filling and the drop never shows.
+  if (/\/(movie|series)\/[^?]*\.\w+(\?|$)/i.test(url)) {
+    return proxyVodStream(url, req, res);
+  }
   proxyStream(url, req, res);
 });
 
@@ -655,6 +662,12 @@ app.get('/cast/:kind/:file', async (req, res) => {
   // for Chromecast is segmented, so it uses the normal proxy.)
   if (isLive && ext === 'ts') {
     return proxyLiveStream(targetUrl, req, res, { contentType: mime, dlnaContentFeatures: features });
+  }
+
+  // Cast VOD gets the resumable proxy too — the TV holds one long GET for the
+  // whole film, so a provider session cut without resume just ends the movie.
+  if (!isLive) {
+    return proxyVodStream(targetUrl, req, res, { contentType: mime, dlnaContentFeatures: features });
   }
 
   proxyStream(targetUrl, req, res, {
@@ -851,6 +864,190 @@ function proxyLiveStream(targetUrl, req, res, opts) {
       if (closed) return;
       if (firstConnect && !res.headersSent) { try { res.status(502).end(); } catch (e) {} closed = true; return; }
       setTimeout(() => connect(targetUrl), 500);
+    });
+  };
+
+  connect(targetUrl);
+}
+
+// Resumable VOD proxy: a movie/series file is finite and byte-seekable, so
+// unlike live we don't need a PTS splice — when the provider drops the
+// connection mid-file (session-TTL panels cut long VOD downloads on the same
+// ~25s timer as live) or the network blips, we reconnect with a Range request
+// at the exact byte we last forwarded and keep writing to the SAME client
+// response. Byte-continuous, so the player's buffer just keeps filling and
+// the drop never reaches the screen. Also covers silent stalls (no FIN, no
+// error — a black-holed TCP connection) via an idle watchdog.
+function proxyVodStream(targetUrl, req, res, opts = {}) {
+  // Only open-ended "bytes=N-" ranges (what media players send) get resume
+  // accounting; bounded/suffix ranges fall back to the one-shot proxy.
+  const rangeMatch = /^bytes=(\d+)-$/.exec(req.headers.range || '');
+  if (req.headers.range && !rangeMatch) return proxyStream(targetUrl, req, res, opts);
+
+  const baseOffset = rangeMatch ? parseInt(rangeMatch[1], 10) : 0;
+  let bytesSent = 0;       // bytes forwarded to the client on this response
+  let totalSize = null;    // absolute file size (from Content-Range/-Length)
+  let skipBytes = 0;       // overlap to discard when a resume gets 200 not 206
+  let upstream = null;
+  let closed = false;
+  let firstConnect = true;
+  let consecFails = 0;     // reset whenever upstream bytes actually arrive
+  let pausedForClient = false; // backpressure pause — idle watchdog ignores it
+  let lastDataAt = Date.now();
+
+  const finish = (destroy) => {
+    if (closed) return;
+    closed = true;
+    clearInterval(idleTimer);
+    if (upstream) { try { upstream.destroy(); } catch (e) {} }
+    // destroy = we owe the client bytes we can't deliver: cut the socket so
+    // it sees a network error, never a clean-but-truncated end.
+    try { destroy ? res.destroy() : res.end(); } catch (e) {}
+  };
+  const stop = () => {
+    closed = true;
+    clearInterval(idleTimer);
+    if (upstream) { try { upstream.destroy(); } catch (e) {} }
+  };
+  res.on('close', stop);
+  req.on('close', stop);
+
+  // Bytes still owed to the client, or null when the provider never told us
+  // the file size (then a clean upstream end is trusted as the real end).
+  const remaining = () => (totalSize == null ? null : totalSize - baseOffset - bytesSent);
+
+  // A dead connection doesn't always error or FIN — a wifi drop can leave the
+  // socket silently black-holed, which is the frozen frame that never
+  // recovers. If no data flows for 15s and it's not our own backpressure
+  // pause, destroy the upstream so the error path reconnects at the offset.
+  const idleTimer = setInterval(() => {
+    if (closed || pausedForClient || !upstream) return;
+    if (Date.now() - lastDataAt > 15000) {
+      console.warn('[vod-proxy] upstream silent 15s — forcing reconnect');
+      try { upstream.destroy(new Error('idle')); } catch (e) {}
+    }
+  }, 5000);
+
+  // Failed connect attempt: back off exponentially (0.5s → 8s). The budget
+  // (~1 min of solid failures) rides out router reboots and provider restarts;
+  // it only gives up when the source is truly gone. Delivered bytes reset it.
+  const failRetry = () => {
+    if (closed) return;
+    consecFails++;
+    if (consecFails > 12) return finish(true); // destroy: never fake a clean EOF short
+    setTimeout(() => connect(targetUrl), Math.min(500 * 2 ** (consecFails - 1), 8000));
+  };
+
+  const connect = (url, redirects = 0) => {
+    if (closed) return;
+    const resumeAt = baseOffset + bytesSent;
+    const headers = { 'User-Agent': 'VLC/3.0.20' };
+    // Keep the client's range semantics on first connect (a 206 vs 200 answer
+    // tells the browser whether it can seek); afterwards resume at our offset.
+    if (rangeMatch || resumeAt > 0) headers['Range'] = `bytes=${resumeAt}-`;
+
+    const protocol = url.startsWith('https') ? https : http;
+    const upReq = protocol.get(url, { headers, rejectUnauthorized: false }, (up) => {
+      if ([301, 302, 307, 308].includes(up.statusCode) && up.headers.location && redirects < 5) {
+        let loc = up.headers.location;
+        if (!loc.startsWith('http')) { try { loc = new URL(url).origin + loc; } catch (e) {} }
+        up.destroy();
+        return connect(loc, redirects + 1);
+      }
+      // Resuming exactly at EOF → 416: everything was already delivered.
+      if (up.statusCode === 416 && !firstConnect) { up.resume(); return finish(false); }
+      if (up.statusCode !== 200 && up.statusCode !== 206) {
+        up.resume();
+        // First attempt failing = the file is actually bad: mirror the status
+        // so the app errors fast instead of hanging on an empty stream.
+        if (firstConnect && !res.headersSent) {
+          try { res.status(up.statusCode).end(); } catch (e) {}
+          closed = true;
+          clearInterval(idleTimer);
+          return;
+        }
+        return failRetry();
+      }
+
+      // Learn the absolute file size (Content-Range total, else Content-Length
+      // of a full 200 response) — that's how a premature FIN is detected.
+      const crTotal = /\/(\d+)\s*$/.exec(up.headers['content-range'] || '');
+      if (crTotal) totalSize = parseInt(crTotal[1], 10);
+      else if (up.statusCode === 200 && up.headers['content-length'] && totalSize == null) {
+        totalSize = parseInt(up.headers['content-length'], 10);
+      }
+
+      skipBytes = 0;
+      if (firstConnect) {
+        res.status(up.statusCode);
+        for (const k of ['content-range', 'content-length', 'accept-ranges', 'content-type']) {
+          if (up.headers[k]) res.setHeader(k, up.headers[k]);
+        }
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        if (opts.contentType) res.setHeader('Content-Type', opts.contentType);
+        if (opts.dlnaContentFeatures) {
+          res.setHeader('transferMode.dlna.org', 'Streaming');
+          res.setHeader('contentFeatures.dlna.org', opts.dlnaContentFeatures);
+          if (!res.getHeader('accept-ranges')) res.setHeader('Accept-Ranges', 'bytes');
+        }
+        if (!res.getHeader('content-type')) res.setHeader('Content-Type', 'video/mp2t');
+        firstConnect = false;
+      } else {
+        // Where does this resume response actually start? A server that
+        // ignores Range answers 200 from byte 0 — discard the overlap. One
+        // that starts PAST our offset can't be spliced byte-continuously.
+        let respStart = 0;
+        const crStart = /bytes (\d+)-/.exec(up.headers['content-range'] || '');
+        if (up.statusCode === 206 && crStart) respStart = parseInt(crStart[1], 10);
+        if (respStart > resumeAt) { up.destroy(); return finish(true); }
+        skipBytes = resumeAt - respStart;
+      }
+
+      upstream = up;
+      lastDataAt = Date.now();
+      let sessionBytes = 0; // forwarded THIS session — a 0-byte session must back off, not tight-loop
+      up.on('data', (chunk) => {
+        if (closed) return;
+        lastDataAt = Date.now();
+        if (skipBytes) {
+          if (chunk.length <= skipBytes) { skipBytes -= chunk.length; return; }
+          chunk = chunk.subarray(skipBytes);
+          skipBytes = 0;
+        }
+        consecFails = 0;
+        sessionBytes += chunk.length;
+        bytesSent += chunk.length;
+        if (!res.write(chunk)) {
+          pausedForClient = true;
+          up.pause();
+          res.once('drain', () => {
+            pausedForClient = false;
+            lastDataAt = Date.now();
+            try { up.resume(); } catch (e) {}
+          });
+        }
+      });
+      up.on('end', () => {
+        if (closed) return;
+        const rem = remaining();
+        if (rem == null || rem <= 0) return finish(false); // true end of file
+        console.log(`[vod-proxy] upstream ended ${(rem / 1024 / 1024).toFixed(1)} MB early — resuming at byte ${baseOffset + bytesSent}`);
+        // A FIN after delivering data is the session-TTL cut, not a failure —
+        // reconnect immediately. A 0-byte session goes through the backoff.
+        if (sessionBytes > 0) return connect(targetUrl);
+        failRetry();
+      });
+      up.on('error', () => { if (!closed) failRetry(); });
+    });
+    upReq.on('error', () => {
+      if (closed) return;
+      if (firstConnect && !res.headersSent) {
+        try { res.status(502).end(); } catch (e) {}
+        closed = true;
+        clearInterval(idleTimer);
+        return;
+      }
+      failRetry();
     });
   };
 

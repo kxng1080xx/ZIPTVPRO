@@ -357,6 +357,13 @@ body.perf-lite #tvn-root .tvn-home-bg i { transition: none; }
   color: rgba(255, 255, 255, 0.55);
   white-space: nowrap;
 }
+.tvn-clock-exp {
+  font-size: 25px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.38);
+  white-space: nowrap;
+}
+.tvn-clock-exp.tvn-exp-danger { color: #fca5a5; }
 
 .tvn-hint {
   display: flex;
@@ -468,6 +475,9 @@ body.perf-lite #tvn-root .tvn-home-bg i { transition: none; }
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  /* the row is a <button>, whose UA default centers text — short names sat
+     centered while truncated ones filled the width and looked left-aligned */
+  text-align: left;
 }
 .tvn-ch-name {
   font-size: 29px;
@@ -752,8 +762,14 @@ body.perf-lite #tvn-root .tvn-home-bg i { transition: none; }
   display: flex;
   gap: 26px;
   overflow-x: auto;
-  /* headroom for the focus zoom + halo (the row clips vertically) */
-  padding: 32px 80px 26px 10px;
+  /* headroom for the focus zoom + halo: the row is a scroll container, so it
+     clips its own padding box. Padding gives the halo room to render and the
+     negative margins cancel it out of the layout, so posters keep the same
+     position while the clip edges move far enough out that the halo fades
+     before reaching them. (Rows overlap a little; they're transparent and the
+     padding areas hold no content, so nothing is covered.) */
+  padding: 90px 80px 90px 80px;
+  margin: -58px 0 -64px -70px;
   flex-shrink: 0;
 }
 .tvn-poster {
@@ -900,7 +916,11 @@ body.perf-lite #tvn-root .tvn-home-bg i { transition: none; }
   display: flex;
   gap: 14px;
   overflow-x: auto;
-  padding: 4px 6px;
+  /* scroll container clips its padding box: padding gives the 10px focus ring
+     room, negative margins cancel it out of the layout (same trick as
+     .tvn-posterrow) */
+  padding: 12px;
+  margin: -8px -6px;
   flex-shrink: 0;
 }
 .tvn-season-pill {
@@ -919,7 +939,10 @@ body.perf-lite #tvn-root .tvn-home-bg i { transition: none; }
   display: flex;
   gap: 22px;
   overflow-x: auto;
-  padding: 20px 80px 6px 6px;
+  /* focus ring + 1.03 scale need ~14px; pad the clip box and cancel the
+     extra with negative margins so the layout position doesn't move */
+  padding: 20px 80px 20px 26px;
+  margin: 0 0 -14px -20px;
   flex-shrink: 0;
 }
 .tvn-ep-card {
@@ -1504,7 +1527,11 @@ body.tv-native.tvn-playing .player-controls-overlay,
 body.tv-native.tvn-playing .channel-info-banner,
 body.tv-native.tvn-playing .now-next-bar,
 body.tv-native.tvn-playing .player-quality-badge,
-body.tv-native.tvn-playing .player-channel-logo-watermark {
+body.tv-native.tvn-playing .player-channel-logo-watermark,
+/* the legacy idle hero ("Ready to stream / Pick a channel…") sits inside
+   #video-container and painted through during the shell→player hand-off —
+   the old-UI flash seen just before a movie/episode starts */
+body.tv-native.tvn-playing .player-idle {
   display: none !important;
 }
 
@@ -1667,16 +1694,17 @@ body.perf-lite .tvn-osd-scrim-bottom { background: rgba(0,0,0,0.6); height: 30%;
 #tvn-osd.tvn-osd-vod .tvn-osd-chname,
 #tvn-osd.tvn-osd-vod .tvn-osd-hint { display: none; }
 
-/* Mode switches: VOD swaps the LIVE badge + elapsed for a seek bar and ±10s,
-   and drops favorites (a live-channel concept). Episode prev/next only in
-   series playback. */
+/* Mode switches: VOD swaps the LIVE badge + elapsed for a seek bar and drops
+   favorites (a live-channel concept). The ±10s buttons are gone in VOD — the
+   seek bar covers scrubbing (D-pad Left/Right on it seeks) — so series
+   playback shows previous/next episode in their place, and movies are just
+   play + seek. */
 #tvn-osd .tvn-osd-seek { display: none; }
 #tvn-osd.tvn-osd-vod .tvn-osd-live,
 #tvn-osd.tvn-osd-vod .tvn-osd-elapsed,
 #tvn-osd.tvn-osd-vod [data-osd="fav"],
 #tvn-osd.tvn-osd-vod .tvn-osd-next:empty { display: none; }
 #tvn-osd .tvn-osd-vodonly { display: none; }
-#tvn-osd.tvn-osd-vod .tvn-osd-vodonly { display: grid; }
 #tvn-osd.tvn-osd-vod [data-osd="prev"],
 #tvn-osd.tvn-osd-vod [data-osd="next"] { display: none; }
 #tvn-osd.tvn-osd-vod.tvn-osd-series [data-osd="prev"],
