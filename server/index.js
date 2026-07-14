@@ -118,6 +118,52 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
+// ---------------------------------------------------------------------------
+// SHARE-TUNNEL GUARD (desktop phone-sharing over Cloudflare Quick Tunnel)
+// The Electron app can expose THIS server on a public trycloudflare.com URL so
+// the user watches on their phone. That URL is unguessable but technically
+// reachable by anyone who has it, so we require a per-session token on requests
+// that ARRIVE THROUGH THE TUNNEL. Cloudflare's edge stamps every such request
+// with `cf-ray` / `cf-connecting-ip`; local desktop traffic and LAN casting have
+// neither, so they pass untouched — only tunnel visitors are gated.
+//
+// Token travels as `?t=<token>` on the first load (from the QR), then a cookie
+// carries it for playlist/segment requests. No token (web build / dev) = no gate.
+// ---------------------------------------------------------------------------
+const SHARE_TOKEN = process.env.SHARE_TOKEN || '';
+const SHARE_COOKIE = 'ziptv_share';
+
+function readCookie(req, name) {
+  const raw = req.headers.cookie;
+  if (!raw) return '';
+  for (const part of raw.split(';')) {
+    const i = part.indexOf('=');
+    if (i === -1) continue;
+    if (part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return '';
+}
+
+if (SHARE_TOKEN) {
+  app.use((req, res, next) => {
+    // Not via the tunnel (no Cloudflare edge headers) → local/LAN → allow.
+    const viaTunnel = !!(req.headers['cf-ray'] || req.headers['cf-connecting-ip']);
+    if (!viaTunnel) return next();
+    if (req.method === 'OPTIONS') return next(); // let CORS preflight through
+
+    const provided = (req.query && req.query.t) || readCookie(req, SHARE_COOKIE);
+    if (provided === SHARE_TOKEN) {
+      // Persist so subsequent same-origin requests (HLS segments, API) are authorized.
+      if (req.query && req.query.t) {
+        res.setHeader('Set-Cookie',
+          `${SHARE_COOKIE}=${encodeURIComponent(SHARE_TOKEN)}; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=86400`);
+      }
+      return next();
+    }
+    res.status(403).type('text/plain').send('This ZIPTV share link is invalid or expired.');
+  });
+}
+
 // Disable caching for all API endpoints
 app.use('/api', (req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');

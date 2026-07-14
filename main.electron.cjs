@@ -2,7 +2,14 @@ const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, dialog, ses
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { initCast } = require('./electron/cast-manager.cjs');
+const { initTunnel, shutdown: shutdownTunnel } = require('./electron/tunnel-manager.cjs');
+
+// Per-launch secret that authorizes phone access over the Cloudflare tunnel.
+// Requests arriving through the tunnel must carry this (see server/index.js);
+// desktop + LAN traffic is never gated. Regenerated every launch.
+const SHARE_TOKEN = crypto.randomBytes(16).toString('hex');
 
 // ---------------------------------------------------------------------------
 // AD BLOCKER (built-in "uBlock-style" engine for custom web tabs)
@@ -203,6 +210,8 @@ if (!gotLock) {
     // Kill any ffmpeg children the in-process server spawned, so nothing is left
     // running after the app closes. The server sets this global (same process).
     try { if (globalThis.__ziptvKillChildren) globalThis.__ziptvKillChildren(); } catch (e) {}
+    // Tear down the Cloudflare tunnel so cloudflared doesn't outlive the app.
+    try { shutdownTunnel(); } catch (e) {}
   });
 
   // Backstop: also clean up right before the process exits, in case quit was
@@ -246,6 +255,8 @@ const PREFERRED_PORT = 56789;
 
 async function startExpressServer() {
   process.env.ELECTRON_RUNNING = 'true';
+  // The in-process server reads this to gate tunnel (phone) traffic.
+  process.env.SHARE_TOKEN = SHARE_TOKEN;
   serverPort = (await isPortFree(PREFERRED_PORT)) ? PREFERRED_PORT : ((await getFreePort()) || 3000);
   process.env.PORT = String(serverPort);
 
@@ -329,6 +340,17 @@ function createWindow() {
       initCast({ getWindow: () => mainWindow, getServerPort: () => serverPort });
     } catch (err) {
       console.error('[Electron] Cast init failed:', err);
+    }
+    // Phone-sharing over Cloudflare Quick Tunnel (opt-in from the UI).
+    try {
+      initTunnel({
+        ipcMain,
+        getWindow: () => mainWindow,
+        getServerPort: () => serverPort,
+        getToken: () => SHARE_TOKEN,
+      });
+    } catch (err) {
+      console.error('[Electron] Tunnel init failed:', err);
     }
   }
 

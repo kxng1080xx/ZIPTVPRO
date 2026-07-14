@@ -66,6 +66,20 @@ contextBridge.exposeInMainWorld('appHost', {
   setFullscreen: (on) => ipcRenderer.invoke('window:set-fullscreen', on),
   quitApp: () => ipcRenderer.invoke('app:quit'),
 
+  // Phone-sharing over a Cloudflare Quick Tunnel. start/stop/get return
+  // { running, connecting, url, shareUrl }. onShare fires when the tunnel URL
+  // changes (comes up / drops); returns an unsubscribe function.
+  share: {
+    start: () => ipcRenderer.invoke('tunnel:start'),
+    stop: () => ipcRenderer.invoke('tunnel:stop'),
+    get: () => ipcRenderer.invoke('tunnel:get'),
+    onChange: (cb) => {
+      const handler = (_e, state) => cb(state || {});
+      ipcRenderer.on('tunnel:url', handler);
+      return () => ipcRenderer.removeListener('tunnel:url', handler);
+    },
+  },
+
   // Close-to-tray with playback stopped (TV power button / programmatic close).
   hideToTray: () => ipcRenderer.invoke('app:hide-to-tray'),
   // Fires whenever the window is being hidden to the tray (X button or

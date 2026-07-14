@@ -41,6 +41,7 @@ import { renderHome } from './components/home.js';
 import { getStoredUiMode, setStoredUiMode, showDeviceChooser, initTvNative, enterTvNative, exitTvNative, isTvNativeActive } from './components/tv-native.js';
 import { watchTogether } from './components/watch-together.js';
 import { getAboutRows, DEVELOPER } from './components/about.js';
+import { initShareTunnel, openShareTunnel } from './components/share-tunnel.js';
 // Imported (not a literal "/src/assets/..." path) so Vite rewrites it to the
 // hashed build URL — a raw path injected from JS isn't processed and 404s.
 import logoUrl from './assets/logo.png';
@@ -234,6 +235,18 @@ document.addEventListener('DOMContentLoaded', () => {
 async function initApp() {
   // 1. Initialize time clock
   startClock();
+
+  // Phone-sharing (Electron only): exposes window.openShareTunnel() and reveals the
+  // header button. No-op on web/Android where the tunnel/appHost.share is absent.
+  try {
+    initShareTunnel();
+    const phoneShareBtn = document.getElementById('phone-share-btn');
+    if (phoneShareBtn && !(window.appHost && window.appHost.share)) {
+      phoneShareBtn.style.display = 'none';
+    } else if (phoneShareBtn) {
+      phoneShareBtn.style.display = '';
+    }
+  } catch (e) {}
 
   try {
     const path = (window.location.pathname || '').replace(/\/+$/, '');
@@ -3941,6 +3954,11 @@ function bindGlobalEvents() {
   // --- Tile: Ad Blocker (built-in uBlock-style engine, web tabs only) ---
   document.getElementById('tile-adblock')?.addEventListener('click', () => {
     toggleAdblock();
+  });
+
+  // --- Header button: Watch on Your Phone (Cloudflare Quick Tunnel share panel) ---
+  document.getElementById('phone-share-btn')?.addEventListener('click', () => {
+    openShareTunnel();
   });
 
   // --- Tile: Sleep Timer ---
