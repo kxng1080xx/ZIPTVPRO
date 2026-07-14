@@ -1050,6 +1050,11 @@ export class VideoPlayer {
             onBuffering: (d) => {
               this._nativeSawLife = true;
               const pct = d && typeof d.percent === 'number' ? Math.round(d.percent) : null;
+              // 100% = buffer full, playback is resuming. libVLC often does NOT emit
+              // a fresh 'playing' state after a mid-stream rebuffer (especially on
+              // live), so the opaque buffering overlay would stay over the native
+              // video → black picture with audio still playing. Clear it here.
+              if (pct != null && pct >= 100) { this.hideSpinner(); return; }
               this._showNativeStatus(pct != null ? `Buffering ${pct}%…` : 'Buffering…');
             },
             onState: (d) => {
@@ -1064,6 +1069,10 @@ export class VideoPlayer {
               this._nativeSawLife = true;
               this._nativeVout = d && typeof d.count === 'number' ? d.count : this._nativeVout;
               this._updateNativeHud({ vout: this._nativeVout });
+              // Video output is live (frames rendering behind the WebView). The
+              // loading/buffering overlay must not be left covering the native
+              // surface — clear it whenever there's an active video track.
+              if (this._nativeVout > 0 && this._nativeActive !== false) this.hideSpinner();
             },
           }
         );
