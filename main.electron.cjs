@@ -1,3 +1,30 @@
+// MUST run before anything that (transitively) requires `depd`. The codecs
+// Electron runtime (hayase-sourced build) ships with V8 code-generation-from-
+// strings disabled as baked-in hardening — `eval`/`new Function` throw
+// EvalError in every context, and it is NOT clearable via the fuse wire.
+// Express's dependency `depd` builds its deprecation wrappers with
+// `new Function` at require-time, killing the in-process server on startup.
+// When the runtime forbids code generation, substitute an API-compatible,
+// eval-free depd: deprecation WARNINGS are lost, behavior is unchanged.
+// Stock Electron allows code generation, so this hook stays dormant there.
+(() => {
+  try { new Function('return 1'); return; } catch (e) { /* restricted runtime */ }
+  function depdStub() {
+    function deprecate() {}
+    deprecate.function = (fn) => fn;
+    deprecate.property = () => {};
+    deprecate.class = (fn) => fn;
+    return deprecate;
+  }
+  const Module = require('module');
+  const origLoad = Module._load;
+  Module._load = function (request) {
+    if (request === 'depd') return depdStub;
+    return origLoad.apply(this, arguments);
+  };
+  console.log('[Electron] eval-restricted runtime detected — using eval-free depd stub');
+})();
+
 const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, dialog, session } = require('electron');
 const net = require('net');
 const path = require('path');

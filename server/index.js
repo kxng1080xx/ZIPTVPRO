@@ -406,8 +406,25 @@ app.post('/api/sync', async (req, res) => {
     // batches (categories, then streams) instead of six sequential round-trips.
     // On a slow/flaky provider this is the difference between ~6×latency and
     // ~2×latency, and no single slow endpoint blocks the others.
-    const fetchJson = (action) =>
-      fetchXtream(`${baseApiUrl}&action=${action}`).then((r) => r.json());
+    // Read every provider call as text first, then parse. Some panels answer an
+    // odd/unsupported action (or a temporarily blocked line) with a redirect to
+    // a "notification" MP4 instead of JSON — blindly calling r.json() on that
+    // threw ("Unexpected token … ftypmp… is not valid JSON") and killed the
+    // WHOLE sync. Now a bad endpoint is logged (with which action + what came
+    // back) and treated as empty, so the rest of the catalog still syncs.
+    const fetchJson = async (action) => {
+      const r = await fetchXtream(`${baseApiUrl}&action=${action}`);
+      const text = await r.text();
+      try {
+        return JSON.parse(text);
+      } catch (e) {
+        const ct = r.headers.get('content-type') || 'unknown';
+        const snippet = text.slice(0, 60).replace(/[^\x20-\x7E]/g, '.');
+        console.error(`Sync: '${action}' returned non-JSON (HTTP ${r.status}, ${ct}): ${snippet}`);
+        sendEvent({ progress: `Skipped ${action} — provider returned ${ct.split(';')[0]}, not data.` });
+        return [];
+      }
+    };
 
     sendEvent({ progress: 'Syncing categories (live, movies, series)...' });
     const [liveCategories, vodCategories, seriesCategories] = await Promise.all([
@@ -1419,18 +1436,26 @@ function detectHwEncoder() {
 // prepend any -vf filters (deinterlace / downscale) themselves.
 function h264EncodeArgs({ soft = false, lp = false } = {}) {
   const hw = soft ? null : detectHwEncoder();
+  // Every encoder gets an explicit ~2s GOP (-g 48 @24fps). The fMP4 muxer runs
+  // with frag_keyframe, which can only close a fragment AT a keyframe — NVENC
+  // with -tune ll and no -g emits (near-)infinite GOPs, so the muxer buffered
+  // the ENTIRE encode and the client got ~0 bytes: measured 28 bytes muxed
+  // after 2 min encoded at 4x realtime. Playback "never starts", and when the
+  // interleave buffer force-flushes, audio and video come out skewed (the
+  // constant lip-sync offset). x264's default 250-frame GOP (~10s fragments)
+  // gets the same cap so software-encoded starts aren't 10s behind either.
   switch (hw) {
     case 'h264_nvenc':
-      return ['-c:v', 'h264_nvenc', '-preset', 'p4', '-tune', 'll', '-rc', 'vbr', '-cq', '23', '-pix_fmt', 'yuv420p'];
+      return ['-c:v', 'h264_nvenc', '-preset', 'p4', '-tune', 'll', '-rc', 'vbr', '-cq', '23', '-g', '48', '-forced-idr', '1', '-pix_fmt', 'yuv420p'];
     case 'h264_qsv':
-      return ['-c:v', 'h264_qsv', '-preset', 'veryfast', '-global_quality', '23', '-pix_fmt', 'nv12'];
+      return ['-c:v', 'h264_qsv', '-preset', 'veryfast', '-global_quality', '23', '-g', '48', '-pix_fmt', 'nv12'];
     case 'h264_amf':
-      return ['-c:v', 'h264_amf', '-quality', 'speed', '-rc', 'cqp', '-qp_i', '23', '-qp_p', '23', '-pix_fmt', 'yuv420p'];
+      return ['-c:v', 'h264_amf', '-quality', 'speed', '-rc', 'cqp', '-qp_i', '23', '-qp_p', '23', '-g', '48', '-pix_fmt', 'yuv420p'];
     case 'h264_videotoolbox':
-      return ['-c:v', 'h264_videotoolbox', '-q:v', '55', '-pix_fmt', 'yuv420p'];
+      return ['-c:v', 'h264_videotoolbox', '-q:v', '55', '-g', '48', '-pix_fmt', 'yuv420p'];
     default:
       // Software. Low-power trades quality for speed so a weak CPU keeps up.
-      return ['-c:v', 'libx264', '-preset', lp ? 'ultrafast' : 'veryfast', '-crf', lp ? '25' : '23', '-pix_fmt', 'yuv420p'];
+      return ['-c:v', 'libx264', '-preset', lp ? 'ultrafast' : 'veryfast', '-crf', lp ? '25' : '23', '-g', '48', '-pix_fmt', 'yuv420p'];
   }
 }
 
@@ -1487,6 +1512,17 @@ app.get('/api/transcode', (req, res) => {
   const reEncode = deint || mode === 'full'; // paths that actually encode video
   const ffmpeg = findFfmpeg();
 
+  // Feed ffmpeg through the local resumable VOD proxy instead of the provider
+  // directly. Session-TTL panels cut VOD downloads too (measured: hard FIN at
+  // ~57s), and ffmpeg's own -reconnect reopens the tokenized edge URL it was
+  // redirected to — whose token can be dead — so every cut froze playback for
+  // seconds (audio + video together: input starvation). proxyVodStream resumes
+  // via the portal URL (fresh token) with a byte-exact splice in well under a
+  // second, so ffmpeg never even sees the drop. -reconnect stays as backstop.
+  const inputUrl = /\/(movie|series)\/[^?]*\.\w+(\?|$)/i.test(target)
+    ? `http://127.0.0.1:${PORT}/api/proxy?url=${encodeURIComponent(target)}`
+    : target;
+
   const buildArgs = (hvc1Tag, forceSoft = false) => {
     const args = [];
     // Fast input seek (before -i) for resume / restart-at-offset.
@@ -1505,7 +1541,7 @@ app.get('/api/transcode', (req, res) => {
       // Regenerate presentation timestamps: sources with missing/irregular PTS
       // otherwise let the copied video and re-encoded AAC audio drift apart.
       '-fflags', '+genpts',
-      '-i', target
+      '-i', inputUrl
     );
     if (reEncode) {
       // Compose the software video filter (runs in system memory before the
@@ -1526,12 +1562,31 @@ app.get('/api/transcode', (req, res) => {
       args.push('-c:v', 'copy');
       if (hvc1Tag) args.push('-tag:v', 'hvc1');
     }
+    if (copyAudio) {
+      // Remux-first: the probed source audio is browser-decodable (aac/mp3/
+      // opus/flac), so copy it untouched. A bit-copied track has the source's
+      // exact timestamps — no encoder, no resampler, nothing that can drift.
+      // (The old always-re-encode path put every title through aresample,
+      // which is where "audio runs fast/slow" crept in on clean sources.)
+      args.push('-c:a', 'copy');
+    } else {
+      args.push(
+        '-c:a', 'aac', '-b:a', '256k', '-ac', '2',
+        // A/V sync: resample audio to track the copied video's clock (absorbs AAC
+        // encoder priming + drift), and zero-base timestamps so a keyframe -ss seek
+        // doesn't leave audio lagging video by the pre-roll offset.
+        //
+        // async=1000 (continuous correction, up to 1000 samples/sec), NOT async=1.
+        // async=1 is a SPECIAL CASE that only compensates the START of the stream:
+        // it pads leading silence to align audio to the copied video's first PTS.
+        // With -c:v copy preserving a big-GOP HEVC keyframe offset (~1s), that pad
+        // shifted ALL audio ~1s late for the whole title — a constant desync on
+        // exactly the transcoded (HEVC/premium) codecs. 1000 stretches/squeezes
+        // continuously to hold sync without the one-shot start pad.
+        '-af', 'aresample=async=1000'
+      );
+    }
     args.push(
-      '-c:a', 'aac', '-b:a', '256k', '-ac', '2',
-      // A/V sync: resample audio to track the copied video's clock (absorbs AAC
-      // encoder priming + drift), and zero-base timestamps so a keyframe -ss seek
-      // doesn't leave audio lagging video by the pre-roll offset.
-      '-af', 'aresample=async=1',
       '-avoid_negative_ts', 'make_zero',
       '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
       '-f', 'mp4',
@@ -1584,7 +1639,15 @@ app.get('/api/transcode', (req, res) => {
       if (!closed && !wroteData && !retriedTag && /Tag hvc1 incompatible/i.test(stderrTail)) {
         retriedTag = true;
         console.warn('[transcode] source is not HEVC — retrying without hvc1 tag');
-        startProc(false);
+        startProc(false, forceSoft);
+        return;
+      }
+      // Audio copy hit a container edge (rare — the safe-list all mux into
+      // mp4): retry once with the AAC re-encode before blaming the encoder.
+      if (!closed && !wroteData && copyAudio && code && code !== 0) {
+        copyAudio = false;
+        console.warn('[transcode] audio copy failed — retrying with AAC re-encode');
+        startProc(hvc1Tag, forceSoft);
         return;
       }
       // Hardware encoder was listed but wouldn't initialise (no matching GPU,
@@ -1603,45 +1666,88 @@ app.get('/api/transcode', (req, res) => {
     });
   };
 
-  startProc(mode === 'audio' && !deint);
+  // The probe (usually cache-warm — the client hits /api/probe at playback
+  // start, and seeks reuse the cache) decides two things before spawn: copy
+  // browser-safe audio instead of re-encoding it, and tag hvc1 only when the
+  // video really is HEVC. A cold probe is capped at 3s; on timeout we start
+  // anyway with the conservative defaults (AAC re-encode + hvc1 heuristics).
+  let copyAudio = false;
+  let begun = false;
+  const begin = (info) => {
+    if (begun || closed) return;
+    begun = true;
+    copyAudio = !!(info && SAFE_COPY_AUDIO.has(info.acodec));
+    if (copyAudio) console.log(`[transcode] audio '${info.acodec}' is browser-safe — copying (remux, no re-encode)`);
+    const hvc1 = (mode === 'audio' && !deint) && (info && info.vcodec ? info.vcodec === 'hevc' : true);
+    startProc(hvc1);
+  };
+  const probeTimer = setTimeout(() => begin(null), 3000);
+  probeMedia(target, (info) => { clearTimeout(probeTimer); begin(info); });
 });
 
-// Probe a stream's total duration with the bundled ffmpeg (no ffprobe needed):
-// `ffmpeg -i <url>` prints "Duration: HH:MM:SS.ss" to stderr then exits. Used by
-// the desktop transcode path to give the (otherwise piped/non-seekable) fMP4 a
-// real total duration so the seek bar works. Returns { duration } in seconds.
-app.get('/api/probe', (req, res) => {
-  const target = req.query.url;
-  if (!target || !/^https?:\/\//i.test(target)) {
-    return res.status(400).json({ error: 'missing or invalid url' });
-  }
+// Audio codecs Chromium/Electron decodes natively — safe to bit-copy into the
+// transcode's fMP4 instead of re-encoding. Everything else (eac3/ac3/dts/
+// truehd) muxes fine but the browser can't DECODE it, so those re-encode.
+const SAFE_COPY_AUDIO = new Set(['aac', 'mp3', 'opus', 'flac']);
+
+// Shared media probe: one short ffmpeg -i run extracting duration + codecs,
+// cached by URL so the transcode's codec decisions (audio copy vs re-encode,
+// hvc1 tag) don't re-hit the provider. The client calls /api/probe at playback
+// start anyway, so by the time a seek restarts the transcode the cache is warm.
+const _probeCache = new Map(); // url -> { at, duration, acodec, vcodec }
+const PROBE_TTL = 10 * 60 * 1000;
+
+function probeMedia(target, cb) {
+  const hit = _probeCache.get(target);
+  if (hit && Date.now() - hit.at < PROBE_TTL) return cb(hit);
+
   const ffmpeg = findFfmpeg();
   let stderr = '';
   let proc;
   try {
     proc = trackChild(spawn(ffmpeg, ['-user_agent', 'VLC/3.0.20', '-i', target], { windowsHide: true }));
   } catch (err) {
-    return res.json({ duration: 0 });
+    return cb(null);
   }
-  // ffmpeg writes header/metadata then errors (no output specified). We only need
-  // the first stderr chunks containing "Duration:"; kill once we have enough.
+  // ffmpeg writes header/metadata then errors (no output specified). We only
+  // need the stderr chunks with Duration + stream lines; kill once we have them.
   proc.stderr.on('data', (d) => {
     stderr += d;
-    if (/Duration:\s*\d+:\d+:\d+/.test(stderr) || stderr.length > 16000) {
+    if ((/Duration:\s*\d+:\d+:\d+/.test(stderr) && /Audio:/.test(stderr) && /Video:/.test(stderr)) || stderr.length > 16000) {
       try { proc.kill('SIGKILL'); } catch (e) {}
     }
   });
   let sent = false;
   const finish = () => {
     if (sent) return; sent = true;
-    const m = stderr.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
-    let duration = 0;
-    if (m) duration = (+m[1]) * 3600 + (+m[2]) * 60 + parseFloat(m[3]);
-    if (!res.headersSent) res.json({ duration });
+    const dm = stderr.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+    const am = stderr.match(/Stream #[^\n]*Audio:\s*([a-z0-9_]+)/i);
+    const vm = stderr.match(/Stream #[^\n]*Video:\s*([a-z0-9_]+)/i);
+    const info = {
+      at: Date.now(),
+      duration: dm ? (+dm[1]) * 3600 + (+dm[2]) * 60 + parseFloat(dm[3]) : 0,
+      acodec: am ? am[1].toLowerCase() : null,
+      vcodec: vm ? vm[1].toLowerCase() : null
+    };
+    // Only cache successful probes — a transient failure shouldn't pin nulls.
+    if (info.duration || info.acodec || info.vcodec) _probeCache.set(target, info);
+    if (_probeCache.size > 200) _probeCache.delete(_probeCache.keys().next().value);
+    cb(info);
   };
   proc.on('error', finish);
   proc.on('exit', finish);
-  req.on('close', () => { try { proc.kill('SIGKILL'); } catch (e) {} });
+  return proc;
+}
+
+app.get('/api/probe', (req, res) => {
+  const target = req.query.url;
+  if (!target || !/^https?:\/\//i.test(target)) {
+    return res.status(400).json({ error: 'missing or invalid url' });
+  }
+  const proc = probeMedia(target, (info) => {
+    if (!res.headersSent) res.json(info || { duration: 0 });
+  });
+  req.on('close', () => { if (proc) { try { proc.kill('SIGKILL'); } catch (e) {} } });
 });
 
 // ==========================================================================

@@ -1084,8 +1084,8 @@ function refreshSettingsTiles() {
     desktopEngineTile.style.display = isElectronApp ? 'flex' : 'none';
     if (isElectronApp && desktopEngineValEl) {
       const saved = localStorage.getItem('electronEngine') || 'ffmpeg';
-      const labels = { ffmpeg: 'FFmpeg Transcode', external: 'External Player', html5: 'HTML5 Player' };
-      desktopEngineValEl.textContent = labels[saved] || 'FFmpeg Transcode';
+      const labels = { ffmpeg: 'Auto (Direct + FFmpeg fallback)', external: 'External Player', html5: 'HTML5 Player' };
+      desktopEngineValEl.textContent = labels[saved] || 'Auto (Direct + FFmpeg fallback)';
     }
   }
 
@@ -4011,7 +4011,7 @@ function bindGlobalEvents() {
       title: 'Desktop Player',
       options: [
         { value: 'html5', label: 'HTML5 Player (Built-in)' },
-        { value: 'ffmpeg', label: 'FFmpeg Transcode' },
+        { value: 'ffmpeg', label: 'Auto (Direct + FFmpeg fallback)' },
         { value: 'external', label: 'External Player (default app)' }
       ],
       current: ['html5', 'external'].includes(localStorage.getItem('electronEngine'))
@@ -4019,7 +4019,7 @@ function bindGlobalEvents() {
       onSelect: (v) => {
         localStorage.setItem('electronEngine', v);
         refreshSettingsTiles();
-        const labels = { ffmpeg: 'FFmpeg Transcode', external: 'External Player', html5: 'HTML5 Player' };
+        const labels = { ffmpeg: 'Auto (Direct + FFmpeg fallback)', external: 'External Player', html5: 'HTML5 Player' };
         const activeLabel = labels[v] || 'HTML5 Player';
         showToast(`Desktop player set to ${activeLabel}`, 'success');
         navigation.setFocus('modal', document.getElementById('tile-desktop-engine'));

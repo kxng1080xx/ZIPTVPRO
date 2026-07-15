@@ -1147,6 +1147,18 @@ export class VideoPlayer {
       }
 
       if (desktopEngine === 'ffmpeg' && isVod && !this._castMode) {
+        // Codecs-build runtime (custom Electron with HEVC + AC3/E-AC3 in
+        // <video>): skip ffmpeg entirely — direct HTML5 playback of the
+        // proxied file. Full native seeking (byte ranges via proxyVodStream),
+        // zero re-encode, zero extra process. The transcode tiers remain the
+        // automatic fallback via _handleVodPlaybackFallback for the codecs no
+        // browser build decodes (DTS, TrueHD, ancient MPEG-2/VC-1).
+        if (this._premiumCodecsNative()) {
+          console.log('[player] runtime decodes HEVC+E-AC3 natively — direct HTML5 playback, no transcode');
+          this._steerByProbe(url); // preempt silent-audio titles (DTS) via the codec probe
+          this._startPlayback(url, isVod);
+          return;
+        }
         this._triedTranscodeAudio = true;
         this._playViaTranscode('audio');
         return;
@@ -1767,14 +1779,20 @@ export class VideoPlayer {
       this.video.src = url;
       this.video.load();
 
-      // Set a 7.5-second timeout to detect silent stalls/blocks (e.g. mixed content blocks)
+      // Silent-stall watchdog (mixed-content blocks, dead URLs). 20s, NOT less:
+      // provider VOD mp4s keep the moov index at the file TAIL, so Chromium
+      // needs several ranged round-trips through the proxy (each one redoing
+      // the provider's redirect handshake) before metadata exists — measured
+      // 8.5s to loadedmetadata on a healthy 707MB episode. The old 7.5s timer
+      // fired one second before success and tore the element down into the
+      // fallback ladder: black screen on a perfectly playable file.
       clearTimeout(this._vodLoadTimeout);
       this._vodLoadTimeout = setTimeout(() => {
         if (this.video.readyState < 1 && this.hasStream && !this.hls && !this.mpegtsPlayer) {
           console.warn('Direct VOD playback timed out (readyState < 1) — triggering fallback.');
           this._handleVodPlaybackFallback({ code: 4, message: 'Playback load timeout' });
         }
-      }, 7500);
+      }, 20000);
 
       this.video.play()
         .then(() => {
@@ -1815,7 +1833,17 @@ export class VideoPlayer {
     // stall can't park the spinner. The terminal error branch clears it below.
     this._armVodWatchdog();
 
-    if (!this._triedMpegtsOriginal) {
+    // Transcode tiers escalate WITHIN the transcode ladder. The ffmpeg engine
+    // enters at transcode-audio directly (skipping the browser tiers), so when
+    // the hvc1 copy fails (GPU/build can't decode HEVC) the old walk fell back
+    // INTO the five untried browser tiers — mpegts/hls/.ts/.m3u8/extensionless,
+    // each a doomed provider round-trip with a 12s watchdog — before reaching
+    // mode=full. That was the 15-40s start on premium titles: go straight there.
+    if (this._isElectron() && this._triedTranscodeAudio && !this._triedTranscodeFull) {
+      this._triedTranscodeFull = true;
+      console.warn('[player] transcode audio-copy tier failed — escalating to full transcode');
+      this._playViaTranscode('full');
+    } else if (!this._triedMpegtsOriginal) {
       this._triedMpegtsOriginal = true;
       console.warn(`Falling back to mpegts.js with original URL: ${url}`);
       this.destroyHls();
@@ -1931,6 +1959,48 @@ export class VideoPlayer {
     const epg = this.epgTitleEl ? this.epgTitleEl.textContent : '';
     this.loadStream(this._streamUrl, name, this._currentLogo || '', epg, true, resume || 0);
     return true;
+  }
+
+  // True when the running Electron is the codecs build: <video> decodes both
+  // HEVC and E-AC3 natively, so premium VOD needs no transcode at all.
+  // Cached — canPlayType is cheap but this runs on every VOD start.
+  _premiumCodecsNative() {
+    if (this._premiumCodecsCached !== undefined) return this._premiumCodecsCached;
+    try {
+      const v = document.createElement('video');
+      this._premiumCodecsCached =
+        !!v.canPlayType('video/mp4; codecs="hvc1.1.6.L120.90"') &&
+        !!v.canPlayType('audio/mp4; codecs="ec-3"');
+    } catch (e) {
+      this._premiumCodecsCached = false;
+    }
+    return this._premiumCodecsCached;
+  }
+
+  // Direct-play guard: a title whose AUDIO codec no browser decodes (DTS,
+  // TrueHD) doesn't error the <video> — it can play silently. The server's
+  // codec probe (cached, also used for the seek-bar duration) tells us the
+  // real codecs; if the audio is undecodable, preemptively switch to the
+  // audio-transcode tier instead of leaving the user in a silent movie.
+  _steerByProbe(url) {
+    const target = this._transcodeTarget(url);
+    const startedFor = this._streamUrl;
+    fetch(`/api/probe?url=${encodeURIComponent(target)}`)
+      .then(r => r.json())
+      .then(info => {
+        if (this._streamUrl !== startedFor || !this._streamIsVod) return; // stale
+        if (!info || !info.acodec) return;
+        const browserAudio = ['aac', 'mp3', 'opus', 'flac', 'vorbis'];
+        const premiumAudio = ['eac3', 'ac3'];
+        const ok = browserAudio.includes(info.acodec) ||
+                   (this._premiumCodecsNative() && premiumAudio.includes(info.acodec));
+        if (!ok && !this._transcodeActive && !this._triedTranscodeAudio) {
+          console.warn(`[player] probed audio '${info.acodec}' not decodable in this runtime — switching to transcode`);
+          this._triedTranscodeAudio = true;
+          this._playViaTranscode('audio');
+        }
+      })
+      .catch(() => {});
   }
 
   // Resolve the real upstream URL ffmpeg should fetch (unwrap our /api/proxy, make
