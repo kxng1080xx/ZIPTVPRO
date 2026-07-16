@@ -116,6 +116,7 @@
         <div class="sec-h" id="d-pl-h">Playlists</div>
         <div id="d-pls"></div>
         <div class="addform">
+          <select id="f-preset" style="display:none;"></select>
           <input type="text" id="f-m3u" placeholder="Paste M3U URL — auto-fills the fields below" />
           <input type="text" id="f-name" placeholder="Playlist name (optional)" />
           <input type="text" id="f-server" placeholder="Server URL (http://host:port)" />
@@ -158,6 +159,21 @@
       </div>
       <div class="sec">
         <button class="btn" id="cfg-save" style="justify-content:center; width:100%;">Save settings</button>
+      </div>
+      <div class="sec" style="border-top:1px solid rgba(255,255,255,0.08); padding-top:16px;">
+        <div class="sec-h" id="cfg-pl-h">Saved playlists</div>
+        <div class="topbar-note" style="margin-bottom:10px;">Save credentials once — then pick them from the dropdown when setting up a new device.</div>
+        <div id="cfg-pls"></div>
+        <div class="addform">
+          <input type="text" id="s-m3u" placeholder="Paste M3U URL — auto-fills the fields below" />
+          <input type="text" id="s-name" placeholder="Preset name (optional)" />
+          <input type="text" id="s-server" placeholder="Server URL (http://host:port)" />
+          <div class="split">
+            <input type="text" id="s-user" placeholder="Username" />
+            <input type="text" id="s-pass" placeholder="Password" />
+          </div>
+          <button class="btn" id="s-save" style="justify-content:center;">Save playlist preset</button>
+        </div>
       </div>
     </div>
   </div>
@@ -292,6 +308,7 @@
     function showDash() {
       $('login-view').classList.add('hidden'); $('dash-view').classList.remove('hidden');
       load();
+      loadConfig();
       clearInterval(refreshTimer);
       refreshTimer = setInterval(() => load(true), AUTO_REFRESH_MS);
       setInterval(tickNote, 5000);
@@ -599,7 +616,7 @@
       $('drawer').classList.remove('show');
     }
     $('d-close').addEventListener('click', closeDrawer);
-    $('scrim').addEventListener('click', () => { closeDrawer(); closeCfg(); });
+    // Modals close via their X (or Escape) only — clicking the scrim is inert.
 
     function fillDrawer(d) {
       if (!d) { closeDrawer(); return; }
@@ -685,6 +702,84 @@
       const p = parseM3u($('f-m3u').value);
       if (p) { $('f-server').value = p.host; $('f-user').value = p.user; $('f-pass').value = p.pass; }
     });
+
+    // ---------------------------- saved playlist presets ----------------------------
+    // Stored server-side on app_config.saved_playlists so they follow the
+    // admin across browsers. Picking one fills the add-playlist form.
+    let savedPlaylists = [];
+
+    async function loadConfig() {
+      try {
+        const { config } = await api('config');
+        savedPlaylists = Array.isArray(config.saved_playlists) ? config.saved_playlists : [];
+        fillPresetSelect();
+      } catch (e) { /* presets are a convenience — don't block the dashboard */ }
+    }
+
+    function fillPresetSelect() {
+      const sel = $('f-preset');
+      sel.innerHTML = '<option value="">Use a saved playlist…</option>' +
+        savedPlaylists.map((p, i) => `<option value="${i}">${esc(p.name)} — ${esc(p.username)}</option>`).join('');
+      sel.style.display = savedPlaylists.length ? '' : 'none';
+    }
+
+    $('f-preset').addEventListener('change', () => {
+      const p = savedPlaylists[parseInt($('f-preset').value, 10)];
+      if (!p) return;
+      $('f-m3u').value = '';
+      $('f-name').value = p.name || '';
+      $('f-server').value = p.server_url || '';
+      $('f-user').value = p.username || '';
+      $('f-pass').value = p.password || '';
+    });
+
+    async function saveSavedPlaylists() {
+      const { config } = await api('config', { method: 'POST', body: { saved_playlists: savedPlaylists } });
+      if (config && Array.isArray(config.saved_playlists)) savedPlaylists = config.saved_playlists;
+      fillPresetSelect();
+      renderCfgPls();
+    }
+
+    function renderCfgPls() {
+      $('cfg-pl-h').textContent = `Saved playlists (${savedPlaylists.length})`;
+      $('cfg-pls').innerHTML = savedPlaylists.map((p, i) => `
+        <div class="pl-row">
+          <div class="pi">
+            <div class="pn">${esc(p.name)}</div>
+            <div class="pm">${esc(p.username)}${p.server_url ? ' · ' + esc(hostName(p.server_url)) : ''}</div>
+          </div>
+          <button class="btn-icon btn-danger" data-rmsaved="${i}" title="Remove preset"><i data-lucide="trash-2"></i></button>
+        </div>`).join('') || '<div class="topbar-note" style="padding:4px 0 2px;">No saved playlists yet — add one below.</div>';
+      icons();
+      $('cfg-pls').querySelectorAll('[data-rmsaved]').forEach(b => b.addEventListener('click', () => {
+        armConfirm(b, 'Sure?', async () => {
+          const removed = savedPlaylists.splice(parseInt(b.getAttribute('data-rmsaved'), 10), 1);
+          try { await saveSavedPlaylists(); toast('Preset removed'); }
+          catch (e) { savedPlaylists.push(...removed); renderCfgPls(); toast(e.message, true); }
+        });
+      }));
+    }
+
+    $('s-m3u').addEventListener('input', () => {
+      const p = parseM3u($('s-m3u').value);
+      if (p) { $('s-server').value = p.host; $('s-user').value = p.user; $('s-pass').value = p.pass; }
+    });
+
+    $('s-save').addEventListener('click', async () => {
+      const server = $('s-server').value.trim(), user = $('s-user').value.trim(), pass = $('s-pass').value.trim();
+      if (!server || !user || !pass) return toast('Need server, username & password (or paste an M3U URL).', true);
+      const btn = $('s-save');
+      btn.disabled = true;
+      savedPlaylists.push({ name: $('s-name').value.trim() || hostName(server), type: 'xtream', server_url: server, username: user, password: pass });
+      try {
+        await saveSavedPlaylists();
+        ['s-m3u', 's-name', 's-server', 's-user', 's-pass'].forEach(id => $(id).value = '');
+        toast('Playlist preset saved');
+      } catch (e) {
+        savedPlaylists.pop(); renderCfgPls();
+        toast(e.message, true);
+      } finally { btn.disabled = false; }
+    });
     // Add-playlist flow: credentials → pick what to sync → create. The
     // visibility drawer opens BEFORE the playlist exists so the device never
     // mirrors the full library only to have categories stripped afterwards.
@@ -692,6 +787,7 @@
       if (!pendingAdd) return;
       await api('add-playlist', { method: 'POST', body: { ...pendingAdd, ...extra } });
       ['f-m3u', 'f-name', 'f-server', 'f-user', 'f-pass'].forEach(id => $(id).value = '');
+      $('f-preset').value = '';
       pendingAdd = null;
       toast('Playlist added'); load();
     }
@@ -964,6 +1060,9 @@
       try { ({ config: cfg } = await api('config')); } catch (e) { return toast(e.message, true); }
       $('cfg-notice').value = cfg.expiry_notice || '';
       $('cfg-contact').value = cfg.contact_info || '';
+      savedPlaylists = Array.isArray(cfg.saved_playlists) ? cfg.saved_playlists : [];
+      fillPresetSelect();
+      renderCfgPls();
       closeDrawer();
       $('scrim').classList.add('show');
       $('cfg-drawer').classList.add('show');

@@ -12,7 +12,7 @@
  *   POST /api/admin?action=remove-playlist  { id }
  *   POST /api/admin?action=delete-device    { device_id }
  *   GET  /api/admin?action=config           -> { config }
- *   POST /api/admin?action=config           { expiry_notice, contact_info }
+ *   POST /api/admin?action=config           { expiry_notice?, contact_info?, saved_playlists? }
  */
 import { sb, supabaseConfigured } from './_supabase.js';
 import { issueToken, verifyRequest, authConfigured } from './_auth.js';
@@ -162,6 +162,19 @@ export default async function handler(req, res) {
       const patch = { updated_at: new Date().toISOString() };
       if ('expiry_notice' in b) patch.expiry_notice = b.expiry_notice;
       if ('contact_info' in b) patch.contact_info = b.contact_info;
+      // Reusable playlist credentials for device setup. Admin-only: the
+      // device endpoint never selects this column, so it can't leak to apps.
+      if ('saved_playlists' in b) {
+        patch.saved_playlists = (Array.isArray(b.saved_playlists) ? b.saved_playlists : [])
+          .filter(p => p && p.server_url && p.username && p.password)
+          .map(p => ({
+            name: String(p.name || 'Playlist'),
+            type: 'xtream',
+            server_url: normalizeHost(p.server_url),
+            username: String(p.username),
+            password: String(p.password)
+          }));
+      }
       const updated = await sb('/app_config?id=eq.1', {
         method: 'PATCH', body: patch, prefer: 'return=representation'
       });
