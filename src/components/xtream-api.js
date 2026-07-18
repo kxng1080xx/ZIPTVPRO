@@ -750,6 +750,85 @@ export function removeSeriesWatchProgress(seriesKey) {
   } catch (e) {}
 }
 
+// ---------------------------------------------------------------------------
+// Companion history merge — folds the paired device's cloud history rows into
+// THIS device's local Continue Watching / Completed stores, newest-wins per
+// item. Called by main.js after fetchCompanionHistory. Writes localStorage
+// directly (no saveWatchProgress) so remote timestamps are preserved and no
+// backup echo is triggered. Stream/episode ids match across the two devices
+// because companions use the same provider playlists. Returns how many items
+// changed so the caller knows whether to re-render.
+// ---------------------------------------------------------------------------
+export function mergeCompanionHistory(entries) {
+  if (!Array.isArray(entries) || !entries.length) return 0;
+
+  const list = getContinueWatching();
+  const localById = new Map(list.map((i) => [String(i.id), i]));
+  const doneIds = getCompletedIds();
+  const doneSet = new Set(doneIds);
+  let cwChanged = false;
+  let doneChanged = false;
+  let changed = 0;
+
+  for (const e of entries) {
+    const id = String(e.item_id || '');
+    if (!id || (e.type !== 'movie' && e.type !== 'series')) continue;
+
+    const remoteAt = Date.parse(e.last_watched) || 0;
+    const local = localById.get(id);
+    // Local activity time for the id: its CW timestamp. A title completed
+    // here is authoritative (Infinity) — completion time isn't stored, so a
+    // stale companion in-progress row must never un-complete it on re-merge.
+    const localAt = local ? (local.lastWatched || 0) : (doneSet.has(id) ? Infinity : 0);
+    if (remoteAt <= localAt) continue;
+
+    if (e.completed) {
+      // Companion finished it more recently than anything here: drop the
+      // in-progress entry and dim the tile as "Watch again".
+      if (local) { list.splice(list.indexOf(local), 1); localById.delete(id); cwChanged = true; }
+      if (!doneSet.has(id)) { doneSet.add(id); doneIds.unshift(id); doneChanged = true; }
+      changed++;
+      continue;
+    }
+
+    const item = {
+      id,
+      type: e.type,
+      name: e.name || '',
+      logo: e.logo || '',
+      backdrop: e.backdrop || '',
+      position: Number(e.position) || 0,
+      duration: Number(e.duration) || 0,
+      lastWatched: remoteAt
+    };
+    if (e.series_id) item.seriesId = e.series_id;
+    if (e.series_name) item.seriesName = e.series_name;
+    if (e.season != null) item.season = e.season;
+    if (e.episode != null) item.episode = e.episode;
+
+    if (local) list.splice(list.indexOf(local), 1);
+    list.unshift(item);
+    localById.set(id, item);
+    cwChanged = true;
+    // Companion re-watched a title this device had finished — undim it here too.
+    if (doneSet.has(id)) {
+      doneSet.delete(id);
+      doneIds.splice(doneIds.indexOf(id), 1);
+      doneChanged = true;
+    }
+    changed++;
+  }
+
+  if (cwChanged) {
+    list.sort((a, b) => (b.lastWatched || 0) - (a.lastWatched || 0));
+    try { localStorage.setItem(cwKey(), JSON.stringify(list.slice(0, 30))); } catch (e) {}
+  }
+  if (doneChanged) {
+    try { localStorage.setItem(doneKey(), JSON.stringify(doneIds.slice(0, 500))); } catch (e) {}
+  }
+  return changed;
+}
+
 export async function updateSettings(settings) {
   if (isServerMode) {
     const response = await fetch('/api/settings', {

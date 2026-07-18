@@ -810,6 +810,16 @@
     </div>
   </div>
 
+  <!-- ==================== COMPANION DEVICE MODAL ====================
+       Settings → Companion Device. Reuses the Watch Together (wt-*) styles.
+       The body is rendered by renderCompanionModal() in main.js. -->
+  <div id="companion-modal" class="modal-overlay hidden">
+    <div class="watch-modal-content">
+      <button class="modal-close-btn" id="companion-modal-close"><i data-lucide="x"></i></button>
+      <div id="companion-modal-body"></div>
+    </div>
+  </div>
+
   <!-- ==================== SETTINGS MODAL ==================== -->
   <div id="settings-modal" class="modal-overlay hidden">
     <div class="settings-card">
@@ -840,6 +850,11 @@
               <div class="settings-tile-icon"><i data-lucide="refresh-cw"></i></div>
               <div class="settings-tile-title">Sync &amp; Cache</div>
               <div class="settings-tile-sub">Refresh all lists</div>
+            </button>
+            <button class="settings-tile" id="tile-companion" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="smartphone"></i></div>
+              <div class="settings-tile-title">Companion Device</div>
+              <div class="settings-tile-sub" id="tile-companion-val">Continue watching across PC &amp; mobile</div>
             </button>
             <button class="settings-tile settings-tile-danger" id="tile-logout" tabindex="0">
               <div class="settings-tile-icon"><i data-lucide="log-out"></i></div>

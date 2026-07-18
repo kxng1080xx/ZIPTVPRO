@@ -5,9 +5,16 @@
  *
  *   POST /api/history  { action, device_id, ... }
  *
- *     record { device_id, playlist_id, entries: [ {...} ] }  -> { ok, count }
- *     list   { device_id, playlist_id?, type?, limit? }      -> { entries: [...] }
- *     delete { device_id, playlist_id?, item_id }            -> { ok }
+ *     record         { device_id, playlist_id, entries: [ {...} ] } -> { ok, count }
+ *     list           { device_id, playlist_id?, type?, limit? }     -> { entries: [...] }
+ *     delete         { device_id, playlist_id?, item_id }           -> { ok }
+ *     companion-list { device_id, limit? }  -> { companion, entries: [...] }
+ *
+ * companion-list is the one deliberate exception to "never exposes another
+ * device's history": it returns the history of the device's PAIRED companion
+ * (devices.companion_device, set via api/device.js `pair`), and only when the
+ * link is mutual. Pairing required knowing both device codes, so the companion
+ * has already consented to sharing.
  *
  * This is a BACKUP of the client's local Continue Watching store (localStorage,
  * see xtream-api.js). localStorage stays the source of truth; these rows exist
@@ -42,6 +49,7 @@ export default async function handler(req, res) {
       case 'record': return await record(req, res, b);
       case 'list':   return await list(req, res, b);
       case 'delete': return await remove(req, res, b);
+      case 'companion-list': return await companionList(req, res, b);
       default:       return res.status(400).json({ error: 'Unknown action' });
     }
   } catch (err) {
@@ -107,6 +115,31 @@ async function remove(req, res, b) {
   }
   await sb(query, { method: 'DELETE', prefer: 'return=minimal' });
   return res.status(200).json({ ok: true });
+}
+
+// Return the paired companion's history so the caller can merge it into its
+// local Continue Watching. Requires a MUTUAL devices.companion_device link.
+// playlist_id is not filterable here — playlist ids are local to each device —
+// so the caller matches on item ids (same provider ⇒ same stream ids).
+async function companionList(req, res, b) {
+  const device = deviceId(b.device_id);
+  if (!device) return res.status(400).json({ error: 'Valid device_id required' });
+
+  const rows = await sb(`/devices?device_id=eq.${encodeURIComponent(device)}&select=companion_device`);
+  const comp = rows && rows[0] && rows[0].companion_device;
+  if (!comp) return res.status(200).json({ companion: null, entries: [] });
+
+  const cRows = await sb(`/devices?device_id=eq.${encodeURIComponent(comp)}&select=device_id,companion_device`);
+  const c = cRows && cRows[0];
+  if (!c || c.companion_device !== device) return res.status(200).json({ companion: null, entries: [] });
+
+  const limit = clampInt(b.limit, DEFAULT_LIST_LIMIT, 1, MAX_LIST_LIMIT);
+  const entries = await sb(
+    `/watch_history?device_id=eq.${encodeURIComponent(comp)}` +
+    `&order=last_watched.desc&limit=${limit}` +
+    '&select=item_id,playlist_id,type,name,logo,backdrop,series_id,series_name,season,episode,position,duration,completed,last_watched'
+  );
+  return res.status(200).json({ companion: comp, entries: Array.isArray(entries) ? entries : [] });
 }
 
 /* ------------------------------------------------------------------ helpers */

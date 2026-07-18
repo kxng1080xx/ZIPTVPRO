@@ -4,7 +4,16 @@
  * single device_id and never exposes other devices' data.
  *
  *   POST /api/device   { device_id, platform, app_version }
- *     -> { status, label, expires_at, expired, playlists: [...], notice }
+ *     -> { status, label, expires_at, expired, playlists: [...], notice, companion }
+ *
+ *   POST /api/device   { action: 'pair', device_id, companion_code }
+ *     -> { ok, companion: { device_id, platform, label } }
+ *   POST /api/device   { action: 'unpair', device_id }
+ *     -> { ok }
+ *
+ * Companion pairing links exactly two devices of DIFFERENT platforms (pc ↔ apk)
+ * so Continue Watching can hand off between a computer and a phone. Knowing
+ * both device codes is the trust boundary, same as activation.
  *
  * `playlists` includes credentials (the device knowing its own code is the
  * trust boundary — same model as the old pairing flow). When the device's
@@ -30,6 +39,9 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Valid device_id required' });
     }
 
+    if (b.action === 'pair') return await pair(res, deviceId, b.companion_code);
+    if (b.action === 'unpair') return await unpair(res, deviceId);
+
     // Heartbeat upsert: only touch heartbeat fields. merge-duplicates updates
     // just the supplied columns, so admin fields (label/expires_at/status) and
     // table defaults (status 'pending' on first insert) are preserved.
@@ -47,12 +59,32 @@ export default async function handler(req, res) {
     // Pull the device + its playlists.
     const rows = await sb(
       `/devices?device_id=eq.${encodeURIComponent(deviceId)}` +
-      `&select=device_id,label,expires_at,status,archived,playlists(id,name,type,server_url,username,password,hidden_tabs,hidden_categories)`
+      `&select=device_id,label,expires_at,status,archived,companion_device,playlists(id,name,type,server_url,username,password,hidden_tabs,hidden_categories)`
     );
     const dev = rows && rows[0];
     if (!dev) return res.status(200).json({ status: 'pending', playlists: [] });
 
     const expired = !!dev.expires_at && new Date(dev.expires_at) < new Date();
+
+    // Companion link (must be mutual; a one-sided link — e.g. the other device
+    // was deleted or re-paired — is healed by clearing this side).
+    let companion = null;
+    if (dev.companion_device) {
+      try {
+        const cRows = await sb(
+          `/devices?device_id=eq.${encodeURIComponent(dev.companion_device)}` +
+          `&select=device_id,label,platform,companion_device`
+        );
+        const c = cRows && cRows[0];
+        if (c && c.companion_device === dev.device_id) {
+          companion = { device_id: c.device_id, platform: c.platform || 'unknown', label: c.label || null };
+        } else {
+          await sb(`/devices?device_id=eq.${encodeURIComponent(dev.device_id)}`, {
+            method: 'PATCH', body: { companion_device: null }, prefer: 'return=minimal'
+          });
+        }
+      } catch { /* companion info is best-effort */ }
+    }
 
     let notice = '';
     if (expired) {
@@ -69,6 +101,7 @@ export default async function handler(req, res) {
       expires_at: dev.expires_at || null,
       expired,
       notice,
+      companion,
       playlists: expired ? [] : (dev.playlists || []).map((p) => ({
         id: p.id,
         playlistName: p.name,
@@ -83,6 +116,83 @@ export default async function handler(req, res) {
   } catch (err) {
     return res.status(err.status || 500).json({ error: err.message || 'Server error' });
   }
+}
+
+/* --------------------------- companion pairing --------------------------- */
+
+// Link two devices as companions. Rules: both must exist (have checked in),
+// they must be different devices, and their platforms must be pc + apk in
+// either order — never pc↔pc or apk↔apk. Re-pairing replaces the old link on
+// both sides, including a third device that pointed at either of them.
+async function pair(res, deviceId, companionCode) {
+  const compId = String(companionCode || '').trim().toUpperCase();
+  if (!compId || !/^[A-Z0-9]{4,12}$/.test(compId)) {
+    return res.status(400).json({ error: 'Enter the other device’s code.' });
+  }
+  if (compId === deviceId) {
+    return res.status(400).json({ error: 'That is this device’s own code — enter the OTHER device’s code.' });
+  }
+
+  const rows = await sb(
+    `/devices?device_id=in.(${encodeURIComponent(deviceId)},${encodeURIComponent(compId)})` +
+    `&select=device_id,label,platform,companion_device`
+  );
+  const me = (rows || []).find((d) => d.device_id === deviceId);
+  const other = (rows || []).find((d) => d.device_id === compId);
+  if (!me) return res.status(400).json({ error: 'This device has not checked in yet — try again in a moment.' });
+  if (!other) {
+    return res.status(404).json({ error: `No device with code ${compId} found. Open ZIPTV on the other device first.` });
+  }
+
+  const myPlat = normalizePlatform(me.platform);
+  const otherPlat = normalizePlatform(other.platform);
+  if (myPlat === 'unknown' || otherPlat === 'unknown') {
+    return res.status(400).json({ error: 'Both devices must run the ZIPTV app (PC or mobile) to pair.' });
+  }
+  if (myPlat === otherPlat) {
+    const kind = myPlat === 'pc' ? 'computers' : 'mobile devices';
+    return res.status(400).json({ error: `Companion sync links a computer with a mobile device — two ${kind} can’t be paired.` });
+  }
+
+  // Detach any third devices that currently point at either side.
+  for (const old of [me.companion_device, other.companion_device]) {
+    if (old && old !== deviceId && old !== compId) {
+      try {
+        await sb(`/devices?device_id=eq.${encodeURIComponent(old)}`, {
+          method: 'PATCH', body: { companion_device: null }, prefer: 'return=minimal'
+        });
+      } catch { /* best-effort */ }
+    }
+  }
+
+  await sb(`/devices?device_id=eq.${encodeURIComponent(deviceId)}`, {
+    method: 'PATCH', body: { companion_device: compId }, prefer: 'return=minimal'
+  });
+  await sb(`/devices?device_id=eq.${encodeURIComponent(compId)}`, {
+    method: 'PATCH', body: { companion_device: deviceId }, prefer: 'return=minimal'
+  });
+
+  return res.status(200).json({
+    ok: true,
+    companion: { device_id: other.device_id, platform: otherPlat, label: other.label || null }
+  });
+}
+
+// Remove the link from both sides.
+async function unpair(res, deviceId) {
+  const rows = await sb(`/devices?device_id=eq.${encodeURIComponent(deviceId)}&select=companion_device`);
+  const comp = rows && rows[0] && rows[0].companion_device;
+  await sb(`/devices?device_id=eq.${encodeURIComponent(deviceId)}`, {
+    method: 'PATCH', body: { companion_device: null }, prefer: 'return=minimal'
+  });
+  if (comp) {
+    try {
+      await sb(`/devices?device_id=eq.${encodeURIComponent(comp)}&companion_device=eq.${encodeURIComponent(deviceId)}`, {
+        method: 'PATCH', body: { companion_device: null }, prefer: 'return=minimal'
+      });
+    } catch { /* best-effort */ }
+  }
+  return res.status(200).json({ ok: true });
 }
 
 function normalizePlatform(p) {

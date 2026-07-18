@@ -137,6 +137,58 @@ export function deleteWatchHistory(deviceCode, playlistId, itemId) {
   } catch (e) {}
 }
 
+// ---------------------------------------------------------------------------
+// Companion device pairing (PC ↔ mobile Continue Watching hand-off).
+// The server enforces the cross-platform rule and mutual linking; these are
+// thin wrappers that throw a readable Error on failure so Settings can toast it.
+// ---------------------------------------------------------------------------
+
+/** Link this device with another device's code. Resolves to { device_id, platform, label }. */
+export async function pairCompanion(deviceCode, companionCode) {
+  const res = await fetch(`${CLOUD_BASE}/api/device`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'pair', device_id: deviceCode, companion_code: companionCode }),
+    signal: AbortSignal.timeout(12000)
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error || `Pairing failed (${res.status})`);
+  return j.companion;
+}
+
+/** Remove the companion link (both sides). */
+export async function unpairCompanion(deviceCode) {
+  const res = await fetch(`${CLOUD_BASE}/api/device`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'unpair', device_id: deviceCode }),
+    signal: AbortSignal.timeout(12000)
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error || `Unpair failed (${res.status})`);
+}
+
+/**
+ * Pull the paired companion's history (newest first). Returns { companion, entries };
+ * { companion: null, entries: [] } when unpaired or on any failure.
+ */
+export async function fetchCompanionHistory(deviceCode, limit) {
+  try {
+    if (!deviceCode) return { companion: null, entries: [] };
+    const res = await fetch(`${CLOUD_BASE}/api/history`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'companion-list', device_id: deviceCode, limit }),
+      signal: AbortSignal.timeout(12000)
+    });
+    if (!res.ok) return { companion: null, entries: [] };
+    const j = await res.json();
+    return { companion: j.companion || null, entries: Array.isArray(j.entries) ? j.entries : [] };
+  } catch (e) {
+    return { companion: null, entries: [] };
+  }
+}
+
 /**
  * Pull this device's backed-up history (newest first) for the future feature.
  * Returns [] on any failure. Optional filters: { playlistId, type, limit }.

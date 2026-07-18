@@ -27,7 +27,8 @@ import {
   getLastSyncAge,
   markSyncStale,
   hasCachedData,
-  updatePlaylistByServerAndUser
+  updatePlaylistByServerAndUser,
+  mergeCompanionHistory
 } from './components/xtream-api.js';
 import { Capacitor } from '@capacitor/core';
 import { VideoPlayer } from './components/player.js';
@@ -38,7 +39,7 @@ import { checkForUpdate, downloadApp, startPeriodicUpdateCheck, initElectronUpda
 import { openSearchKeyboard, openSortDropdown } from './components/tv-search.js';
 import { openGlobalSearch, setGlobalSearchQuery } from './components/global-search.js';
 import { isNativeAvailable, nativeIsTv } from './components/native-player.js';
-import { getDeviceCode, syncDevice, readCachedState, clearCachedState, isStateExpired } from './components/cloud-sync.js';
+import { getDeviceCode, syncDevice, detectPlatform, readCachedState, clearCachedState, isStateExpired, pairCompanion, unpairCompanion, fetchCompanionHistory } from './components/cloud-sync.js';
 import { initWebTabs, openWebTab, openManageTabs, toggleAdblock, isAdblockOn, applyHiddenTabs } from './components/web-tabs.js';
 import { renderHome } from './components/home.js';
 import { getStoredUiMode, setStoredUiMode, showDeviceChooser, initTvNative, enterTvNative, exitTvNative, isTvNativeActive } from './components/tv-native.js';
@@ -4105,6 +4106,11 @@ function bindGlobalEvents() {
     });
   });
 
+  // --- Tile: Companion Device (cross-device Continue Watching) ---
+  document.getElementById('tile-companion')?.addEventListener('click', () => openCompanionModal());
+  document.getElementById('companion-modal-close')?.addEventListener('click', closeCompanionModal);
+  updateCompanion(companionInfo);   // show the cached link state on boot
+
   // --- Tile: Sync & Cache ---
   document.getElementById('tile-sync')?.addEventListener('click', async () => {
     settingsModal.classList.add('hidden');
@@ -5251,6 +5257,9 @@ async function runCloudSync() {
       return;
     }
     await applyCloudState(state);
+    // Piggyback the companion Continue Watching pull on the heartbeat
+    // (internally throttled — it does not hit the network every 15s).
+    await syncCompanionHistory();
   } catch (err) {
     console.warn('Cloud sync error:', err);
   } finally {
@@ -5268,6 +5277,10 @@ async function applyCloudState(state) {
   // Remember the admin-set expiry for the in-app badge (or clear it).
   if (state.expires_at) localStorage.setItem(DEVICE_EXPIRY_KEY, state.expires_at);
   else localStorage.removeItem(DEVICE_EXPIRY_KEY);
+
+  // The heartbeat is the source of truth for the companion link (it also heals
+  // one-sided links server-side, e.g. after the other device re-pairs).
+  updateCompanion(state.companion);
 
   // A brand-new ('pending') device that the admin hasn't provisioned yet keeps
   // whatever the user may already have locally — we only mirror (incl. removals)
@@ -5301,6 +5314,144 @@ async function applyCloudState(state) {
       await loadTabCategoriesAndContent();
     }
   }
+}
+
+// ==========================================================================
+// COMPANION DEVICE (8.3) — cross-device Continue Watching hand-off.
+// Settings → Companion Device links this device with ONE other device of the
+// opposite platform (PC ↔ mobile, enforced server-side). Each device keeps
+// backing up its own history as before; a throttled pull fetches the
+// companion's rows and merges them into the local store, newest-wins per
+// title — start a movie on the PC, pick it up on the phone, and back.
+// ==========================================================================
+const COMPANION_KEY = 'ziptv_companion';
+const COMPANION_PULL_MS = 60 * 1000;   // history pull throttle (heartbeat is 15s)
+let companionInfo = null;
+try { companionInfo = JSON.parse(localStorage.getItem(COMPANION_KEY) || 'null'); } catch (e) {}
+let lastCompanionPull = 0;
+
+function companionPlatformLabel(p) {
+  return p === 'pc' ? 'PC' : p === 'apk' ? 'Mobile' : 'Device';
+}
+
+// Keep state + the Settings tile in step. Cached in localStorage so the tile
+// is right immediately on boot, before the first heartbeat answers.
+//
+// Pairing happens on ONE device but must show on BOTH: the other side learns
+// via the heartbeat, so when the link changes here without local action
+// (opts.quiet is only set by this device's own Link/Unlink buttons) announce
+// it — toast, flip the Companion modal if it's open, and pull history now.
+function updateCompanion(info, opts = {}) {
+  const prev = companionInfo ? companionInfo.device_id : null;
+  companionInfo = info || null;
+  const next = companionInfo ? companionInfo.device_id : null;
+  try {
+    if (companionInfo) localStorage.setItem(COMPANION_KEY, JSON.stringify(companionInfo));
+    else localStorage.removeItem(COMPANION_KEY);
+  } catch (e) {}
+  const sub = document.getElementById('tile-companion-val');
+  if (sub) {
+    sub.textContent = companionInfo
+      ? `Linked with ${companionInfo.device_id} · ${companionPlatformLabel(companionInfo.platform)}`
+      : 'Continue watching across PC & mobile';
+  }
+
+  if (!opts.quiet && next !== prev) {
+    if (next) showToast(`Companion device linked: ${next} — Continue Watching will sync`, 'success', 4500);
+    else if (prev) showToast('Companion device unlinked', 'info', 4000);
+    const modal = document.getElementById('companion-modal');
+    if (modal && !modal.classList.contains('hidden')) renderCompanionModal();
+    if (next) syncCompanionHistory(true);
+  }
+}
+
+// Pull the companion's history and fold it into local Continue Watching.
+// Throttled; pass force=true right after pairing for instant gratification.
+async function syncCompanionHistory(force = false) {
+  if (!companionInfo || !deviceCode) return;
+  const now = Date.now();
+  if (!force && now - lastCompanionPull < COMPANION_PULL_MS) return;
+  lastCompanionPull = now;
+  const { companion, entries } = await fetchCompanionHistory(deviceCode);
+  if (!companion) return;   // unlinked remotely — the next heartbeat clears the tile
+  const changed = mergeCompanionHistory(entries);
+  if (changed > 0) {
+    try { refreshContinueWatching(); } catch (e) {}
+  }
+}
+
+function openCompanionModal() {
+  renderCompanionModal();
+  document.getElementById('companion-modal')?.classList.remove('hidden');
+}
+function closeCompanionModal() {
+  document.getElementById('companion-modal')?.classList.add('hidden');
+}
+
+function renderCompanionModal() {
+  const body = document.getElementById('companion-modal-body');
+  if (!body) return;
+  const plat = detectPlatform();
+  const otherKind = plat === 'pc' ? 'phone' : plat === 'apk' ? 'computer' : 'other device';
+
+  if (companionInfo) {
+    body.innerHTML = `
+      <h3 class="wt-heading">Companion Device</h3>
+      <p class="wt-sub">Continue Watching syncs both ways with</p>
+      <p class="wt-code" style="font-size:2.4rem;">${companionInfo.device_id}</p>
+      <p class="wt-hint">${companionPlatformLabel(companionInfo.platform)}${companionInfo.label ? ' · ' + escapeHtml(companionInfo.label) : ''} — start on one device, pick up on the other within a minute.</p>
+      <div class="wt-actions">
+        <button class="wt-btn" id="companion-unlink-btn">Unlink devices</button>
+      </div>`;
+    body.querySelector('#companion-unlink-btn')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true; btn.textContent = 'Unlinking…';
+      try {
+        await unpairCompanion(deviceCode);
+        updateCompanion(null, { quiet: true });
+        showToast('Companion unlinked', 'success');
+        renderCompanionModal();
+      } catch (ex) {
+        btn.disabled = false; btn.textContent = 'Unlink devices';
+        showToast(ex.message, 'error', 4000);
+      }
+    });
+    return;
+  }
+
+  body.innerHTML = `
+    <h3 class="wt-heading">Companion Device</h3>
+    <p class="wt-sub">Link this device with your ${otherKind} to sync Continue Watching both ways — start a movie here, pick it up there. Works between a PC and a mobile device only.</p>
+    <p class="wt-hint">This device's code: <strong>${deviceCode || '—'}</strong>. On the other device, open Settings → Companion Device to find its code.</p>
+    <input class="wt-code-input" id="companion-code-input" maxlength="8" placeholder="CODE" autocomplete="off" spellcheck="false" style="font-size:1.7rem;" />
+    <p class="wt-error" id="companion-error"></p>
+    <div class="wt-actions">
+      <button class="wt-btn wt-btn-primary" id="companion-link-btn">Link devices</button>
+    </div>`;
+
+  const input = body.querySelector('#companion-code-input');
+  const errEl = body.querySelector('#companion-error');
+  const linkBtn = body.querySelector('#companion-link-btn');
+
+  const doLink = async () => {
+    const code = (input.value || '').trim().toUpperCase();
+    errEl.textContent = '';
+    if (!/^[A-Z0-9]{4,12}$/.test(code)) { errEl.textContent = 'Enter the code shown on the other device.'; return; }
+    linkBtn.disabled = true; linkBtn.textContent = 'Linking…';
+    try {
+      const comp = await pairCompanion(deviceCode, code);
+      updateCompanion(comp, { quiet: true });
+      showToast(`Linked with ${comp.device_id} — history will sync`, 'success', 4000);
+      renderCompanionModal();
+      syncCompanionHistory(true);
+    } catch (ex) {
+      linkBtn.disabled = false; linkBtn.textContent = 'Link devices';
+      errEl.textContent = ex.message;
+    }
+  };
+  linkBtn?.addEventListener('click', doLink);
+  input?.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLink(); });
+  setTimeout(() => input?.focus(), 50);
 }
 
 // Make the local playlists match the dashboard's list (match on host+username).
