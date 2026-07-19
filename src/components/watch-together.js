@@ -29,7 +29,7 @@
 import { getDeviceCode } from './cloud-sync.js';
 import { getActiveSubscriptionKey } from './xtream-api.js';
 
-const CLOUD_BASE = 'https://ziptvpro-nu.vercel.app';
+const CLOUD_BASE = 'https://ziptvpro.pages.dev';
 
 const POLL_LOBBY_MS = 2000;    // nothing is moving yet — no need to hammer it
 const POLL_PLAYING_MS = 1000;  // a pause should land on guests within ~1s
