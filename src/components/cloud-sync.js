@@ -156,6 +156,37 @@ export async function pairCompanion(deviceCode, companionCode) {
   return j.companion;
 }
 
+/**
+ * Push a playlist added via the hidden manual-login form up to this device's
+ * cloud record — the same table the admin dashboard writes to — so it (a)
+ * shows up for the admin, (b) survives the heartbeat's reconcile (it's no
+ * longer "missing from remote"), and (c) can be deleted from there too.
+ * Returns the new row's id, or throws a readable Error on failure.
+ */
+export async function addPlaylistToCloud(deviceCode, playlist) {
+  const res = await fetch(`${CLOUD_BASE}/api/device`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'add_playlist', device_id: deviceCode, ...playlist }),
+    signal: AbortSignal.timeout(12000)
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error || `Could not sync playlist to server (${res.status})`);
+  return j.id;
+}
+
+/** Remove a device-added playlist from this device's cloud record. */
+export async function removePlaylistFromCloud(deviceCode, remoteId) {
+  const res = await fetch(`${CLOUD_BASE}/api/device`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'remove_playlist', device_id: deviceCode, playlist_id: remoteId }),
+    signal: AbortSignal.timeout(12000)
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error || `Could not remove playlist from server (${res.status})`);
+}
+
 /** Remove the companion link (both sides). */
 export async function unpairCompanion(deviceCode) {
   const res = await fetch(`${CLOUD_BASE}/api/device`, {

@@ -41,6 +41,8 @@ export default async function handler(req, res) {
 
     if (b.action === 'pair') return await pair(res, deviceId, b.companion_code);
     if (b.action === 'unpair') return await unpair(res, deviceId);
+    if (b.action === 'add_playlist') return await addPlaylist(res, deviceId, b);
+    if (b.action === 'remove_playlist') return await removeManagedPlaylist(res, deviceId, b.playlist_id);
 
     // Heartbeat upsert: only touch heartbeat fields. merge-duplicates updates
     // just the supplied columns, so admin fields (label/expires_at/status) and
@@ -192,6 +194,57 @@ async function unpair(res, deviceId) {
       });
     } catch { /* best-effort */ }
   }
+  return res.status(200).json({ ok: true });
+}
+
+/* ------------------------ device-added playlists -------------------------- */
+
+// A playlist added on-device via the hidden manual-login form (bypassing
+// dashboard provisioning). Inserting it here — same table the dashboard
+// writes to — means the next heartbeat's reconcile sees it as already
+// "managed" and won't treat it as removed, while it still shows up for the
+// admin to see/edit like any other playlist.
+async function addPlaylist(res, deviceId, b) {
+  const serverUrl = String(b.server_url || '').trim();
+  const username = String(b.username || '').trim();
+  const password = String(b.password || '');
+  if (!serverUrl || !username || !password) {
+    return res.status(400).json({ error: 'server_url, username, and password are required' });
+  }
+
+  // Make sure the device row exists so the playlists FK insert doesn't fail
+  // if this fires before the device's first heartbeat has landed.
+  await sb('/devices?on_conflict=device_id', {
+    method: 'POST',
+    prefer: 'resolution=merge-duplicates,return=minimal',
+    body: { device_id: deviceId }
+  });
+
+  const rows = await sb('/playlists', {
+    method: 'POST',
+    prefer: 'return=representation',
+    body: {
+      device_id: deviceId,
+      name: b.name || 'My Xtream Playlist',
+      type: b.type || 'xtream',
+      server_url: serverUrl,
+      username,
+      password
+    }
+  });
+  const row = rows && rows[0];
+  return res.status(200).json({ ok: true, id: row ? row.id : null });
+}
+
+// Delete only removes a row this device owns (device_id must match), so a
+// device can never delete another device's playlist by guessing an id.
+async function removeManagedPlaylist(res, deviceId, playlistId) {
+  const id = String(playlistId || '').trim();
+  if (!id) return res.status(400).json({ error: 'playlist_id required' });
+  await sb(
+    `/playlists?id=eq.${encodeURIComponent(id)}&device_id=eq.${encodeURIComponent(deviceId)}`,
+    { method: 'DELETE', prefer: 'return=minimal' }
+  );
   return res.status(200).json({ ok: true });
 }
 

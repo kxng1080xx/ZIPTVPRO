@@ -28,6 +28,7 @@ import {
   markSyncStale,
   hasCachedData,
   updatePlaylistByServerAndUser,
+  setPlaylistCloudId,
   mergeCompanionHistory
 } from './components/xtream-api.js';
 import { Capacitor } from '@capacitor/core';
@@ -39,7 +40,7 @@ import { checkForUpdate, downloadApp, startPeriodicUpdateCheck, initElectronUpda
 import { openSearchKeyboard, openSortDropdown } from './components/tv-search.js';
 import { openGlobalSearch, setGlobalSearchQuery } from './components/global-search.js';
 import { isNativeAvailable, nativeIsTv } from './components/native-player.js';
-import { getDeviceCode, syncDevice, detectPlatform, readCachedState, clearCachedState, isStateExpired, pairCompanion, unpairCompanion, fetchCompanionHistory } from './components/cloud-sync.js';
+import { getDeviceCode, syncDevice, detectPlatform, readCachedState, clearCachedState, isStateExpired, pairCompanion, unpairCompanion, fetchCompanionHistory, addPlaylistToCloud, removePlaylistFromCloud } from './components/cloud-sync.js';
 import { initWebTabs, openWebTab, openManageTabs, toggleAdblock, isAdblockOn, applyHiddenTabs } from './components/web-tabs.js';
 import { renderHome } from './components/home.js';
 import { getStoredUiMode, setStoredUiMode, showDeviceChooser, initTvNative, enterTvNative, exitTvNative, isTvNativeActive } from './components/tv-native.js';
@@ -3716,6 +3717,26 @@ function bindGlobalEvents() {
     showManualLoginForm();
   });
 
+  // Hidden escape hatch: triple-click the side-rail logo to reach the manual
+  // Xtream login form directly (5.0 hides the button above — playlists are
+  // normally dashboard-managed — but this stays reachable as a fallback for
+  // when cloud sync itself is having issues).
+  const railLogo = document.querySelector('.rail-logo');
+  if (railLogo) {
+    let logoClicks = 0;
+    let logoClickTimer = null;
+    railLogo.addEventListener('click', () => {
+      logoClicks++;
+      clearTimeout(logoClickTimer);
+      logoClickTimer = setTimeout(() => { logoClicks = 0; }, 1200);
+      if (logoClicks >= 3) {
+        logoClicks = 0;
+        clearTimeout(logoClickTimer);
+        showManualLoginForm();
+      }
+    });
+  }
+
   // Manual form back to remote activation button handler
   document.getElementById('manual-back-btn')?.addEventListener('click', () => {
     showRemoteActivation();
@@ -3795,6 +3816,26 @@ function bindGlobalEvents() {
     try {
       const res = await login(hostUrl, username, password, playlistName);
       if (res.success) {
+        // Push this manually-added playlist to the cloud device record so it
+        // shows up in admin and survives the heartbeat's reconcile (it's no
+        // longer "missing from remote"). Best-effort: this hidden form exists
+        // specifically as a fallback for when cloud sync itself is having
+        // issues, so a login must succeed even if this push doesn't.
+        if (deviceCode) {
+          try {
+            const cloudId = await addPlaylistToCloud(deviceCode, {
+              name: playlistName || 'My Xtream Playlist',
+              type: 'xtream',
+              server_url: hostUrl,
+              username,
+              password
+            });
+            if (cloudId) await setPlaylistCloudId(hostUrl, username, cloudId);
+          } catch (e) {
+            console.warn('Could not sync manually-added playlist to cloud:', e.message);
+          }
+        }
+
         const status = await getStatus();
         state.user = status;
         if (status.favorites) {
@@ -4791,7 +4832,16 @@ function showPlaylistSelect(playlists, lastUsedId = localStorage.getItem('last_p
 async function deletePlaylistFromLoginScreen(id) {
   if (!confirm('Remove this playlist?')) return;
   try {
+    let cloudId = null;
+    try {
+      const { playlists } = await getPlaylists();
+      cloudId = (playlists || []).find(p => p.id === id)?.cloudId || null;
+    } catch (e) {}
+
     const res = await removePlaylist(id);
+    if (cloudId && deviceCode) {
+      try { await removePlaylistFromCloud(deviceCode, cloudId); } catch (e) { console.warn('Could not remove playlist from cloud:', e.message); }
+    }
     if (!res.remaining) {
       state.user = null;
       showLogin();
@@ -4956,7 +5006,20 @@ async function switchToPlaylist(id) {
 async function deletePlaylist(id) {
   if (!confirm('Remove this playlist?')) return;
   try {
+    // Look this up before removing locally — a playlist added via the hidden
+    // manual-login form carries a cloudId (the row this device pushed to the
+    // cloud device record), which needs deleting there too. Admin-provisioned
+    // playlists have no cloudId, so this is a no-op for them.
+    let cloudId = null;
+    try {
+      const { playlists } = await getPlaylists();
+      cloudId = (playlists || []).find(p => p.id === id)?.cloudId || null;
+    } catch (e) {}
+
     const res = await removePlaylist(id);
+    if (cloudId && deviceCode) {
+      try { await removePlaylistFromCloud(deviceCode, cloudId); } catch (e) { console.warn('Could not remove playlist from cloud:', e.message); }
+    }
     if (!res.remaining) {
       state.user = null;
       showLogin();

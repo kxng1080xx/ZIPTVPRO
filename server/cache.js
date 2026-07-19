@@ -168,7 +168,8 @@ export function getPlaylistsList() {
       server_url: p.server_url,
       username: p.username,
       hidden_tabs: p.hidden_tabs || [],
-      hidden_categories: p.hidden_categories || []
+      hidden_categories: p.hidden_categories || [],
+      cloudId: p.cloudId || null
     })),
     activeId
   };
@@ -179,11 +180,12 @@ export function updatePlaylistSettings(id, settings) {
   const idx = store.playlists.findIndex(p => p.id === id);
   if (idx >= 0) {
     const old = store.playlists[idx];
-    const changed = 
+    const changed =
       JSON.stringify(old.hidden_tabs || []) !== JSON.stringify(settings.hidden_tabs || []) ||
       JSON.stringify(old.hidden_categories || []) !== JSON.stringify(settings.hidden_categories || []) ||
-      (settings.playlistName && old.playlistName !== settings.playlistName);
-      
+      (settings.playlistName && old.playlistName !== settings.playlistName) ||
+      (settings.cloudId !== undefined && old.cloudId !== settings.cloudId);
+
     if (changed) {
       store.playlists[idx] = { ...old, ...settings };
       if (settings.playlistName) store.playlists[idx].playlistName = settings.playlistName;

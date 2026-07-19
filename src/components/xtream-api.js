@@ -297,6 +297,37 @@ export async function updatePlaylistByServerAndUser(serverUrl, username, setting
   }
 }
 
+// Record the cloud (Supabase) row id for a playlist added via the hidden
+// manual-login form, so deleting it locally can also delete it server-side —
+// see removePlaylist()'s cloudId check.
+export async function setPlaylistCloudId(serverUrl, username, cloudId) {
+  const norm = (s) => String(s || '').trim().toLowerCase().replace(/\/+$/, '').replace(/^https?:\/\//, '');
+  const targetKey = norm(serverUrl) + '|' + String(username || '').toLowerCase();
+
+  const localList = readPlaylists();
+  const localIdx = localList.findIndex(p => (norm(p.server_url) + '|' + String(p.username || '').toLowerCase()) === targetKey);
+  if (localIdx >= 0) {
+    localList[localIdx].cloudId = cloudId;
+    writePlaylists(localList);
+  }
+
+  if (isServerMode) {
+    try {
+      const { playlists } = await getPlaylists();
+      const match = (playlists || []).find(p => (norm(p.server_url) + '|' + String(p.username || '').toLowerCase()) === targetKey);
+      if (match) {
+        await fetch('/api/playlists/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: match.id, cloudId })
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to persist cloudId server-side:', e.message);
+    }
+  }
+}
+
 // Best-effort fetch of the Xtream user_info for a saved playlist (client mode),
 // used to backfill the subscription expiry for playlists saved before exp_date
 // was tracked. Returns the user_info object or null on any failure.
@@ -556,7 +587,8 @@ export async function getPlaylists() {
       id: p.id,
       playlistName: p.playlistName,
       server_url: p.server_url,
-      username: p.username
+      username: p.username,
+      cloudId: p.cloudId || null
     })),
     activeId
   };

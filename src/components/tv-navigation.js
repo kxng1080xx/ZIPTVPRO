@@ -503,9 +503,14 @@ class TVNavigation {
 
     const activeEl = document.activeElement;
     const updateOverlay = document.getElementById('update-modal-overlay');
-    const activeModal = document.querySelector('.modal-overlay:not(.hidden)');
+    // Modals can stack (e.g. Companion Device popped up on top of Settings without
+    // closing it) — several ".modal-overlay:not(.hidden)" can exist at once. Prefer
+    // whichever one actually contains focus over querySelector's first-in-DOM match,
+    // or a focused input inside a background modal gets treated as "outside" and blurred.
+    const visibleModals = Array.from(document.querySelectorAll('.modal-overlay:not(.hidden)'));
+    const activeModal = visibleModals.find(m => m.contains(activeEl)) || visibleModals[0] || null;
     const castOverlay = document.querySelector('.cast-modal-overlay:not(.hidden)');
-    
+
     const activeContainer = updateOverlay || activeModal || castOverlay;
     const insideActiveContainer = activeContainer && activeContainer.contains(activeEl);
 

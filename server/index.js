@@ -362,9 +362,16 @@ app.post('/api/playlists/remove', (req, res) => {
 });
 
 app.post('/api/playlists/update', (req, res) => {
-  const { id, hidden_tabs, hidden_categories, playlistName } = req.body;
+  const { id, hidden_tabs, hidden_categories, playlistName, cloudId } = req.body;
   if (!id) return res.status(400).json({ error: 'Missing playlist id' });
-  const result = updatePlaylistSettings(id, { hidden_tabs, hidden_categories, playlistName });
+  // Only forward fields the caller actually sent — a plain object spread with an
+  // explicit `undefined` value still overwrites the stored field with undefined.
+  const settings = {};
+  if (hidden_tabs !== undefined) settings.hidden_tabs = hidden_tabs;
+  if (hidden_categories !== undefined) settings.hidden_categories = hidden_categories;
+  if (playlistName !== undefined) settings.playlistName = playlistName;
+  if (cloudId !== undefined) settings.cloudId = cloudId;
+  const result = updatePlaylistSettings(id, settings);
   res.json({ success: true, ...result });
 });
 
