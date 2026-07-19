@@ -1,18 +1,24 @@
 /**
  * Cloud sync client (ZIPTV Pro 5.0).
  *
- * Talks to the serverless device endpoint at https://ziptvpro-nu.vercel.app/api/device
+ * Talks to the serverless device endpoint at https://ziptvpro.pages.dev/api/device
  * — an ABSOLUTE url on purpose: in the desktop (Electron) and APK (Capacitor)
  * builds the frontend is loaded locally, so a relative "/api/device" would hit
  * the bundled local server, not the cloud. The hosted web build also works with
  * the absolute url (same origin).
+ *
+ * Migrated from Vercel (ziptvpro-nu.vercel.app) to Cloudflare Pages
+ * (ziptvpro.pages.dev) in 8.3.2 — device.js/history.js were ported as
+ * Cloudflare Pages Functions (same routes, same Supabase backend), so older
+ * installs still on Vercel keep working unchanged until this update reaches
+ * them through the normal update-check flow.
  *
  * This module only does network + caching. Reconciliation (adding/removing
  * playlists, wiping on expiry, UI) lives in main.js so it can reuse the player's
  * existing playlist helpers.
  */
 
-const CLOUD_BASE = 'https://ziptvpro-nu.vercel.app';
+const CLOUD_BASE = 'https://ziptvpro.pages.dev';
 const STATE_KEY = 'ziptv_device_state';   // last good /api/device response
 const CODE_KEY = 'ziptv_device_code';
 

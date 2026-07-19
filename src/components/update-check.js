@@ -12,7 +12,7 @@ import navigation from './tv-navigation.js';
 
 const ApkInstaller = registerPlugin('ApkInstaller');
 
-const VERSION_URL = 'https://ziptvpro-nu.vercel.app/version.json';
+const VERSION_URL = 'https://ziptvpro.pages.dev/version.json';
 const SKIP_KEY = 'skip_update_version';
 
 // Compare dotted numeric versions: returns true if `a` is newer than `b`.
@@ -41,8 +41,8 @@ function downloadUrlFor(manifest) {
   const ua = navigator.userAgent || '';
   const isAndroid = /Android/i.test(ua);
   const isWindowsDesktop = /Windows NT/i.test(ua) && !isAndroid;
-  if (isWindowsDesktop) return manifest.exe || 'https://ziptvpro-nu.vercel.app/latest.exe';
-  return manifest.apk || 'https://ziptvpro-nu.vercel.app/app.apk';
+  if (isWindowsDesktop) return manifest.exe || 'https://ziptvpro.pages.dev/latest.exe';
+  return manifest.apk || 'https://ziptvpro.pages.dev/app.apk';
 }
 
 function isAndroidNative() {

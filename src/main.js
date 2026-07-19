@@ -385,11 +385,11 @@ async function initApp() {
     const isAndroid = /Android/i.test(ua);
     const isWindowsDesktop = /Windows NT/i.test(ua) && !isAndroid;
     if (isWindowsDesktop) {
-      dlBtn.href = 'https://ziptvpro-nu.vercel.app/latest.exe';
+      dlBtn.href = 'https://ziptvpro.pages.dev/latest.exe';
       dlBtn.removeAttribute('download'); // cross-origin redirect handles the download
       if (dlLabel) dlLabel.textContent = 'Download Latest Version (PC)';
     } else {
-      dlBtn.href = 'https://ziptvpro-nu.vercel.app/app.apk';
+      dlBtn.href = 'https://ziptvpro.pages.dev/app.apk';
       if (dlLabel) dlLabel.textContent = 'Download Latest Version';
     }
 
@@ -400,7 +400,7 @@ async function initApp() {
         e.preventDefault();
         const label = dlLabel ? dlLabel.textContent : '';
         if (dlLabel) dlLabel.textContent = 'Downloading…';
-        const res = await downloadApp('https://ziptvpro-nu.vercel.app/app.apk', (m) => { if (dlLabel) dlLabel.textContent = m; });
+        const res = await downloadApp('https://ziptvpro.pages.dev/app.apk', (m) => { if (dlLabel) dlLabel.textContent = m; });
         if (dlLabel) dlLabel.textContent = res.needsPermission
           ? 'Allow "Install unknown apps", then retry'
           : (res.ok ? label : 'Download failed — retry');
