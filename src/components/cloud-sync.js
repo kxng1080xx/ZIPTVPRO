@@ -26,6 +26,8 @@
  * existing playlist helpers.
  */
 
+import { readLastError, clearLastError } from '../compat.js';
+
 const CLOUD_BASES = [
   'https://ziptvpro.pages.dev',     // primary (Cloudflare Pages)
   'https://ziptvpro-nu.vercel.app'  // fallback (legacy Vercel deploy, same API + DB)
@@ -108,10 +110,15 @@ export function detectPlatform() {
  * State shape: { status, label, expires_at, expired, notice, playlists: [...] }
  */
 export async function syncDevice(deviceCode, appVersion) {
+  // Piggyback the last captured runtime error (compat.js) so a broken device
+  // reports WHAT broke to the admin panel. Cleared only after a successful send.
+  const lastError = readLastError();
   const res = await cloudFetch('/api/device', {
     device_id: deviceCode,
     platform: detectPlatform(),
-    app_version: appVersion || null
+    app_version: appVersion || null,
+    last_error: lastError ? lastError.message : undefined,
+    last_error_at: lastError ? lastError.at : undefined
   });
   if (!res.ok) {
     let msg = `Sync failed (${res.status})`;
@@ -119,6 +126,7 @@ export async function syncDevice(deviceCode, appVersion) {
     throw new Error(msg);
   }
   const state = await res.json();
+  if (lastError) clearLastError();
   try { localStorage.setItem(STATE_KEY, JSON.stringify({ ...state, _cachedAt: Date.now() })); } catch (e) {}
   return state;
 }

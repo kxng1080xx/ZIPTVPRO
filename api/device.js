@@ -58,6 +58,21 @@ export default async function handler(req, res) {
       }
     });
 
+    // Client-reported runtime error (compat.js capture) — stored separately and
+    // best-effort so registration never breaks if the columns don't exist yet.
+    if (b.last_error) {
+      try {
+        await sb(`/devices?device_id=eq.${encodeURIComponent(deviceId)}`, {
+          method: 'PATCH',
+          prefer: 'return=minimal',
+          body: {
+            last_error: String(b.last_error).slice(0, 300),
+            last_error_at: b.last_error_at || new Date().toISOString()
+          }
+        });
+      } catch { /* diagnostic only */ }
+    }
+
     // Pull the device + its playlists.
     const rows = await sb(
       `/devices?device_id=eq.${encodeURIComponent(deviceId)}` +

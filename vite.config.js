@@ -21,6 +21,10 @@ export default defineConfig({
     }
   },
   build: {
+    // Transpile down to ~Chromium 70-era syntax: old system WebViews (Fire TV
+    // sticks) can't PARSE newer syntax and white-screen on the whole bundle.
+    // Missing runtime APIs are shimmed separately in src/compat.js.
+    target: 'es2018',
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),

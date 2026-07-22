@@ -461,7 +461,7 @@
         <tr data-id="${esc(d.device_id)}" class="${selected.has(d.device_id) ? 'sel' : ''}">
           <td class="cb-cell"><input type="checkbox" class="cb row-cb" ${selected.has(d.device_id) ? 'checked' : ''} /></td>
           <td>
-            <div class="dev-name ${d.label ? '' : 'unnamed'}">${d.label ? esc(d.label) : 'Unnamed device'}</div>
+            <div class="dev-name ${d.label ? '' : 'unnamed'}">${d.label ? esc(d.label) : 'Unnamed device'}${d.last_error ? ` <span title="App error: ${esc(d.last_error)}" style="cursor:help;">⚠️</span>` : ''}</div>
             <div class="dev-code">${esc(d.device_id)}</div>
           </td>
           <td><span class="pill ${st.cls}"><span class="d"></span>${st.label}</span></td>
@@ -629,7 +629,8 @@
         <div class="meta-cell"><div class="k">Platform</div><div class="v">${d.platform && d.platform !== 'unknown' ? esc(d.platform.toUpperCase()) : 'Unknown'}</div></div>
         <div class="meta-cell"><div class="k">App version</div><div class="v">${d.app_version ? 'v' + esc(d.app_version) : '—'}</div></div>
         <div class="meta-cell"><div class="k">Last seen</div><div class="v">${relTime(d.last_seen)}</div></div>
-        <div class="meta-cell"><div class="k">First seen</div><div class="v">${d.created_at ? new Date(d.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</div></div>`;
+        <div class="meta-cell"><div class="k">First seen</div><div class="v">${d.created_at ? new Date(d.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</div></div>${d.last_error ? `
+        <div class="meta-cell" style="grid-column:1 / -1;"><div class="k">⚠️ Last app error (${relTime(d.last_error_at)})</div><div class="v" style="font-size:0.78rem; word-break:break-word; color:#f87171;">${esc(d.last_error)}</div></div>` : ''}`;
       $('d-exp').innerHTML = `<span class="${exp.cls}">${exp.text}</span>`;
       $('d-clearexp').style.display = d.expires_at ? '' : 'none';
 
