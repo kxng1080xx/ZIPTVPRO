@@ -6377,6 +6377,15 @@ body.epg-fullscreen-active .epg-section-container {
   text-shadow: 0 0 10px rgba(6, 182, 212, 0.3);
 }
 
+.remote-login-status {
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.remote-login-status[data-state="wait"] { color: var(--text-muted); }
+.remote-login-status[data-state="ok"]   { color: #34d399; }
+.remote-login-status[data-state="fail"] { color: #f87171; }
+
 .remote-login-instructions {
   font-size: 0.78rem;
   color: var(--text-muted);
@@ -7700,6 +7709,10 @@ body.tv-layout .remote-login-code-wrapper {
 body.tv-layout .remote-login-code {
   font-size: 1.4rem;
   padding: 2px 10px;
+}
+body.tv-layout .remote-login-status {
+  font-size: 0.75rem;
+  margin-bottom: 6px;
 }
 body.tv-layout .remote-login-instructions {
   font-size: 0.72rem;

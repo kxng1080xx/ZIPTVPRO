@@ -1,3 +1,4 @@
+import './compat.js'; // MUST be first: patches globals old TV WebViews lack
 import {
   getStatus,
   login,
@@ -5315,10 +5316,12 @@ async function runCloudSync() {
     try {
       state = await syncDevice(deviceCode, appVersion());
     } catch (netErr) {
+      setActivationStatus('fail');
       const cached = readCachedState();
       if (cached && isStateExpired(cached)) await enforceDeviceExpiry(cached);
       return;
     }
+    setActivationStatus('ok');
     await applyCloudState(state);
     // Piggyback the companion Continue Watching pull on the heartbeat
     // (internally throttled — it does not hit the network every 15s).
@@ -5328,6 +5331,18 @@ async function runCloudSync() {
   } finally {
     cloudSyncBusy = false;
   }
+}
+
+// Setup-screen registration status, next to the device code. A device whose
+// heartbeat can't reach the server must SAY so — a code that displays but never
+// registers is indistinguishable from a working one otherwise.
+function setActivationStatus(state) {
+  const el = document.getElementById('remote-login-status');
+  if (!el) return;
+  el.dataset.state = state;
+  el.textContent = state === 'ok'
+    ? '✓ Registered — visible to your provider'
+    : '⚠ Not connected — check the internet connection (retrying…)';
 }
 
 // Apply a fresh state from /api/device.
