@@ -1,31 +1,22 @@
 /**
- * WebGL video upscaler — FSR-1-style spatial upscaling for the Chromium
- * <video> path (Electron desktop, web, and the Android <video> fallback).
+ * WebGL video upscaler — Multi-mode real-time video upscaling for Chromium
+ * <video> element (Electron desktop & web).
  *
- * Pipeline (two GPU passes, runs once per decoded frame):
- *   1. Catmull-Rom bicubic upscale  — source resolution -> display resolution.
- *      Sharper and cleaner than the browser's default bilinear stretch. This is
- *      the practical stand-in for FSR's EASU pass: on already-compressed video
- *      (no clean edges or subpixel data like a game frame has) edge-adaptive
- *      upscaling buys little over a good bicubic, and this is rock-solid.
- *   2. CAS (Contrast Adaptive Sharpening) — AMD's kernel, the basis of FSR's
- *      RCAS pass. Adds local sharpness where the image is soft while limiting
- *      itself in already-high-contrast areas so it doesn't ring or amplify
- *      block noise. Strength is adjustable.
- *
- * Why not "real" FSR 2/3 or DLSS: those are temporal and need per-frame motion
- * vectors from a 3D engine, which video streams don't have. FSR 1 (spatial) is
- * the only member of either family that applies to arbitrary video.
- *
- * Engine-agnostic: it reads pixels straight off the <video> element, so it works
- * the same whether hls.js, mpegts.js, or direct playback is driving it. It does
- * NOT affect the Android libVLC surface (that renders behind the WebView).
+ * Supported Modes:
+ *   - 'anime4k' : Real-time Anime4K line-art reconstruction & edge thinning
+ *                 pass + 9-tap Catmull-Rom bicubic upscale + CAS sharpening.
+ *                 Optimized for anime, cartoons, and 2D animation.
+ *   - 'fsr'     : AMD FSR 1.0 style spatial upscaling (Catmull-Rom bicubic
+ *                 upscale + Contrast Adaptive Sharpening). Great for live TV,
+ *                 movies, and sports streams.
+ *   - 'bicubic' : Pure 9-tap Catmull-Rom bicubic upscaling without extra
+ *                 sharpening (smooth, clean output).
+ *   - 'off'     : Native video decoding (WebGL overlay hidden).
  *
  * Usage:
  *   const up = new Upscaler(videoEl, containerEl);
- *   up.enable();            // start processing
- *   up.setSharpness(0.5);   // 0..1
- *   up.disable();           // show the raw <video> again
+ *   up.setMode('anime4k');  // 'anime4k' | 'fsr' | 'bicubic' | 'off'
+ *   up.setSharpness(0.5);  // 0..1
  *   up.destroy();
  */
 
@@ -38,7 +29,60 @@ void main() {
   gl_Position = vec4(p, 0.0, 1.0);
 }`;
 
-// Pass 1 — 9-tap Catmull-Rom bicubic upscale.
+// Anime4K Pass 1 — Line Reconstruction & Edge Refinement Shader (Source resolution)
+const FRAG_ANIME4K = `#version 300 es
+precision highp float;
+in vec2 vUV;
+out vec4 o;
+uniform sampler2D uTex;
+uniform vec2 uTexel;   // 1.0 / uSrcSize
+uniform float uSharp;  // 0..1 edge strength
+
+float luma(vec3 c) {
+  return dot(c, vec3(0.299, 0.587, 0.114));
+}
+
+void main() {
+  vec3 c = texture(uTex, vUV).rgb;
+  
+  // Sample 3x3 neighborhood at source resolution
+  vec3 t  = texture(uTex, vUV + vec2(0.0, -uTexel.y)).rgb;
+  vec3 b  = texture(uTex, vUV + vec2(0.0,  uTexel.y)).rgb;
+  vec3 l  = texture(uTex, vUV + vec2(-uTexel.x, 0.0)).rgb;
+  vec3 r  = texture(uTex, vUV + vec2( uTexel.x, 0.0)).rgb;
+  vec3 tl = texture(uTex, vUV + vec2(-uTexel.x, -uTexel.y)).rgb;
+  vec3 tr = texture(uTex, vUV + vec2( uTexel.x, -uTexel.y)).rgb;
+  vec3 bl = texture(uTex, vUV + vec2(-uTexel.x,  uTexel.y)).rgb;
+  vec3 br = texture(uTex, vUV + vec2( uTexel.x,  uTexel.y)).rgb;
+
+  // Sobel edge gradient vector
+  float gx = (luma(tr) + 2.0 * luma(r) + luma(br)) - (luma(tl) + 2.0 * luma(l) + luma(bl));
+  float gy = (luma(bl) + 2.0 * luma(b) + luma(br)) - (luma(tl) + 2.0 * luma(t) + luma(tr));
+  float gLen = sqrt(gx * gx + gy * gy);
+
+  // If gradient threshold met (anime line art edge), push pixel towards sharper boundary
+  if (gLen > 0.02) {
+    vec2 dir = normalize(vec2(gx, gy));
+    float stepDist = 0.5 + uSharp * 0.75;
+    vec3 pPos = texture(uTex, vUV + dir * uTexel * stepDist).rgb;
+    vec3 pNeg = texture(uTex, vUV - dir * uTexel * stepDist).rgb;
+    
+    float lPos = luma(pPos);
+    float lNeg = luma(pNeg);
+    float diff = abs(lPos - lNeg);
+
+    if (diff > 0.04) {
+      // Pick direction with higher contrast / edge sharpness
+      vec3 target = (lPos > lNeg) ? pPos : pNeg;
+      float weight = clamp(gLen * (0.8 + uSharp * 0.8), 0.0, 0.85);
+      c = mix(c, target, weight);
+    }
+  }
+
+  o = vec4(clamp(c, 0.0, 1.0), 1.0);
+}`;
+
+// Pass — 9-tap Catmull-Rom bicubic upscale (source -> display resolution).
 const FRAG_UPSCALE = `#version 300 es
 precision highp float;
 in vec2 vUV;
@@ -74,7 +118,7 @@ vec4 catmullRom(vec2 uv, vec2 texSize) {
 
 void main() { o = catmullRom(vUV, uSrcSize); }`;
 
-// Pass 2 — CAS (Contrast Adaptive Sharpening), AMD's kernel.
+// Pass — CAS (Contrast Adaptive Sharpening), AMD's kernel.
 const FRAG_SHARPEN = `#version 300 es
 precision highp float;
 in vec2 vUV;
@@ -111,6 +155,7 @@ export class Upscaler {
     this.video = video;
     this.container = container;
     this.sharpness = 0.4;
+    this.mode = 'fsr'; // 'off' | 'anime4k' | 'fsr' | 'bicubic'
     this.enabled = false;
     this._raf = null;
     this._rvfc = null;
@@ -119,7 +164,6 @@ export class Upscaler {
     canvas.className = 'upscaler-canvas';
     Object.assign(canvas.style, {
       position: 'absolute', pointerEvents: 'none', display: 'none',
-      // sit directly over the video; rect is synced in _resize()
       left: '0', top: '0',
     });
     this.canvas = canvas;
@@ -130,20 +174,21 @@ export class Upscaler {
     });
     this.gl = gl;
     this.supported = !!gl;
-    if (!gl) return; // caller checks .supported; falls back to raw <video>
+    if (!gl) return;
 
     container.appendChild(canvas);
 
+    this.progAnime4k = this._program(VERT, FRAG_ANIME4K);
     this.progUp = this._program(VERT, FRAG_UPSCALE);
     this.progSharp = this._program(VERT, FRAG_SHARPEN);
 
-    // Source texture (video frames) — LINEAR so the bicubic taps are clean.
+    // Textures
     this.srcTex = this._texture(gl.LINEAR);
-    // Intermediate texture (upscaled result) + its framebuffer.
-    this.midTex = this._texture(gl.LINEAR);
+    this.animeTex = this._texture(gl.LINEAR); // intermediate source-size texture for Anime4K pass
+    this.midTex = this._texture(gl.LINEAR);   // intermediate display-size texture
     this.fbo = gl.createFramebuffer();
 
-    this.vao = gl.createVertexArray(); // empty VAO for the fullscreen triangle
+    this.vao = gl.createVertexArray();
 
     this._onResize = () => this._resize();
     window.addEventListener('resize', this._onResize);
@@ -188,8 +233,6 @@ export class Upscaler {
     return t;
   }
 
-  // Match the canvas to the video's on-screen content box (object-fit: contain),
-  // so aspect ratio is preserved and letterboxing lines up with the raw video.
   _resize() {
     if (!this.supported) return;
     const vw = this.video.videoWidth, vh = this.video.videoHeight;
@@ -200,7 +243,7 @@ export class Upscaler {
     const dispW = Math.round(vw * scale), dispH = Math.round(vh * scale);
     const left = Math.round((cw - dispW) / 2), top = Math.round((ch - dispH) / 2);
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 2); // cap for perf
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.canvas.style.left = left + 'px';
     this.canvas.style.top = top + 'px';
     this.canvas.style.width = dispW + 'px';
@@ -208,21 +251,43 @@ export class Upscaler {
     this.canvas.width = Math.max(1, Math.round(dispW * dpr));
     this.canvas.height = Math.max(1, Math.round(dispH * dpr));
 
-    // (Re)allocate the intermediate texture at output resolution.
     const gl = this.gl;
+    // Reallocate intermediate source texture for Anime4K pass
+    gl.bindTexture(gl.TEXTURE_2D, this.animeTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, vw, vh, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+    // Reallocate intermediate display texture
     gl.bindTexture(gl.TEXTURE_2D, this.midTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.canvas.width, this.canvas.height,
       0, gl.RGBA, gl.UNSIGNED_BYTE, null);
   }
 
-  setSharpness(v) { this.sharpness = Math.max(0, Math.min(1, v)); }
+  setSharpness(v) {
+    this.sharpness = Math.max(0, Math.min(1, v));
+  }
+
+  setMode(mode) {
+    const validModes = ['off', 'anime4k', 'fsr', 'bicubic'];
+    if (!validModes.includes(mode)) mode = 'fsr';
+    this.mode = mode;
+    if (mode === 'off') {
+      this.disable();
+    } else {
+      this.enable();
+    }
+  }
+
+  getMode() {
+    return this.enabled ? this.mode : 'off';
+  }
 
   enable() {
-    if (!this.supported || this.enabled) return;
+    if (!this.supported) return;
+    if (this.mode === 'off') this.mode = 'fsr';
     this.enabled = true;
     this._resize();
     this.canvas.style.display = 'block';
-    this.video.style.visibility = 'hidden'; // keep decoding + audio, hide pixels
+    this.video.style.visibility = 'hidden';
     this._loop();
   }
 
@@ -236,10 +301,15 @@ export class Upscaler {
     this.video.style.visibility = '';
   }
 
-  toggle() { this.enabled ? this.disable() : this.enable(); return this.enabled; }
+  toggle() {
+    if (this.enabled) {
+      this.disable();
+    } else {
+      this.enable();
+    }
+    return this.enabled;
+  }
 
-  // Render on every decoded frame when the browser supports it (perfectly synced,
-  // no wasted work on paused/static video); fall back to rAF otherwise.
   _loop() {
     const draw = () => {
       if (!this.enabled) return;
@@ -255,40 +325,69 @@ export class Upscaler {
   _render() {
     const gl = this.gl;
     const vw = this.video.videoWidth, vh = this.video.videoHeight;
-    if (!vw || !vh || this.video.readyState < 2) return;
+    if (!vw || !vh || this.video.readyState < 2 || this.mode === 'off') return;
     if (this.canvas.width < 1) this._resize();
 
-    // Upload the current video frame.
+    // Upload video frame
     gl.bindTexture(gl.TEXTURE_2D, this.srcTex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     try {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.video);
-    } catch (e) { return; } // frame not ready / cross-origin taint
+    } catch (e) { return; }
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
 
     gl.bindVertexArray(this.vao);
 
-    // Pass 1: bicubic upscale -> intermediate texture (output resolution).
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.midTex, 0);
-    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    gl.useProgram(this.progUp.p);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.srcTex);
-    gl.uniform1i(this.progUp.u.tex, 0);
-    gl.uniform2f(this.progUp.u.srcSize, vw, vh);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    let activeSrcTex = this.srcTex;
 
-    // Pass 2: CAS sharpen -> screen.
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    gl.useProgram(this.progSharp.p);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.midTex);
-    gl.uniform1i(this.progSharp.u.tex, 0);
-    gl.uniform2f(this.progSharp.u.texel, 1 / this.canvas.width, 1 / this.canvas.height);
-    gl.uniform1f(this.progSharp.u.sharp, this.sharpness);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    // Optional Pass 0: Anime4K Line Refinement (at source resolution)
+    if (this.mode === 'anime4k') {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.animeTex, 0);
+      gl.viewport(0, 0, vw, vh);
+      gl.useProgram(this.progAnime4k.p);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.srcTex);
+      gl.uniform1i(this.progAnime4k.u.tex, 0);
+      gl.uniform2f(this.progAnime4k.u.texel, 1.0 / vw, 1.0 / vh);
+      gl.uniform1f(this.progAnime4k.u.sharp, this.sharpness);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      activeSrcTex = this.animeTex;
+    }
+
+    if (this.mode === 'bicubic') {
+      // Direct Bicubic upscale to screen
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+      gl.useProgram(this.progUp.p);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, activeSrcTex);
+      gl.uniform1i(this.progUp.u.tex, 0);
+      gl.uniform2f(this.progUp.u.srcSize, vw, vh);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    } else {
+      // Pass 1: Catmull-Rom bicubic upscale -> intermediate texture
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.midTex, 0);
+      gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+      gl.useProgram(this.progUp.p);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, activeSrcTex);
+      gl.uniform1i(this.progUp.u.tex, 0);
+      gl.uniform2f(this.progUp.u.srcSize, vw, vh);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+      // Pass 2: CAS sharpen -> screen
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+      gl.useProgram(this.progSharp.p);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.midTex);
+      gl.uniform1i(this.progSharp.u.tex, 0);
+      gl.uniform2f(this.progSharp.u.texel, 1 / this.canvas.width, 1 / this.canvas.height);
+      gl.uniform1f(this.progSharp.u.sharp, this.sharpness);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
   }
 
   destroy() {
@@ -299,3 +398,4 @@ export class Upscaler {
     if (this.canvas && this.canvas.parentNode) this.canvas.parentNode.removeChild(this.canvas);
   }
 }
+

@@ -2410,196 +2410,255 @@ async function screenGuide(params) {
 // ==========================================================================
 // SCREEN: Settings
 // ==========================================================================
+// Two-level layout: a left category rail (Account · Playback · Appearance ·
+// System) drives a right content pane. The pane re-renders as focus moves down
+// the rail (select-on-focus, same feel as the Live screen), and D-pad Right
+// steps into the freshly-rendered tiles via the geometric focus engine.
 async function screenSettings(params = {}) {
   const isElectron = !!(window.electronCast || window.appHost);
   const isNative = Capacitor.isNativePlatform();
-  const perf = (() => { try { return localStorage.getItem('perfLite'); } catch (e) { return null; } })();
-  const perfLabel = perf === 'on' ? 'On' : perf === 'off' ? 'Off' : 'Auto';
   const version = (typeof __APP_VERSION__ !== 'undefined') ? __APP_VERSION__ : '';
+  const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+
+  // Compact rail glyphs (stroke style matches the shell's shared I.* icons).
+  const PANE_ICON = {
+    account: `<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c0-4 4-6 8-6s8 2 8 6"></path></svg>`,
+    playback: `<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polygon points="10,8 16,12 10,16" fill="currentColor" stroke="none"></polygon></svg>`,
+    appearance: `<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><circle cx="8.5" cy="9" r="1.4" fill="currentColor" stroke="none"></circle><circle cx="15.5" cy="9" r="1.4" fill="currentColor" stroke="none"></circle><circle cx="9" cy="15.2" r="1.4" fill="currentColor" stroke="none"></circle><circle cx="15" cy="15.2" r="1.4" fill="currentColor" stroke="none"></circle></svg>`,
+    system: `<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"></rect><line x1="4" y1="10" x2="20" y2="10"></line><line x1="10" y1="10" x2="10" y2="20"></line></svg>`
+  };
+  const PANES = [
+    { key: 'account', label: 'Account' },
+    { key: 'playback', label: 'Playback' },
+    { key: 'appearance', label: 'Appearance' },
+    { key: 'system', label: 'System' }
+  ];
 
   const scr = el(`
-  <div class="tvn-screen tvn-settings">
-    <div class="tvn-live-rail">
+  <div class="tvn-screen tvn-settings tvn-settings2">
+    <div class="tvn-set-nav">
       <div class="tvn-rail-head">
         <button class="tvn-iconbtn tvn-focable" data-nav data-fkey="back" style="background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.08)">${I.back()}</button>
         <span class="tvn-rail-title">Settings</span>
       </div>
-      <div style="flex:1"></div>
+      <div class="tvn-set-navlist" data-navlist></div>
     </div>
-    <div class="tvn-set-list" data-list></div>
+    <div class="tvn-set-pane" data-pane></div>
   </div>`);
   stage.appendChild(scr);
   scr.querySelector('[data-fkey="back"]').onclick = () => goBack();
-  const list = scr.querySelector('[data-list]');
+  const navBox = scr.querySelector('[data-navlist]');
+  const paneBox = scr.querySelector('[data-pane]');
 
+  // Pane content builders — reuse the existing tile visuals, mounted into the
+  // right pane instead of one long scrolling list.
   const group = (title) => {
-    const g = el(`<div class="tvn-set-group"><span class="tvn-set-group-title">${esc(title)}</span></div>`);
+    const g = el(`<div class="tvn-set-group">${title ? `<span class="tvn-set-group-title">${esc(title)}</span>` : ''}</div>`);
     const grid = document.createElement('div');
     grid.className = 'tvn-set-grid';
     g.appendChild(grid);
-    list.appendChild(g);
+    paneBox.appendChild(g);
     return grid;
   };
-  const tile = (grid, { icon, title, sub, fkey, danger, autofocus }) => {
+  const tile = (grid, { icon, title, sub, fkey, danger, accent }) => {
     const t = el(`
-      <button class="tvn-set-tile tvn-focable ${danger ? 'tvn-danger' : ''}" data-nav data-fkey="${esc(fkey)}" ${autofocus ? 'data-autofocus' : ''}>
+      <button class="tvn-set-tile tvn-focable ${danger ? 'tvn-danger' : ''}" data-nav data-fkey="${esc(fkey)}">
         <div class="tvn-set-tile-icon">${icon}</div>
         <div class="tvn-set-tile-txt">
           <span class="tvn-set-tile-title">${esc(title)}</span>
           <span class="tvn-set-tile-sub">${esc(sub || '')}</span>
         </div>
       </button>`);
+    if (accent) t.querySelector('.tvn-set-tile-icon').style.color = 'var(--acc)';
     grid.appendChild(t);
     return t;
   };
 
-  // --- Appearance: accent swatches ---
-  const gApp = group('Appearance');
-  const swRow = el(`<div class="tvn-swatch-row"></div>`);
-  gApp.appendChild(swRow);
-  ACCENTS.forEach(c => {
-    const sw = el(`<button class="tvn-swatch tvn-focable ${getAccent() === c ? 'tvn-sel' : ''}" data-nav data-fkey="acc-${c}" style="background:${c}" title="Accent"></button>`);
-    sw.onclick = () => {
-      try { localStorage.setItem(ACCENT_KEY, c); } catch (e) {}
-      stage.style.setProperty('--acc', c);
-      swRow.querySelectorAll('.tvn-swatch').forEach(n => n.classList.remove('tvn-sel'));
-      sw.classList.add('tvn-sel');
-    };
-    swRow.appendChild(sw);
-  });
+  // ---- Account: status banner + playlist management ----------------------
+  async function paneAccount() {
+    let acct = null;
+    try { acct = H.accountStatus ? H.accountStatus() : null; } catch (e) {}
+    paneBox.appendChild(el(`
+      <div class="tvn-acct-banner ${acct && acct.danger ? 'tvn-acct-danger' : ''}">
+        <span class="tvn-acct-dot"></span>
+        <div class="tvn-acct-txt">
+          <span class="tvn-acct-k">Subscription</span>
+          <span class="tvn-acct-v">${esc(acct ? acct.text : 'Active')}</span>
+        </div>
+      </div>`));
 
-  // --- Playback / performance ---
-  const gPerf = group('Playback');
-  const perfTile = tile(gPerf, {
-    icon: I.zap(30), title: 'Performance mode', sub: perfLabel, fkey: 'perf'
-  });
-  perfTile.onclick = () => {
-    // cycle Auto → On → Off
-    const cur = (() => { try { return localStorage.getItem('perfLite'); } catch (e) { return null; } })();
-    const next = cur === null ? 'on' : cur === 'on' ? 'off' : null;
-    if (window.setPerfLite) window.setPerfLite(next === null ? null : next === 'on');
-    const label = next === 'on' ? 'On' : next === 'off' ? 'Off' : 'Auto';
-    perfTile.querySelector('.tvn-set-tile-sub').textContent = label;
-  };
-
-  // --- Player engine (mirror of the mobile/desktop Settings tile) ---
-  // Android (libVLC available): Native ↔ Web (HTML5) via `playerEngine`.
-  // Desktop (Electron): FFmpeg transcode → HTML5 → External via `electronEngine`.
-  // Web browsers have no native/ffmpeg layer, so the tile is hidden there.
-  const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
-  const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
-  if (isNative) {
-    const label = (v) => v === 'web' ? 'Web player · HTML5 (built-in)' : 'Native player · libVLC (recommended)';
-    let v = lsGet('playerEngine') === 'web' ? 'web' : 'native';
-    const engTile = tile(gPerf, { icon: I.monitor(30), title: 'Player engine', sub: label(v), fkey: 'engine' });
-    engTile.onclick = () => {
-      v = v === 'web' ? 'native' : 'web';
-      lsSet('playerEngine', v);
-      engTile.querySelector('.tvn-set-tile-sub').textContent = label(v);
-    };
-  } else if (isElectron) {
-    const order = ['ffmpeg', 'html5', 'external'];
-    const labels = {
-      ffmpeg: 'FFmpeg transcode (recommended)',
-      html5: 'HTML5 player (built-in)',
-      external: 'External player (default app)'
-    };
-    let idx = Math.max(0, order.indexOf(order.includes(lsGet('electronEngine')) ? lsGet('electronEngine') : 'ffmpeg'));
-    const engTile = tile(gPerf, { icon: I.monitor(30), title: 'Player engine', sub: labels[order[idx]], fkey: 'engine' });
-    engTile.onclick = () => {
-      idx = (idx + 1) % order.length;
-      lsSet('electronEngine', order[idx]);
-      engTile.querySelector('.tvn-set-tile-sub').textContent = labels[order[idx]];
-    };
-  }
-
-  // --- Playlists ---
-  const gPl = group('Playlist');
-  try {
-    const { playlists, activeId } = await getPlaylists();
-    const acct = H.accountStatus ? H.accountStatus() : null;
-    const plName = (p) => (p && (p.name || p.playlistName)) || 'Playlist';
-    const active = (playlists || []).find(p => String(p.id) === String(activeId));
-    // One tile — the full list lives in a popout so a long playlist collection
-    // doesn't crowd the settings grid.
-    const swTile = tile(gPl, {
-      icon: I.list(30),
-      title: 'Switch playlist',
-      sub: `${plName(active)}${acct ? ` · ${acct.text}` : ''}`,
-      fkey: 'switchpl',
-      autofocus: params.section === 'playlists'
-    });
-    swTile.querySelector('.tvn-set-tile-icon').style.color = 'var(--acc)';
-    if (acct && acct.danger) swTile.querySelector('.tvn-set-tile-sub').style.color = '#f87171';
-    swTile.onclick = () => {
-      let switching = false;
-      openPopup({
-        title: 'Switch playlist',
-        items: (playlists || []).map(p => ({
-          id: p.id,
-          title: plName(p),
-          sub: String(p.id) === String(activeId)
-            ? `Current playlist${acct ? ` · ${acct.text}` : ''}` : '',
-          selected: String(p.id) === String(activeId),
-          danger: String(p.id) === String(activeId) && !!(acct && acct.danger)
-        })),
-        onPick: async (it, row) => {
-          if (String(it.id) === String(activeId)) { closePopup(); return; }
-          if (switching) return;
-          switching = true;
-          row.querySelector('.tvn-popup-row-sub').textContent = 'Switching…';
-          try {
-            await H.switchPlaylist(it.id); // re-enters the shell on success
-          } catch (e) {
-            switching = false;
-            row.querySelector('.tvn-popup-row-sub').textContent = 'Failed — try again';
-          }
-        }
+    const g = group('Playlists');
+    try {
+      const { playlists, activeId } = await getPlaylists();
+      const plName = (p) => (p && (p.name || p.playlistName)) || 'Playlist';
+      const active = (playlists || []).find(p => String(p.id) === String(activeId));
+      const swTile = tile(g, {
+        icon: I.list(30), title: 'Switch playlist', sub: plName(active),
+        fkey: 'switchpl', accent: true
       });
+      swTile.onclick = () => {
+        let switching = false;
+        openPopup({
+          title: 'Switch playlist',
+          items: (playlists || []).map(p => ({
+            id: p.id,
+            title: plName(p),
+            sub: String(p.id) === String(activeId)
+              ? `Current playlist${acct ? ` · ${acct.text}` : ''}` : '',
+            selected: String(p.id) === String(activeId),
+            danger: String(p.id) === String(activeId) && !!(acct && acct.danger)
+          })),
+          onPick: async (it, row) => {
+            if (String(it.id) === String(activeId)) { closePopup(); return; }
+            if (switching) return;
+            switching = true;
+            row.querySelector('.tvn-popup-row-sub').textContent = 'Switching…';
+            try {
+              await H.switchPlaylist(it.id); // re-enters the shell on success
+            } catch (e) {
+              switching = false;
+              row.querySelector('.tvn-popup-row-sub').textContent = 'Failed — try again';
+            }
+          }
+        });
+      };
+    } catch (e) {}
+    const addPlTile = tile(g, { icon: I.plus(30), title: 'Add playlist', sub: 'Connect a new source', fkey: 'addpl' });
+    addPlTile.onclick = () => { try { if (H.addPlaylist) H.addPlaylist(); } catch (e) {} };
+    const resyncTile = tile(g, { icon: I.refresh(30), title: 'Refresh playlist data', sub: 'Re-sync channels, movies & series', fkey: 'resync' });
+    resyncTile.onclick = async () => {
+      const sub = resyncTile.querySelector('.tvn-set-tile-sub');
+      sub.textContent = 'Syncing…';
+      try {
+        await H.resync((msg) => { sub.textContent = msg || 'Syncing…'; });
+        sub.textContent = 'Up to date';
+        catCache = null; totalsCache = null; epgCache.clear();
+      } catch (e) { sub.textContent = 'Sync failed — try again'; }
     };
-  } catch (e) {}
-  const addPlTile = tile(gPl, { icon: I.plus(30), title: 'Add playlist', sub: 'Connect a new source', fkey: 'addpl' });
-  addPlTile.onclick = () => { try { if (H.addPlaylist) H.addPlaylist(); } catch (e) {} };
-  const resyncTile = tile(gPl, { icon: I.refresh(30), title: 'Refresh playlist data', sub: 'Re-sync channels, movies & series', fkey: 'resync' });
-  resyncTile.onclick = async () => {
-    const sub = resyncTile.querySelector('.tvn-set-tile-sub');
-    sub.textContent = 'Syncing…';
-    try {
-      await H.resync((msg) => { sub.textContent = msg || 'Syncing…'; });
-      sub.textContent = 'Up to date';
-      catCache = null; totalsCache = null; epgCache.clear();
-    } catch (e) { sub.textContent = 'Sync failed — try again'; }
-  };
-
-  // --- System ---
-  const gSys = group('System');
-  const updTile = tile(gSys, { icon: I.download(30), title: 'Check for updates', sub: version ? `Version ${version}` : '', fkey: 'update' });
-  updTile.onclick = async () => {
-    const sub = updTile.querySelector('.tvn-set-tile-sub');
-    sub.textContent = 'Checking…';
-    try {
-      const r = await H.checkUpdate();
-      sub.textContent = r === false ? `Up to date · v${version}` : `Version ${version}`;
-    } catch (e) { sub.textContent = 'Check failed'; }
-  };
-  if (!TV_ONLY) {
-    const uiTile = tile(gSys, {
-      icon: I.monitor(30),
-      title: isElectron ? 'Switch to Desktop interface' : 'Switch to Mobile interface',
-      sub: 'Leave TV mode and reload',
-      fkey: 'uimode'
-    });
-    uiTile.onclick = switchOutOfTvMode;
   }
-  const outTile = tile(gSys, { icon: I.logout(30), title: 'Sign out', sub: 'Disconnect this playlist', fkey: 'logout', danger: true });
-  outTile.onclick = async () => {
-    outTile.querySelector('.tvn-set-tile-sub').textContent = 'Signing out…';
-    try { await H.logout(); } catch (e) {}
-  };
-  const exitTile = tile(gSys, { icon: I.power(30), title: 'Exit app', sub: isElectron ? 'Close ZIPTV Pro' : 'Leave the app', fkey: 'exit', danger: true });
-  exitTile.onclick = exitApp;
 
-  tile(gSys, { icon: I.info(30), title: 'ZIPTV Pro', sub: version ? `Version ${version} · TV interface` : 'TV interface', fkey: 'about' }).onclick = openAboutPopup;
+  // ---- Playback: player engine + performance mode ------------------------
+  function panePlayback() {
+    const g = group('Playback');
+    // Android (libVLC): Native ↔ Web (HTML5). Desktop (Electron): FFmpeg →
+    // HTML5 → External. Web browsers have neither layer, so no engine tile.
+    if (isNative) {
+      const label = (v) => v === 'web' ? 'Web player · HTML5 (built-in)' : 'Native player · libVLC (recommended)';
+      let v = lsGet('playerEngine') === 'web' ? 'web' : 'native';
+      const engTile = tile(g, { icon: I.monitor(30), title: 'Player engine', sub: label(v), fkey: 'engine' });
+      engTile.onclick = () => {
+        v = v === 'web' ? 'native' : 'web';
+        lsSet('playerEngine', v);
+        engTile.querySelector('.tvn-set-tile-sub').textContent = label(v);
+      };
+    } else if (isElectron) {
+      const order = ['ffmpeg', 'html5', 'external'];
+      const labels = {
+        ffmpeg: 'FFmpeg transcode (recommended)',
+        html5: 'HTML5 player (built-in)',
+        external: 'External player (default app)'
+      };
+      let idx = Math.max(0, order.indexOf(order.includes(lsGet('electronEngine')) ? lsGet('electronEngine') : 'ffmpeg'));
+      const engTile = tile(g, { icon: I.monitor(30), title: 'Player engine', sub: labels[order[idx]], fkey: 'engine' });
+      engTile.onclick = () => {
+        idx = (idx + 1) % order.length;
+        lsSet('electronEngine', order[idx]);
+        engTile.querySelector('.tvn-set-tile-sub').textContent = labels[order[idx]];
+      };
+    }
+    const perf = lsGet('perfLite');
+    const perfLabel = perf === 'on' ? 'On' : perf === 'off' ? 'Off' : 'Auto';
+    const perfTile = tile(g, { icon: I.zap(30), title: 'Performance mode', sub: perfLabel, fkey: 'perf' });
+    perfTile.onclick = () => {
+      // cycle Auto → On → Off
+      const cur = lsGet('perfLite');
+      const next = cur === null ? 'on' : cur === 'on' ? 'off' : null;
+      if (window.setPerfLite) window.setPerfLite(next === null ? null : next === 'on');
+      perfTile.querySelector('.tvn-set-tile-sub').textContent = next === 'on' ? 'On' : next === 'off' ? 'Off' : 'Auto';
+    };
+  }
+
+  // ---- Appearance: accent color ------------------------------------------
+  function paneAppearance() {
+    const g = el(`<div class="tvn-set-group"><span class="tvn-set-group-title">Accent color</span></div>`);
+    const swRow = el(`<div class="tvn-swatch-row"></div>`);
+    g.appendChild(swRow);
+    paneBox.appendChild(g);
+    ACCENTS.forEach((c) => {
+      const sw = el(`<button class="tvn-swatch tvn-focable ${getAccent() === c ? 'tvn-sel' : ''}" data-nav data-fkey="acc-${c}" style="background:${c}" title="Accent"></button>`);
+      sw.onclick = () => {
+        try { localStorage.setItem(ACCENT_KEY, c); } catch (e) {}
+        stage.style.setProperty('--acc', c);
+        swRow.querySelectorAll('.tvn-swatch').forEach(n => n.classList.remove('tvn-sel'));
+        sw.classList.add('tvn-sel');
+      };
+      swRow.appendChild(sw);
+    });
+  }
+
+  // ---- System: updates, interface, about + a separated danger zone -------
+  function paneSystem() {
+    const g = group('About & updates');
+    const updTile = tile(g, { icon: I.download(30), title: 'Check for updates', sub: version ? `Version ${version}` : '', fkey: 'update' });
+    updTile.onclick = async () => {
+      const sub = updTile.querySelector('.tvn-set-tile-sub');
+      sub.textContent = 'Checking…';
+      try {
+        const r = await H.checkUpdate();
+        sub.textContent = r === false ? `Up to date · v${version}` : `Version ${version}`;
+      } catch (e) { sub.textContent = 'Check failed'; }
+    };
+    tile(g, { icon: I.info(30), title: 'About ZIPTV Pro', sub: version ? `Version ${version} · TV interface` : 'TV interface', fkey: 'about' }).onclick = openAboutPopup;
+    if (!TV_ONLY) {
+      const uiTile = tile(g, {
+        icon: I.monitor(30),
+        title: isElectron ? 'Switch to Desktop interface' : 'Switch to Mobile interface',
+        sub: 'Leave TV mode and reload', fkey: 'uimode'
+      });
+      uiTile.onclick = switchOutOfTvMode;
+    }
+    // Danger zone — set apart from the safe actions so it's harder to hit by
+    // accident with a D-pad.
+    const dg = group('Account actions');
+    dg.parentElement.classList.add('tvn-set-danger-group');
+    const outTile = tile(dg, { icon: I.logout(30), title: 'Sign out', sub: 'Disconnect this playlist', fkey: 'logout', danger: true });
+    outTile.onclick = async () => {
+      outTile.querySelector('.tvn-set-tile-sub').textContent = 'Signing out…';
+      try { await H.logout(); } catch (e) {}
+    };
+    const exitTile = tile(dg, { icon: I.power(30), title: 'Exit app', sub: isElectron ? 'Close ZIPTV Pro' : 'Leave the app', fkey: 'exit', danger: true });
+    exitTile.onclick = exitApp;
+  }
+
+  const RENDER = { account: paneAccount, playback: panePlayback, appearance: paneAppearance, system: paneSystem };
+  async function renderPane(key) {
+    paneBox.innerHTML = '';
+    try { await RENDER[key](); } catch (e) {}
+  }
+
+  // Left rail: select-on-focus. Moving down the rail live-swaps the pane; the
+  // active pane is re-rendered lazily so opening Settings only builds one pane.
+  let activePane = 'account';
+  PANES.forEach((p) => {
+    const item = el(`
+      <button class="tvn-set-navitem tvn-focable ${p.key === activePane ? 'tvn-sel' : ''}" data-nav data-fkey="pane-${p.key}" ${p.key === activePane ? 'data-autofocus' : ''}>
+        <span class="tvn-set-navitem-ic">${PANE_ICON[p.key]}</span>
+        <span class="tvn-set-navitem-lb">${esc(p.label)}</span>
+      </button>`);
+    const activate = () => {
+      navBox.querySelectorAll('.tvn-set-navitem').forEach(n => n.classList.remove('tvn-sel'));
+      item.classList.add('tvn-sel');
+      if (activePane === p.key && paneBox.childElementCount) return; // already shown
+      activePane = p.key;
+      renderPane(p.key);
+    };
+    item.addEventListener('focus', activate);
+    item.onclick = activate;
+    navBox.appendChild(item);
+  });
+
+  await renderPane(activePane);
 }
 
 // ==========================================================================

@@ -61,6 +61,10 @@ export function proxifyImage(url) {
 // NOTE: no "ID" (Investigation Discovery) or "AT" ("AT 5") — real channel
 // names that would be eaten if treated as country codes.
 const BARE_COUNTRY = /^(?:US|UK|GB|CA|AU|NZ|IE|AR|BR|MX|DE|FR|ES|IT|PT|NL|BE|CH|PL|TR|GR|RO|SE|NO|DK|FI|IN|PK|ZA|EG|SA|AE|QA|KW|IL|RU|UA|CZ|SK|HU|HR|RS|BG|PH|MY|SG|TH|VN|KR|JP|CN|HK|TW|CL|CO|PE|VE|EC|UY|PY|BO|CR|PA|DO|JM|TT)\s+(?=\S)/;
+// A leading country WORD followed by a spaced dash — "USA - CATCHY COMEDY",
+// "UK - SKY", "CAN - TSN". Only from an explicit allowlist so real channel
+// names with a dash ("MTV - Classic", "TNT - Movies") are never touched.
+const COUNTRY_DASH = /^(?:USA|US|UK|GB|GBR|ENG|CA|CAN|AU|AUS|NZ|NZL|IE|IRL|UAE|AE|ZA|RSA|IN|IND|PK|PAK|PH|PHL)\s*[-–—]\s*(?=\S)/;
 export function cleanChannelName(raw) {
   if (!raw) return raw || '';
   let s = String(raw);
@@ -70,6 +74,7 @@ export function cleanChannelName(raw) {
     s = s.replace(/^[[({]\s*[^\])}]{1,12}\s*[\])}]\s*/, '');       // [US] (UK) {VIP}
     s = s.replace(/^\|[^|]{1,12}\|\s*/, '');                       // |AR|
     s = s.replace(/^[A-Z]{2,4}(?:\s[A-Z]{2,12}){0,2}\s*[:|]\s*/, ''); // "PM :", "USA:", "UK MOVIES:", "VIP| X"
+    s = s.replace(COUNTRY_DASH, '');                               // "USA - CATCHY COMEDY"
     s = s.replace(BARE_COUNTRY, '');                               // "US Cozi" (2-letter codes only)
     // flag / pictographic emoji and variation selectors
     s = s.replace(/^(?:[\u{1F1E6}-\u{1F1FF}\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]+\s*)+/u, '');
@@ -85,6 +90,32 @@ export function cleanChannelName(raw) {
 // Map live items to display shape (original name survives in the cache/DB).
 function cleanLiveItems(items) {
   return items.map(it => it && it.name ? { ...it, name: cleanChannelName(it.name) } : it);
+}
+
+// Category-name cleaner. Lighter than cleanChannelName: it strips only the
+// bracketed / piped country TAGS and leading flag emoji ("[US] USA GENERAL" →
+// "USA GENERAL", "|EU| FRANCE SPORTS" → "FRANCE SPORTS"), and deliberately
+// keeps bare country words so distinct groups ("UK MOVIES" vs "US MOVIES")
+// don't collapse into the same label.
+export function cleanCategoryName(raw) {
+  if (!raw) return raw || '';
+  let s = String(raw);
+  for (let i = 0; i < 3; i++) {
+    const before = s;
+    s = s.trimStart();
+    s = s.replace(/^[[({]\s*[^\])}]{1,14}\s*[\])}]\s*/, '');       // [US] (UK) {VIP}
+    s = s.replace(/^\|[^|]{1,14}\|\s*/, '');                       // |EU|
+    s = s.replace(/^(?:[\u{1F1E6}-\u{1F1FF}\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]+\s*)+/u, ''); // flags / emoji
+    s = s.replace(/^(?:\|\s+|[\s\-–—:•·.]+)+/, '');                // leftover separators
+    if (s === before) break;
+  }
+  s = s.replace(/\s{2,}/g, ' ').trim();
+  return s || String(raw).trim(); // never clean a name into nothing
+}
+function cleanCategoryList(cats) {
+  return Array.isArray(cats)
+    ? cats.map(c => c && c.category_name ? { ...c, category_name: cleanCategoryName(c.category_name) } : c)
+    : cats;
 }
 
 // Helper: Check if backend server is active. Memoized so the detection runs
@@ -1149,7 +1180,9 @@ export async function getCategories(type) {
   if (isServerMode) {
     const response = await fetch(`/api/categories?type=${encodeURIComponent(normType)}&t=${Date.now()}`);
     if (!response.ok) throw new Error('Failed to fetch categories');
-    return response.json();
+    const data = await response.json();
+    if (data && Array.isArray(data.categories)) data.categories = cleanCategoryList(data.categories);
+    return data;
   } else {
     // Client Mode getCategories
     let categories = [];
@@ -1212,7 +1245,7 @@ export async function getCategories(type) {
     }
 
     return {
-      categories: mappedCategories,
+      categories: cleanCategoryList(mappedCategories),
       counts: {
         favorites: favCount,
         recently_viewed: recentCount

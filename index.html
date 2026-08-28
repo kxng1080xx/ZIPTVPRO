@@ -376,6 +376,7 @@
                           </div>
                         </div>
                       </div>
+                      <button class="player-control-icon" id="player-upscaler-btn" title="Video Upscaler Options"><i data-lucide="sparkles"></i></button>
                       <button class="player-control-icon" id="player-pip-btn" title="Picture in Picture"><i data-lucide="picture-in-picture"></i></button>
                       <button class="player-control-icon cast-only" id="player-cast-btn" title="Cast to TV" style="display:none;"><i data-lucide="cast"></i></button>
                       <button class="player-control-icon" id="player-fullscreen-btn" title="Fullscreen"><i data-lucide="maximize"></i></button>
@@ -818,6 +819,89 @@
     <div class="watch-modal-content">
       <button class="modal-close-btn" id="companion-modal-close"><i data-lucide="x"></i></button>
       <div id="companion-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- ==================== UPSCALER OPTIONS MODAL ==================== -->
+  <div id="upscaler-modal" class="modal-overlay hidden">
+    <div class="upscaler-modal-card">
+      <div class="upscaler-modal-header">
+        <div class="upscaler-modal-title">
+          <i data-lucide="sparkles" class="upscaler-header-icon"></i>
+          <div>
+            <h3>Video Upscaler &amp; Image Enhancement</h3>
+            <p class="upscaler-header-sub">Hardware-accelerated WebGL real-time video processing</p>
+          </div>
+        </div>
+        <button class="modal-close-btn" id="upscaler-modal-close"><i data-lucide="x"></i></button>
+      </div>
+      
+      <div class="upscaler-modal-body">
+        <div class="upscaler-section-label">SELECT UPSCALER MODE</div>
+        
+        <div class="upscaler-options-grid">
+          <label class="upscaler-option-card" data-mode="anime4k">
+            <input type="radio" name="upscaler-mode-radio" value="anime4k">
+            <div class="upscaler-card-content">
+              <div class="upscaler-card-header">
+                <span class="upscaler-badge anime4k-badge">🌟 Anime4K</span>
+                <span class="upscaler-badge-sub">Best for Anime &amp; Cartoons</span>
+              </div>
+              <div class="upscaler-card-title">Anime4K Line Reconstruction</div>
+              <div class="upscaler-card-desc">Advanced Sobel edge thinning &amp; line reconstruction. Sharpens cartoon outlines, thins anti-aliasing blur, and thins cartoon line art without halos.</div>
+            </div>
+          </label>
+
+          <label class="upscaler-option-card" data-mode="fsr">
+            <input type="radio" name="upscaler-mode-radio" value="fsr">
+            <div class="upscaler-card-content">
+              <div class="upscaler-card-header">
+                <span class="upscaler-badge fsr-badge">⚡ AMD FSR / CAS</span>
+                <span class="upscaler-badge-sub">Best for Movies &amp; Sports</span>
+              </div>
+              <div class="upscaler-card-title">FSR Spatial Upscaling</div>
+              <div class="upscaler-card-desc">Catmull-Rom 9-tap bicubic upscale paired with Contrast Adaptive Sharpening. Enhances video detail without amplifying compression artifacts.</div>
+            </div>
+          </label>
+
+          <label class="upscaler-option-card" data-mode="bicubic">
+            <input type="radio" name="upscaler-mode-radio" value="bicubic">
+            <div class="upscaler-card-content">
+              <div class="upscaler-card-header">
+                <span class="upscaler-badge bicubic-badge">🔍 Bicubic Smooth</span>
+                <span class="upscaler-badge-sub">Clean &amp; Soft</span>
+              </div>
+              <div class="upscaler-card-title">Catmull-Rom Bicubic</div>
+              <div class="upscaler-card-desc">High-quality 9-tap bicubic interpolation without additional sharpening. Provides smooth, artifact-free scaling for noisy streams.</div>
+            </div>
+          </label>
+
+          <label class="upscaler-option-card" data-mode="off">
+            <input type="radio" name="upscaler-mode-radio" value="off">
+            <div class="upscaler-card-content">
+              <div class="upscaler-card-header">
+                <span class="upscaler-badge off-badge">⛔ Off</span>
+                <span class="upscaler-badge-sub">Native Video</span>
+              </div>
+              <div class="upscaler-card-title">Disabled</div>
+              <div class="upscaler-card-desc">Bypass WebGL upscaling canvas and output raw video stream straight from the decoder.</div>
+            </div>
+          </label>
+        </div>
+
+        <div class="upscaler-slider-box">
+          <div class="upscaler-slider-header">
+            <span>SHARPNESS &amp; ENHANCEMENT STRENGTH</span>
+            <span id="upscaler-sharpness-val">40%</span>
+          </div>
+          <input type="range" id="upscaler-sharpness-slider" min="0" max="1" step="0.05" value="0.4">
+          <div class="upscaler-slider-labels">
+            <span>Soft (0%)</span>
+            <span>Balanced (50%)</span>
+            <span>Ultra Crisp (100%)</span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 

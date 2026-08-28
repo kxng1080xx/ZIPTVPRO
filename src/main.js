@@ -1131,10 +1131,17 @@ function refreshSettingsTiles() {
     upscalerTile.style.display = isNative ? 'none' : '';
     const upEl = document.getElementById('tile-upscaler-val');
     if (upEl) {
-      let on = false;
-      try { on = localStorage.getItem('upscaler_enabled') === '1'; } catch (e) {}
-      upEl.textContent = on ? 'On' : 'Off';
-      upEl.classList.toggle('tile-badge-off', !on);
+      let mode = 'off';
+      try {
+        if (window.playerInstance && window.playerInstance.getUpscalerMode) {
+          mode = window.playerInstance.getUpscalerMode();
+        } else {
+          mode = localStorage.getItem('upscaler_mode') || (localStorage.getItem('upscaler_enabled') === '1' ? 'fsr' : 'off');
+        }
+      } catch (e) {}
+      const modeNames = { anime4k: 'Anime4K', fsr: 'AMD FSR', bicubic: 'Bicubic', off: 'Off' };
+      upEl.textContent = modeNames[mode] || 'Off';
+      upEl.classList.toggle('tile-badge-off', mode === 'off');
     }
   }
 
@@ -3718,25 +3725,29 @@ function bindGlobalEvents() {
     showManualLoginForm();
   });
 
-  // Hidden escape hatch: triple-click the side-rail logo to reach the manual
-  // Xtream login form directly (5.0 hides the button above — playlists are
-  // normally dashboard-managed — but this stays reachable as a fallback for
-  // when cloud sync itself is having issues).
-  const railLogo = document.querySelector('.rail-logo');
-  if (railLogo) {
-    let logoClicks = 0;
-    let logoClickTimer = null;
-    railLogo.addEventListener('click', () => {
-      logoClicks++;
-      clearTimeout(logoClickTimer);
-      logoClickTimer = setTimeout(() => { logoClicks = 0; }, 1200);
-      if (logoClicks >= 3) {
-        logoClicks = 0;
-        clearTimeout(logoClickTimer);
-        showManualLoginForm();
+  // Hidden escape hatch: triple-click any app logo (login screen, side-rail, or top header)
+  // to reach the manual Xtream login form directly (5.0 hides the manual button —
+  // playlists are normally dashboard-managed — but this stays reachable as a fallback
+  // for when cloud sync or device pairing itself has issues).
+  const attachTripleClick = (el, cb) => {
+    if (!el) return;
+    let clicks = 0;
+    let clickTimer = null;
+    el.addEventListener('click', () => {
+      clicks++;
+      clearTimeout(clickTimer);
+      clickTimer = setTimeout(() => { clicks = 0; }, 1200);
+      if (clicks >= 3) {
+        clicks = 0;
+        clearTimeout(clickTimer);
+        cb();
       }
     });
-  }
+  };
+
+  attachTripleClick(document.querySelector('.rail-logo'), showManualLoginForm);
+  attachTripleClick(document.querySelector('.login-logo-header'), showManualLoginForm);
+  attachTripleClick(document.querySelector('.logo-container'), showManualLoginForm);
 
   // Manual form back to remote activation button handler
   document.getElementById('manual-back-btn')?.addEventListener('click', () => {
@@ -4101,15 +4112,91 @@ function bindGlobalEvents() {
     showToast(`Performance mode: ${label}`, 'success');
   });
 
-  // --- Tile: Upscaler (FSR-1-style WebGL enhancement over the <video>) ---
-  document.getElementById('tile-upscaler')?.addEventListener('click', () => {
+  // --- Upscaler Options Modal ---
+  function openUpscalerModal() {
+    const modal = document.getElementById('upscaler-modal');
+    if (!modal) return;
+
     const p = window.playerInstance;
-    if (!p) return;
-    const on = p.toggleUpscaler();
-    refreshSettingsTiles();
-    if (on) showToast('Upscaler on — enhancing video', 'success');
-    else if (p._upscaler && !p._upscaler.supported) showToast('Upscaler needs WebGL2 (unavailable here)', 'error');
-    else showToast('Upscaler off', 'success');
+    const currentMode = (p && p.getUpscalerMode) ? p.getUpscalerMode() : (localStorage.getItem('upscaler_mode') || 'off');
+    const currentSharp = parseFloat(localStorage.getItem('upscaler_sharpness') || '0.4');
+
+    // Update radios & card highlight
+    const radios = modal.querySelectorAll('input[name="upscaler-mode-radio"]');
+    radios.forEach(radio => {
+      radio.checked = (radio.value === currentMode);
+    });
+
+    const cards = modal.querySelectorAll('.upscaler-option-card');
+    cards.forEach(card => {
+      const mode = card.dataset.mode;
+      card.classList.toggle('active', mode === currentMode);
+    });
+
+    // Update sharpness slider
+    const slider = document.getElementById('upscaler-sharpness-slider');
+    const valReadout = document.getElementById('upscaler-sharpness-val');
+    if (slider) {
+      slider.value = isNaN(currentSharp) ? 0.4 : currentSharp;
+      if (valReadout) valReadout.textContent = `${Math.round(slider.value * 100)}%`;
+    }
+
+    modal.classList.remove('hidden');
+    if (window.lucide) {
+      try { window.lucide.createIcons({ scope: modal }); } catch (e) {}
+    }
+  }
+
+  function closeUpscalerModal() {
+    const modal = document.getElementById('upscaler-modal');
+    if (modal) modal.classList.add('hidden');
+  }
+
+  window.openUpscalerModal = openUpscalerModal;
+
+  // Event handlers for Upscaler modal
+  document.getElementById('upscaler-modal-close')?.addEventListener('click', closeUpscalerModal);
+  document.getElementById('upscaler-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'upscaler-modal') closeUpscalerModal();
+  });
+
+  document.querySelectorAll('input[name="upscaler-mode-radio"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      const mode = e.target.value;
+      const p = window.playerInstance;
+      if (p) p.setUpscalerMode(mode);
+
+      document.querySelectorAll('.upscaler-option-card').forEach(card => {
+        card.classList.toggle('active', card.dataset.mode === mode);
+      });
+
+      refreshSettingsTiles();
+      const labels = {
+        anime4k: 'Anime4K Line Reconstruction',
+        fsr: 'AMD FSR / CAS Spatial Upscaling',
+        bicubic: 'Bicubic Smooth',
+        off: 'Upscaler disabled'
+      };
+      showToast(`Upscaler mode: ${labels[mode] || mode}`, 'success');
+    });
+  });
+
+  document.getElementById('upscaler-sharpness-slider')?.addEventListener('input', (e) => {
+    const val = parseFloat(e.target.value);
+    const p = window.playerInstance;
+    if (p) p.setUpscalerSharpness(val);
+    const valReadout = document.getElementById('upscaler-sharpness-val');
+    if (valReadout) valReadout.textContent = `${Math.round(val * 100)}%`;
+  });
+
+  // --- Tile: Upscaler ---
+  document.getElementById('tile-upscaler')?.addEventListener('click', () => {
+    openUpscalerModal();
+  });
+
+  // --- Player control bar Upscaler button ---
+  document.getElementById('player-upscaler-btn')?.addEventListener('click', () => {
+    openUpscalerModal();
   });
 
   // --- Tile: Manage Tabs (show/hide/edit custom web tabs) ---
@@ -5287,6 +5374,30 @@ const CLOUD_SYNC_MS = 15 * 1000;      // reconcile every 15 seconds while open
 const DEVICE_EXPIRY_KEY = 'ziptv_device_expiry';
 let cloudSyncBusy = false;
 
+// Signature of the last remote playlist state we fully reconciled. The heartbeat
+// fires every 15s; without this, a single mismatch between the cloud record and
+// the local playlist (a differing name, hidden-category set, or a server_url
+// that normalizes differently) makes reconcile think "something changed" on
+// EVERY cycle and re-run its destructive UI work — reloading categories or
+// switching playlists — which yanks the user out of whatever they're browsing.
+// Gating reconcile on this signature makes a steady cloud state a true no-op:
+// work runs once when the cloud actually changes, never again until it changes.
+let _lastCloudSig = null;
+function cloudPlaylistSig(state) {
+  try {
+    const norm = (s) => String(s || '').trim().toLowerCase().replace(/\/+$/, '').replace(/^https?:\/\//, '');
+    const rows = (state.playlists || []).map(p => [
+      norm(p.server_url),
+      String(p.username || '').toLowerCase(),
+      p.playlistName || '',
+      p.password || '',
+      (p.hidden_tabs || []).slice().sort().join(','),
+      (p.hidden_categories || []).map(String).slice().sort().join(',')
+    ].join('|')).sort();
+    return (state.status || '') + '::' + rows.join('~~');
+  } catch (e) { return null; }
+}
+
 // Back-compat shims: the login/activation screens call these. With 5.0 the sync
 // loop runs continuously for the whole app lifetime, so "start" just guarantees
 // it's running and "stop" is a no-op (we never want to stop mirroring).
@@ -5360,11 +5471,22 @@ async function applyCloudState(state) {
   // one-sided links server-side, e.g. after the other device re-pairs).
   updateCompanion(state.companion);
 
+  // Nothing changed since the last full reconcile → do no reconcile work. This
+  // is the common case on the 15s heartbeat, and skipping it here is what keeps
+  // a background sync from interrupting the user's browsing (see _lastCloudSig).
+  const sig = cloudPlaylistSig(state);
+  if (sig !== null && sig === _lastCloudSig) return;
+
   // A brand-new ('pending') device that the admin hasn't provisioned yet keeps
   // whatever the user may already have locally — we only mirror (incl. removals)
   // once the device is managed. This protects existing users during migration.
   const managed = state.status && state.status !== 'pending';
-  const { activeChanged } = await reconcilePlaylists(state.playlists || [], { allowRemovals: managed });
+  const { activeChanged, incomplete } = await reconcilePlaylists(state.playlists || [], { allowRemovals: managed });
+
+  // Only remember this state as "done" once it fully reconciled. A transient
+  // add failure leaves it unmemoized so the next heartbeat retries — but a
+  // clean cycle memoizes, so a steady cloud state stops re-running forever.
+  if (!incomplete) _lastCloudSig = sig;
 
   // Managed device whose playlists were ALL removed from the dashboard → treat
   // like an expired subscription: stop playback, return to the login screen and
@@ -5544,6 +5666,7 @@ async function reconcilePlaylists(remote, { allowRemovals } = {}) {
   let added = false;
   let addedKey = null;
   let activeChanged = false;
+  let incomplete = false; // an add/update failed → don't memoize; retry next cycle
   for (const r of remote) {
     const k = key(r);
     if (!localKeys.has(k)) {
@@ -5552,6 +5675,7 @@ async function reconcilePlaylists(remote, { allowRemovals } = {}) {
         added = true;
         addedKey = k;
       } catch (e) {
+        incomplete = true;
         console.warn('Could not add synced playlist:', r.playlistName, e.message);
       }
     }
@@ -5572,6 +5696,7 @@ async function reconcilePlaylists(remote, { allowRemovals } = {}) {
         }
       }
     } catch (e) {
+      incomplete = true;
       console.warn('Failed to update synced playlist settings:', r.playlistName, e.message);
     }
   }
@@ -5606,7 +5731,7 @@ async function reconcilePlaylists(remote, { allowRemovals } = {}) {
       }
     } catch (e) { console.warn('Auto-enter after sync failed:', e.message); }
   }
-  return { activeChanged };
+  return { activeChanged, incomplete };
 }
 
 // Wipe all local playlists, stop playback and bounce to the login screen.

@@ -266,6 +266,8 @@ button {
 .login-logo-header {
   text-align: center;
   margin-bottom: 30px;
+  cursor: pointer;
+  user-select: none;
 }
 
 .logo-z {
@@ -7974,3 +7976,198 @@ body.wt-guest #video-container::after {
 }
 .about-dev-line:hover { text-decoration: underline; }
 .about-dev-line i { width: 16px; height: 16px; flex: none; }
+
+/* ==========================================================================
+   UPSCALER OPTIONS MODAL
+   ========================================================================== */
+.upscaler-modal-card {
+  position: relative;
+  width: min(580px, 94vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px;
+  background: var(--bg-elevated, #16181d);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+}
+
+.upscaler-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 28px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.upscaler-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.upscaler-header-icon {
+  width: 28px;
+  height: 28px;
+  color: #fbbf24;
+  flex-shrink: 0;
+}
+
+.upscaler-modal-title h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.upscaler-header-sub {
+  margin: 2px 0 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary, #9aa0a6);
+}
+
+.upscaler-modal-body {
+  padding: 22px 28px 28px;
+  overflow-y: auto;
+}
+
+.upscaler-section-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary, #9aa0a6);
+  margin-bottom: 14px;
+}
+
+.upscaler-options-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.upscaler-option-card {
+  display: flex;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.12s ease;
+}
+
+.upscaler-option-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.upscaler-option-card.active,
+.upscaler-option-card:has(input:checked) {
+  background: rgba(77, 163, 255, 0.08);
+  border-color: var(--accent, #4da3ff);
+  box-shadow: 0 0 0 1px var(--accent, #4da3ff);
+}
+
+.upscaler-option-card input[type="radio"] {
+  display: none;
+}
+
+.upscaler-card-content {
+  flex: 1;
+}
+
+.upscaler-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.upscaler-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 6px;
+}
+
+.anime4k-badge {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.fsr-badge {
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+.bicubic-badge {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.35);
+}
+
+.off-badge {
+  background: rgba(255, 255, 255, 0.08);
+  color: #9aa0a6;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.upscaler-badge-sub {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #9aa0a6);
+}
+
+.upscaler-card-title {
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.upscaler-card-desc {
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--text-secondary, #9aa0a6);
+}
+
+.upscaler-slider-box {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+
+.upscaler-slider-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-secondary, #9aa0a6);
+  margin-bottom: 12px;
+}
+
+#upscaler-sharpness-val {
+  color: var(--accent, #4da3ff);
+  font-size: 0.9rem;
+}
+
+#upscaler-sharpness-slider {
+  width: 100%;
+  accent-color: var(--accent, #4da3ff);
+  cursor: pointer;
+}
+
+.upscaler-slider-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 0.7rem;
+  color: var(--text-secondary, #9aa0a6);
+}
+

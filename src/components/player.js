@@ -3134,7 +3134,7 @@ export class VideoPlayer {
   }
 
   // Release all resources held by this player instance.
-  // --- Upscaler (FSR-1-style WebGL enhancement over the <video>) --------------
+  // --- Upscaler (WebGL enhancement over the <video>) --------------
   // Lazily built the first time it's turned on. Engine-agnostic: it reads frames
   // straight off the <video>, so it keeps working across channel/engine switches.
   _ensureUpscaler() {
@@ -3145,13 +3145,31 @@ export class VideoPlayer {
     return this._upscaler;
   }
 
-  // Turn the upscaler on/off. Returns the new state. Persists the choice.
+  // Turn the upscaler on/off or set mode. Returns current mode. Persists choice.
+  setUpscalerMode(mode) {
+    const up = this._ensureUpscaler();
+    if (!up.supported) return 'off';
+    up.setMode(mode);
+    try {
+      localStorage.setItem('upscaler_mode', mode);
+      localStorage.setItem('upscaler_enabled', mode !== 'off' ? '1' : '0');
+    } catch (e) {}
+    return mode;
+  }
+
+  getUpscalerMode() {
+    const up = this._ensureUpscaler();
+    if (!up.supported) return 'off';
+    return up.getMode();
+  }
+
   toggleUpscaler() {
     const up = this._ensureUpscaler();
     if (!up.supported) return false;
-    const on = up.toggle();
-    try { localStorage.setItem('upscaler_enabled', on ? '1' : '0'); } catch (e) {}
-    return on;
+    const current = up.getMode();
+    const nextMode = (current === 'off') ? 'fsr' : 'off';
+    this.setUpscalerMode(nextMode);
+    return nextMode !== 'off';
   }
 
   setUpscalerSharpness(v) {
@@ -3165,7 +3183,14 @@ export class VideoPlayer {
     try {
       const s = parseFloat(localStorage.getItem('upscaler_sharpness'));
       if (!isNaN(s)) this._ensureUpscaler().setSharpness(s);
-      if (localStorage.getItem('upscaler_enabled') === '1') this._ensureUpscaler().enable();
+      
+      let savedMode = localStorage.getItem('upscaler_mode');
+      if (!savedMode && localStorage.getItem('upscaler_enabled') === '1') {
+        savedMode = 'fsr';
+      }
+      if (savedMode && savedMode !== 'off') {
+        this.setUpscalerMode(savedMode);
+      }
     } catch (e) {}
   }
 
