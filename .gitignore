@@ -56,3 +56,15 @@ electron-codecs/dist/
 electron-src/
 
 stream-monitor-out/
+
+# iOS (Capacitor) — the Xcode project is generated on macOS/CI by `cap add ios`.
+# The native plugin source lives in ios-native-video/ (committed); the generated
+# app project and CocoaPods artifacts are not.
+/ios/App/Pods/
+/ios/App/App/public/
+/ios/App/build/
+/ios/DerivedData/
+/ios/App/App/capacitor.config.json
+/ios/App/App/config.xml
+DerivedData/
+*.xcuserstate

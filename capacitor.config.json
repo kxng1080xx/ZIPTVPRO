@@ -7,8 +7,15 @@
     "allowMixedContent": true,
     "overrideUserAgent": "VLC/3.0.20"
   },
+  "ios": {
+    "overrideUserAgent": "VLC/3.0.20",
+    "contentInset": "never",
+    "backgroundColor": "#000000",
+    "limitsNavigationsToAppBoundDomains": false
+  },
   "server": {
     "androidScheme": "https",
+    "iosScheme": "https",
     "cleartext": true
   },
   "plugins": {

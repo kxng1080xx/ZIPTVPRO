@@ -5,6 +5,10 @@
  * routes playback to a real native player that uses the device's hardware
  * codecs (same as IPTV Smarters / VLC):
  *   - Android (APK):  libVLC via the NativeVideo Capacitor plugin.
+ *   - iOS/iPadOS:     MobileVLCKit via the same NativeVideo plugin name (the
+ *                     ziptv-native-video local plugin) — WKWebView lacks MSE so
+ *                     mpegts.js can't run, and AVPlayer won't do MKV / raw TS /
+ *                     E-AC3; VLC covers them, same as Android.
  *   - Electron (PC):  no native layer → premium VOD goes through the server
  *                     ffmpeg transcode (/api/transcode); everything else <video>.
  *   - Web:            unavailable (no native layer) → caller uses <video>.
@@ -14,9 +18,10 @@
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
-const AndroidNative = (() => {
+const NativePlugin = (() => {
   try {
-    if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+    const platform = Capacitor.isNativePlatform() ? Capacitor.getPlatform() : null;
+    if (platform === 'android' || platform === 'ios') {
       return registerPlugin('NativeVideo');
     }
   } catch (e) {}
@@ -24,16 +29,16 @@ const AndroidNative = (() => {
 })();
 
 export function isNativeAvailable() {
-  return !!AndroidNative;
+  return !!NativePlugin;
 }
 
 // True on Android TV / Fire TV (UiModeManager + leanback/fire_tv features).
 // The authoritative check — some TV WebView user agents look like phones, so
 // UA sniffing alone put TVs in the desktop layout. False on phones/desktop/web.
 export async function nativeIsTv() {
-  if (!AndroidNative || !AndroidNative.isTv) return false;
+  if (!NativePlugin || !NativePlugin.isTv) return false;
   try {
-    const r = await AndroidNative.isTv();
+    const r = await NativePlugin.isTv();
     return !!(r && r.tv);
   } catch (e) { return false; }
 }
@@ -43,26 +48,26 @@ export async function nativeIsTv() {
 // (desktop/web rely on the OS keeping the screen on while media plays).
 export async function setScreenAwake(on) {
   try {
-    if (!AndroidNative) return;
-    if (on) await AndroidNative.keepAwake();
-    else await AndroidNative.allowSleep();
+    if (!NativePlugin) return;
+    if (on) await NativePlugin.keepAwake();
+    else await NativePlugin.allowSleep();
   } catch (e) {}
 }
 
 // Normalize the native backend behind one interface. All methods are async and
 // must never throw synchronously (callers race them against a fallback timer).
 function impl() {
-  if (AndroidNative) {
+  if (NativePlugin) {
     return {
-      load: (o) => AndroidNative.load(o),
-      play: () => AndroidNative.play(),
-      pause: () => AndroidNative.pause(),
-      seek: (position) => AndroidNative.seek({ position }),
-      setVolume: (volume) => AndroidNative.setVolume({ volume }),
-      setRect: (r) => AndroidNative.setRect(r),
-      stop: () => AndroidNative.stop(),
-      getAudioTracks: () => AndroidNative.getAudioTracks(),
-      on: (event, cb) => AndroidNative.addListener(event, cb),
+      load: (o) => NativePlugin.load(o),
+      play: () => NativePlugin.play(),
+      pause: () => NativePlugin.pause(),
+      seek: (position) => NativePlugin.seek({ position }),
+      setVolume: (volume) => NativePlugin.setVolume({ volume }),
+      setRect: (r) => NativePlugin.setRect(r),
+      stop: () => NativePlugin.stop(),
+      getAudioTracks: () => NativePlugin.getAudioTracks(),
+      on: (event, cb) => NativePlugin.addListener(event, cb),
     };
   }
   return null;

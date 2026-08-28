@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@capacitor/app": "^8.1.0",
+    "@capacitor/ios": "8.4.0",
     "@capacitor/screen-orientation": "^8.0.1",
     "@ghostery/adblocker-electron": "^2.5.2",
     "chromecasts": "^1.10.2",
@@ -33,12 +34,13 @@
     "express": "^4.21.2",
     "hls.js": "^1.5.15",
     "mpegts.js": "^1.8.0",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "ziptv-native-video": "file:ios-native-video"
   },
   "devDependencies": {
-    "@capacitor/android": "^8.4.0",
-    "@capacitor/cli": "^8.4.0",
-    "@capacitor/core": "^8.4.0",
+    "@capacitor/android": "8.4.0",
+    "@capacitor/cli": "8.4.0",
+    "@capacitor/core": "8.4.0",
     "concurrently": "^9.1.2",
     "electron": "^42.4.0",
     "electron-builder": "^26.15.3",

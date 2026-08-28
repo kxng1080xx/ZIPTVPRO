@@ -1,0 +1,73 @@
+# Codemagic CI → TestFlight for ZIPTV Pro (iOS / iPadOS).
+#
+# Why this exists: iOS apps can't be built or signed on Windows. This runs the
+# whole Capacitor iOS build on a macOS runner and uploads to TestFlight, so you
+# push from Windows and testers get the build.
+#
+# ONE-TIME SETUP (Codemagic UI → App settings):
+#   1. Add an App Store Connect API key integration and name it exactly
+#      "ZIPTV_ASC" (Teams → Integrations → App Store Connect). It needs the
+#      App Manager role so it can upload builds.
+#   2. Create the app record in App Store Connect with bundle id
+#      com.iptv.player.zero, then put its numeric Apple ID in APP_STORE_APPLE_ID
+#      below (App Store Connect → your app → App Information → "Apple ID").
+#   3. Create a TestFlight beta group (e.g. "ZIPTV Testers") and put its exact
+#      name under beta_groups.
+#   4. First run: Codemagic's automatic signing will create the distribution
+#      certificate + provisioning profile for you.
+
+workflows:
+  ios-testflight:
+    name: iOS · TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    integrations:
+      app_store_connect: ZIPTV_ASC
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.iptv.player.zero
+      vars:
+        BUNDLE_ID: "com.iptv.player.zero"
+        # Replace with your app's numeric Apple ID from App Store Connect:
+        APP_STORE_APPLE_ID: "0000000000"
+        XCODE_WORKSPACE: "ios/App/App.xcworkspace"
+        XCODE_SCHEME: "App"
+      node: 20
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Install npm dependencies
+        script: npm ci
+      - name: Build web assets (Vite → dist/)
+        script: npm run build
+      - name: Add + sync the iOS platform
+        script: |
+          # `cap add ios` scaffolds ios/ on first run; sync copies web assets and
+          # wires in the ziptv-native-video (MobileVLCKit) plugin.
+          if [ ! -d "ios/App" ]; then npx cap add ios; fi
+          npx cap sync ios
+      - name: Install CocoaPods (pulls MobileVLCKit)
+        script: |
+          cd ios/App && pod install
+      - name: Apply signing profiles
+        script: xcode-project use-profiles
+      - name: Set the TestFlight build number
+        script: |
+          cd ios/App
+          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" || echo 0)
+          agvtool new-version -all $(($LATEST + 1))
+      - name: Build signed .ipa
+        script: |
+          xcode-project build-ipa \
+            --workspace "$XCODE_WORKSPACE" \
+            --scheme "$XCODE_SCHEME"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        beta_groups:
+          - "ZIPTV Testers"
