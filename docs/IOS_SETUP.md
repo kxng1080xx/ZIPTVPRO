@@ -43,6 +43,45 @@ misbehaves the stream degrades to AVPlayer rather than breaking.
 
 ---
 
+## Route 0 — Free test on your OWN device (no $99, before you commit)
+
+Validate that the app + MobileVLCKit playback actually work on a real iPhone/iPad
+**without paying** — using Xcode's free "personal team" signing.
+
+**Still needs a Mac.** iOS apps can't be compiled or installed onto a device
+without Xcode (macOS only). Free removes the $99 membership, not the Mac. A
+rented *cloud* Mac won't work here — free-provisioning install needs the device
+physically connected — so borrow a physical Mac in the same room as your phone.
+
+**Limits of the free route:** the app **expires after 7 days** (re-run to
+reinstall), max 3 sideloaded apps, your own devices only, **no TestFlight**.
+
+Steps (on the borrowed Mac, ~15 min):
+1. Install **Xcode** (Mac App Store, free). Open it once to finish setup.
+2. Xcode → **Settings → Accounts → +** → sign in with any **free Apple ID**
+   (no paid membership). This creates a "Personal Team".
+3. Clone + prepare the app:
+   ```bash
+   git clone https://github.com/kxng1080xx/ZIPTVPRO.git && cd ZIPTVPRO
+   npm ci && npm run build
+   npx cap add ios && npx cap sync ios
+   cd ios/App && pod install     # pulls MobileVLCKit
+   open App.xcworkspace
+   ```
+4. In Xcode: select the **App** target → **Signing & Capabilities**:
+   - **Team** → your Personal Team.
+   - **Bundle Identifier** → change to something unique for the free test, e.g.
+     `com.leon.ziptv.dev` (a free team can't reuse an id another team owns; the
+     real `com.iptv.player.zero` is reserved for the paid TestFlight build).
+5. Plug your iPhone/iPad in via USB, unlock it, tap **Trust** on the phone.
+6. Pick your device in Xcode's run-target dropdown, press **▶ Run**.
+7. First launch: on the phone, **Settings → General → VPN & Device Management**
+   → tap your Apple ID → **Trust**. Reopen the app.
+8. Test playback (especially non-HLS: MKV / HEVC / E-AC3 VOD) to confirm the VLC
+   plugin works before you spend anything.
+
+If it works, come back to Route A/B and pay the $99 to ship via TestFlight.
+
 ## Route A — Codemagic (recommended, build from Windows)
 
 1. **Apple Developer Program** — enroll ($99/yr) at developer.apple.com.
