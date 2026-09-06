@@ -16,8 +16,9 @@
     "start": "node server/index.js",
     "electron:start": "electron .",
     "fetch:ffmpeg": "node scripts/fetch-ffmpeg.mjs",
-    "electron:dist": "npm run fetch:ffmpeg && npm run bump -- --no-bump && npm run build && electron-builder && node -e \"const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('./package.json')); fs.copyFileSync('dist-electron/ZIPTV-Pro-Setup-' + pkg.version + '.exe', 'latest.exe');\"",
-    "electron:dist:codecs": "npm run fetch:ffmpeg && npm run build && electron-builder --config.electronDist=electron-codecs/dist --config.electronVersion=42.2.0 && node -e \"const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('./package.json')); fs.copyFileSync('dist-electron/ZIPTV-Pro-Setup-' + pkg.version + '.exe', 'latest.exe');\"",
+    "electron:dist": "node scripts/check-codec-runtime.mjs && npm run fetch:ffmpeg && npm run bump -- --no-bump && npm run build && electron-builder --config.electronDist=electron-codecs/dist --config.electronVersion=42.2.0 && node -e \"const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('./package.json')); fs.copyFileSync('dist-electron/ZIPTV-Pro-Setup-' + pkg.version + '.exe', 'latest.exe');\"",
+    "electron:dist:codecs": "npm run electron:dist",
+    "electron:dist:stock": "npm run fetch:ffmpeg && npm run bump -- --no-bump && npm run build && electron-builder && node -e \"const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('./package.json')); fs.copyFileSync('dist-electron/ZIPTV-Pro-Setup-' + pkg.version + '.exe', 'latest.exe');\"",
     "release": "node scripts/publish-release.mjs",
     "apk": "npm run bump -- --no-bump && npm run build && npx cap sync android && cd android && .\\gradlew.bat assembleDebug && cd .. && copy /Y android\\app\\build\\outputs\\apk\\debug\\app-debug.apk app.apk && copy /Y app.apk ZIPTV-Pro.apk && echo APK ready: app.apk + ZIPTV-Pro.apk",
     "apk:tv": "npm run bump -- --no-bump && set TV_ONLY=true&& node scripts/gen-version.mjs && vite build && npx cap sync android && cd android && .\\gradlew.bat assembleDebug && cd .. && copy /Y android\\app\\build\\outputs\\apk\\debug\\app-debug.apk tv.apk && echo TV-only APK ready: tv.apk"
