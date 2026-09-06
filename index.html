@@ -4,6 +4,46 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ZIPTV Pro</title>
+  <!-- Early boot diagnostic (ES3-safe, runs before the app bundle). On old
+       WebViews where the bundle fails to load/parse, the in-app error overlay
+       never installs, so this surfaces the real error — or reports that the
+       bundle never executed — onto the startup loader text. Harmless elsewhere:
+       it only writes while the startup loader is still visible. -->
+  <script>
+  (function () {
+    var INITIAL = 'Loading application session...';
+    function setText(t) {
+      try { var el = document.querySelector('.startup-loading-text'); if (el) el.textContent = String(t).slice(0, 240); } catch (e) {}
+    }
+    window.addEventListener('error', function (e) {
+      // A capture-phase error whose target is an element = a RESOURCE that
+      // failed to load (script/link/img). Name it — that's the culprit.
+      var t = e && e.target;
+      if (t && t.tagName && (t.src || t.href)) {
+        var url = String(t.src || t.href || '');
+        setText('LOAD FAIL: ' + t.tagName + ' ' + url.replace(/^https?:\/\//, '').slice(0, 120));
+        return;
+      }
+      var m = (e && e.message) || 'script error';
+      if (e && e.filename) m += ' @' + String(e.filename).split('/').pop() + ':' + (e.lineno || '?');
+      setText('ERR: ' + m);
+    }, true);
+    window.addEventListener('unhandledrejection', function (e) {
+      var r = e && e.reason; setText('REJECT: ' + ((r && r.message) ? r.message : String(r)));
+    });
+    document.addEventListener('DOMContentLoaded', function () {
+      var modules = ('noModule' in document.createElement('script'));
+      setTimeout(function () {
+        var loader = document.getElementById('login-startup-loader');
+        var el = document.querySelector('.startup-loading-text');
+        var visible = loader && loader.className.indexOf('hidden') === -1 && loader.offsetParent !== null;
+        if (visible && el && el.textContent === INITIAL) {
+          setText('app did not start (esmodules=' + modules + ')');
+        }
+      }, 9000);
+    });
+  })();
+  </script>
   <!-- Google Fonts: Inter & Outfit — loaded async so an offline/slow TV never
        blocks first paint on the font CSS fetch (system fonts render meanwhile). -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -448,6 +488,7 @@
                   <span>Favorite</span>
                   <i data-lucide="star" id="detail-favorite-icon"></i>
                 </button>
+                <button class="details-close-btn" id="details-close-btn" title="Close details" aria-label="Close details"><i data-lucide="x"></i></button>
               </div>
 
               <div class="details-program-info">

@@ -127,6 +127,10 @@ function ensureServerMode() {
 }
 
 async function checkServerMode() {
+  // The legacy Fire OS 5 build is a bare WebView wrapper with no bundled local
+  // server, so the /api/status probe can only stall boot ("Loading application
+  // session…"). It is always a client-mode app — short-circuit immediately.
+  if (typeof __LEGACY__ !== 'undefined' && __LEGACY__) { isServerMode = false; return false; }
   try {
     // /api/status may block on an upstream provider check (up to ~8s), so allow
     // headroom — a too-short timeout makes REMOTE clients (phone over the

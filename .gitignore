@@ -68,3 +68,11 @@ stream-monitor-out/
 /ios/App/App/config.xml
 DerivedData/
 *.xcuserstate
+dist-legacy/
+
+# Legacy Fire OS 5 wrapper project (hand-rolled, no Capacitor .gitignore of its
+# own) — same build outputs as android/ above.
+android-legacy/.gradle/
+android-legacy/**/build/
+android-legacy/local.properties
+android-legacy/.idea/

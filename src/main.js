@@ -265,8 +265,21 @@ window.addEventListener('unhandledrejection', (e) => {
   e.preventDefault();
 });
 
+// Legacy Fire OS 5 boot tracer: writes each startup milestone onto the loader
+// text so a stall on the old WebView pinpoints exactly which step hung (instead
+// of a silent spinner). No-op in every non-legacy build.
+function bootTrace(msg) {
+  if (typeof __LEGACY__ === 'undefined' || !__LEGACY__) return;
+  try {
+    const el = document.querySelector('.startup-loading-text');
+    if (el) el.textContent = String(msg);
+    if (window.console && console.log) console.log('[boot]', msg);
+  } catch (e) {}
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   try {
+    bootTrace('starting…');
     const p = initApp();
     if (p && typeof p.catch === 'function') {
       p.catch((err) => showFatalOverlay('initApp() failed', err && err.stack ? err.stack : String(err)));
@@ -355,14 +368,17 @@ async function initApp() {
   // low-power devices (Fire TV / Tizen / WebOS / Android projectors). Auto-on
   // for those targets; a Settings toggle (stored in localStorage) overrides.
   applyPerfMode();
+  bootTrace('perf mode');
 
   // Light/dark theme (Auto follows the OS; TVs stay dark).
   applyTheme();
+  bootTrace('theme ready');
 
   // Initialize device code (identity for the /connect dashboard).
   deviceCode = getDeviceCode();
   const codeEl = document.getElementById('remote-device-code');
   if (codeEl) codeEl.textContent = deviceCode;
+  bootTrace('code ' + deviceCode);
 
   const nameEl = document.getElementById('playlist-name');
   if (nameEl && (!nameEl.value || nameEl.value === 'Xtream Codes')) {
@@ -385,13 +401,22 @@ async function initApp() {
     const ua = navigator.userAgent || '';
     const isAndroid = /Android/i.test(ua);
     const isWindowsDesktop = /Windows NT/i.test(ua) && !isAndroid;
+    // The main APK's minSdk is 24 (Android 7.0). Fire OS 5 sticks report
+    // "Android 5.x" and can't install it — route them to the legacy build
+    // instead. Android major < 7 is the exact boundary (there is no Fire OS on
+    // Android 6, and Fire OS 6 is Android 7.1). See docs/LEGACY_FIRETV.md.
+    const androidMajor = (ua.match(/Android\s+(\d+)/) || [])[1];
+    const isLegacyAndroid = isAndroid && androidMajor && parseInt(androidMajor, 10) < 7;
+    const apkUrl = isLegacyAndroid
+      ? 'https://ziptvpro.pages.dev/legacy.apk'
+      : 'https://ziptvpro.pages.dev/app.apk';
     if (isWindowsDesktop) {
       dlBtn.href = 'https://ziptvpro.pages.dev/latest.exe';
       dlBtn.removeAttribute('download'); // cross-origin redirect handles the download
       if (dlLabel) dlLabel.textContent = 'Download Latest Version (PC)';
     } else {
-      dlBtn.href = 'https://ziptvpro.pages.dev/app.apk';
-      if (dlLabel) dlLabel.textContent = 'Download Latest Version';
+      dlBtn.href = apkUrl;
+      if (dlLabel) dlLabel.textContent = isLegacyAndroid ? 'Download (older Fire TV)' : 'Download Latest Version';
     }
 
     // On Android (Fire TV's browser can't install APKs) download + install in
@@ -401,7 +426,7 @@ async function initApp() {
         e.preventDefault();
         const label = dlLabel ? dlLabel.textContent : '';
         if (dlLabel) dlLabel.textContent = 'Downloading…';
-        const res = await downloadApp('https://ziptvpro.pages.dev/app.apk', (m) => { if (dlLabel) dlLabel.textContent = m; });
+        const res = await downloadApp(apkUrl, (m) => { if (dlLabel) dlLabel.textContent = m; });
         if (dlLabel) dlLabel.textContent = res.needsPermission
           ? 'Allow "Install unknown apps", then retry'
           : (res.ok ? label : 'Download failed — retry');
@@ -410,10 +435,12 @@ async function initApp() {
   }
 
   // 2. Initialize Core Components
+  bootTrace('player init…');
   playerInstance = new VideoPlayer();
   window.playerInstance = playerInstance;
   try { playerInstance.restoreUpscalerPref(); } catch (e) {}
   updateRecordingsCount();
+  bootTrace('player ready');
 
   // Electron close-to-tray: the window keeps running in the tray (recordings),
   // but nothing the USER was watching may keep playing — stop the player and
@@ -464,8 +491,10 @@ async function initApp() {
   } catch (e) {}
 
   // 3. Bind Global UI Events (Tabs, Logins, Settings, Modal Closers)
+  bootTrace('binding events…');
   bindGlobalEvents();
   initGlobalSearch();
+  bootTrace('events bound');
 
   // Custom web tabs (Electron in-app browser) + tab visibility + ad blocker.
   initWebTabs({ onSwitchTab: switchTab, onRefreshTiles: refreshSettingsTiles });
@@ -495,8 +524,10 @@ async function initApp() {
   // (Settings update check is wired on the Updates tile — see bindGlobalEvents.)
 
   // 4. Check Saved Playlists on Boot
+  bootTrace('loading playlists…');
   try {
     const { playlists, activeId } = await getPlaylists();
+    bootTrace('playlists: ' + ((playlists && playlists.length) || 0));
     if (!playlists || playlists.length === 0) {
       showLogin();
     } else {
@@ -625,6 +656,9 @@ window.switchTab = switchTab;
 // ---- Performance (lite) mode -------------------------------------------
 // Returns true if this device should default to lite mode (weak GPU).
 function shouldAutoLite() {
+  // The legacy Fire OS 5 build runs on the weakest hardware we target — always
+  // strip the glass effects/animations there.
+  if (typeof __LEGACY__ !== 'undefined' && __LEGACY__) return true;
   try {
     const ua = (navigator.userAgent || '').toLowerCase();
     // Fire TV (AFT*), Tizen (Samsung TV), WebOS (LG TV), generic SMART-TV,
@@ -3024,6 +3058,9 @@ function exitVodPlayer() {
   document.querySelector('.sidebar')?.classList.remove('hidden');
   document.querySelector('.top-header')?.classList.remove('hidden');
   document.querySelector('.epg-section-container')?.classList.remove('hidden');
+  // playVODStream / the series player also hide this one; it was never restored,
+  // so the Live details drawer stayed dead after a single VOD playback.
+  document.querySelector('.program-details-panel')?.classList.remove('hidden');
 
   if (document.fullscreenElement) {
     document.exitFullscreen().catch(() => {});

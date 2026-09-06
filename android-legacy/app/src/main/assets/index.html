@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZIPTV Pro</title>
+  <!-- Early boot diagnostic (ES3-safe, runs before the app bundle). On old
+       WebViews where the bundle fails to load/parse, the in-app error overlay
+       never installs, so this surfaces the real error — or reports that the
+       bundle never executed — onto the startup loader text. Harmless elsewhere:
+       it only writes while the startup loader is still visible. -->
+  <script>
+  (function () {
+    var INITIAL = 'Loading application session...';
+    function setText(t) {
+      try { var el = document.querySelector('.startup-loading-text'); if (el) el.textContent = String(t).slice(0, 240); } catch (e) {}
+    }
+    window.addEventListener('error', function (e) {
+      // A capture-phase error whose target is an element = a RESOURCE that
+      // failed to load (script/link/img). Name it — that's the culprit.
+      var t = e && e.target;
+      if (t && t.tagName && (t.src || t.href)) {
+        var url = String(t.src || t.href || '');
+        setText('LOAD FAIL: ' + t.tagName + ' ' + url.replace(/^https?:\/\//, '').slice(0, 120));
+        return;
+      }
+      var m = (e && e.message) || 'script error';
+      if (e && e.filename) m += ' @' + String(e.filename).split('/').pop() + ':' + (e.lineno || '?');
+      setText('ERR: ' + m);
+    }, true);
+    window.addEventListener('unhandledrejection', function (e) {
+      var r = e && e.reason; setText('REJECT: ' + ((r && r.message) ? r.message : String(r)));
+    });
+    document.addEventListener('DOMContentLoaded', function () {
+      var modules = ('noModule' in document.createElement('script'));
+      setTimeout(function () {
+        var loader = document.getElementById('login-startup-loader');
+        var el = document.querySelector('.startup-loading-text');
+        var visible = loader && loader.className.indexOf('hidden') === -1 && loader.offsetParent !== null;
+        if (visible && el && el.textContent === INITIAL) {
+          setText('app did not start (esmodules=' + modules + ')');
+        }
+      }, 9000);
+    });
+  })();
+  </script>
+  <!-- Google Fonts: Inter & Outfit — loaded async so an offline/slow TV never
+       blocks first paint on the font CSS fetch (system fonts render meanwhile). -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
+  <!-- Lucide Icons — vendored locally (public/lucide.min.js, pinned 0.525.0).
+       The old unpkg @latest script was synchronous + network-dependent: every
+       APK cold start blocked first paint on an unpkg round-trip. `defer` keeps
+       it ahead of the module script without blocking parsing. -->
+  <script defer src="/lucide.min.js"></script>
+  
+</head>
+<body class="dark-mode">
+
+  <!-- ==================== LOGIN SCREEN ==================== -->
+  <div id="login-screen" class="login-container">
+    <div class="login-card">
+      <button class="login-back-btn hidden" id="login-back-btn">
+        <i data-lucide="arrow-left"></i> Back to playlists
+      </button>
+      <div class="login-logo-header">
+        <img src="/assets/logo-BZUWDWM2.png" alt="ZIPTV Pro Logo" class="logo-img login-logo">
+        <h2>ZIPTV Pro</h2>
+        <p>Connect your Xtream Codes subscription</p>
+      </div>
+      <div id="login-startup-loader" class="login-startup-loader">
+        <div class="startup-spinner"></div>
+        <p class="startup-loading-text">Loading application session...</p>
+      </div>
+
+      <div id="login-error" class="login-error-msg hidden">Invalid login details. Please check and try again.</div>
+
+      <form id="login-form" class="hidden">
+        <button type="button" class="login-back-btn" id="manual-back-btn">
+          <i data-lucide="arrow-left"></i> Back to Device Activation
+        </button>
+        <div class="form-group">
+          <label for="playlist-name">Playlist Name</label>
+          <input type="text" id="playlist-name" placeholder="e.g. My Cord Cutter Playlist">
+        </div>
+        <div class="form-group">
+          <label for="m3u-url">Paste M3U URL (Auto-Extracts Login)</label>
+          <input type="url" id="m3u-url" placeholder="Paste your full M3U URL here">
+        </div>
+        <div class="login-or-divider">
+          <span>OR ENTER CREDENTIALS MANUALLY</span>
+        </div>
+        <div class="form-group">
+          <label for="host-url">Server URL (Host & Port)</label>
+          <input type="text" id="host-url" placeholder="e.g. http://your-provider-url.com:8080">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="username">Username</label>
+            <input type="text" id="username" placeholder="Enter username">
+          </div>
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" placeholder="Enter password">
+          </div>
+        </div>
+        
+        <button type="submit" id="login-btn">
+          <span class="btn-text">Connect Playlist</span>
+          <span class="btn-loader hidden"></span>
+        </button>
+      </form>
+      
+      <!-- Playlist select screen on boot if login/reachability fails -->
+      <div id="login-playlist-select" class="hidden">
+        <div class="login-playlists-title">Select a Saved Playlist</div>
+        <div id="login-playlists-list" class="login-playlists-list">
+          <!-- Dynamic playlist rows go here -->
+        </div>
+        <button type="button" id="login-show-form-btn" class="playlist-add-btn">
+          <i data-lucide="plus"></i> Add New Playlist
+        </button>
+      </div>
+
+      <!-- Remote Activation Code Box -->
+      <div id="remote-login-box" class="remote-login-box hidden">
+        <div class="remote-login-divider">
+          <span>DEVICE ACTIVATION</span>
+        </div>
+        <div class="remote-login-code-wrapper">
+          <span class="remote-login-label">Device Code:</span>
+          <span class="remote-login-code" id="remote-device-code">------</span>
+        </div>
+        <div class="remote-login-status" id="remote-login-status" data-state="wait">Connecting to activation server…</div>
+        <p class="remote-login-instructions">
+          Provide this Device Code to your service provider or administrator to activate your playlist remotely.
+        </p>
+      </div>
+
+      <div class="login-credits">
+
+        Designed by: Leon Goulbourne
+      </div>
+      <div class="app-version" id="app-version"></div>
+      <div class="apk-download-container">
+        <!-- href/label set per-platform in main.js (APK for Android, EXE for PC) -->
+        <a id="download-app-btn" href="https://ziptvpro.pages.dev/app.apk" class="apk-download-btn" download>
+          <i data-lucide="download"></i>
+          <span id="download-app-label">Download Latest Version</span>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MAIN APPLICATION ==================== -->
+  <div id="app-container" class="app-layout hidden">
+
+    <!-- ==================== SIDE RAIL (primary navigation) ====================
+         Netflix-style leanback rail: collapsed icon bar that expands with labels
+         on hover (desktop) or D-pad focus (TV). Hidden on phone portrait, where
+         the bottom tab bar takes over. -->
+    <nav class="side-rail" id="side-rail" aria-label="Primary navigation">
+      <div class="rail-logo">
+        <img src="/assets/logo-BZUWDWM2.png" alt="ZIPTV Pro" class="rail-logo-img animate-glow">
+        <span class="rail-label rail-wordmark">ZIPTV&nbsp;<em>PRO</em></span>
+      </div>
+
+      <div class="rail-group rail-group-main">
+        <button class="rail-item" id="rail-search-btn" title="Search">
+          <i data-lucide="search"></i><span class="rail-label">Search</span>
+        </button>
+        <button class="nav-tab rail-item active" data-tab="home">
+          <i data-lucide="house"></i><span class="rail-label">Home</span>
+        </button>
+        <button class="nav-tab rail-item" data-tab="live">
+          <i data-lucide="tv"></i><span class="rail-label">Live TV</span>
+        </button>
+        <button class="nav-tab rail-item" data-tab="movies">
+          <i data-lucide="film"></i><span class="rail-label">Movies</span>
+        </button>
+        <button class="nav-tab rail-item" data-tab="series">
+          <i data-lucide="clapperboard"></i><span class="rail-label">Series</span>
+        </button>
+        <!-- User-added web tabs (Electron): favicon buttons rendered by web-tabs.js -->
+        <div id="custom-tabs-slot"></div>
+        <!-- "+" opens the Chrome-bookmark-style add-tab dialog. Hidden on non-Electron. -->
+        <button class="rail-item" id="add-tab-btn" title="Add tab" style="display:none">
+          <i data-lucide="plus"></i><span class="rail-label">Add tab</span>
+        </button>
+      </div>
+
+      <div class="rail-group rail-group-bottom">
+        <button class="rail-item" id="sync-btn" title="Refresh Playlist Data" style="display: none;">
+          <i data-lucide="refresh-cw"></i><span class="rail-label">Refresh</span>
+        </button>
+        <button class="rail-item" id="settings-btn" title="Settings">
+          <i data-lucide="settings"></i><span class="rail-label">Settings</span>
+        </button>
+        <div class="profile-wrap">
+          <div class="profile-card rail-item" id="profile-card-btn" title="Switch playlist">
+            <span class="profile-avatar" id="profile-avatar">ZP</span>
+            <div class="profile-info rail-label">
+              <span class="profile-name" id="nav-playlist-name">Xtream Codes</span>
+              <span class="profile-status">
+                <span class="status-dot"></span>
+                <span id="expiry-text">Active</span>
+              </span>
+            </div>
+          </div>
+          <!-- Playlist drawer markup lives at body level (see #playlist-dropdown
+               near the modals) so position:fixed isn't trapped by the header's
+               backdrop-filter containing block. -->
+        </div>
+      </div>
+    </nav>
+
+    <div class="app-main">
+
+    <!-- ==================== TOP HEADER (contextual bar) ==================== -->
+    <header class="top-header">
+      <!-- Hamburger Menu Button (Mobile Only) -->
+      <button id="mobile-menu-btn" class="header-icon-btn mobile-only" title="Toggle Categories">
+        <i data-lucide="menu"></i>
+      </button>
+
+      <!-- Left: Logo (phone/desktop branding) -->
+      <div class="header-left">
+        <div class="logo-container">
+          <img src="/assets/logo-BZUWDWM2.png" alt="ZIPTV Pro Logo" class="logo-img header-logo animate-glow">
+          <span class="logo-wordmark">ZIPTV</span>
+          <span id="header-tv-ip" class="header-tv-ip-badge" style="display: none;">
+            <i data-lucide="tv"></i>
+            <span id="header-tv-ip-text">TV Link: Loading...</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- Right: global search · clock -->
+      <div class="header-right">
+        <!-- Global search: a real field on PC, a D-pad button on the APK/TV.
+             main.js shows exactly one of these based on the platform. -->
+        <label class="header-search" id="global-search-field" style="display: none;">
+          <i data-lucide="search"></i>
+          <input id="global-search-input" type="text" placeholder="Search live, movies & series…"
+                 autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        </label>
+        <button class="header-icon-btn" id="global-search-btn" title="Search" style="display: none;">
+          <i data-lucide="search"></i>
+        </button>
+        <button class="header-icon-btn" id="watch-join-btn" title="Join a Watch Together session">
+          <i data-lucide="users"></i>
+        </button>
+        <button class="header-icon-btn" id="phone-share-btn" title="Watch on your iPhone" style="display: none;">
+          <i data-lucide="smartphone"></i>
+        </button>
+        <div class="header-clock">
+          <span id="current-time">12:19 PM</span>
+          <span id="current-date">June 15, 2026</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="main-body-container">
+      
+      <!-- ==================== SIDEBAR ==================== -->
+      <aside class="sidebar">
+        <!-- Unified panel: toolbar (title + search + sort) pinned on top;
+             pinned items and categories scroll together as one list below. -->
+        <div class="categories-card">
+          <div class="categories-search-section">
+            <div class="categories-header-row">
+              <span class="categories-title">Categories</span>
+              <span class="categories-count-total" id="categories-count-total">40</span>
+            </div>
+            <div class="categories-actions">
+              <button class="category-search-btn" id="categories-search-btn" tabindex="0" title="Search categories" aria-label="Search categories">
+                <i data-lucide="search"></i>
+              </button>
+              <button class="category-sort-btn" id="categories-sort-btn" tabindex="0" title="Sort categories">
+                <i data-lucide="arrow-up-down"></i> <span id="categories-sort-label">—</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Shared scroll area: pins on top, categories below -->
+          <div class="categories-scroll" id="categories-scroll">
+            <!-- Pins Section (collapsible) -->
+            <div class="sidebar-top-pins" id="pin-top-section">
+              <div class="pin-title-row" id="pin-section-toggle" role="button" tabindex="0" aria-expanded="true" aria-controls="sidebar-pin-list" title="Show/hide pinned items">
+                <span><i data-lucide="pin" class="pin-icon"></i> Pinned</span>
+                <button class="icon-btn-small pin-collapse-chevron" tabindex="-1" aria-hidden="true"><i data-lucide="chevron-down"></i></button>
+              </div>
+
+              <ul class="sidebar-pin-list" id="sidebar-pin-list">
+                <li class="pin-item" data-category="favorites">
+                  <span class="pin-label"><i data-lucide="star" class="star-filled"></i> Favorites</span>
+                  <span class="pin-count" id="count-favorites">0</span>
+                </li>
+                <li class="pin-item" data-category="recordings">
+                  <span class="pin-label"><i data-lucide="circle-dot"></i> Recordings</span>
+                  <span class="pin-count" id="count-recordings">0</span>
+                </li>
+                <li class="pin-item" data-category="recently_viewed">
+                  <span class="pin-label"><i data-lucide="history"></i> Recently Viewed</span>
+                  <span class="pin-count" id="count-recently-viewed">0</span>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Category List (dynamic) -->
+            <div class="categories-list-container" id="categories-list">
+              <div class="category-item active" data-category="all">
+                <span class="cat-cc">ALL</span>
+                <span class="cat-label">All channels</span>
+                <span class="cat-count" id="count-all-channels">0</span>
+              </div>
+              <!-- Categories dynamic list will insert here -->
+            </div>
+          </div>
+        </div>
+
+      </aside>
+
+      <!-- ==================== CONTENT PANELS ==================== -->
+      <main class="content-viewport">
+        
+        <!-- 1. LIVE TV VIEW -->
+        <div id="live-view" class="view-panel">
+          <!-- Top section: Split Video Player and Channel Info -->
+          <div class="live-top-row">
+            
+            <!-- Video Player Area -->
+            <div class="player-wrapper">
+              <div class="video-container" id="video-container">
+                <video id="main-video-player" playsinline></video>
+
+                <!-- Idle / empty state — modern glass placeholder shown when no
+                     stream is playing; hidden on play, restored on stop. -->
+                <div class="player-idle" id="player-idle">
+                  <div class="player-idle__grid"></div>
+                  <div class="player-idle__brand">ZIPTV<span> PRO</span></div>
+                  <div class="player-idle__emblem-wrap">
+                    <span class="player-idle__pulse"></span>
+                    <div class="player-idle__emblem"><i data-lucide="play"></i></div>
+                  </div>
+                  <div class="player-idle__title">Ready to stream</div>
+                  <div class="player-idle__sub">Pick a channel or title to start watching</div>
+                  <div class="player-idle__hints">
+                    <span class="player-idle__hint"><i data-lucide="tv"></i>Live TV</span>
+                    <span class="player-idle__hint"><i data-lucide="film"></i>Movies</span>
+                    <span class="player-idle__hint"><i data-lucide="clapperboard"></i>Series</span>
+                  </div>
+                  <div class="player-idle__eq">
+                    <span></span><span></span><span></span><span></span><span></span>
+                  </div>
+                </div>
+
+                <!-- Always-on quality + FPS badge (top-right, independent of the
+                     auto-hiding controls overlay) -->
+                <div class="player-quality-badge" id="player-quality-badge"></div>
+
+                <!-- Custom Control Overlay -->
+                <div class="player-controls-overlay" id="player-controls">
+                  <!-- Top controls (indicators) -->
+                  <div class="controls-top">
+                    <button class="player-back-btn vod-only" id="player-back-btn" title="Back"><i data-lucide="arrow-left"></i></button>
+                    <span class="live-tag">LIVE</span>
+                    <span class="fps-indicator" id="player-fps-indicator">Loading...</span>
+                    <span class="vod-title-tag vod-only" id="player-vod-title"></span>
+                  </div>
+                  
+                  <!-- Center play/pause & skip -->
+                  <div class="controls-center">
+                    <button class="player-skip-btn" id="player-prev-btn"><i data-lucide="chevron-left"></i></button>
+                    <button class="player-seek10-btn seekable-only" id="player-rewind-10" title="Rewind 10 seconds"><i data-lucide="rotate-ccw"></i><span class="seek10-num">10</span></button>
+                    <button class="player-play-btn" id="player-play-pause-btn"><i data-lucide="play" class="play-icon"></i></button>
+                    <button class="player-seek10-btn seekable-only" id="player-forward-10" title="Forward 10 seconds"><i data-lucide="rotate-cw"></i><span class="seek10-num">10</span></button>
+                    <button class="player-skip-btn" id="player-next-btn"><i data-lucide="chevron-right"></i></button>
+                  </div>
+                  
+                  <!-- Bottom controls bar -->
+                  <div class="controls-bottom">
+                    <!-- VOD seek/progress bar (movies & series only) -->
+                    <div class="player-seek vod-only" id="player-seek-wrap">
+                      <span class="player-seek-time" id="player-time-current">0:00</span>
+                      <input type="range" class="player-seek-bar" id="player-seek" min="0" max="100" value="0" step="0.1">
+                      <span class="player-seek-time" id="player-time-duration">0:00</span>
+                      <button class="player-live-badge timeshift-only" id="player-live-badge" title="Go to live"><span class="live-dot"></span>LIVE</button>
+                    </div>
+                    <div class="controls-bottom-row">
+                    <div class="control-row-left">
+                      <div class="player-playing-details">
+                        <span class="player-playing-title" id="player-channel-name">No Channel Selected</span>
+                        <span class="player-playing-epg" id="player-epg-title">Select a channel from the list to start watching</span>
+                      </div>
+                    </div>
+
+                    <div class="control-row-right">
+                      <button class="player-control-icon timeshift-only" id="player-golive-btn" title="Go to Live"><i data-lucide="radio"></i></button>
+                      <button class="player-control-icon dvr-only" id="player-record-btn" title="Record this channel"><i data-lucide="circle-dot"></i></button>
+                      <button class="player-control-icon desktop-ffmpeg-only" id="player-deint-btn" title="Deinterlace (60fps)"><i data-lucide="zap"></i></button>
+                      <button class="player-control-icon" id="player-stop-btn" title="Stop"><i data-lucide="square"></i></button>
+                      <button class="player-control-icon" id="player-info-btn" title="Channel Info"><i data-lucide="info"></i></button>
+                      <button class="player-control-icon" id="player-cc-btn" title="Audio &amp; Subtitles"><i data-lucide="subtitles"></i></button>
+                      <div class="player-volume-wrap">
+                        <button class="player-control-icon" id="player-volume-btn" title="Mute"><i data-lucide="volume-2"></i></button>
+                        <div class="player-volume-flyout">
+                          <div class="player-volume-panel">
+                            <input type="range" class="player-volume-slider" id="player-volume-slider" min="0" max="1" step="0.05" value="0.8">
+                          </div>
+                        </div>
+                      </div>
+                      <button class="player-control-icon" id="player-upscaler-btn" title="Video Upscaler Options"><i data-lucide="sparkles"></i></button>
+                      <button class="player-control-icon" id="player-pip-btn" title="Picture in Picture"><i data-lucide="picture-in-picture"></i></button>
+                      <button class="player-control-icon cast-only" id="player-cast-btn" title="Cast to TV" style="display:none;"><i data-lucide="cast"></i></button>
+                      <button class="player-control-icon" id="player-fullscreen-btn" title="Fullscreen"><i data-lucide="maximize"></i></button>
+                    </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Casting state overlay (covers the video while a cast is active) -->
+                <!-- Backdrop only: the real #player-controls bar sits above this and
+                     drives playback on the TV while casting. -->
+                <div class="player-cast-overlay hidden" id="player-cast-overlay">
+                  <i data-lucide="cast" class="cast-overlay-icon"></i>
+                  <div class="cast-overlay-title">Playing on TV</div>
+                  <div class="cast-overlay-device" id="cast-overlay-device"></div>
+                </div>
+
+                <!-- Channel Logo Overlay (Watermark top left when overlay hidden) -->
+                <div class="player-channel-logo-watermark hidden" id="player-watermark">
+                  <img src="" alt="" id="watermark-img">
+                </div>
+
+                <!-- Channel Info Banner (brief OSD shown when a channel starts playing) -->
+                <div class="channel-info-banner" id="channel-info-banner">
+                  <div class="cib-header">
+                    <div class="cib-logo" id="cib-logo"><img src="" alt="" id="cib-logo-img"></div>
+                    <div class="cib-text">
+                      <span class="cib-name" id="cib-name">Live Channel</span>
+                      <span class="cib-datetime" id="cib-datetime"></span>
+                    </div>
+                  </div>
+                  <div class="cib-list" id="cib-list"></div>
+                </div>
+
+                <!-- Now/Next one-line guide (cable-box flip bar) at the bottom -->
+                <div class="now-next-bar" id="now-next-bar">
+                  <div class="nnb-item nnb-now" id="nnb-now">
+                    <span class="nnb-tag">NOW</span>
+                    <span class="nnb-time" id="nnb-now-time"></span>
+                    <span class="nnb-title" id="nnb-now-title"></span>
+                  </div>
+                  <span class="nnb-sep" id="nnb-sep"></span>
+                  <div class="nnb-item nnb-next" id="nnb-next">
+                    <span class="nnb-tag">NEXT</span>
+                    <span class="nnb-time" id="nnb-next-time"></span>
+                    <span class="nnb-title" id="nnb-next-title"></span>
+                  </div>
+                </div>
+
+                <!-- Video Loading Spinner -->
+                <div class="video-loader hidden" id="video-spinner">
+                  <div class="spinner"></div>
+                  <span>Loading Stream...</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Program Info Details Panel -->
+            <div class="program-details-panel" id="program-details">
+              <div class="details-header-row">
+                <div class="channel-logo-wrapper">
+                  <img id="detail-channel-icon" src="" alt="Z" class="fallback-logo">
+                </div>
+                <div class="channel-meta-text">
+                  <h3 id="detail-channel-name">Select a Channel</h3>
+                  <p id="detail-category-name">Live TV</p>
+                </div>
+                <button class="favorite-toggle-btn" id="detail-favorite-btn">
+                  <span>Favorite</span>
+                  <i data-lucide="star" id="detail-favorite-icon"></i>
+                </button>
+              </div>
+
+              <div class="details-program-info">
+                <div class="info-label">Program</div>
+                <h2 id="detail-program-title">No Program Information</h2>
+                <div class="program-time-range" id="detail-program-time">11:00 AM - 7:00 PM</div>
+                
+                <!-- Progress bar -->
+                <div class="details-progress-bar-container">
+                  <div class="details-progress-bar" id="detail-program-progress" style="width: 0%;"></div>
+                </div>
+                
+                <div class="info-label">Description</div>
+                <p class="program-description-text" id="detail-program-desc">
+                  No program details available. Select a channel to view the current schedule and start watching live streams.
+                </p>
+
+                <!-- Upcoming programs for this channel -->
+                <div class="details-upcoming hidden" id="detail-upcoming">
+                  <div class="info-label">Up Next</div>
+                  <div class="upcoming-list" id="detail-upcoming-list"></div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Bottom section: EPG Grid -->
+          <div class="epg-section-container timeline-hidden">
+            <!-- EPG Control Header -->
+            <div class="epg-controls-header">
+              <div class="epg-controls-left">
+                <button class="epg-ctrl-btn" id="epg-refresh-btn" title="Refresh EPG Data">
+                  <i data-lucide="refresh-cw"></i>
+                </button>
+                <div class="epg-search-field" id="epg-search-field">
+                  <button class="epg-ctrl-btn epg-ctrl-btn-icon" id="epg-channels-filter-btn" tabindex="0" title="Filter channels" aria-label="Filter channels">
+                    <i data-lucide="search"></i>
+                  </button>
+                  <input type="text" id="epg-channels-search-input" placeholder="Search channels &amp; shows…" autocomplete="off" spellcheck="false" />
+                </div>
+                <button class="epg-ctrl-btn" id="epg-channels-sort-btn" tabindex="0">
+                  <i data-lucide="arrow-up-down"></i> <span id="epg-channels-sort-label">Sort</span>
+                </button>
+                <button class="epg-ctrl-btn epg-ctrl-btn-icon" id="epg-view-toggle-btn" tabindex="0" title="Switch to list view" aria-label="Switch to list view">
+                  <i data-lucide="list"></i>
+                </button>
+              </div>
+              
+              <div class="epg-controls-right">
+                <button class="epg-ctrl-btn" id="epg-full-btn">
+                  <i data-lucide="expand"></i> <span class="epg-full-btn-label">Show Full Guide</span>
+                </button>
+                <div class="epg-hours-select">
+                  <span>Hours</span>
+                  <select id="epg-hours-range">
+                    <option value="4">4h</option>
+                    <option value="8" selected>8h</option>
+                    <option value="12">12h</option>
+                    <option value="24">24h</option>
+                  </select>
+                </div>
+                
+                <div class="epg-nav-controls">
+                  <button class="epg-nav-btn" id="epg-nav-prev"><i data-lucide="chevron-left"></i></button>
+                  <button class="epg-nav-btn active" id="epg-nav-now">Now</button>
+                  <button class="epg-nav-btn" id="epg-nav-next"><i data-lucide="chevron-right"></i></button>
+                  <span class="epg-selected-date" id="epg-selected-date-label">Monday, Jun 15</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- EPG Grid Body -->
+            <div class="epg-grid-layout">
+              <!-- Grid Header: Timeline Hours -->
+              <div class="epg-timeline-header-row">
+                <div class="epg-channel-header-cell">
+                  Channels <span id="epg-visible-count">(0)</span>
+                </div>
+                <div class="epg-timeline-hours-container" id="epg-timeline-hours">
+                  <!-- Hour ticks will insert here -->
+                </div>
+              </div>
+
+              <!-- Grid Content: Scrollable Channels & EPG blocks -->
+              <div class="epg-grid-scroll-container">
+                <!-- Left Channels Column (Scrolls vertically in sync with right column) -->
+                <div class="epg-channels-column" id="epg-channels-list">
+                  <!-- Channels list rows will insert here -->
+                </div>
+                
+                <!-- Right Programs Grid (Scrolls horizontally AND vertically) -->
+                <div class="epg-programs-grid-viewport" id="epg-grid-viewport">
+                  <!-- Red Current Time indicator -->
+                  <div class="epg-current-time-line" id="epg-current-time-indicator"></div>
+                  <!-- Timeline background grid lines -->
+                  <div class="epg-grid-lines" id="epg-grid-lines"></div>
+                  <!-- Rows with program blocks -->
+                  <div class="epg-programs-rows-container" id="epg-programs-rows">
+                    <!-- Dynamic program blocks insert here -->
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. MOVIES VIEW (VOD) -->
+        <div id="movies-view" class="view-panel">
+          <div class="vod-view-header">
+            <h2>Movies Catalog</h2>
+            <div class="vod-filters">
+              <button class="vod-filter-btn" id="movies-search-btn" tabindex="0">
+                <i data-lucide="search"></i> <span id="movies-search-label">Search</span>
+              </button>
+              <button class="vod-filter-btn" id="movies-sort-btn" tabindex="0">
+                <i data-lucide="arrow-up-down"></i> <span id="movies-sort-label">—</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="vod-scroll-container">
+            <!-- Continue Watching (movies) -->
+            <div class="continue-row hidden" id="movies-continue"></div>
+
+            <!-- Movies Grid -->
+            <div class="vod-grid" id="movies-grid">
+              <!-- Dynamic Movie Poster Cards -->
+            </div>
+
+            <!-- Pagination -->
+            <div class="vod-pagination" id="movies-pagination">
+              <!-- Dynamic Pagination Buttons -->
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. SERIES VIEW -->
+        <div id="series-view" class="view-panel">
+          <!-- Catalog Screen -->
+          <div id="series-catalog-container" class="series-catalog-container">
+            <div class="vod-view-header">
+              <h2>TV Series Catalog</h2>
+              <div class="vod-filters">
+                <button class="vod-filter-btn" id="series-search-btn" tabindex="0">
+                  <i data-lucide="search"></i> <span id="series-search-label">Search</span>
+                </button>
+                <button class="vod-filter-btn" id="series-sort-btn" tabindex="0">
+                  <i data-lucide="arrow-up-down"></i> <span id="series-sort-label">—</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="vod-scroll-container">
+              <!-- Continue Watching (series) -->
+              <div class="continue-row hidden" id="series-continue"></div>
+
+              <!-- Series Grid -->
+              <div class="vod-grid" id="series-grid">
+                <!-- Dynamic Series Poster Cards -->
+              </div>
+
+              <!-- Pagination -->
+              <div class="vod-pagination" id="series-pagination">
+                <!-- Dynamic Pagination Buttons -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Playback Dashboard Screen -->
+          <div id="series-playback-container" class="series-playback-container hidden">
+            <!-- Back bar -->
+            <div class="series-back-bar">
+              <button class="series-back-btn" id="series-back-btn">
+                <i data-lucide="arrow-left"></i> Back to Catalog
+              </button>
+            </div>
+
+            <!-- Split Top Row: Video Player (left) and Series Details (right) -->
+            <div class="series-top-row">
+              <!-- Player Wrapper (for hosting the dynamic #video-container) -->
+              <div class="series-player-wrapper">
+                <!-- #video-container will be appended here dynamically in JS -->
+              </div>
+              
+              <!-- Series Details Panel -->
+              <div class="series-details-panel">
+                <div class="series-details-header">
+                  <div class="series-cover-wrapper">
+                    <img id="series-cover-img" src="" alt="" class="fallback-logo">
+                  </div>
+                  <div class="series-meta-text">
+                    <h3 id="series-title">Select a Series</h3>
+                    <div class="series-badge-row">
+                      <span class="series-rating-badge" id="series-rating"><i data-lucide="star"></i> N/A</span>
+                      <span class="series-year-badge" id="series-year">N/A</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="series-plot-section">
+                  <div class="info-label">Plot Summary</div>
+                  <p id="series-plot">No summary available.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Bottom Section: Season Selector and Episodes list -->
+            <div class="series-bottom-section">
+              <div class="series-bottom-header">
+                <div class="season-select-wrapper">
+                  <span>Season</span>
+                  <select id="series-season-select">
+                    <!-- Season options will insert here dynamically -->
+                  </select>
+                </div>
+                <div class="series-episodes-count">
+                  Episodes <span id="series-episodes-count-num">(0)</span>
+                </div>
+              </div>
+              
+              <!-- Episodes list, styled like Live TV channels list -->
+              <div class="series-episodes-list" id="series-episodes-list">
+                <!-- Episode items will insert here dynamically -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- HOME DASHBOARD (landing page; content built by home.js) -->
+        <div id="home-view" class="view-panel active"></div>
+
+        <!-- CUSTOM WEB TAB VIEW (Electron in-app browser; chrome built by web-tabs.js) -->
+        <div id="webtab-view" class="view-panel"></div>
+
+      </main>
+    </div>
+    </div><!-- /.app-main -->
+  </div>
+
+  <!-- ==================== MOBILE BOTTOM TAB BAR (phone only) ==================== -->
+  <nav class="mobile-tab-bar" id="mobile-tab-bar">
+    <button class="mobile-tab-btn active" data-tab="home">
+      <i data-lucide="house"></i><span>Home</span>
+    </button>
+    <button class="mobile-tab-btn" data-tab="live">
+      <i data-lucide="tv"></i><span>Live</span>
+    </button>
+    <button class="mobile-tab-btn" data-tab="movies">
+      <i data-lucide="film"></i><span>Movies</span>
+    </button>
+    <button class="mobile-tab-btn" data-tab="series">
+      <i data-lucide="clapperboard"></i><span>Series</span>
+    </button>
+    <button class="mobile-tab-btn" data-action="settings">
+      <i data-lucide="settings"></i><span>Settings</span>
+    </button>
+  </nav>
+
+  <!-- ==================== RECORDINGS MODAL (DVR) ==================== -->
+  <div id="recordings-modal" class="recordings-modal hidden">
+    <div class="recordings-modal-card">
+      <div class="recordings-modal-header">
+        <h2><i data-lucide="circle-dot"></i> Recordings</h2>
+        <button class="recordings-close-btn" id="recordings-close-btn" title="Close"><i data-lucide="x"></i></button>
+      </div>
+      <div class="recordings-list" id="recordings-list">
+        <!-- Recording rows inserted dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== PLAYLISTS SLIDE-OVER DRAWER ==================== -->
+  <div class="playlist-dropdown hidden" id="playlist-dropdown">
+    <div class="playlist-drawer-scrim" id="playlist-drawer-scrim"></div>
+    <div class="playlist-drawer-panel">
+      <div class="playlist-drawer-header">
+        <div class="playlist-drawer-heading">
+          <h3>Playlists</h3>
+          <span class="playlist-drawer-sub" id="playlist-drawer-sub">Saved sources</span>
+        </div>
+        <button class="playlist-drawer-close" id="playlist-drawer-close" title="Close">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <div class="playlist-dropdown-list" id="playlist-dropdown-list"></div>
+      <button class="playlist-add-btn" id="playlist-add-btn">
+        <i data-lucide="plus"></i> Add playlist
+      </button>
+    </div>
+  </div>
+
+  <!-- ==================== VOD / SERIES DETAILS MODAL ==================== -->
+  <div id="vod-modal" class="modal-overlay hidden">
+    <div class="vod-modal-content">
+      <button class="modal-close-btn" id="vod-modal-close"><i data-lucide="x"></i></button>
+      
+      <div class="vod-modal-body">
+        <div class="vod-modal-left">
+          <img id="vod-modal-poster" src="" alt="Poster" class="vod-details-poster">
+          <button class="vod-play-btn-large" id="vod-modal-play-btn">
+            <i data-lucide="play-circle"></i> Play Now
+          </button>
+          <button class="vod-watch-together-btn" id="vod-modal-wt-btn">
+            <i data-lucide="users"></i> Watch Together
+          </button>
+        </div>
+        <div class="vod-modal-right">
+          <div class="vod-modal-title-row">
+            <h1 id="vod-modal-title">Movie Title</h1>
+            <span class="vod-badge-rating" id="vod-modal-rating"><i data-lucide="star"></i> 8.5</span>
+          </div>
+          
+          <div class="vod-modal-metadata">
+            <span class="vod-meta-item" id="vod-modal-genre">Action, Drama</span>
+            <span class="vod-meta-item" id="vod-modal-release">2026</span>
+            <span class="vod-meta-item" id="vod-modal-duration">2h 15m</span>
+          </div>
+
+          <p class="vod-modal-description" id="vod-modal-plot">
+            Movie plot summary goes here...
+          </p>
+
+          <div class="vod-cast-section">
+            <p><strong>Director:</strong> <span id="vod-modal-director">N/A</span></p>
+            <p><strong>Cast:</strong> <span id="vod-modal-cast">N/A</span></p>
+          </div>
+
+          <!-- Series Seasons & Episodes container -->
+          <div id="vod-series-episodes-container" class="hidden">
+            <div class="seasons-select-row">
+              <label for="seasons-dropdown">Season</label>
+              <select id="seasons-dropdown">
+                <!-- Dynamic season options -->
+              </select>
+            </div>
+            
+            <div class="episodes-list" id="episodes-list">
+              <!-- Dynamic episode rows -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== ABOUT MODAL ====================
+       Body rendered by renderAboutModal() in main.js from about.js. -->
+  <div id="about-modal" class="modal-overlay hidden">
+    <div class="about-modal-content">
+      <button class="modal-close-btn" id="about-modal-close"><i data-lucide="x"></i></button>
+      <div id="about-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- ==================== WATCH TOGETHER MODAL ====================
+       One overlay, three states (host lobby / guest code entry / guest lobby).
+       The body is rendered by renderWatchModal() in main.js. -->
+  <div id="watch-modal" class="modal-overlay hidden">
+    <div class="watch-modal-content">
+      <button class="modal-close-btn" id="watch-modal-close"><i data-lucide="x"></i></button>
+      <div id="watch-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- ==================== COMPANION DEVICE MODAL ====================
+       Settings → Companion Device. Reuses the Watch Together (wt-*) styles.
+       The body is rendered by renderCompanionModal() in main.js. -->
+  <div id="companion-modal" class="modal-overlay hidden">
+    <div class="watch-modal-content">
+      <button class="modal-close-btn" id="companion-modal-close"><i data-lucide="x"></i></button>
+      <div id="companion-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- ==================== UPSCALER OPTIONS MODAL ==================== -->
+  <div id="upscaler-modal" class="modal-overlay hidden">
+    <div class="upscaler-modal-card">
+      <div class="upscaler-modal-header">
+        <div class="upscaler-modal-title">
+          <i data-lucide="sparkles" class="upscaler-header-icon"></i>
+          <div>
+            <h3>Video Upscaler &amp; Image Enhancement</h3>
+            <p class="upscaler-header-sub">Hardware-accelerated WebGL real-time video processing</p>
+          </div>
+        </div>
+        <button class="modal-close-btn" id="upscaler-modal-close"><i data-lucide="x"></i></button>
+      </div>
+      
+      <div class="upscaler-modal-body">
+        <div class="upscaler-section-label">SELECT UPSCALER MODE</div>
+        
+        <div class="upscaler-options-grid">
+          <label class="upscaler-option-card" data-mode="anime4k">
+            <input type="radio" name="upscaler-mode-radio" value="anime4k">
+            <div class="upscaler-card-content">
+              <div class="upscaler-card-header">
+                <span class="upscaler-badge anime4k-badge">🌟 Anime4K</span>
+                <span class="upscaler-badge-sub">Best for Anime &amp; Cartoons</span>
+              </div>
+              <div class="upscaler-card-title">Anime4K Line Reconstruction</div>
+              <div class="upscaler-card-desc">Advanced Sobel edge thinning &amp; line reconstruction. Sharpens cartoon outlines, thins anti-aliasing blur, and thins cartoon line art without halos.</div>
+            </div>
+          </label>
+
+          <label class="upscaler-option-card" data-mode="fsr">
+            <input type="radio" name="upscaler-mode-radio" value="fsr">
+            <div class="upscaler-card-content">
+              <div class="upscaler-card-header">
+                <span class="upscaler-badge fsr-badge">⚡ AMD FSR / CAS</span>
+                <span class="upscaler-badge-sub">Best for Movies &amp; Sports</span>
+              </div>
+              <div class="upscaler-card-title">FSR Spatial Upscaling</div>
+              <div class="upscaler-card-desc">Catmull-Rom 9-tap bicubic upscale paired with Contrast Adaptive Sharpening. Enhances video detail without amplifying compression artifacts.</div>
+            </div>
+          </label>
+
+          <label class="upscaler-option-card" data-mode="bicubic">
+            <input type="radio" name="upscaler-mode-radio" value="bicubic">
+            <div class="upscaler-card-content">
+              <div class="upscaler-card-header">
+                <span class="upscaler-badge bicubic-badge">🔍 Bicubic Smooth</span>
+                <span class="upscaler-badge-sub">Clean &amp; Soft</span>
+              </div>
+              <div class="upscaler-card-title">Catmull-Rom Bicubic</div>
+              <div class="upscaler-card-desc">High-quality 9-tap bicubic interpolation without additional sharpening. Provides smooth, artifact-free scaling for noisy streams.</div>
+            </div>
+          </label>
+
+          <label class="upscaler-option-card" data-mode="off">
+            <input type="radio" name="upscaler-mode-radio" value="off">
+            <div class="upscaler-card-content">
+              <div class="upscaler-card-header">
+                <span class="upscaler-badge off-badge">⛔ Off</span>
+                <span class="upscaler-badge-sub">Native Video</span>
+              </div>
+              <div class="upscaler-card-title">Disabled</div>
+              <div class="upscaler-card-desc">Bypass WebGL upscaling canvas and output raw video stream straight from the decoder.</div>
+            </div>
+          </label>
+        </div>
+
+        <div class="upscaler-slider-box">
+          <div class="upscaler-slider-header">
+            <span>SHARPNESS &amp; ENHANCEMENT STRENGTH</span>
+            <span id="upscaler-sharpness-val">40%</span>
+          </div>
+          <input type="range" id="upscaler-sharpness-slider" min="0" max="1" step="0.05" value="0.4">
+          <div class="upscaler-slider-labels">
+            <span>Soft (0%)</span>
+            <span>Balanced (50%)</span>
+            <span>Ultra Crisp (100%)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SETTINGS MODAL ==================== -->
+  <div id="settings-modal" class="modal-overlay hidden">
+    <div class="settings-card">
+      <div class="settings-header">
+        <h2>Settings</h2>
+        <button class="modal-close-btn" id="settings-close-btn"><i data-lucide="x"></i></button>
+      </div>
+      
+      <div class="settings-body settings-body-tabbed">
+        <nav class="settings-menu" id="settings-menu">
+          <button class="settings-menu-item active" data-pane="account" tabindex="0"><i data-lucide="user"></i><span>Account &amp; Playlists</span></button>
+          <button class="settings-menu-item" data-pane="playback" tabindex="0"><i data-lucide="play-circle"></i><span>Playback</span></button>
+          <button class="settings-menu-item" data-pane="network" tabindex="0"><i data-lucide="wifi"></i><span>Network</span></button>
+          <button class="settings-menu-item" data-pane="webtabs" tabindex="0"><i data-lucide="layout-grid"></i><span>Web Tabs</span></button>
+          <button class="settings-menu-item" data-pane="application" tabindex="0"><i data-lucide="app-window"></i><span>Application</span></button>
+        </nav>
+
+        <div class="settings-panes" id="settings-panes">
+
+          <section class="settings-pane active" data-pane="account">
+            <h3 class="settings-pane-title">Account &amp; Playlists</h3>
+            <button class="settings-tile" id="tile-switch-playlist" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="list"></i></div>
+              <div class="settings-tile-title">Switch Playlist</div>
+              <div class="settings-tile-sub" id="tile-switch-playlist-val">Change source</div>
+            </button>
+            <button class="settings-tile" id="tile-sync" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="refresh-cw"></i></div>
+              <div class="settings-tile-title">Sync &amp; Cache</div>
+              <div class="settings-tile-sub">Refresh all lists</div>
+            </button>
+            <button class="settings-tile" id="tile-companion" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="smartphone"></i></div>
+              <div class="settings-tile-title">Companion Device</div>
+              <div class="settings-tile-sub" id="tile-companion-val">Continue watching across PC &amp; mobile</div>
+            </button>
+            <button class="settings-tile settings-tile-danger" id="tile-logout" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="log-out"></i></div>
+              <div class="settings-tile-title">Log Out</div>
+              <div class="settings-tile-sub" id="tile-logout-val">Disconnect</div>
+            </button>
+          </section>
+
+          <section class="settings-pane" data-pane="playback">
+            <h3 class="settings-pane-title">Playback</h3>
+            <button class="settings-tile" id="tile-stream-format" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="clapperboard"></i></div>
+              <div class="settings-tile-title">Stream Format</div>
+              <div class="settings-tile-sub">Current: <strong id="tile-stream-format-val">—</strong></div>
+            </button>
+            <button class="settings-tile" id="tile-player-engine" tabindex="0" style="display: none;">
+              <div class="settings-tile-icon"><i data-lucide="play-circle"></i></div>
+              <div class="settings-tile-title">Player Engine</div>
+              <div class="settings-tile-sub">Current: <strong id="tile-player-engine-val">Native Player</strong></div>
+            </button>
+            <button class="settings-tile" id="tile-desktop-engine" tabindex="0" style="display: none;">
+              <div class="settings-tile-icon"><i data-lucide="cpu"></i></div>
+              <div class="settings-tile-title">Desktop Player</div>
+              <div class="settings-tile-sub">Current: <strong id="tile-desktop-engine-val">FFmpeg Transcode</strong></div>
+            </button>
+            <button class="settings-tile" id="tile-upscaler" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="sparkles"></i></div>
+              <div class="settings-tile-title">Upscaler</div>
+              <div class="settings-tile-sub">Enhance low-quality streams: <span class="tile-badge" id="tile-upscaler-val">Off</span></div>
+            </button>
+            <button class="settings-tile" id="tile-perf" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="gauge"></i></div>
+              <div class="settings-tile-title">Performance Mode</div>
+              <div class="settings-tile-sub">For TVs / projectors: <span class="tile-badge" id="tile-perf-val">Auto</span></div>
+            </button>
+            <button class="settings-tile" id="tile-sleep" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="moon"></i></div>
+              <div class="settings-tile-title">Sleep Timer</div>
+              <div class="settings-tile-sub" id="tile-sleep-val">Off</div>
+            </button>
+          </section>
+
+          <section class="settings-pane" data-pane="network">
+            <h3 class="settings-pane-title">Network</h3>
+            <button class="settings-tile" id="tile-proxy" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="shield-check"></i></div>
+              <div class="settings-tile-title">CORS Proxy</div>
+              <div class="settings-tile-sub">Currently: <span class="tile-badge" id="tile-proxy-val">On</span></div>
+            </button>
+            <button class="settings-tile" id="tile-network" tabindex="0" style="display:none;">
+              <div class="settings-tile-icon"><i data-lucide="cast"></i></div>
+              <div class="settings-tile-title">Smart TV Access</div>
+              <div class="settings-tile-sub" id="tile-network-val">Show local URL</div>
+            </button>
+          </section>
+
+          <section class="settings-pane" data-pane="webtabs">
+            <h3 class="settings-pane-title">Web Tabs</h3>
+            <button class="settings-tile" id="tile-tabs" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="layout-grid"></i></div>
+              <div class="settings-tile-title">Manage Tabs</div>
+              <div class="settings-tile-sub" id="tile-tabs-val">Show, hide &amp; edit tabs</div>
+            </button>
+            <button class="settings-tile" id="tile-adblock" tabindex="0" style="display:none">
+              <div class="settings-tile-icon"><i data-lucide="shield-ban"></i></div>
+              <div class="settings-tile-title">Ad Blocker</div>
+              <div class="settings-tile-sub">Web tabs: <span class="tile-badge" id="tile-adblock-val">On</span></div>
+            </button>
+          </section>
+
+          <section class="settings-pane" data-pane="application">
+            <h3 class="settings-pane-title">Application</h3>
+            <button class="settings-tile" id="tile-theme" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="sun-moon"></i></div>
+              <div class="settings-tile-title">Appearance</div>
+              <div class="settings-tile-sub">Theme: <span class="tile-badge" id="tile-theme-val">Auto</span></div>
+            </button>
+            <button class="settings-tile" id="tile-startup" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="power"></i></div>
+              <div class="settings-tile-title">Run at Startup</div>
+              <div class="settings-tile-sub">Launch when Windows starts: <span class="tile-badge" id="tile-startup-val">Off</span></div>
+            </button>
+            <button class="settings-tile" id="tile-startminimized" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="minimize-2"></i></div>
+              <div class="settings-tile-title">Start Minimized</div>
+              <div class="settings-tile-sub">Open to the tray on launch: <span class="tile-badge" id="tile-startminimized-val">Off</span></div>
+            </button>
+            <button class="settings-tile" id="tile-update" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="arrow-up-circle"></i></div>
+              <div class="settings-tile-title">Updates</div>
+              <div class="settings-tile-sub" id="tile-update-val">v—</div>
+            </button>
+            <button class="settings-tile" id="tile-tv-ui" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="tv"></i></div>
+              <div class="settings-tile-title">TV Interface</div>
+              <div class="settings-tile-sub" id="tile-tv-ui-val">Switch to the 10-foot TV experience</div>
+            </button>
+            <button class="settings-tile" id="tile-about" tabindex="0">
+              <div class="settings-tile-icon"><i data-lucide="info"></i></div>
+              <div class="settings-tile-title">About</div>
+              <div class="settings-tile-sub" id="tile-about-val">Version &amp; support contact</div>
+            </button>
+          </section>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Sidebar Backdrop Overlay -->
+  <div id="sidebar-backdrop" class="sidebar-backdrop hidden"></div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container"></div>
+  <script crossorigin id="vite-legacy-polyfill" src="/assets/polyfills-legacy-YtCg7N0y.js"></script>
+  <script crossorigin id="vite-legacy-entry" data-src="/assets/main-legacy-CXG9AvwG.js">System.import(document.getElementById('vite-legacy-entry').getAttribute('data-src'))</script>
+</body>
+</html>

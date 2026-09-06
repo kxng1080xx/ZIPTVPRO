@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <filter id="b" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="130"/></filter>
+    <radialGradient id="vig" cx="50%" cy="42%" r="78%">
+      <stop offset="58%" stop-color="#05070d" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#05070d" stop-opacity="0.92"/>
+    </radialGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="#05070d"/>
+  <g filter="url(#b)">
+    <ellipse cx="1460" cy="150" rx="540" ry="390" fill="#93b4d8" opacity="0.30"/>
+    <ellipse cx="240" cy="960" rx="580" ry="410" fill="#5a6e96" opacity="0.34"/>
+    <ellipse cx="880" cy="520" rx="430" ry="300" fill="#64748b" opacity="0.16"/>
+  </g>
+  <g fill="none" stroke="#cbd5e1">
+    <circle cx="1620" cy="250" r="180" stroke-width="58" stroke-dasharray="44 34" opacity="0.06"/>
+    <circle cx="1620" cy="250" r="115" stroke-width="4" opacity="0.10"/>
+    <circle cx="1620" cy="250" r="46" stroke-width="4" opacity="0.10"/>
+    <circle cx="280" cy="840" r="130" stroke-width="44" stroke-dasharray="34 28" opacity="0.06"/>
+    <circle cx="280" cy="840" r="80" stroke-width="3" opacity="0.09"/>
+  </g>
+  <rect width="1920" height="1080" fill="url(#vig)"/>
+</svg>

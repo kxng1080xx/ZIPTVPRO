@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <filter id="b" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="130"/></filter>
+    <radialGradient id="vig" cx="50%" cy="42%" r="78%">
+      <stop offset="58%" stop-color="#05070d" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#05070d" stop-opacity="0.92"/>
+    </radialGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="#05070d"/>
+  <g filter="url(#b)">
+    <ellipse cx="1480" cy="220" rx="560" ry="400" fill="#a78bfa" opacity="0.34"/>
+    <ellipse cx="260" cy="900" rx="580" ry="410" fill="#6366f1" opacity="0.30"/>
+    <ellipse cx="900" cy="540" rx="440" ry="310" fill="#f472b6" opacity="0.12"/>
+  </g>
+  <g fill="none" stroke="#c4b5fd" opacity="0.10" stroke-width="3">
+    <circle cx="1320" cy="620" r="120"/>
+    <circle cx="1560" cy="620" r="120"/>
+  </g>
+  <rect width="1920" height="1080" fill="url(#vig)"/>
+</svg>

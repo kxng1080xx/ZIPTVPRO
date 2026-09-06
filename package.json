@@ -1,7 +1,7 @@
 {
   "name": "iptv-player-zero",
   "productName": "ZIPTV Pro",
-  "version": "8.7.0",
+  "version": "8.8.0",
   "description": "Premium IPTV Player - ZIPTV Pro",
   "main": "main.electron.cjs",
   "type": "module",
@@ -10,6 +10,7 @@
     "dev:client": "vite",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "build": "node scripts/gen-version.mjs && vite build",
+    "build:legacy": "set LEGACY=true&& node scripts/gen-version.mjs && vite build",
     "bump": "node scripts/bump-version.mjs",
     "preview": "vite preview",
     "start": "node server/index.js",
@@ -41,10 +42,12 @@
     "@capacitor/android": "8.4.0",
     "@capacitor/cli": "8.4.0",
     "@capacitor/core": "8.4.0",
+    "@vitejs/plugin-legacy": "^6.1.1",
     "concurrently": "^9.1.2",
     "electron": "^42.4.0",
     "electron-builder": "^26.15.3",
     "nodemon": "^3.1.9",
+    "terser": "^5.51.2",
     "vite": "^6.2.0"
   },
   "build": {

@@ -1,0 +1,23 @@
+// Minimal standalone WebView wrapper for old Fire OS 5 sticks (Android 5.x,
+// API 22) that the main Capacitor 8 app (minSdk 24) can't install on. Ships the
+// ES5 `dist-legacy` bundle. See docs/LEGACY_FIRETV.md.
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.13.0'
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}

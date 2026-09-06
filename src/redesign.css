@@ -2635,3 +2635,146 @@ body:not(.tv-layout) #settings-modal .settings-card {
   display: flex;
   flex-direction: column;
 }
+
+/* ==========================================================================
+   LIVE TV — PLAYER-FIRST STAGE + PROGRAM DETAILS DRAWER
+   The details panel used to hold a permanent grid column (1.6fr/1fr, and only
+   1.2fr/1fr under 1200px), which on a tablet left the player with barely a
+   third of the viewport. Almost everything the panel showed is already on the
+   player itself (channel + EPG title in the control bar, the NOW/NEXT flip bar)
+   or in the guide below, so it no longer earns a column: the player takes the
+   whole row and the panel slides in over the right edge on demand — the same
+   pattern body.tv-layout already uses for its Info drawer.
+   Toggled by the player's Info button (see player.js), Esc, or its close button.
+   ========================================================================== */
+body:not(.tv-layout):not(.vod-mode) .live-top-row {
+  /* Height of the video stage itself. The row's max-height adds its own
+     18px/4px padding back on top; the player's max-width is derived from it so
+     the 16:9 frame is never wider than the height cap allows (otherwise the
+     glass frame stretches and the video pillarboxes inside it). */
+  --live-stage-h: 62vh;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  max-height: calc(var(--live-stage-h) + 22px);
+}
+
+body:not(.tv-layout):not(.vod-mode) .live-top-row .player-wrapper {
+  width: 100%;
+  max-width: calc(var(--live-stage-h) * 16 / 9);
+  margin: 0 auto;
+  /* Own stacking context. The idle screen and the controls overlay inside it
+     carry their own z-indexes, and without this they compete with the drawer
+     directly in the row's context and paint over it. */
+  z-index: 1;
+}
+
+body:not(.tv-layout):not(.vod-mode) .live-top-row .program-details-panel {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  bottom: 4px;
+  width: 360px;
+  max-width: 78vw;
+  z-index: 2;
+  padding: 16px 18px 20px;
+  overflow-y: auto;
+  border: 1px solid var(--rd-hairline);
+  border-radius: var(--rd-r-22, 22px);
+  background: var(--rd-glass-drawer, rgba(9, 13, 22, 0.88));
+  -webkit-backdrop-filter: var(--rd-blur-drawer, blur(20px));
+  backdrop-filter: var(--rd-blur-drawer, blur(20px));
+  box-shadow: -26px 0 60px rgba(0, 0, 0, 0.55);
+  transform: translateX(calc(100% + 26px));
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1),
+              opacity 0.2s ease,
+              visibility 0s linear 0.26s;
+}
+
+body:not(.tv-layout):not(.vod-mode) .live-top-row.details-open .program-details-panel {
+  transform: none;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1),
+              opacity 0.2s ease,
+              visibility 0s;
+}
+
+/* Phone portrait: the player stage is only ~200px tall, so a sheet parented to
+   the row would bury it. Anchor this one to the viewport instead — it rises
+   over the channel list below and leaves the player alone. */
+@media (max-width: 620px) and (orientation: portrait) {
+  body:not(.tv-layout):not(.vod-mode) .live-top-row .program-details-panel {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-width: none;
+    max-height: 62vh;
+    z-index: 60;
+    border-radius: 20px 20px 0 0;
+    /* clear the bottom tab bar */
+    padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+    transform: translateY(100%);
+    box-shadow: 0 -18px 50px rgba(0, 0, 0, 0.6);
+  }
+}
+
+body.perf-lite .live-top-row .program-details-panel {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: var(--bg-panel, #0d1220);
+  transition: none;
+}
+
+/* Close affordance in the drawer header (the Info button toggles it too). */
+.details-close-btn {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--rd-hairline);
+  background: var(--bg-surface, #161d2f);
+  color: var(--text-secondary, #9aa0a6);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.details-close-btn:hover {
+  background: var(--bg-surface-hover, #1f2940);
+  color: var(--text-primary, #fff);
+}
+.details-close-btn i { width: 15px; height: 15px; }
+/* The TV layout drives its drawer with the remote's Back key. */
+body.tv-layout .details-close-btn { display: none; }
+
+/* The header row has to fit logo + name + Favorite + close inside 360px. */
+body:not(.tv-layout) .live-top-row .details-header-row {
+  gap: 10px;
+  margin-bottom: 14px;
+}
+body:not(.tv-layout) .live-top-row .channel-logo-wrapper {
+  width: 44px;
+  height: 44px;
+  padding: 6px;
+}
+body:not(.tv-layout) .live-top-row .channel-meta-text {
+  min-width: 0;
+}
+body:not(.tv-layout) .live-top-row .channel-meta-text h3 {
+  font-size: 1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body:not(.tv-layout) .live-top-row .favorite-toggle-btn {
+  padding: 7px 10px;
+  font-size: 0.72rem;
+}

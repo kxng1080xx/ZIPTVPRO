@@ -315,21 +315,33 @@ export class VideoPlayer {
       else this.toggleCaptions();
     });
 
-    // Info button toggle channel details panel
+    // Info button toggles the program details panel. It is a drawer on every
+    // layout now — off-canvas by default so the player owns the whole stage.
     if (this.infoBtn) {
       this.infoBtn.addEventListener('click', () => {
-        // On TV the side details panel is hidden by the single-column layout, so
-        // reveal it as an overlay instead (toggle on repeat press / Back).
+        // On TV the panel is hidden by the single-column layout, so it opens as
+        // a full-height overlay driven from the body class (Back closes it).
         if (document.body.classList.contains('tv-layout')) {
           document.body.classList.toggle('tv-info-open');
           return;
         }
-        const topRow = document.querySelector('.live-top-row');
-        if (topRow) {
-          topRow.classList.toggle('details-collapsed');
-        }
+        document.querySelector('.live-top-row')?.classList.toggle('details-open');
       });
     }
+
+    // Close affordances for the details drawer.
+    document.getElementById('details-close-btn')?.addEventListener('click', () => {
+      document.body.classList.remove('tv-info-open');
+      document.querySelector('.live-top-row')?.classList.remove('details-open');
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      const row = document.querySelector('.live-top-row.details-open');
+      if (!row) return;
+      // Let Escape keep its usual job (leaving fullscreen) when it has one.
+      if (document.fullscreenElement) return;
+      row.classList.remove('details-open');
+    });
 
     // VOD seek bar (movies / series only)
     if (this.seek) {

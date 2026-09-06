@@ -75,6 +75,23 @@ function getAccent() {
   } catch (e) { return ACCENTS[0]; }
 }
 
+/**
+ * Write the accent onto an element as BOTH --acc (#rrggbb) and --acc-rgb
+ * ('r, g, b'). The focus rings/halos are built with rgba(var(--acc-rgb), a)
+ * rather than color-mix() because color-mix() doesn't parse on the old TV
+ * WebViews (Fire OS 5, older Tizen/webOS) and one unparsable value drops the
+ * whole box-shadow — which left D-pad focus invisible on those sets.
+ */
+function setAccent(node, hex) {
+  if (!node) return;
+  node.style.setProperty('--acc', hex);
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || '');
+  node.style.setProperty(
+    '--acc-rgb',
+    m ? parseInt(m[1], 16) + ', ' + parseInt(m[2], 16) + ', ' + parseInt(m[3], 16) : '56, 189, 248'
+  );
+}
+
 // Manrope (design typeface) — loaded only when the TV shell is used, with the
 // app's existing stack as fallback so an offline TV still renders fine.
 let fontLoaded = false;
@@ -1295,6 +1312,8 @@ function mountPopup(pop) {
     stage.appendChild(pop);
   } else {
     pop.classList.add('tvn-popup-fixed');
+    // mounted outside #tvn-stage → it can't inherit the accent tokens
+    setAccent(pop, getAccent());
     (document.fullscreenElement || document.getElementById('video-container') || document.body).appendChild(pop);
   }
   focusAuto();
@@ -2589,7 +2608,8 @@ async function screenSettings(params = {}) {
       const sw = el(`<button class="tvn-swatch tvn-focable ${getAccent() === c ? 'tvn-sel' : ''}" data-nav data-fkey="acc-${c}" style="background:${c}" title="Accent"></button>`);
       sw.onclick = () => {
         try { localStorage.setItem(ACCENT_KEY, c); } catch (e) {}
-        stage.style.setProperty('--acc', c);
+        setAccent(stage, c);
+        if (popupEl) setAccent(popupEl, c);
         swRow.querySelectorAll('.tvn-swatch').forEach(n => n.classList.remove('tvn-sel'));
         sw.classList.add('tvn-sel');
       };
@@ -3187,7 +3207,7 @@ export function enterTvNative() {
     document.body.appendChild(root);
     stage = root.querySelector('#tvn-stage');
   }
-  stage.style.setProperty('--acc', getAccent());
+  setAccent(stage, getAccent());
   applyScale();
   root.classList.remove('tvn-hidden');
   hiddenForPlayback = false;

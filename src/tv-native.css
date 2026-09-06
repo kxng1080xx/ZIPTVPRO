@@ -29,6 +29,12 @@
   background: #060911;
   transform-origin: center center;
   --acc: #38bdf8;
+  /* Same accent as --acc, but as bare channels so rings/halos can be built with
+     rgba(). color-mix() is NOT parsed by the old TV WebViews (Fire OS 5 ~Chr59,
+     Tizen <=6, webOS <=6) and one unparsable value drops the WHOLE declaration —
+     which is why D-pad focus was invisible on those sets. Kept in sync with
+     --acc by setAccent() in tv-native.js. */
+  --acc-rgb: 56, 189, 248;
 }
 
 #tvn-root * { box-sizing: border-box; }
@@ -71,7 +77,10 @@ body.perf-lite #tvn-root .tvn-screen { animation: none; }
    Shared atoms
    -------------------------------------------------------------------------- */
 
-/* Focus ring (design token): white inner ring + accent glow */
+/* Focus ring (design token): thin white liner + SOLID accent ring + accent halo.
+   The white liner keeps the ring readable over accent-coloured artwork; the
+   solid accent ring is the "selector" itself; the two soft halos are what make
+   it survive the heavy contrast/edge processing TV panels apply. */
 #tvn-root .tvn-focable,
 #tvn-chooser .tvn-focable {
   transition: transform 0.15s ease, box-shadow 0.15s ease,
@@ -84,8 +93,10 @@ body.perf-lite #tvn-root .tvn-focable { transition: none; }
   /* #tvn-popup included on its own: over playback the popout mounts OUTSIDE
      the stage (#tvn-popup.tvn-popup-fixed inside #video-container), where the
      #tvn-root-scoped ring never matched — D-pad focus moved invisibly. */
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95),
-              0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.92),
+              0 0 0 7px var(--acc, #38bdf8),
+              0 0 22px 4px rgba(var(--acc-rgb, 56, 189, 248), 0.55),
+              0 0 54px 16px rgba(var(--acc-rgb, 56, 189, 248), 0.30);
 }
 
 /* round icon button (62px) */
@@ -268,8 +279,10 @@ body.perf-lite #tvn-root .tvn-home-bg i { transition: none; }
 .tvn-card:focus {
   transform: scale(1.05) translateY(-8px);
   border-color: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95),
-              0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent),
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.92),
+              0 0 0 7px var(--acc, #38bdf8),
+              0 0 26px 5px rgba(var(--acc-rgb, 56, 189, 248), 0.55),
+              0 0 64px 20px rgba(var(--acc-rgb, 56, 189, 248), 0.30),
               0 30px 70px rgba(0, 0, 0, 0.6);
 }
 .tvn-card-tag {
@@ -399,8 +412,14 @@ body.perf-lite #tvn-root .tvn-home-bg i { transition: none; }
   margin-top: 36px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 32px 10px 0;
+  /* was 6px: the focus ring + halo needs room or the neighbouring rows sit on
+     top of it and the selector reads as a vague smudge */
+  gap: 14px;
+  /* The list IS the scroll container, so it clips at its padding box — with
+     padding-left:0 the ring lost its left edge entirely. Pad both sides and
+     pull the box back out so the rows stay visually where they were. */
+  padding: 12px 26px 12px 12px;
+  margin-left: -12px;
   min-height: 0;
 }
 .tvn-cat-row {
@@ -412,7 +431,21 @@ body.perf-lite #tvn-root .tvn-home-bg i { transition: none; }
   background: transparent;
   flex-shrink: 0;
 }
-.tvn-cat-row.tvn-sel { background: rgba(255, 255, 255, 0.08); }
+/* Currently-open category: an accent wash + edge bar, so "which category am I
+   in" never reads the same as "where is the D-pad". */
+.tvn-cat-row.tvn-sel {
+  background: rgba(var(--acc-rgb, 56, 189, 248), 0.14);
+  box-shadow: inset 4px 0 0 var(--acc, #38bdf8);
+}
+/* D-pad focus. The rail rows have no card background of their own, so the ring
+   was the only signal here — and the first thing to disappear on dim/heavily
+   processed TV panels. Fill the row with the accent as well. */
+.tvn-cat-row:focus {
+  background: rgba(var(--acc-rgb, 56, 189, 248), 0.32);
+  transform: scale(1.02);
+}
+.tvn-cat-row:focus .tvn-cat-name { color: #fff; }
+.tvn-cat-row:focus .tvn-cat-count { color: rgba(255, 255, 255, 0.8); }
 .tvn-cat-tile {
   width: 58px;
   height: 58px;
@@ -459,8 +492,10 @@ body.perf-lite #tvn-root .tvn-home-bg i { transition: none; }
 .tvn-ch-row:focus {
   background: rgba(255, 255, 255, 0.09);
   transform: scale(1.02);
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95),
-              0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent),
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.92),
+              0 0 0 7px var(--acc, #38bdf8),
+              0 0 24px 4px rgba(var(--acc-rgb, 56, 189, 248), 0.55),
+              0 0 58px 18px rgba(var(--acc-rgb, 56, 189, 248), 0.30),
               0 20px 50px rgba(0, 0, 0, 0.5);
 }
 .tvn-ch-tile {
@@ -796,8 +831,10 @@ body.perf-lite #tvn-root .tvn-home-bg i { transition: none; }
   transition: box-shadow 0.16s ease;
 }
 .tvn-poster:focus .tvn-poster-art {
-  box-shadow: 0 0 24px 5px color-mix(in srgb, var(--acc, #38bdf8) 60%, transparent),
-              0 0 70px 20px color-mix(in srgb, var(--acc, #38bdf8) 28%, transparent),
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.92),
+              0 0 0 6px var(--acc, #38bdf8),
+              0 0 26px 6px rgba(var(--acc-rgb, 56, 189, 248), 0.60),
+              0 0 74px 22px rgba(var(--acc-rgb, 56, 189, 248), 0.30),
               0 24px 55px rgba(0, 0, 0, 0.55);
 }
 .tvn-poster-art img {
@@ -1038,8 +1075,10 @@ body.perf-lite #tvn-root .tvn-home-bg i { transition: none; }
 .tvn-g-row:focus {
   background: rgba(255, 255, 255, 0.09);
   transform: scale(1.01);
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95),
-              0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent),
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.92),
+              0 0 0 7px var(--acc, #38bdf8),
+              0 0 24px 4px rgba(var(--acc-rgb, 56, 189, 248), 0.55),
+              0 0 58px 18px rgba(var(--acc-rgb, 56, 189, 248), 0.30),
               0 20px 50px rgba(0, 0, 0, 0.5);
 }
 .tvn-g-ch {
@@ -1413,6 +1452,7 @@ body.perf-lite #tvn-root .tvn-home-bg i { transition: none; }
   gap: 5vmin;
   padding: 24px;
   --acc: #38bdf8;
+  --acc-rgb: 56, 189, 248;
 }
 #tvn-chooser * { box-sizing: border-box; }
 #tvn-chooser [data-nav] { outline: none; cursor: pointer; }
@@ -1611,8 +1651,8 @@ body.perf-lite #tvn-popup { animation: none; }
   font-family: inherit;
 }
 .tvn-popup-row.tvn-sel {
-  background: color-mix(in srgb, var(--acc, #38bdf8) 14%, rgba(255, 255, 255, 0.03));
-  border-color: color-mix(in srgb, var(--acc, #38bdf8) 40%, transparent);
+  background: rgba(var(--acc-rgb, 56, 189, 248), 0.16);
+  border-color: rgba(var(--acc-rgb, 56, 189, 248), 0.40);
 }
 .tvn-popup-row-txt {
   flex: 1;
@@ -1920,8 +1960,10 @@ body.perf-lite .tvn-osd-btn { transition: none; }
 .tvn-osd-star { font-size: 27px; color: rgba(255,255,255,0.85); }
 .tvn-osd-star.tvn-fav { color: var(--acc, #38bdf8); }
 #tvn-osd .tvn-focable:focus {
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95),
-              0 0 0 7px color-mix(in srgb, var(--acc, #38bdf8) 45%, transparent);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.92),
+              0 0 0 7px var(--acc, #38bdf8),
+              0 0 22px 4px rgba(var(--acc-rgb, 56, 189, 248), 0.55),
+              0 0 54px 16px rgba(var(--acc-rgb, 56, 189, 248), 0.30);
 }
 .tvn-osd-hint {
   display: flex;
@@ -2005,7 +2047,7 @@ body.perf-lite .tvn-osd-btn { transition: none; }
 }
 .tvn-wt-slot.on {
   border-color: var(--acc, #38bdf8);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--acc, #38bdf8) 28%, transparent);
+  box-shadow: 0 0 0 4px rgba(var(--acc-rgb, 56, 189, 248), 0.28);
 }
 
 .tvn-wt-status {
@@ -2178,3 +2220,27 @@ body.perf-lite #tvn-osd .tvn-osd-volflyout { transition: none; }
 /* The slider is open because the button has focus — keep the ring on the button
    so it stays obvious where the D-pad is. */
 .tvn-osd-volopen .tvn-osd-btn { border-color: rgba(255, 255, 255, 0.35); }
+
+/* --------------------------------------------------------------------------
+   Focus visibility on weak / heavily-processed TV panels
+   The rings above stack a solid accent band with two soft halos. perf-lite sets
+   (Fire TV sticks, Tizen, projectors) are the ones where focus goes missing in
+   the first place, so they keep a halo — just the tight one. Only the wide
+   54-64px spread is dropped: it is nearly all of the blurred paint area and
+   almost none of the signal.
+   -------------------------------------------------------------------------- */
+body.perf-lite #tvn-root .tvn-focable:focus,
+body.perf-lite #tvn-chooser .tvn-focable:focus,
+body.perf-lite #tvn-popup .tvn-focable:focus,
+body.perf-lite #tvn-root .tvn-card:focus,
+body.perf-lite #tvn-root .tvn-ch-row:focus,
+body.perf-lite #tvn-root .tvn-g-row:focus {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.92),
+              0 0 0 7px var(--acc, #38bdf8),
+              0 0 20px 4px rgba(var(--acc-rgb, 56, 189, 248), 0.55);
+}
+body.perf-lite #tvn-root .tvn-poster:focus .tvn-poster-art {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.92),
+              0 0 0 6px var(--acc, #38bdf8),
+              0 0 20px 4px rgba(var(--acc-rgb, 56, 189, 248), 0.55);
+}
