@@ -10,6 +10,22 @@ const pkg = JSON.parse(readFileSync('./package.json', 'utf8'));
 // dist-legacy so the main build is untouched. See docs/LEGACY_FIRETV.md.
 const IS_LEGACY = process.env.LEGACY === 'true';
 
+// TMDB read token baked into CLIENT-MODE builds (APK / Fire TV / hosted web).
+// Those have no bundled Node server, so /api/meta does not exist for them and
+// every metadata lookup would 404 — silently killing the ABOUT panels and the
+// trailer previews on exactly the 10-foot devices this release targets. The
+// desktop build does NOT rely on this: it proxies through its local server
+// (server/tmdb.js), which keeps the token server-side.
+function tmdbToken() {
+  if (process.env.TMDB_TOKEN) return process.env.TMDB_TOKEN.trim();
+  try {
+    const lines = readFileSync('./.env', 'utf8').split(/\r?\n/);
+    const line = lines.find((l) => /^\s*TMDB_TOKEN\s*=/.test(l));
+    if (line) return line.slice(line.indexOf('=') + 1).trim().replace(/^["']|["']$/g, '');
+  } catch (e) {}
+  return '';
+}
+
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
@@ -19,7 +35,10 @@ export default defineConfig({
     // Legacy build (legacy.apk, Fire OS 5): forces performance mode on and skips
     // the local-server probe (a bare WebView wrapper never has one). Set by
     // LEGACY=true at build time.
-    __LEGACY__: JSON.stringify(process.env.LEGACY === 'true')
+    __LEGACY__: JSON.stringify(process.env.LEGACY === 'true'),
+    // See tmdbToken() above. Empty string in a build with no token available,
+    // which the client treats as "no metadata" rather than failing.
+    __TMDB_TOKEN__: JSON.stringify(tmdbToken())
   },
   server: {
     port: 5673,

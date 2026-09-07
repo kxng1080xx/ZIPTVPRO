@@ -5045,6 +5045,7 @@ body.vod-mode .now-next-bar {
     height: auto !important;
   }
 
+  .series-details-col,
   .series-details-panel {
     display: none !important;
   }
@@ -5694,7 +5695,9 @@ body.epg-fullscreen-active .epg-section-container {
      its content (top-aligned) so it never becomes a big empty box. */
   grid-template-columns: 1.7fr 1fr;
   gap: 20px;
-  align-items: start;
+  /* stretch, not start: the details column must take the row height the 16:9
+     player defines, so the panel beside it ends level with the video. */
+  align-items: stretch;
   margin-bottom: 20px;
   min-height: 0;
   flex-shrink: 0;
@@ -5719,18 +5722,23 @@ body.epg-fullscreen-active .epg-section-container {
   height: 100%;
 }
 
+/* Positioning context only; contributes no height of its own. */
+.series-details-col {
+  position: relative;
+  min-height: 0;
+}
+
 .series-details-panel {
+  position: absolute;
+  inset: 0;
   background: var(--bg-panel);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-md);
   padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 13px;
   overflow-y: auto;
-  align-self: start;
-  height: auto;
-  max-height: 100%;
 }
 
 .series-details-header {
@@ -5813,6 +5821,176 @@ body.epg-fullscreen-active .epg-section-container {
   color: var(--text-secondary);
   line-height: 1.5;
   margin: 0;
+  /* Clamped so a long synopsis can't push the ABOUT block below the player.
+     The panel still scrolls, so nothing is unreachable. */
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------------------
+   ABOUT panel (TMDB enrichment, 9.0)
+   Sits under Plot Summary in the series dashboard. Every colour is rgba() or a
+   theme var on purpose — old TV WebViews drop an entire declaration containing
+   color-mix(), which would silently strip these rules on exactly the devices
+   that most need the extra detail.
+   --------------------------------------------------------------------------- */
+.series-about-section {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding-top: 11px;
+  border-top: 1px solid var(--border-color);
+}
+
+/* Two columns: fixed label, flexible value. min-content on the label keeps
+   "Created by" on one line without hard-coding a width that breaks in other
+   languages. */
+.about-facts {
+  display: grid;
+  grid-template-columns: minmax(72px, max-content) 1fr;
+  gap: 5px 14px;
+  margin: 0;
+  align-items: baseline;
+}
+
+.about-facts dt {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.about-facts dd {
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.4;
+  min-width: 0;
+}
+
+/* Network shows its TMDB logo where there is one; those PNGs are white-on-
+   transparent, so they need no tinting on the dark panel. */
+.about-net {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.about-net img {
+  height: 15px;
+  width: auto;
+  max-width: 78px;
+  object-fit: contain;
+  vertical-align: middle;
+}
+
+/* Status reads as a state, so it gets a chip rather than plain text. */
+.about-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+}
+
+.about-status.is-ongoing {
+  background: rgba(34, 197, 94, 0.16);
+  color: #4ade80;
+}
+
+.about-status.is-ended {
+  background: rgba(148, 163, 184, 0.16);
+  color: #cbd5e1;
+}
+
+.about-cast {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Horizontal strip rather than a wrapped grid: the panel is narrow and tall,
+   and a strip keeps the cast to one predictable row height however many people
+   TMDB returns. */
+.about-cast-strip {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+
+.about-cast-strip::-webkit-scrollbar { height: 6px; }
+.about-cast-strip::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 3px;
+}
+
+.about-cast-member {
+  flex: 0 0 auto;
+  width: 52px;
+  text-align: center;
+}
+
+.about-cast-photo {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--bg-surface);
+  display: block;
+  margin-bottom: 5px;
+}
+
+/* Initials stand in when TMDB has no head-shot, so the strip keeps its rhythm
+   instead of showing a broken-image box. */
+.about-cast-photo.is-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.about-cast-name {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.25;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.about-cast-role {
+  font-size: 0.63rem;
+  color: var(--text-secondary);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Attribution is a condition of the free TMDB API. */
+/* Global search: a query is in flight but the previous results stay up, so the
+   focused element is never destroyed mid-type. Dimmed, not replaced. */
+.gsearch-busy {
+  opacity: 0.5;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+.about-tmdb-credit {
+  font-size: 0.62rem;
+  color: var(--text-secondary);
+  opacity: 0.7;
+  margin-top: 2px;
 }
 
 .series-bottom-section {
@@ -7052,6 +7230,7 @@ body:has(.gsearch-overlay) .tvk-overlay {
 
 /* Hide VOD series details panel in portrait orientation on all devices */
 @media (orientation: portrait) {
+  .series-details-col,
   .series-details-panel {
     display: none !important;
   }

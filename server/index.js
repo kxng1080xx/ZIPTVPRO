@@ -108,9 +108,35 @@ import {
   deactivateActivePlaylist,
   updatePlaylistSettings
 } from './cache.js';
+import { lookup as tmdbLookup, tmdbToken } from './tmdb.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// ---------------------------------------------------------------------------
+// CRASH GUARD
+// This process IS the app's backend — when Electron spawns it and it dies, the
+// UI loses categories, streams, EPG and playback all at once, with no error the
+// user can act on.
+//
+// The specific killer seen in the wild is Node 24's bundled undici throwing an
+// UNCATCHABLE-by-try/catch `assert(!this.paused)` out of its HTTP parser when an
+// upstream peer closes a connection mid-parse. IPTV providers do that
+// constantly (see the short-cycle session behaviour the stream proxy already
+// works around), so a single rude disconnect anywhere could take the server
+// down. Nothing in the request path can catch it — it surfaces as an
+// uncaughtException on a socket 'end' tick.
+//
+// main.electron.cjs guards the Electron main process exactly this way already;
+// this is the same policy for the child. Errors are logged loudly rather than
+// swallowed silently, so real bugs still show up in the terminal.
+// ---------------------------------------------------------------------------
+process.on('uncaughtException', (err) => {
+  console.error('[server] uncaughtException (kept alive):', err && err.stack ? err.stack : err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[server] unhandledRejection (kept alive):', reason && reason.stack ? reason.stack : reason);
+});
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -1914,6 +1940,40 @@ app.delete('/api/recordings/schedule/:id', (req, res) => {
   future.forEach(armSchedule);
   if (future.length !== jobs.length) writeJson(SCHED_INDEX, future);
 }
+
+// --- TMDB metadata (ABOUT panel + poster-dwell trailer) ---------------------
+// GET /api/meta?type=movie|series&title=...&year=...&tmdb_id=...
+//
+// `tmdb_id` short-circuits the title search when the provider already supplies
+// one (many do, in get_vod_info) — free and exact, so the client passes it
+// whenever it has it. Everything is cached to disk in tmdb.js, including
+// misses, so an un-matchable title doesn't re-hit TMDB on every poster focus.
+//
+// A miss is a 200 with { ok: false, reason }, not a 404: "no TMDB entry" is a
+// normal outcome for a scraped library, and the caller falls back to provider
+// data. Only a real upstream/config failure is a non-2xx.
+app.get('/api/meta', async (req, res) => {
+  if (!tmdbToken()) {
+    return res.status(503).json({
+      ok: false,
+      error: 'TMDB_TOKEN not set. Add it to .env (dev) or tmdb.json in the data dir (installed).'
+    });
+  }
+  const { type, title, year, tmdb_id: tmdbId } = req.query;
+  if (!title && !tmdbId) {
+    return res.status(400).json({ ok: false, error: 'title or tmdb_id required' });
+  }
+  try {
+    res.json(await tmdbLookup({
+      type: type === 'series' ? 'series' : 'movie',
+      title: title || '',
+      year: year || '',
+      tmdbId: tmdbId || ''
+    }));
+  } catch (e) {
+    res.status(e.status || 502).json({ ok: false, error: e.message });
+  }
+});
 
 // --- Online subtitles (OpenSubtitles proxy) ---------------------------------
 // The renderer can't call the OpenSubtitles API cross-origin, so the local

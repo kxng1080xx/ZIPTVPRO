@@ -24,6 +24,21 @@ allprojects {
     }
 }
 
+// Pin build-tools across EVERY module, including the Capacitor/Cordova plugin
+// subprojects. Without this those modules fall back to the Android Gradle
+// Plugin's own default (35.0.0 for AGP 8.13), and the build then dies asking
+// to download a second copy of build-tools — which fails outright when the SDK
+// lives under Program Files and sdkmanager can't write there without elevation.
+// The project already compiles against SDK 36, so 36.0.0 is what should be used
+// everywhere.
+subprojects {
+    afterEvaluate { project ->
+        if (project.hasProperty('android')) {
+            project.android.buildToolsVersion = '36.0.0'
+        }
+    }
+}
+
 task clean(type: Delete) {
     delete rootProject.buildDir
 }

@@ -100,6 +100,51 @@ async function setAdblock(enabled) {
 ipcMain.handle('adblock:set', (_e, enabled) => setAdblock(!!enabled));
 ipcMain.handle('adblock:get', () => ({ enabled: adblockEnabled }));
 
+// --- Trailer session (9.0) --------------------------------------------------
+// Poster-dwell trailers render in a <webview partition="persist:trailers">
+// rather than an <iframe>, for two reasons:
+//
+//   1. ORIGIN. The renderer is loaded from file://, and YouTube's embed checks
+//      the requesting origin — an iframe from a file page is refused. A
+//      <webview> is a real guest that NAVIGATES to https://www.youtube.com/...,
+//      so it presents a genuine https origin and plays.
+//
+//   2. ADS. A pre-roll on a 2-second hover preview would be worse than no
+//      preview at all. This session gets the same Ghostery engine the custom
+//      web tabs use.
+//
+// Blocking here is deliberately NOT tied to the Settings ad-block toggle: that
+// switch is about the in-app browser, and a user turning it off to debug a
+// website should not silently start getting adverts on poster hover. It is
+// enabled lazily on the first trailer so app startup never pays for the engine
+// download.
+//
+// The partition is separate from persist:webtabs (cookie isolation: YouTube
+// playback state must not mix with the user's browsing) and from the default
+// session, so IPTV stream/EPG/API traffic is never filtered.
+let trailerBlockingReady = false;
+
+function trailerSession() {
+  return session.fromPartition('persist:trailers');
+}
+
+async function ensureTrailerAdblock() {
+  if (trailerBlockingReady) return { ok: true, enabled: true };
+  try {
+    const blocker = await loadAdblockEngine();
+    blocker.enableBlockingInSession(trailerSession());
+    trailerBlockingReady = true;
+    return { ok: true, enabled: true };
+  } catch (err) {
+    // Non-fatal: the trailer still plays, just unfiltered. The renderer uses
+    // this to decide whether to warn, never to block playback.
+    console.error('[trailers] adblock unavailable:', err && err.message ? err.message : err);
+    return { ok: false, enabled: false, error: String(err && err.message ? err.message : err) };
+  }
+}
+
+ipcMain.handle('trailers:prepare', () => ensureTrailerAdblock());
+
 // --- Startup behaviour: run at login + start minimized to tray ---------------
 // startMinimized is persisted in userData; openAtLogin is owned by the OS and
 // read back via app.getLoginItemSettings(). When both are on, the login-item is
@@ -205,6 +250,13 @@ process.on('unhandledRejection', (reason) => {
 // path in a custom Chromium build, so we lift those. Chrome enables these by
 // default; Electron does not always. Verify the result at chrome://gpu
 // ("Direct composition: Enabled" + a video overlay format like NV12).
+// Poster-dwell trailers play WITH sound. Chromium blocks unmuted autoplay
+// unless the origin has media-engagement history, which a freshly-created
+// trailer session never has — so without this the preview is silent forever.
+// Safe here in a way it wouldn't be on the open web: this app only ever
+// autoplays media the user explicitly navigated to or focused.
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('disable-gpu-driver-bug-workarounds');
 app.commandLine.appendSwitch('enable-features', 'DirectComposition,ZeroCopyVideoCapture');

@@ -76,3 +76,6 @@ android-legacy/.gradle/
 android-legacy/**/build/
 android-legacy/local.properties
 android-legacy/.idea/
+
+# Build-time TMDB token (baked into packaged builds, never committed)
+server/tmdb-baked.json

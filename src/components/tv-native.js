@@ -32,6 +32,8 @@ import {
   getWatchInfo
 } from './xtream-api.js';
 import { getAboutRows, DEVELOPER } from './about.js';
+import { getMeta, yearHintOf } from './metadata.js';
+import { armPreview, closePreview } from './trailer-preview.js';
 
 // --------------------------------------------------------------------------
 // UI-mode persistence (Mobile vs TV) — asked on first APK boot, before login.
@@ -1332,6 +1334,9 @@ function rememberFocus() {
 
 function setScreen(name, params = {}, push = true) {
   if (!root) return;
+  // A screen change must never leave a trailer frame floating over the new
+  // screen — it is fixed-position and outlives the DOM it was anchored to.
+  closePreview();
   rememberFocus();
   if (push && current) stack.push(current);
   current = { name, params };
@@ -1938,8 +1943,28 @@ async function screenBrowse(params) {
         </div>
         <span class="tvn-poster-label">${esc(item.name)}</span>
       </button>`);
-    card.addEventListener('focus', () => reflectHeroDebounced(item));
-    card.onclick = () => setScreen('details', { item, type });
+    card.addEventListener('focus', () => {
+      reflectHeroDebounced(item);
+      // Netflix-style dwell preview. armPreview starts the TMDB lookup at once
+      // and only opens the frame if focus is still here 2s later, so the
+      // request overlaps the dwell instead of following it.
+      armPreview(card, {
+        label: item.name,
+        resolveMeta: () => {
+          const key = `${type}:${item.stream_id || item.series_id}`;
+          const provider = infoCache.get(key)?.info || {};
+          return getMeta({
+            type,
+            title: item.name,
+            year: yearHintOf(item, provider),
+            tmdbId: provider.tmdb_id || provider.tmdb || ''
+          });
+        }
+      });
+    });
+    // Any focus change tears the preview down; the next focus re-arms it.
+    card.addEventListener('blur', () => closePreview());
+    card.onclick = () => { closePreview(); setScreen('details', { item, type }); };
     return card;
   }
 
@@ -2131,6 +2156,7 @@ async function screenDetails(params) {
       <div style="flex:1"></div>
       <span class="tvn-browse-date" data-tvn-time style="font-weight:700"></span>
     </div>
+    <div class="tvn-details-about" data-about hidden></div>
     <div class="tvn-details-body">
       <div class="tvn-details-meta" data-meta></div>
       <div class="tvn-details-title">${esc(item.name)}</div>
@@ -2172,6 +2198,69 @@ async function screenDetails(params) {
   if (type === 'movie' && meta.duration_secs) bits.push(`${Math.floor(meta.duration_secs / 60)} min`);
   if (type === 'series' && info?.seasons?.length) bits.push(`${info.seasons.length} seasons`);
   metaEl.innerHTML = bits.map(b => `<span>${esc(b)}</span>`).join('<span style="opacity:0.4">·</span>');
+
+  // TMDB enrichment on the right-hand side. Not awaited — the screen is fully
+  // usable from provider data and this fills in beside it when it lands.
+  const aboutEl = scr.querySelector('[data-about]');
+  getMeta({
+    type,
+    title: item.name,
+    year: yearHintOf(item, meta),
+    tmdbId: meta.tmdb_id || meta.tmdb || ''
+  }).then((tm) => {
+    if (!aboutEl || !stage.contains(scr) || !tm) return;   // user left, or no match
+    const rows = [];
+    const add = (k, v) => { if (v) rows.push(`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`); };
+    add('Genre', (tm.genres || []).join(', '));
+    add(type === 'series' ? 'Created by' : 'Director',
+        ((type === 'series' ? tm.created_by : tm.director) || []).join(', '));
+    add('Network', (tm.networks || []).map((n) => n.name).join(', '));
+    if (tm.status) add('Status', /return|production/i.test(tm.status) ? 'Ongoing' : tm.status);
+    if (type === 'series' && tm.seasons) {
+      add('Seasons', `${tm.seasons} season${tm.seasons === 1 ? '' : 's'}` +
+        (tm.episodes ? ` · ${tm.episodes} episodes` : ''));
+    }
+    if (type === 'movie' && tm.runtime) add('Runtime', `${tm.runtime} min`);
+    if (tm.rating) add('TMDB rating', `★ ${tm.rating.toFixed(1)}`);
+
+    const cast = (tm.cast || []).filter((c) => c.name).slice(0, 5);
+    const castHtml = cast.length
+      ? `<div class="tvn-about-castlabel">Cast</div><div class="tvn-about-cast">` +
+        cast.map((c) => {
+          const initials = c.name.split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase();
+          const pic = c.profile
+            ? `<img src="${esc(c.profile)}" alt="" loading="lazy" onerror="this.remove()">`
+            : `<span class="tvn-about-initials">${esc(initials)}</span>`;
+          return `<div class="tvn-about-person"><div class="tvn-about-pic">${pic}</div>` +
+                 `<div class="tvn-about-name">${esc(c.name)}</div></div>`;
+        }).join('') + `</div>`
+      : '';
+
+    // QOL: TMDB owns the rating. Providers routinely report a flat 10.0, which
+    // looked absurd sitting directly above an ABOUT panel stating the real one.
+    // Rebuild the meta line with TMDB's values where it has them.
+    const mb = [];
+    if (tm.rating) mb.push(`★ ${tm.rating.toFixed(1)}`);
+    else if (item.rating || meta.rating) mb.push(`★ ${parseFloat(item.rating || meta.rating).toFixed(1)}`);
+    const g = (tm.genres || []).join(' / ') || meta.genre;
+    if (g) mb.push(g);
+    const rd = tm.release_date || meta.releasedate || meta.releaseDate || meta.year;
+    if (rd) mb.push(rd);
+    if (type === 'movie' && (tm.runtime || meta.duration_secs)) {
+      mb.push(`${tm.runtime || Math.floor(meta.duration_secs / 60)} min`);
+    }
+    if (type === 'series' && (tm.seasons || info?.seasons?.length)) {
+      mb.push(`${tm.seasons || info.seasons.length} seasons`);
+    }
+    if (mb.length) {
+      metaEl.innerHTML = mb.map((x) => `<span>${esc(x)}</span>`).join('<span style="opacity:0.4">·</span>');
+    }
+
+    if (!rows.length && !castHtml) return;
+    aboutEl.innerHTML = `<div class="tvn-about-title">About</div>` +
+      (rows.length ? `<dl class="tvn-about-facts">${rows.join('')}</dl>` : '') + castHtml;
+    aboutEl.hidden = false;
+  }).catch(() => {});
 
   const fav = H.isFavorite ? H.isFavorite(type, queryId) : false;
   const favBtn = el(`<button class="tvn-btn tvn-focable" data-nav data-fkey="fav"><span style="color:${fav ? 'var(--acc)' : 'rgba(255,255,255,0.5)'};font-size:28px">${I.star}</span> Favorite</button>`);
@@ -2988,6 +3077,8 @@ const SCREENS = {
 // ==========================================================================
 function hideForPlayback() {
   if (!root) return;
+  // Two audio sources at once would be the worst possible bug here.
+  closePreview();
   rememberFocus();
   hiddenForPlayback = true;
   sawPlayback = false;

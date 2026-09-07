@@ -674,7 +674,14 @@
                 <!-- #video-container will be appended here dynamically in JS -->
               </div>
               
-              <!-- Series Details Panel -->
+              <!-- Series Details Panel.
+                   The column wrapper exists so the panel can be absolutely
+                   positioned inside it: as a plain grid item the panel's own
+                   content sized the row, so a long plot + ABOUT block pushed
+                   the panel below the player. The wrapper stretches to the
+                   row height (set by the 16:9 player) and the panel fills it,
+                   scrolling internally instead of growing. -->
+              <div class="series-details-col">
               <div class="series-details-panel">
                 <div class="series-details-header">
                   <div class="series-cover-wrapper">
@@ -692,7 +699,21 @@
                   <div class="info-label">Plot Summary</div>
                   <p id="series-plot">No summary available.</p>
                 </div>
+
+                <!-- TMDB enrichment (9.0). Hidden until a lookup succeeds —
+                     the provider payload has no network/status/created-by, so
+                     an empty shell would just show a column of "N/A". Rows
+                     inside are individually hidden when TMDB has no value. -->
+                <div class="series-about-section" id="series-about" hidden>
+                  <div class="info-label" id="series-about-label">About</div>
+                  <dl class="about-facts" id="series-about-facts"></dl>
+                  <div class="about-cast" id="series-about-cast" hidden>
+                    <div class="info-label">Cast</div>
+                    <div class="about-cast-strip" id="series-about-cast-strip"></div>
+                  </div>
+                </div>
               </div>
+              </div><!-- /.series-details-col -->
             </div>
 
             <!-- Bottom Section: Season Selector and Episodes list -->
@@ -814,6 +835,19 @@
           <div class="vod-cast-section">
             <p><strong>Director:</strong> <span id="vod-modal-director">N/A</span></p>
             <p><strong>Cast:</strong> <span id="vod-modal-cast">N/A</span></p>
+          </div>
+
+          <!-- TMDB enrichment (9.0), same treatment as the series dashboard.
+               Hidden until a lookup succeeds — the provider payload carries no
+               network/status/created-by, so an empty shell would just be a
+               column of "N/A". -->
+          <div class="series-about-section" id="vod-about" hidden>
+            <div class="info-label" id="vod-about-label">About</div>
+            <dl class="about-facts" id="vod-about-facts"></dl>
+            <div class="about-cast" id="vod-about-cast" hidden>
+              <div class="info-label">Cast</div>
+              <div class="about-cast-strip" id="vod-about-cast-strip"></div>
+            </div>
           </div>
 
           <!-- Series Seasons & Episodes container -->

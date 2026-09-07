@@ -46,6 +46,8 @@ import { initWebTabs, openWebTab, openManageTabs, toggleAdblock, isAdblockOn, ap
 import { renderHome } from './components/home.js';
 import { getStoredUiMode, setStoredUiMode, showDeviceChooser, initTvNative, enterTvNative, exitTvNative, isTvNativeActive } from './components/tv-native.js';
 import { watchTogether } from './components/watch-together.js';
+import { getMeta, yearHintOf } from './components/metadata.js';
+import { armPreview, closePreview } from './components/trailer-preview.js';
 import { getAboutRows, DEVELOPER } from './components/about.js';
 import { initShareTunnel, openShareTunnel } from './components/share-tunnel.js';
 // Imported (not a literal "/src/assets/..." path) so Vite rewrites it to the
@@ -2140,9 +2142,11 @@ function renderMoviesCatalog(movies) {
     `;
 
     card.addEventListener('click', () => {
+      closePreview();
       navigation.setFocus('grid', card);
       openVODDetailsModal(movie, 'movie');
     });
+    attachCardTrailer(card, movie, 'movie');
     grid.appendChild(card);
   });
   
@@ -2151,6 +2155,31 @@ function renderMoviesCatalog(movies) {
     navigation.focusDefault('grid');
   }
   navigation.triggerPendingFocus();
+}
+
+
+/**
+ * Attach the dwell trailer preview to a desktop grid tile.
+ *
+ * Mirrors the TV shell's poster wiring (tv-native.js) but driven by pointer as
+ * well as focus, since the PC UI is used with a mouse. The TMDB lookup is
+ * kicked off by armPreview the instant the pointer/focus arrives, so it
+ * overlaps the dwell rather than following it.
+ */
+function attachCardTrailer(card, item, type) {
+  const arm = () => armPreview(card, {
+    label: item.name,
+    resolveMeta: () => getMeta({
+      type,
+      title: item.name,
+      year: yearHintOf(item, {}),
+      tmdbId: item.tmdb_id || ''
+    })
+  });
+  card.addEventListener('mouseenter', arm);
+  card.addEventListener('focus', arm);
+  card.addEventListener('mouseleave', () => closePreview());
+  card.addEventListener('blur', () => closePreview());
 }
 
 // ==========================================================================
@@ -2208,9 +2237,11 @@ function renderSeriesCatalog(seriesList) {
 
     // In Xtream Codes, TV Series items contain series_id instead of stream_id
     card.addEventListener('click', () => {
+      closePreview();
       navigation.setFocus('grid', card);
       openSeriesPlaybackDashboard(series);
     });
+    attachCardTrailer(card, series, 'series');
     grid.appendChild(card);
   });
 
@@ -2222,6 +2253,134 @@ function renderSeriesCatalog(seriesList) {
 }
 
 // TV Series Playback Dashboard controllers
+
+/**
+ * QOL: TMDB supplies the rating wherever we have one.
+ *
+ * Xtream providers populate `rating` with whatever their scraper found, and it
+ * is frequently wrong in an obvious way — a flat "10.0" across an entire
+ * catalogue is the common failure. TMDB's vote average is a real number from a
+ * real sample, so when a lookup succeeds it wins outright rather than being a
+ * fallback. The title attribute keeps the source visible on hover.
+ */
+function applyTmdbRating(el, meta) {
+  if (!el || !meta || !meta.rating) return;
+  el.innerHTML = `<i data-lucide="star"></i> ${meta.rating.toFixed(1)}`;
+  el.title = 'Rating from TMDB';
+  try { lucide.createIcons({ scope: el }); } catch (e) {}
+}
+
+/**
+ * Make a still poster expand into its trailer, for the detail modals.
+ *
+ * Uses the same dwell component as the grid tiles so the timing, teardown and
+ * device gating stay in one place. `resolveMeta` returns the already-resolved
+ * object — the lookup is finished by the time this is called, so the frame can
+ * open the moment the dwell elapses.
+ */
+function armPosterTrailer(posterEl, label, meta) {
+  if (!posterEl || !meta) return;
+  if (!meta.trailer?.key && !meta.backdrop) return;   // nothing to show
+
+  const arm = () => armPreview(posterEl, { label, resolveMeta: () => meta });
+  // Desktop pointer and D-pad focus both count as "resting on" the poster.
+  posterEl.onmouseenter = arm;
+  posterEl.onfocus = arm;
+  posterEl.onmouseleave = () => closePreview();
+  posterEl.onblur = () => closePreview();
+  // Focusable so the TV remote can reach it at all.
+  if (!posterEl.hasAttribute('tabindex')) posterEl.setAttribute('tabindex', '0');
+}
+
+// Guards against a slow TMDB lookup painting onto a series the user has since
+// navigated away from. Bumped every time the dashboard opens; an in-flight
+// response whose token no longer matches is discarded.
+let aboutSeq = 0;
+
+/**
+ * Fill the ABOUT panel under Plot Summary from a TMDB lookup (9.0).
+ *
+ * The whole section stays hidden unless TMDB actually returned something —
+ * network / status / created-by simply don't exist in the Xtream payload, so
+ * without a hit there is nothing to show and an empty shell would just be a
+ * column of "N/A". Individual rows are omitted the same way when TMDB has the
+ * title but not that particular field.
+ *
+ * Safe to call with null; that's the normal outcome on builds with no local
+ * server, or for a title TMDB has never heard of.
+ */
+function renderAboutPanel(meta, type, prefix = 'series') {
+  const section = document.getElementById(`${prefix}-about`);
+  const factsEl = document.getElementById(`${prefix}-about-facts`);
+  const castWrap = document.getElementById(`${prefix}-about-cast`);
+  const castStrip = document.getElementById(`${prefix}-about-cast-strip`);
+  if (!section || !factsEl) return;
+
+  if (!meta) {
+    section.hidden = true;
+    factsEl.innerHTML = '';
+    if (castStrip) castStrip.innerHTML = '';
+    return;
+  }
+
+  const label = document.getElementById(`${prefix}-about-label`);
+  if (label) label.textContent = `About ${meta.title || ''}`.trim();
+
+  const rows = [];
+  const push = (dt, ddHtml) => { if (ddHtml) rows.push({ dt, ddHtml }); };
+
+  push('Genre', meta.genres?.length ? escapeHtml(meta.genres.join(', ')) : '');
+  push(type === 'series' ? 'Created by' : 'Director',
+       (type === 'series' ? meta.created_by : meta.director)?.length
+         ? escapeHtml((type === 'series' ? meta.created_by : meta.director).join(', '))
+         : '');
+  push('Network', meta.networks?.length
+    ? meta.networks.map(n => n.logo
+        ? `<span class="about-net"><img src="${escapeHtml(n.logo)}" alt="${escapeHtml(n.name)}" onerror="this.remove()">${escapeHtml(n.name)}</span>`
+        : `<span class="about-net">${escapeHtml(n.name)}</span>`).join(' ')
+    : '');
+
+  if (meta.status) {
+    // TMDB status strings are free text ("Returning Series", "Ended",
+    // "Canceled"); map to a coarse tone rather than colouring every variant.
+    const s = meta.status.toLowerCase();
+    const tone = s.includes('return') || s.includes('production') ? ' is-ongoing'
+               : (s.includes('end') || s.includes('cancel')) ? ' is-ended' : '';
+    const shown = s.includes('return') ? 'Ongoing' : meta.status;
+    push('Status', `<span class="about-status${tone}">${escapeHtml(shown)}</span>`);
+  }
+
+  if (type === 'series' && meta.seasons) {
+    push('Seasons', escapeHtml(`${meta.seasons} season${meta.seasons === 1 ? '' : 's'}` +
+      (meta.episodes ? ` · ${meta.episodes} episodes` : '')));
+  }
+  if (type === 'movie' && meta.runtime) push('Runtime', escapeHtml(`${meta.runtime} min`));
+  if (meta.rating) push('TMDB rating', escapeHtml(`★ ${meta.rating.toFixed(1)}`));
+
+  factsEl.innerHTML = rows
+    .map(r => `<dt>${escapeHtml(r.dt)}</dt><dd>${r.ddHtml}</dd>`)
+    .join('');
+
+  // Cast strip. Head-shots are optional per person, so anyone without one gets
+  // initials instead of a broken image.
+  if (castStrip && castWrap) {
+    const cast = (meta.cast || []).filter(c => c.name).slice(0, 12);
+    castStrip.innerHTML = cast.map(c => {
+      const initials = c.name.split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
+      const photo = c.profile
+        ? `<img class="about-cast-photo" src="${escapeHtml(c.profile)}" alt="${escapeHtml(c.name)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'about-cast-photo is-fallback',textContent:'${escapeHtml(initials)}'}))">`
+        : `<div class="about-cast-photo is-fallback">${escapeHtml(initials)}</div>`;
+      return `<div class="about-cast-member">${photo}` +
+             `<div class="about-cast-name">${escapeHtml(c.name)}</div>` +
+             (c.character ? `<div class="about-cast-role">${escapeHtml(c.character)}</div>` : '') +
+             `</div>`;
+    }).join('');
+    castWrap.hidden = cast.length === 0;
+  }
+
+  section.hidden = rows.length === 0 && !(meta.cast || []).length;
+}
+
 async function openSeriesPlaybackDashboard(series, resumeOpts = null) {
   const playbackContainer = document.getElementById('series-playback-container');
   const catalogContainer = document.getElementById('series-catalog-container');
@@ -2249,6 +2408,8 @@ async function openSeriesPlaybackDashboard(series, resumeOpts = null) {
   if (yearBadge) yearBadge.textContent = series.releaseDate || series.year || 'N/A';
   if (coverImg) coverImg.src = proxifyImage(series.stream_icon || series.cover || series.cover_big || '');
   if (plot) plot.textContent = 'Loading description details...';
+  const aboutToken = ++aboutSeq;      // invalidates any in-flight TMDB lookup
+  renderAboutPanel(null, 'series');   // hide last series' facts while loading
   if (select) select.innerHTML = '';
   if (episodesList) episodesList.innerHTML = '<div class="spinner-center"><div class="spinner"></div></div>';
   if (countNum) countNum.textContent = '(0)';
@@ -2296,7 +2457,24 @@ async function openSeriesPlaybackDashboard(series, resumeOpts = null) {
 
     if (plot) plot.textContent = infoMeta.plot || infoMeta.description || 'No summary available.';
     if (yearBadge) yearBadge.textContent = infoMeta.releasedate || infoMeta.releaseDate || infoMeta.year || yearBadge.textContent;
-    
+
+    // TMDB enrichment. Deliberately NOT awaited — the dashboard and episode
+    // list render fully from provider data, and the ABOUT panel appears if and
+    // when the lookup lands. A miss simply leaves the panel hidden.
+    getMeta({
+      type: 'series',
+      title: series.name,
+      year: yearHintOf(series, infoMeta),
+      // Many providers carry a TMDB id already; using it skips the title
+      // search entirely and is exact.
+      tmdbId: infoMeta.tmdb_id || infoMeta.tmdb || ''
+    }).then((meta) => {
+      if (aboutToken !== aboutSeq) return;   // user moved on to another series
+      renderAboutPanel(meta, 'series');
+      applyTmdbRating(rating, meta);
+    }).catch(() => {});
+
+
     const episodesMap = info.episodes || {};
     const seasons = Object.keys(episodesMap).sort((a, b) => parseInt(a) - parseInt(b));
     
@@ -2796,6 +2974,9 @@ async function openVODDetailsModal(vodData, type, resumeTime = 0) {
   plot.textContent = 'Loading description details...';
   director.textContent = 'Loading...';
   cast.textContent = 'Loading...';
+  const vodAboutToken = ++aboutSeq;        // invalidates any in-flight lookup
+  renderAboutPanel(null, type, 'vod');     // hide the last title's facts
+  closePreview();                          // and any trailer left open
 
   playBtn.classList.remove('hidden');
   wtBtn.classList.add('hidden');   // movies only — shown once the metadata lands
@@ -2817,6 +2998,41 @@ async function openVODDetailsModal(vodData, type, resumeTime = 0) {
     cast.textContent = infoMeta.cast || infoMeta.actors || 'N/A';
     release.textContent = infoMeta.releasedate || infoMeta.releaseDate || infoMeta.year || release.textContent;
     genre.textContent = infoMeta.genre || genre.textContent;
+
+    // TMDB enrichment. Not awaited — the modal is fully usable from provider
+    // data, and this fills in over it when it lands.
+    getMeta({
+      type,
+      title: vodData.name,
+      year: yearHintOf(vodData, infoMeta),
+      tmdbId: infoMeta.tmdb_id || infoMeta.tmdb || ''
+    }).then((meta) => {
+      if (vodAboutToken !== aboutSeq) return;   // modal moved on
+      renderAboutPanel(meta, type, 'vod');
+      if (!meta) return;
+
+      // QOL: TMDB is the authoritative rating. Providers routinely ship
+      // nonsense here — a flat "10.0" on everything is common — so a real
+      // score replaces it wherever we have one.
+      applyTmdbRating(rating, meta);
+
+      // Fill the gaps the provider left rather than overwriting what it gave.
+      if (meta.genres?.length && (!infoMeta.genre || genre.textContent === 'General')) {
+        genre.textContent = meta.genres.join(', ');
+      }
+      if (!infoMeta.plot && !infoMeta.description && meta.overview) plot.textContent = meta.overview;
+      const dir = (type === 'series' ? meta.created_by : meta.director) || [];
+      if (dir.length && (!infoMeta.director || director.textContent === 'N/A')) {
+        director.textContent = dir.join(', ');
+      }
+      if (meta.cast?.length && (!(infoMeta.cast || infoMeta.actors) || cast.textContent === 'N/A')) {
+        cast.textContent = meta.cast.slice(0, 8).map((c) => c.name).join(', ');
+      }
+
+      // QOL: the modal poster expands into the trailer, same behaviour as a
+      // grid tile. Hover on desktop, focus for D-pad.
+      armPosterTrailer(poster, vodData.name, meta);
+    }).catch(() => {});
 
     if (type === 'movie') {
       const runTime = infoMeta.duration_secs ? `${Math.floor(infoMeta.duration_secs / 60)}m` : infoMeta.duration || 'N/A';

@@ -41,6 +41,11 @@ contextBridge.exposeInMainWorld('appHost', {
   setAdblock: (enabled) => ipcRenderer.invoke('adblock:set', enabled),
   getAdblock: () => ipcRenderer.invoke('adblock:get'),
 
+  // Poster-dwell trailers: arm ad-blocking on the persist:trailers session
+  // before the first embed loads. Resolves { ok, enabled, error? }; a failure
+  // means "unfiltered", not "don't play".
+  prepareTrailers: () => ipcRenderer.invoke('trailers:prepare'),
+
   // Auto-updater (electron-updater) → in-app UI. Subscribe to update lifecycle
   // events; cb receives { type: 'available'|'progress'|'downloaded'|'error', ... }.
   // Returns an unsubscribe function.

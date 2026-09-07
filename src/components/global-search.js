@@ -80,7 +80,18 @@ export function openGlobalSearch({ tvInput = false, onPick } = {}) {
     const open = () => openSearchKeyboard({
       title: 'Search',
       initial: gs.query,
-      onChange: (q) => { setQuery(q); },
+      // Debounced like the PC field. Without this every single key press fired
+      // three catalogue searches AND rebuilt the whole result list, which on a
+      // TV box meant the UI was busy re-rendering for as long as you kept
+      // typing — and each rebuild destroyed the focused element, dumping D-pad
+      // focus onto <body>.
+      onChange: (q) => {
+        clearTimeout(gs.debounce);
+        gs.debounce = setTimeout(() => setQuery(q), 350);
+      },
+      // Only hand focus to the results if there ARE results. Closing the
+      // keyboard while the list is still loading used to focus nothing at all,
+      // leaving the D-pad with nowhere to go.
       onClose: () => { focusFirstResult(); },
     });
     gs.display.addEventListener('click', open);
@@ -167,12 +178,23 @@ function epgMatchesFor(q, liveResults) {
 async function runSearch(q) {
   if (!gs) return;
   if (q.length < MIN_QUERY) {
+    gs.last = null;
+    gs.body.classList.remove('gsearch-busy');
     gs.body.innerHTML = `<div class="gsearch-hint">Type at least ${MIN_QUERY} characters to search across everything.</div>`;
     return;
   }
 
   const token = ++gs.searchToken;
-  gs.body.innerHTML = '<div class="gsearch-loading"><div class="spinner"></div></div>';
+  // Replace the list with a spinner ONLY on the first search. Re-rendering it
+  // on every subsequent query destroys whatever element currently has D-pad
+  // focus, which is what made focus jump out of the overlay mid-type. Keeping
+  // the previous results up (dimmed) also stops the list flickering on every
+  // letter.
+  if (!gs.last) {
+    gs.body.innerHTML = '<div class="gsearch-loading"><div class="spinner"></div></div>';
+  } else {
+    gs.body.classList.add('gsearch-busy');
+  }
 
   const fetchType = (type) => getStreams({ type, categoryId: 'all', page: 1, limit: PER_TYPE_LIMIT, search: q })
     .then((r) => (r && Array.isArray(r.items) ? r.items : []))
@@ -192,6 +214,7 @@ async function runSearch(q) {
   ]);
 
   if (!gs || token !== gs.searchToken) return; // a newer query superseded this one
+  gs.body.classList.remove('gsearch-busy');
   const epg = epgMatchesFor(q.toLowerCase(), live);
   gs.last = { live, movies, series, epg };
   renderResults(gs.last);
@@ -305,7 +328,17 @@ function moveFocus(delta) {
 
 function focusFirstResult() {
   const items = focusableItems();
-  if (items.length) { moveFocus(-9999); items[0].classList.add('gsearch-focused'); try { items[0].focus(); } catch (e) {} }
+  if (!items.length) {
+    // Nothing to focus (still loading, or no matches). Park focus on the
+    // overlay itself rather than leaving it on a destroyed node — otherwise
+    // the next D-pad press escapes to whatever is behind the overlay.
+    try { gs && gs.overlay && gs.overlay.focus({ preventScroll: true }); } catch (e) {}
+    return false;
+  }
+  moveFocus(-9999);
+  items[0].classList.add('gsearch-focused');
+  try { items[0].focus(); } catch (e) {}
+  return true;
 }
 
 // Arrow/Enter navigation over the result tiles. The PC text field keeps normal

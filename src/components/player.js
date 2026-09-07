@@ -712,12 +712,34 @@ export class VideoPlayer {
             // reconnect budget is spent.
             console.warn('[vod] network error mid-playback — attempting resume');
             this._recoverVodStall(true);
+          } else if (err && err.code === 3) {
+            // MEDIA_ERR_DECODE mid-playback. This is NOT the "unsupported
+            // codec" case — that fails within the first couple of seconds and
+            // goes through _handleVodPlaybackFallback above, which tries the
+            // transcode ladder. Reaching here means the stream decoded fine for
+            // a while and then hit a bad patch: a corrupt segment, or the
+            // decoder being starved by one of the provider's short-cycle
+            // session drops. Reloading at the current position flushes the
+            // decoder and almost always continues.
+            //
+            // Budget is deliberately tighter than the stall watchdog's: if
+            // three reloads all decode-fail at the same spot, the file really
+            // is damaged there and retrying just spins.
+            this._vodDecodeRetries = (this._vodDecodeRetries || 0) + 1;
+            if (this._vodDecodeRetries <= 3) {
+              console.warn(`[vod] decode error mid-playback — reload attempt ${this._vodDecodeRetries}`);
+              if (window.showToast && this._vodDecodeRetries === 1) {
+                window.showToast('Playback glitched — recovering…', 'info', 2500);
+              }
+              this._recoverVodStall(true);
+            } else {
+              let errMsg = 'Video decoding failed.';
+              if (err.message) errMsg += ` (${err.message})`;
+              this.showError(errMsg);
+            }
           } else {
             let errMsg = 'VOD playback interrupted.';
-            if (err) {
-              if (err.code === 3) errMsg = 'Video decoding failed.';
-              if (err.message) errMsg += ` (${err.message})`;
-            }
+            if (err && err.message) errMsg += ` (${err.message})`;
             this.showError(errMsg);
           }
         } else {
@@ -2538,6 +2560,9 @@ export class VideoPlayer {
   _startVodStallWatch() {
     this._stopVodStallWatch();
     this._vodRecoverCount = 0;
+    // Decode-error retries are per-title, same as the stall budget: a new
+    // stream must not inherit the last one's exhausted allowance.
+    this._vodDecodeRetries = 0;
     let last = -1;
     let lastChange = Date.now();
     let progressSince = null; // wall-clock start of the current healthy stretch
@@ -2555,6 +2580,7 @@ export class VideoPlayer {
         // 15s of uninterrupted playback earns the recovery budget back, so a
         // server that drops every few minutes over a 2h movie keeps recovering.
         else if (this._vodRecoverCount > 0 && Date.now() - progressSince > 15000) this._vodRecoverCount = 0;
+        else if (this._vodDecodeRetries > 0 && Date.now() - progressSince > 15000) this._vodDecodeRetries = 0;
         return;
       }
       progressSince = null;
