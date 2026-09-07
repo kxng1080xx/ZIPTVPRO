@@ -41,7 +41,11 @@
 
 const DWELL_MS = 2000;        // how long focus must rest before opening
 const VIDEO_FADE_MS = 420;    // backdrop -> video cross-fade
-const PLAY_TIMEOUT_MS = 6500; // give up waiting for playback; keep the backdrop
+// Generous on purpose: YouTube's player can take several seconds to actually
+// start rolling on a cold session, and giving up early tears the embed down
+// and strands the frame on the still image.
+const PLAY_TIMEOUT_MS = 15000;
+const POLL_MS = 450;          // how often we ask the guest if it is really playing
 
 let overlay = null;      // the frame element (created once, reused)
 let mediaHost = null;    // <webview> or <iframe>, recreated per trailer
@@ -53,6 +57,7 @@ let dwellTimer = null;
 let playTimer = null;
 let openSeq = 0;         // invalidates async work from a previous open
 let detachPlaybackListener = null;
+let pollTimer = null;      // webview playback probe (see mountMedia)
 let currentAnchor = null;
 let hiddenAnchor = null;   // tile currently faded out beneath an open frame
 let shiftedTiles = [];     // neighbours currently translated aside
@@ -337,6 +342,8 @@ function teardownMedia() {
   clearTimeout(playTimer);
   playTimer = null;
   if (detachPlaybackListener) { try { detachPlaybackListener(); } catch (e) {} detachPlaybackListener = null; }
+  clearInterval(pollTimer);
+  pollTimer = null;
   if (overlay) overlay.classList.remove('is-playing');
   if (mediaHost) {
     // about:blank first: dropping a <webview>/<iframe> without navigating away
@@ -488,20 +495,44 @@ function mountMedia(key, seq) {
     wv.setAttribute('allowpopups', 'false');
     wv.setAttribute('disableblinkfeatures', 'Auxclick');
     wv.src = embedUrl(key);
-    // Electron gives us a true signal here: the guest only emits this once
-    // media actually starts. A bot challenge or error page never will, so the
-    // backdrop simply stays up.
+    // Fast path, when the guest bothers to report it.
     wv.addEventListener('media-started-playing', markPlaying);
-    // No postMessage channel to a guest process, so use its media events. A
-    // trailer that stops playing is either finished or stalled; either way the
-    // next thing on screen would be YouTube's end-screen, so fade back to the
-    // backdrop instead. Delayed slightly because a brief pause also fires
-    // during buffering.
-    wv.addEventListener('media-paused', () => {
+
+    // Authoritative path: ask the guest whether a <video> is actually
+    // advancing. Events alone were not enough —
+    //   * 'media-started-playing' does not reliably fire for this guest, and
+    //     the give-up timer then tore the embed down, stranding the frame on
+    //     the backdrop (exactly the "opens but never plays" symptom);
+    //   * 'media-paused' fires during ordinary buffering, so using it to fade
+    //     out killed healthy playback moments after it began.
+    // A currentTime that keeps increasing is proof, and it still rejects the
+    // bot-challenge and error pages, which have no playing <video> at all.
+    const probe = "(()=>{const v=document.querySelector('video');return v?v.currentTime:-1})()";
+    let lastT = -1;
+    let stalls = 0;
+    wv.addEventListener('did-stop-loading', () => {
       if (seq !== openSeq) return;
-      setTimeout(() => {
-        if (seq === openSeq) overlay.classList.remove('is-playing');
-      }, 700);
+      clearInterval(pollTimer);
+      pollTimer = setInterval(() => {
+        if (seq !== openSeq || !mediaHost) { clearInterval(pollTimer); return; }
+        let pending;
+        try { pending = mediaHost.executeJavaScript(probe, true); } catch (e) { return; }
+        Promise.resolve(pending).then((t) => {
+          if (seq !== openSeq || typeof t !== 'number' || t < 0) return;
+          if (t > 0.2) markPlaying();
+          // Time stopped advancing for ~2s: finished, or stalled. Either way
+          // YouTube's end-screen is what comes next, so return to the still.
+          if (Math.abs(t - lastT) < 0.02) {
+            if (++stalls >= 4) {
+              overlay.classList.remove('is-playing');
+              clearInterval(pollTimer);
+            }
+          } else {
+            stalls = 0;
+          }
+          lastT = t;
+        }).catch(() => {});
+      }, POLL_MS);
     });
     wv.addEventListener('did-fail-load', () => {
       if (seq === openSeq) teardownMedia();   // keep the backdrop
