@@ -25,18 +25,16 @@
  * the bonus, every one of those cases would read as a bug.
  *
  * ---------------------------------------------------------------------------
- * Electron vs everything else
+ * One embed path everywhere: a plain <iframe>
  * ---------------------------------------------------------------------------
- * Desktop uses <webview partition="persist:trailers">, not <iframe>. The
- * renderer loads from file://, and YouTube refuses embeds from a file origin;
- * a <webview> is a real guest that navigates to https://www.youtube.com/... so
- * it carries a genuine https origin. That session also gets the app's Ghostery
- * ad-blocker (see main.electron.cjs), which matters because a pre-roll advert
- * on a hover preview would be worse than showing nothing.
- *
- * Android/Capacitor serves from https://localhost — a real origin — so a plain
- * iframe is fine there. It has no ad-blocker, which is the other reason the
- * backdrop layer has to stand on its own.
+ * The desktop build briefly used a <webview> on its own ad-blocked session.
+ * Both justifications turned out to be false: the renderer is served from
+ * http://localhost:<serverPort> (not file://), so an iframe has a perfectly
+ * good origin; and pointing the ad-blocker at YouTube stripped resources the
+ * player needs, so the embed never started. The tell was that identical code
+ * played under `npm run dev` and on Android — both iframe paths — and failed
+ * only in the packaged EXE. One path now, so dev behaviour is shipped
+ * behaviour.
  */
 
 const DWELL_MS = 2000;        // how long focus must rest before opening
@@ -48,7 +46,7 @@ const PLAY_TIMEOUT_MS = 15000;
 const POLL_MS = 450;          // how often we ask the guest if it is really playing
 
 let overlay = null;      // the frame element (created once, reused)
-let mediaHost = null;    // <webview> or <iframe>, recreated per trailer
+let mediaHost = null;    // the <iframe>, recreated per trailer
 let backdropEl = null;
 let titleEl = null;
 let stylesInjected = false;
@@ -57,12 +55,11 @@ let dwellTimer = null;
 let playTimer = null;
 let openSeq = 0;         // invalidates async work from a previous open
 let detachPlaybackListener = null;
-let pollTimer = null;      // webview playback probe (see mountMedia)
+let pollTimer = null;      // reserved for playback probing
 let currentAnchor = null;
 let hiddenAnchor = null;   // tile currently faded out beneath an open frame
 let shiftedTiles = [];     // neighbours currently translated aside
 let enabled = true;
-let trailersPrepared = false;
 
 const isElectron = () => !!(window.appHost && window.appHost.isElectron);
 
@@ -440,7 +437,7 @@ function listenForPlayback(iframe, onPlaying, onEnded) {
  * "Looks like" is doing real work: a plain iframe gives us no playback signal
  * without pulling in the YouTube IFrame API (another script from a host that
  * may be blocked), so a successful load event plus a short settle is the
- * signal. A <webview> gives us real navigation events. Either way the frame is
+ * signal. Either way the frame is
  * already showing the backdrop, so a wrong guess costs nothing.
  */
 function mountMedia(key, seq) {
@@ -459,8 +456,17 @@ function mountMedia(key, seq) {
     } catch (e) {}
   };
 
+  // Diagnostics: this feature has several silent failure modes (wrong embed
+  // path, guest never loading, playback never confirmed) that all look
+  // identical on screen — a frame stuck on the backdrop. Logging which branch
+  // ran and what it heard back turns "not playing" into an answerable
+  // question from the app's own DevTools (F12).
+  const log = (...a) => { try { console.log('[trailer]', ...a); } catch (e) {} };
+  log('mounting iframe, key=', key);
+
   const markPlaying = () => {
     if (seq !== openSeq) return;
+    log('revealing video');
     overlay.classList.add('is-playing');
     applyAudio();
   };
@@ -487,58 +493,26 @@ function mountMedia(key, seq) {
     command('playVideo');
   };
 
-  if (isElectron()) {
-    const wv = document.createElement('webview');
-    wv.className = 'ztp-preview-media';
-    // Real https origin + the Ghostery-filtered session (main.electron.cjs).
-    wv.setAttribute('partition', 'persist:trailers');
-    wv.setAttribute('allowpopups', 'false');
-    wv.setAttribute('disableblinkfeatures', 'Auxclick');
-    wv.src = embedUrl(key);
-    // Fast path, when the guest bothers to report it.
-    wv.addEventListener('media-started-playing', markPlaying);
-
-    // Authoritative path: ask the guest whether a <video> is actually
-    // advancing. Events alone were not enough —
-    //   * 'media-started-playing' does not reliably fire for this guest, and
-    //     the give-up timer then tore the embed down, stranding the frame on
-    //     the backdrop (exactly the "opens but never plays" symptom);
-    //   * 'media-paused' fires during ordinary buffering, so using it to fade
-    //     out killed healthy playback moments after it began.
-    // A currentTime that keeps increasing is proof, and it still rejects the
-    // bot-challenge and error pages, which have no playing <video> at all.
-    const probe = "(()=>{const v=document.querySelector('video');return v?v.currentTime:-1})()";
-    let lastT = -1;
-    let stalls = 0;
-    wv.addEventListener('did-stop-loading', () => {
-      if (seq !== openSeq) return;
-      clearInterval(pollTimer);
-      pollTimer = setInterval(() => {
-        if (seq !== openSeq || !mediaHost) { clearInterval(pollTimer); return; }
-        let pending;
-        try { pending = mediaHost.executeJavaScript(probe, true); } catch (e) { return; }
-        Promise.resolve(pending).then((t) => {
-          if (seq !== openSeq || typeof t !== 'number' || t < 0) return;
-          if (t > 0.2) markPlaying();
-          // Time stopped advancing for ~2s: finished, or stalled. Either way
-          // YouTube's end-screen is what comes next, so return to the still.
-          if (Math.abs(t - lastT) < 0.02) {
-            if (++stalls >= 4) {
-              overlay.classList.remove('is-playing');
-              clearInterval(pollTimer);
-            }
-          } else {
-            stalls = 0;
-          }
-          lastT = t;
-        }).catch(() => {});
-      }, POLL_MS);
-    });
-    wv.addEventListener('did-fail-load', () => {
-      if (seq === openSeq) teardownMedia();   // keep the backdrop
-    });
-    mediaHost = wv;
-  } else {
+  // ONE path for every platform: a plain <iframe>.
+  //
+  // The desktop build used a <webview partition="persist:trailers"> for two
+  // stated reasons, and BOTH were wrong:
+  //
+  //   1. "The renderer runs from file://, so YouTube refuses an iframe."
+  //      It does not — main.electron.cjs loads http://localhost:<serverPort>,
+  //      a real http origin, exactly like the dev server. An iframe is fine.
+  //
+  //   2. "That session gets the ad-blocker, so no pre-rolls."
+  //      Pointing the Ghostery ads-and-tracking engine at YouTube also strips
+  //      resources its player needs, and the embed never starts. The symptom
+  //      was decisive: identical code played fine under `npm run dev` (a
+  //      browser, so the iframe path) and failed in the packaged EXE (the
+  //      webview path). A trailer that plays with an occasional ad beats one
+  //      that reliably shows nothing.
+  //
+  // Keeping a single code path also means the behaviour you debug in dev is
+  // the behaviour that ships.
+  {
     const fr = document.createElement('iframe');
     fr.className = 'ztp-preview-media';
     fr.setAttribute('allow', 'autoplay; encrypted-media');
@@ -546,8 +520,27 @@ function mountMedia(key, seq) {
     fr.setAttribute('frameborder', '0');
     fr.src = embedUrl(key);
     mediaHost = fr;
-    // NOT the load event — see listenForPlayback's comment.
+    // Preferred signal: the widget reporting playerState PLAYING over
+    // postMessage — see listenForPlayback for why the load event alone lies.
     detachPlaybackListener = listenForPlayback(fr, markPlaying, handleEnded);
+
+    // Safety net. The handshake is the better signal, but if it never lands
+    // (widget version differences, a blocked postMessage, an origin the player
+    // dislikes) the frame would sit on the backdrop forever — which is the bug
+    // that shipped three times. Once the iframe has loaded and had a moment to
+    // start, reveal it anyway. Worst case the viewer briefly sees a YouTube
+    // error card instead of a still; far better than a feature that silently
+    // does nothing.
+    fr.addEventListener('load', () => {
+      log('iframe loaded');
+      setTimeout(() => {
+        if (seq !== openSeq || !overlay) return;
+        if (!overlay.classList.contains('is-playing')) {
+          log('handshake never confirmed - revealing anyway');
+          markPlaying();
+        }
+      }, 2500);
+    });
   }
 
   slot.appendChild(mediaHost);
@@ -556,7 +549,10 @@ function mountMedia(key, seq) {
   // fading in a frame that may be showing an error page.
   playTimer = setTimeout(() => {
     if (seq !== openSeq) return;
-    if (!overlay.classList.contains('is-playing')) teardownMedia();
+    if (!overlay.classList.contains('is-playing')) {
+      log('gave up waiting for playback after', PLAY_TIMEOUT_MS, 'ms - staying on backdrop');
+      teardownMedia();
+    }
   }, PLAY_TIMEOUT_MS);
 }
 
@@ -598,16 +594,13 @@ function openPreview(anchor, meta, label) {
   }
 
   if (meta?.trailer?.key) {
-    const start = () => { if (seq === openSeq) mountMedia(meta.trailer.key, seq); };
-    if (isElectron() && !trailersPrepared && window.appHost?.prepareTrailers) {
-      // Arm ad-blocking on the trailer session before the first embed loads.
-      // Never block on failure — an unfiltered trailer beats no trailer.
-      window.appHost.prepareTrailers()
-        .catch(() => {})
-        .finally(() => { trailersPrepared = true; start(); });
-    } else {
-      start();
-    }
+    // Mount immediately. This used to wait on window.appHost.prepareTrailers(),
+    // which armed the ad-blocker on the (now removed) webview session — and on
+    // first run that call downloads the Ghostery filter lists, so the embed was
+    // delayed by a network fetch before it even started. In the packaged app
+    // that could outlast the give-up timer entirely, leaving the frame on the
+    // backdrop. Nothing to arm now, so nothing to wait for.
+    mountMedia(meta.trailer.key, seq);
   }
 }
 
