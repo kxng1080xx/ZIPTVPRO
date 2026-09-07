@@ -63,6 +63,20 @@ let enabled = true;
 
 const isElectron = () => !!(window.appHost && window.appHost.isElectron);
 
+/** True inside the Capacitor APK (Android), false in Electron and the browser. */
+function isNativeApp() {
+  try {
+    return !!(window.Capacitor &&
+      typeof window.Capacitor.isNativePlatform === 'function' &&
+      window.Capacitor.isNativePlatform());
+  } catch (e) { return false; }
+}
+
+/** The v7 10-foot shell is mounted (body gets `tv-native` when it activates). */
+function tvShellActive() {
+  try { return document.body.classList.contains('tv-native'); } catch (e) { return false; }
+}
+
 /** localStorage `trailerMuted` = 'on' silences previews. Default: sound on. */
 function mutedPref() {
   try { return localStorage.getItem('trailerMuted') === 'on'; } catch (e) { return false; }
@@ -108,6 +122,15 @@ function previewAllowed() {
     let pref = null;
     try { pref = localStorage.getItem('trailerPreview'); } catch (e) {}
     if (pref === 'off') return false;
+
+    // APK: TV shell only. The phone's portrait layout has no room for a 16:9
+    // frame that expands out of a poster and shoves its neighbours aside - it
+    // ends up covering most of the screen and reads as a bug rather than a
+    // feature. On a TV the same gesture is the whole point. Deliberately not
+    // overridable by `trailerPreview: 'on'`: this is a layout constraint, not a
+    // performance one. Electron and the browser are unaffected.
+    if (isNativeApp() && !tvShellActive()) return false;
+
     if (pref !== 'on' && deviceLooksWeak()) return false;
     // Someone who asked the OS for less motion should not get autoplaying video.
     if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
@@ -141,15 +164,31 @@ function injectStyles() {
   pointer-events: none;
 }
 .ztp-preview.is-open { opacity: 1; transform: scale(1); }
-.ztp-preview-media, .ztp-preview-backdrop {
+.ztp-preview-backdrop {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   border: 0;
+  object-fit: cover;
+  background: #05070d;
 }
-.ztp-preview-backdrop { object-fit: cover; background: #05070d; }
+/* The embed is deliberately LARGER than the frame that clips it.
+   YouTube anchors its chrome to the player's own edges - the video title and
+   channel avatar across the top, the share / "More videos" / logo bar across
+   the bottom - and there is no supported way to switch those off
+   (modestbranding is deprecated and now does nothing). Oversizing the iframe
+   and centring it pushes that furniture outside the clipped area, leaving
+   just picture. Costs a modest crop, which on a preview tile reads as
+   framing rather than loss. */
 .ztp-preview-media {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 134%;
+  height: 134%;
+  transform: translate(-50%, -50%);
+  border: 0;
   opacity: 0;
   transition: opacity ${VIDEO_FADE_MS}ms ease;
   background: transparent;
@@ -241,6 +280,25 @@ function positionOver(anchor) {
   // physical edge looks like an overlay rather than part of the row.
   const SAFE = 48;
 
+  // Horizontal bounds come from the tile's own container, not the viewport.
+  // The desktop layout puts a Categories sidebar to the left of the grid, and
+  // clamping to the window let the frame slide out over it. The row/grid rect,
+  // intersected with the screen-safe area, keeps the frame inside the content
+  // column on every layout.
+  const holder = anchor.closest('.tvn-posterrow, .vod-grid, #movies-grid, #series-grid, .series-episodes-list')
+    || anchor.parentElement;
+  let minX = SAFE;
+  let maxX = vw - SAFE;
+  if (holder) {
+    const h = holder.getBoundingClientRect();
+    // A horizontally scrolling row is wider than the window, so only tighten
+    // the bound, never loosen it.
+    if (h.left > minX) minX = h.left;
+    if (h.right < maxX) maxX = h.right;
+    // Degenerate container (collapsed or offscreen): fall back to the screen.
+    if (maxX - minX < 240) { minX = SAFE; maxX = vw - SAFE; }
+  }
+
   // Height matches the poster tile EXACTLY, and the width follows from 16:9.
   // Driving it the other way round (width first) left the frame shorter than
   // the row, so the expanded tile sat in a band of its own instead of sitting
@@ -251,7 +309,7 @@ function positionOver(anchor) {
   let height = art.offsetHeight || r.height;
   let width = height * 16 / 9;
   // Only if that would overrun the screen does the height give way.
-  const maxWidth = vw - SAFE * 2;
+  const maxWidth = maxX - minX;
   if (width > maxWidth) {
     width = maxWidth;
     height = width * 9 / 16;
@@ -264,8 +322,8 @@ function positionOver(anchor) {
   // frame away from the poster it belongs to — an edge tile should visibly
   // expand from itself, not drift toward the middle of the screen.
   let left = r.left + r.width / 2 - width / 2;
-  if (left < SAFE) left = Math.max(SAFE, r.left);
-  else if (left + width > vw - SAFE) left = Math.min(vw - SAFE - width, r.right - width);
+  if (left < minX) left = Math.max(minX, r.left);
+  else if (left + width > maxX) left = Math.min(maxX - width, r.right - width);
 
   let top = r.top + r.height / 2 - height / 2;
   top = Math.max(8, Math.min(top, vh - height - 8));
@@ -393,7 +451,7 @@ function embedUrl(key) {
  *
  * Returns a detach function.
  */
-function listenForPlayback(iframe, onPlaying, onEnded) {
+function listenForPlayback(iframe, onPlaying, onStopped) {
   const onMessage = (ev) => {
     if (!/^https?:\/\/(www\.)?youtube(-nocookie)?\.com$/.test(ev.origin)) return;
     if (!mediaHost || ev.source !== mediaHost.contentWindow) return;
@@ -466,6 +524,7 @@ function mountMedia(key, seq) {
 
   const markPlaying = () => {
     if (seq !== openSeq) return;
+    clearTimeout(hideTimer);   // a restart that worked cancels the fallback
     log('revealing video');
     overlay.classList.add('is-playing');
     applyAudio();
@@ -478,18 +537,36 @@ function mountMedia(key, seq) {
     command('unMute');
   };
 
-  // `loop=1` is unreliable on YouTube for single videos, so restart manually.
-  // Capped: after a couple of passes the viewer has plainly stopped looking,
-  // and fading back to the backdrop beats looping a trailer indefinitely.
+  // Whenever the player stops being in PLAYING state it paints its own UI over
+  // the video: a large centre play/pause glyph, and after ENDED the grid of
+  // "More videos" thumbnails. That centre furniture sits mid-frame, so unlike
+  // the top and bottom bars it cannot be cropped away - the only remedy is to
+  // stop showing the video and fall back to the still.
+  //
+  // ENDED gets a couple of silent restarts first, because `loop=1` is
+  // unreliable for a single video. PAUSED should not happen at all (the embed
+  // has no controls and nothing can click it), so treat it as a stall and give
+  // it one nudge before giving up.
   let replays = 0;
+  let hideTimer = null;
   const MAX_REPLAYS = 2;
-  const handleEnded = () => {
+
+  const showStill = () => {
+    if (seq !== openSeq || !overlay) return;
+    log('player stopped - falling back to the backdrop');
+    overlay.classList.remove('is-playing');
+  };
+
+  const handleStopped = (state) => {
     if (seq !== openSeq) return;
-    if (replays++ >= MAX_REPLAYS) {
-      overlay.classList.remove('is-playing');   // reveal the backdrop again
-      return;
-    }
-    command('seekTo', [0, true]);
+    // Hide almost immediately; YouTube paints its chrome the instant it stops,
+    // so a slow fallback is a visible flash of their UI. A restart that works
+    // re-fires PLAYING and cancels this.
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(showStill, 220);
+    if (replays++ >= MAX_REPLAYS) return;
+    log('state', state, '- attempting restart', replays);
+    if (state === 0) command('seekTo', [0, true]);
     command('playVideo');
   };
 
@@ -522,7 +599,7 @@ function mountMedia(key, seq) {
     mediaHost = fr;
     // Preferred signal: the widget reporting playerState PLAYING over
     // postMessage — see listenForPlayback for why the load event alone lies.
-    detachPlaybackListener = listenForPlayback(fr, markPlaying, handleEnded);
+    detachPlaybackListener = listenForPlayback(fr, markPlaying, handleStopped);
 
     // Safety net. The handshake is the better signal, but if it never lands
     // (widget version differences, a blocked postMessage, an origin the player
