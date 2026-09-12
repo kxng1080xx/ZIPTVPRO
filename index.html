@@ -832,9 +832,14 @@
             Movie plot summary goes here...
           </p>
 
+          <!-- Provider-supplied director/cast. These are the fallback: when a
+               TMDB lookup lands, ABOUT below shows the same facts from a better
+               source (with head-shots), so each line here hides itself rather
+               than printing the answer twice — often with two different names,
+               since provider credits are frequently wrong. -->
           <div class="vod-cast-section">
-            <p><strong>Director:</strong> <span id="vod-modal-director">N/A</span></p>
-            <p><strong>Cast:</strong> <span id="vod-modal-cast">N/A</span></p>
+            <p id="vod-director-line"><strong>Director:</strong> <span id="vod-modal-director">N/A</span></p>
+            <p id="vod-cast-line"><strong>Cast:</strong> <span id="vod-modal-cast">N/A</span></p>
           </div>
 
           <!-- TMDB enrichment (9.0), same treatment as the series dashboard.

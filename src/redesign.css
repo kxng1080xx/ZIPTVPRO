@@ -2888,3 +2888,74 @@ body.perf-lite .epg-channel-row.active .epg-channel-row-logo::after {
 @media (prefers-reduced-motion: reduce) {
   .epg-channel-row.active .epg-channel-row-logo::after { animation: none; }
 }
+
+/* ==========================================================================
+   VOD details modal — size to the viewport, not to a fixed box
+   ==========================================================================
+   The modal was pinned at 900px wide with a hard `max-height: 600px` on the
+   scrolling right column, so on any normal desktop window it sat in the middle
+   of the screen with a few hundred unused pixels above and below it while the
+   cast strip was cut in half. Width and height now both track the viewport, so
+   the content that exists gets the room that exists.
+
+   Scoped to landscape desktop: the portrait rules below turn this modal into a
+   full-bleed sheet, and the TV shell has its own 10-foot sizing. */
+@media (min-width: 901px) and (orientation: landscape) {
+  body:not(.tv-layout) #vod-modal .vod-modal-content {
+    width: min(1180px, 94vw);
+  }
+
+  /* A wider poster column earns its keep twice over: the artwork is the thing
+     you recognise the film by, and every pixel the plot and cast lines gain
+     from the remaining width is a line of text that no longer wraps — which is
+     vertical scrolling removed, not just moved. */
+  body:not(.tv-layout) #vod-modal .vod-modal-body {
+    grid-template-columns: clamp(260px, 24%, 340px) 1fr;
+  }
+
+  body:not(.tv-layout) #vod-modal .vod-modal-right {
+    max-height: min(88vh, 1080px);
+  }
+
+  /* The poster column is shorter than the details column, and grid stretch
+     would otherwise strand its buttons against a tall empty panel. */
+  body:not(.tv-layout) #vod-modal .vod-modal-left {
+    justify-content: flex-start;
+  }
+}
+
+/* ==========================================================================
+   VOD catalogs — infinite-scroll footer
+   ==========================================================================
+   Replaces the numbered page buttons. The footer keeps its height so the
+   sentinel always has a box to intersect, and so the grid does not jump as its
+   contents swap between button, spinner and end-note. */
+.vod-more-btn.page-btn {
+  width: auto;
+  min-width: 9rem;
+  height: 2.5rem;
+  padding: 0 1.25rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-radius: 999px;
+}
+
+.vod-more-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.vod-more-status.is-error {
+  color: #f87171;
+}
+
+/* The page spinner is 40px — far too loud for a footer line. */
+.spinner.spinner-sm {
+  width: 15px;
+  height: 15px;
+  border-width: 2px;
+}

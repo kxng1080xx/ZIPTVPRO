@@ -77,20 +77,28 @@ const state = {
     favorites: 0,
     recently_viewed: 0
   },
-  // VOD pagination & filters
+  // VOD paging & filters. `loading` / `done` drive the infinite scroll:
+  // `loading` stops the observer firing the same page twice, `done` stops it
+  // asking for a page that isn't there.
   movies: {
     categoryId: 'all',
     page: 1,
     limit: 30,
     search: '',
-    sort: 'added'
+    sort: 'added',
+    loading: false,
+    done: false,
+    total: 0
   },
   series: {
     categoryId: 'all',
     page: 1,
     limit: 30,
     search: '',
-    sort: 'added'
+    sort: 'added',
+    loading: false,
+    done: false,
+    total: 0
   }
 };
 window.state = state;
@@ -2095,33 +2103,56 @@ function playPreviousChannel() {
 // ==========================================================================
 // MOVIES VIEW (VOD)
 // ==========================================================================
-async function loadMoviesGrid() {
+async function loadMoviesGrid({ append = false } = {}) {
   const grid = document.getElementById('movies-grid');
-  grid.innerHTML = '<div class="spinner-center"><div class="spinner"></div></div>';
+  const st = state.movies;
+  if (st.loading) return;
+  st.loading = true;
+
+  if (!append) {
+    st.page = 1;
+    st.done = false;
+    st.total = 0;
+    grid.innerHTML = '<div class="spinner-center"><div class="spinner"></div></div>';
+  }
+  renderVodFooter('movies');
 
   try {
     const res = await getStreams({
       type: 'movie',
-      categoryId: state.movies.categoryId,
-      page: state.movies.page,
-      limit: state.movies.limit,
-      search: state.movies.search,
-      sort: state.movies.sort
+      categoryId: st.categoryId,
+      page: st.page,
+      limit: st.limit,
+      search: st.search,
+      sort: st.sort
     });
 
-    renderMoviesCatalog(res.items);
-    renderPagination('movies', res.pagination);
+    renderMoviesCatalog(res.items, append);
+    noteVodPage('movies', res.pagination, res.items.length);
   } catch (err) {
-    grid.innerHTML = `<div class="error-msg">Failed to load movies: ${err.message}</div>`;
+    // A failed *first* page replaces the grid; a failed later page must not —
+    // wiping what the user has already scrolled through to report a hiccup at
+    // the bottom would lose their place for nothing.
+    if (append) {
+      st.page = Math.max(1, st.page - 1);
+      renderVodFooter('movies', `Couldn't load more: ${err.message}`);
+    } else {
+      grid.innerHTML = `<div class="error-msg">Failed to load movies: ${err.message}</div>`;
+    }
+  } finally {
+    st.loading = false;
+    renderVodFooter('movies');
   }
 }
 
-function renderMoviesCatalog(movies) {
+function renderMoviesCatalog(movies, append = false) {
   const grid = document.getElementById('movies-grid');
-  grid.innerHTML = '';
+  if (!append) grid.innerHTML = '';
 
   if (movies.length === 0) {
-    grid.innerHTML = '<div class="no-results">No movies found in this category.</div>';
+    // Only the first page can legitimately say "nothing here"; an empty later
+    // page just means we have reached the end of a list that does have items.
+    if (!append) grid.innerHTML = '<div class="no-results">No movies found in this category.</div>';
     return;
   }
 
@@ -2158,10 +2189,13 @@ function renderMoviesCatalog(movies) {
   });
   
   lucide.createIcons({ scope: grid });
-  if (navigation.currentZone === 'grid') {
+  // Appending must never move focus: the user is mid-scroll (or mid-D-pad),
+  // and snapping back to the first card would undo the very navigation that
+  // triggered the load.
+  if (!append && navigation.currentZone === 'grid') {
     navigation.focusDefault('grid');
   }
-  navigation.triggerPendingFocus();
+  if (!append) navigation.triggerPendingFocus();
 }
 
 
@@ -2192,33 +2226,51 @@ function attachCardTrailer(card, item, type) {
 // ==========================================================================
 // SERIES VIEW (VOD)
 // ==========================================================================
-async function loadSeriesGrid() {
+async function loadSeriesGrid({ append = false } = {}) {
   const grid = document.getElementById('series-grid');
-  grid.innerHTML = '<div class="spinner-center"><div class="spinner"></div></div>';
+  const st = state.series;
+  if (st.loading) return;
+  st.loading = true;
+
+  if (!append) {
+    st.page = 1;
+    st.done = false;
+    st.total = 0;
+    grid.innerHTML = '<div class="spinner-center"><div class="spinner"></div></div>';
+  }
+  renderVodFooter('series');
 
   try {
     const res = await getStreams({
       type: 'series',
-      categoryId: state.series.categoryId,
-      page: state.series.page,
-      limit: state.series.limit,
-      search: state.series.search,
-      sort: state.series.sort
+      categoryId: st.categoryId,
+      page: st.page,
+      limit: st.limit,
+      search: st.search,
+      sort: st.sort
     });
 
-    renderSeriesCatalog(res.items);
-    renderPagination('series', res.pagination);
+    renderSeriesCatalog(res.items, append);
+    noteVodPage('series', res.pagination, res.items.length);
   } catch (err) {
-    grid.innerHTML = `<div class="error-msg">Failed to load series: ${err.message}</div>`;
+    if (append) {
+      st.page = Math.max(1, st.page - 1);
+      renderVodFooter('series', `Couldn't load more: ${err.message}`);
+    } else {
+      grid.innerHTML = `<div class="error-msg">Failed to load series: ${err.message}</div>`;
+    }
+  } finally {
+    st.loading = false;
+    renderVodFooter('series');
   }
 }
 
-function renderSeriesCatalog(seriesList) {
+function renderSeriesCatalog(seriesList, append = false) {
   const grid = document.getElementById('series-grid');
-  grid.innerHTML = '';
+  if (!append) grid.innerHTML = '';
 
   if (seriesList.length === 0) {
-    grid.innerHTML = '<div class="no-results">No series found in this category.</div>';
+    if (!append) grid.innerHTML = '<div class="no-results">No series found in this category.</div>';
     return;
   }
 
@@ -2253,10 +2305,10 @@ function renderSeriesCatalog(seriesList) {
   });
 
   lucide.createIcons({ scope: grid });
-  if (navigation.currentZone === 'grid') {
+  if (!append && navigation.currentZone === 'grid') {
     navigation.focusDefault('grid');
   }
-  navigation.triggerPendingFocus();
+  if (!append) navigation.triggerPendingFocus();
 }
 
 // TV Series Playback Dashboard controllers
@@ -2327,6 +2379,7 @@ function renderAboutPanel(meta, type, prefix = 'series') {
     section.hidden = true;
     factsEl.innerHTML = '';
     if (castStrip) castStrip.innerHTML = '';
+    setProviderCreditsVisible(prefix, true, true);
     return;
   }
 
@@ -2386,6 +2439,26 @@ function renderAboutPanel(meta, type, prefix = 'series') {
   }
 
   section.hidden = rows.length === 0 && !(meta.cast || []).length;
+
+  // ABOUT now carries these facts from TMDB, so drop the provider's duplicates
+  // — per row, because TMDB may have a director but no cast, or vice versa.
+  const hasDirector = rows.some(r => r.dt === 'Director' || r.dt === 'Created by');
+  const hasCast = !!(castWrap && !castWrap.hidden);
+  setProviderCreditsVisible(prefix, section.hidden || !hasDirector, section.hidden || !hasCast);
+}
+
+/**
+ * Show or hide the provider-supplied Director / Cast lines above ABOUT.
+ *
+ * Only the movie/series modal has them; the series dashboard prints its credits
+ * differently, so `prefix` gates this.
+ */
+function setProviderCreditsVisible(prefix, director, cast) {
+  if (prefix !== 'vod') return;
+  const d = document.getElementById('vod-director-line');
+  const c = document.getElementById('vod-cast-line');
+  if (d) d.hidden = !director;
+  if (c) c.hidden = !cast;
 }
 
 async function openSeriesPlaybackDashboard(series, resumeOpts = null) {
@@ -2537,7 +2610,7 @@ async function openSeriesPlaybackDashboard(series, resumeOpts = null) {
           const epExt = ep.container_extension || ep.info?.container_extension || '';
           const epName = `${infoMeta.name || 'Series'} - S${seasonNum}E${ep.episode_num}: ${ep.title}`;
           
-          await playSeriesEpisode(epStreamId, epName, infoMeta.cover, ep.info?.plot || '', epExt, epIdx, episodes, seasonNum, info);
+          await playSeriesEpisode(epStreamId, epName, infoMeta.cover, ep.info?.plot || '', epExt, epIdx, episodes, seasonNum, info, resolveResume(epStreamId));
         });
         
         episodesList.appendChild(row);
@@ -2581,6 +2654,7 @@ async function openSeriesPlaybackDashboard(series, resumeOpts = null) {
 
 async function playSeriesEpisode(epStreamId, epName, logo, plot, epExt, epIndex, episodesListForSeason, seasonNum, seriesInfo, resumeTime = 0) {
   if (!playerInstance) return;
+  resumeTime = resolveResume(epStreamId, resumeTime);
   playerInstance.showSpinner();
   if (playerInstance.vodTitleTag) {
     playerInstance.vodTitleTag.textContent = epName || '';
@@ -2884,73 +2958,127 @@ function exitSeriesPlaybackDashboard() {
   }
 }
 
-// Render pagination buttons in catalog footers
-function renderPagination(type, pagination) {
-  const container = document.getElementById(`${type}-pagination`);
-  container.innerHTML = '';
+// ==========================================================================
+// VOD CATALOGS — INFINITE SCROLL
+// ==========================================================================
+/*
+ * Numbered pages are gone from Movies and TV Series: the next page now loads
+ * when you reach the bottom.
+ *
+ * The footer that used to hold the page buttons is reused as the sentinel.
+ * That is deliberate — it already sits after the grid, inside the same
+ * scroller, so it needs no extra element and no layout change, and it doubles
+ * as the place to show "loading" / "that's everything".
+ *
+ * A visible "Load more" button stays in that footer whenever there is more to
+ * fetch. Auto-load usually consumes it before you ever see it, but it is the
+ * fallback that matters: IntersectionObserver is missing on some old TV
+ * WebViews, and a D-pad user who cannot generate a scroll event still needs a
+ * focusable way to go on.
+ */
 
-  if (!pagination || pagination.pages <= 1) return;
+const vodLoaders = { movies: () => loadMoviesGrid({ append: true }),
+                     series: () => loadSeriesGrid({ append: true }) };
+const vodObservers = {};
 
-  const current = pagination.page;
-  const maxPages = pagination.pages;
-
-  // Draw first / prev buttons
-  if (current > 1) {
-    const firstBtn = document.createElement('button');
-    firstBtn.className = 'page-btn';
-    firstBtn.innerHTML = '<i data-lucide="chevrons-left"></i>';
-    firstBtn.addEventListener('click', () => setPage(type, 1));
-    container.appendChild(firstBtn);
-
-    const prevBtn = document.createElement('button');
-    prevBtn.className = 'page-btn';
-    prevBtn.innerHTML = '<i data-lucide="chevron-left"></i>';
-    prevBtn.addEventListener('click', () => setPage(type, current - 1));
-    container.appendChild(prevBtn);
-  }
-
-  // Draw page numbers (sliding window of 5 pages)
-  const windowSize = 5;
-  let startPage = Math.max(1, current - Math.floor(windowSize / 2));
-  let endPage = Math.min(maxPages, startPage + windowSize - 1);
-  if (endPage - startPage + 1 < windowSize) {
-    startPage = Math.max(1, endPage - windowSize + 1);
-  }
-
-  for (let i = startPage; i <= endPage; i++) {
-    const pageBtn = document.createElement('button');
-    pageBtn.className = `page-btn ${i === current ? 'active' : ''}`;
-    pageBtn.textContent = i;
-    pageBtn.addEventListener('click', () => setPage(type, i));
-    container.appendChild(pageBtn);
-  }
-
-  // Draw next / last buttons
-  if (current < maxPages) {
-    const nextBtn = document.createElement('button');
-    nextBtn.className = 'page-btn';
-    nextBtn.innerHTML = '<i data-lucide="chevron-right"></i>';
-    nextBtn.addEventListener('click', () => setPage(type, current + 1));
-    container.appendChild(nextBtn);
-
-    const lastBtn = document.createElement('button');
-    lastBtn.className = 'page-btn';
-    lastBtn.innerHTML = '<i data-lucide="chevrons-right"></i>';
-    lastBtn.addEventListener('click', () => setPage(type, maxPages));
-    container.appendChild(lastBtn);
-  }
-
-  lucide.createIcons({ scope: container });
+/** Ask for the next page, if there is one and we aren't already fetching it. */
+function loadMoreVod(type) {
+  const st = state[type];
+  if (!st || st.loading || st.done) return;
+  // Nothing rendered yet means the sentinel is simply sitting at the top of an
+  // empty grid — that is not the user reaching the bottom, and jumping to
+  // page 2 here would skip page 1 entirely.
+  if (st.total === 0) return;
+  st.page += 1;
+  vodLoaders[type]();
 }
 
-function setPage(type, pageNum) {
-  if (type === 'movies') {
-    state.movies.page = pageNum;
-    loadMoviesGrid();
-  } else {
-    state.series.page = pageNum;
-    loadSeriesGrid();
+/**
+ * Record what the server said about the page we just rendered.
+ *
+ * `pagination.pages` is the reliable signal where the provider sends it; a
+ * short page is the fallback for providers that don't, since a page with fewer
+ * items than the limit is by definition the last one.
+ */
+function noteVodPage(type, pagination, received) {
+  const st = state[type];
+  st.total += received;
+  const pages = pagination && Number(pagination.pages);
+  if (pages ? st.page >= pages : received < st.limit) st.done = true;
+  renderVodFooter(type);
+  // A category that doesn't fill the viewport leaves the sentinel on screen
+  // and the observer silent (it only fires on a *change* of intersection), so
+  // top up until the scroller actually has something to scroll.
+  if (!st.done) queueMicrotask(() => topUpVod(type));
+}
+
+/** Keep pulling pages while the sentinel is still visible with no scrollbar. */
+function topUpVod(type) {
+  const st = state[type];
+  const footer = document.getElementById(`${type}-pagination`);
+  const scroller = footer?.closest('.vod-scroll-container');
+  if (!footer || !scroller || st.loading || st.done) return;
+  if (scroller.scrollHeight <= scroller.clientHeight + 4) loadMoreVod(type);
+}
+
+/**
+ * Footer state: a spinner while fetching, a Load-more button while there is
+ * more, a quiet count once the catalogue is exhausted.
+ */
+function renderVodFooter(type, errorMsg = '') {
+  const footer = document.getElementById(`${type}-pagination`);
+  if (!footer) return;
+  const st = state[type];
+
+  if (errorMsg) {
+    footer.innerHTML = `<div class="vod-more-status is-error">${escapeHtml(errorMsg)}</div>`;
+    return;
   }
+  if (st.loading) {
+    footer.innerHTML = '<div class="vod-more-status"><span class="spinner spinner-sm"></span>Loading more…</div>';
+    return;
+  }
+  if (st.done) {
+    // Nothing to say when the whole catalogue was one page — an "end of list"
+    // note under a half-empty grid is noise.
+    footer.innerHTML = st.total > st.limit
+      ? `<div class="vod-more-status">That’s all ${st.total} titles.</div>`
+      : '';
+    return;
+  }
+
+  footer.innerHTML = '';
+  const btn = document.createElement('button');
+  // `page-btn` as well, so the existing D-pad rules in tv-navigation.js pick
+  // this up exactly where the page numbers used to be — DOWN from the bottom
+  // row lands on it, UP goes back to the cards, ENTER loads. No nav changes.
+  btn.className = 'page-btn vod-more-btn';
+  btn.type = 'button';
+  btn.tabIndex = 0;
+  btn.textContent = 'Load more';
+  btn.addEventListener('click', () => loadMoreVod(type));
+  footer.appendChild(btn);
+}
+
+/**
+ * Start watching a catalogue's sentinel. Called once per catalogue.
+ *
+ * rootMargin pulls the trigger 800px early so the next page is usually already
+ * in the DOM by the time the user scrolls to where it goes — the point of
+ * lazy loading is that you don't see it happen.
+ */
+function setupVodInfiniteScroll(type) {
+  if (vodObservers[type] || typeof IntersectionObserver === 'undefined') return;
+  const footer = document.getElementById(`${type}-pagination`);
+  if (!footer) return;
+  const root = footer.closest('.vod-scroll-container') || null;
+
+  const io = new IntersectionObserver((entries) => {
+    if (entries.some(e => e.isIntersecting)) loadMoreVod(type);
+  }, { root, rootMargin: '800px 0px' });
+
+  io.observe(footer);
+  vodObservers[type] = io;
 }
 
 // ==========================================================================
@@ -3045,10 +3173,14 @@ async function openVODDetailsModal(vodData, type, resumeTime = 0) {
       const runTime = infoMeta.duration_secs ? `${Math.floor(infoMeta.duration_secs / 60)}m` : infoMeta.duration || 'N/A';
       duration.textContent = runTime;
 
-      // Play Movie Action — "Resume" when there's saved progress, else "Play Now"
+      // Play Movie Action — "Resume" when there's saved progress, else "Play Now".
+      // Resolved from storage, not just from the caller: opening a movie from
+      // the catalog grid passes no position, and the button used to say
+      // "Play Now" and start over on a film the user was halfway through.
       const movieExt = info.movie_data?.container_extension || infoMeta.container_extension || '';
-      playBtn.innerHTML = resumeTime > 0
-        ? `<i data-lucide="play-circle"></i> Resume playing · ${formatClock(resumeTime)}`
+      const movieResume = resolveResume(queryId, resumeTime);
+      playBtn.innerHTML = movieResume > 0
+        ? `<i data-lucide="play-circle"></i> Resume playing · ${formatClock(movieResume)}`
         : `<i data-lucide="play-circle"></i> Play Now`;
       lucide.createIcons({ scope: playBtn });
 
@@ -3061,7 +3193,7 @@ async function openVODDetailsModal(vodData, type, resumeTime = 0) {
 
       playBtn.onclick = async () => {
         modal.classList.add('hidden');
-        await playVODStream(queryId, 'movie', vodData.name, vodData.stream_icon, plot.textContent, movieExt, resumeTime, resolveBackdrop());
+        await playVODStream(queryId, 'movie', vodData.name, vodData.stream_icon, plot.textContent, movieExt, movieResume, resolveBackdrop());
       };
 
       // Watch Together. The session carries identifiers only — every device
@@ -3161,7 +3293,7 @@ function renderSeriesSeasons(seriesInfo) {
             backdrop = infoMeta.backdrop_path;
           }
         }
-        await playVODStream(epStreamId, 'series', epName, seriesInfo.info?.cover, ep.info?.plot || '', epExt, 0, backdrop);
+        await playVODStream(epStreamId, 'series', epName, seriesInfo.info?.cover, ep.info?.plot || '', epExt, resolveResume(epStreamId), backdrop);
       });
       episodesList.appendChild(row);
     });
@@ -3175,7 +3307,33 @@ function renderSeriesSeasons(seriesInfo) {
   loadSeasonEpisodes(seasons[0]);
 }
 
+/**
+ * Where playback of `id` should actually start.
+ *
+ * Resolved here, at the point of play, rather than threaded down from whatever
+ * screen the user clicked. Every caller used to have to remember to pass the
+ * saved position, and most of them didn't — the episode rows rendered a
+ * progress bar from getWatchInfo() and then called play with a hard-coded 0,
+ * so the bar showed where you were and the video started from the beginning.
+ * Making the play functions look it up themselves means a new entry point
+ * cannot reintroduce that bug by omission.
+ *
+ * An explicit position still wins, so callers that already know better (the
+ * Continue Watching cards, a Watch Together join) are unaffected. Completed
+ * titles report position 0, so "Watch again" still starts over.
+ */
+function resolveResume(id, explicit = 0) {
+  if (explicit > 0) return explicit;
+  try {
+    const info = getWatchInfo(id);
+    return (!info.completed && info.position > 0) ? info.position : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
 async function playVODStream(streamId, type, name, logo, description, containerExtension = '', resumeTime = 0, backdrop = '') {
+  resumeTime = resolveResume(streamId, resumeTime);
   // Track this movie for Continue Watching.
   currentVodItem = { id: String(streamId), type: type || 'movie', name, cardTitle: name, logo, containerExtension, backdrop };
   lastProgressSave = 0;
@@ -4787,6 +4945,8 @@ function bindGlobalEvents() {
   // TV-navigable Search + Sort (on-screen keyboard / dropdown — no input fields)
   wireVodFilters('movies', loadMoviesGrid);
   wireVodFilters('series', loadSeriesGrid);
+  setupVodInfiniteScroll('movies');
+  setupVodInfiniteScroll('series');
 
   // Live channel filter — inline search field on desktop/mobile; on TV the
   // icon button opens the on-screen keyboard (real inputs don't D-pad well).
