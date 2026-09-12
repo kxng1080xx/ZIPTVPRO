@@ -1438,6 +1438,11 @@ async function selectAndPlayChannel(channel, programBlock) {
   state.activeChannel = channel;
   state.activeProgram = programBlock;
 
+  // Highlight the row in the channel list. Done here rather than in the row's
+  // click handler so every route into a channel marks it — clicking, channel
+  // up/down, the last-channel zap, a search result, a restored session.
+  epgGridInstance?.setActiveChannel(channel.stream_id);
+
   // Track history
   try {
     incrementChannelView(channel.stream_id); // local tally for the "Most Viewed" sort
@@ -1641,6 +1646,7 @@ setInterval(checkReminders, 30000);
 async function playCatchup(channel, prog) {
   state.activeChannel = channel;
   state.activeProgram = prog;
+  epgGridInstance?.setActiveChannel(channel.stream_id);
   document.body.classList.remove('vod-mode');
   try {
     const start = parseInt(prog.start_timestamp, 10);

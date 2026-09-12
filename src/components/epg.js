@@ -45,6 +45,11 @@ export class EPGGrid {
     this.windowOffsetHours = 2; // Hours to show in the past
     
     this.channels = [];
+    // The channel that is actually playing. Owned here rather than left as a
+    // CSS class on one row: rows are rendered in chunks and re-created on every
+    // filter / sort / hour shift, so a class alone is lost the moment the
+    // playing row falls outside what is currently in the DOM.
+    this.activeStreamId = null;
     this.channelsSort = 'added';
     this.epgData = {}; // Cache map: stream_id -> epg_listings
     this.epgObserver = null; // Lazy-loads EPG only for on-screen channel rows
@@ -191,6 +196,37 @@ export class EPGGrid {
       navigation.focusDefault('channels');
     }
     navigation.triggerPendingFocus();
+  }
+
+  /**
+   * Mark a channel as the one that is playing.
+   *
+   * Called from the playback path (not from the click handler) so every route
+   * into a channel highlights it: clicking a row, channel up/down, the
+   * last-channel zap, a search result, or a restored session.
+   */
+  setActiveChannel(streamId) {
+    const id = streamId == null ? null : String(streamId);
+    if (this.activeStreamId === id) return;
+    this.activeStreamId = id;
+    this.applyActiveHighlight();
+  }
+
+  /** Paint `.active` onto whichever rows are currently in the DOM. */
+  applyActiveHighlight() {
+    if (!this.channelsList) return;
+    // Cleared document-wide, not just inside channelsList: the row can survive
+    // in a detached/duplicated list (fullscreen guide) and two highlighted rows
+    // is worse than none.
+    document.querySelectorAll('.epg-channel-row.active, .epg-programs-row.active')
+      .forEach(r => r.classList.remove('active'));
+    if (!this.activeStreamId) return;
+    const row = this.channelsList
+      .querySelector(`.epg-channel-row[data-stream-id="${this.activeStreamId}"]`);
+    if (row) row.classList.add('active');
+    const prog = this.programsRows
+      ?.querySelector(`.epg-programs-row[data-stream-id="${this.activeStreamId}"]`);
+    if (prog) prog.classList.add('active');
   }
 
   // Calculate times based on now + navigation offsets
@@ -418,7 +454,6 @@ export class EPGGrid {
     this.visibleCount.textContent = `(${filtered.length})`;
 
     // Remember focus state to prevent jumping / scrolling to top on hour shifts
-    const activeStreamId = this.channelsList.querySelector('.epg-channel-row.active')?.dataset.streamId;
     const focusedStreamId = document.activeElement?.closest('.epg-channel-row')?.dataset.streamId;
 
     if (resetPagination) {
@@ -444,10 +479,7 @@ export class EPGGrid {
     }
 
     // Restore active states and D-pad focus
-    if (activeStreamId) {
-      const activeRow = this.channelsList.querySelector(`.epg-channel-row[data-stream-id="${activeStreamId}"]`);
-      if (activeRow) activeRow.classList.add('active');
-    }
+    this.applyActiveHighlight();
     if (focusedStreamId) {
       const focusedRow = this.channelsList.querySelector(`.epg-channel-row[data-stream-id="${focusedStreamId}"]`);
       if (focusedRow) {
@@ -504,7 +536,10 @@ export class EPGGrid {
       // --- 1. Channel Left Item ---
       const chanRow = document.createElement('div');
       const isPinned = pinned.has(streamId);
-      chanRow.className = 'epg-channel-row' + (isPinned ? ' pinned' : '');
+      const isActive = this.activeStreamId === streamId;
+      chanRow.className = 'epg-channel-row'
+        + (isPinned ? ' pinned' : '')
+        + (isActive ? ' active' : '');
       chanRow.dataset.streamId = streamId;
       chanRow.tabIndex = -1; // make D-pad focusable
 
@@ -532,8 +567,9 @@ export class EPGGrid {
       chanRow.addEventListener('click', (e) => {
         if (e.target.closest('.epg-channel-row-fav')) return; // ignore fav click
 
-        document.querySelectorAll('.epg-channel-row').forEach(r => r.classList.remove('active'));
-        chanRow.classList.add('active');
+        // Highlight optimistically so the row responds instantly; the playback
+        // path calls setActiveChannel() too, which is what makes it stick.
+        this.setActiveChannel(streamId);
 
         // Sync EPG Channel Focus
         navigation.setFocus('channels', chanRow);
@@ -571,7 +607,7 @@ export class EPGGrid {
 
       // --- 2. Programs Right Row ---
       const progRow = document.createElement('div');
-      progRow.className = 'epg-programs-row';
+      progRow.className = 'epg-programs-row' + (isActive ? ' active' : '');
       progRow.dataset.streamId = streamId;
 
       const listings = this.epgData[streamId] || [];

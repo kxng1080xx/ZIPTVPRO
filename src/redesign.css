@@ -2847,3 +2847,44 @@ body.player-autofs:not(.app-native):not(.tv-layout) #video-container {
   z-index: 9000 !important;
   background: #000 !important;
 }
+
+/* --------------------------------------------------------------------------
+   Now-playing marker on the channel list
+   --------------------------------------------------------------------------
+   `.active` already fills the playing row with the accent colour, but a fill
+   alone reads as "selected". This pulsing dot on the logo says "this one is
+   live right now", which is the thing you are actually scanning the list for.
+   Pure CSS on a pseudo-element — no extra nodes in a list that can run to
+   thousands of rows. */
+.epg-channel-row-logo {
+  position: relative;
+}
+.epg-channel-row.active .epg-channel-row-logo::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent-cyan);
+  box-shadow: 0 0 0 2px var(--bg-panel);
+  animation: ziptv-now-playing-pulse 1.8s ease-in-out infinite;
+}
+/* List/card mode paints the whole row accent, so the dot goes white to stay
+   readable against it. */
+.epg-section-container.timeline-hidden .epg-channel-row.active .epg-channel-row-logo::after {
+  background: #fff;
+  box-shadow: none;
+}
+@keyframes ziptv-now-playing-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.45; transform: scale(0.82); }
+}
+/* Weak hardware and users who asked for less motion get the dot, not the pulse. */
+body.perf-lite .epg-channel-row.active .epg-channel-row-logo::after {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .epg-channel-row.active .epg-channel-row-logo::after { animation: none; }
+}
