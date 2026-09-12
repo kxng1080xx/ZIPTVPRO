@@ -48,6 +48,7 @@ import { getStoredUiMode, setStoredUiMode, showDeviceChooser, initTvNative, ente
 import { watchTogether } from './components/watch-together.js';
 import { getMeta, yearHintOf } from './components/metadata.js';
 import { armPreview, closePreview } from './components/trailer-preview.js';
+import { initPlayerStage } from './components/player-stage.js';
 import { getAboutRows, DEVELOPER } from './components/about.js';
 import { initShareTunnel, openShareTunnel } from './components/share-tunnel.js';
 // Imported (not a literal "/src/assets/..." path) so Vite rewrites it to the
@@ -5462,6 +5463,11 @@ function showDashboard() {
 
   // Update TV Connection IP badge in the top header
   updateHeaderTvIpBadge(state.user);
+
+  // 9.1 desktop: the Live stage grows when playback starts, and goes fullscreen
+  // by itself after 15s of stillness. No-ops on TV and native builds, which
+  // have their own fullscreen paths.
+  initPlayerStage();
 
   // 7.0 native TV shell: in TV mode the launcher takes over the screen once
   // the session is live (the legacy layout stays underneath for playback).

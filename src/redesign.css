@@ -2652,14 +2652,28 @@ body:not(.tv-layout):not(.vod-mode) .live-top-row {
      18px/4px padding back on top; the player's max-width is derived from it so
      the 16:9 frame is never wider than the height cap allows (otherwise the
      glass frame stretches and the video pillarboxes inside it). */
-  --live-stage-h: 62vh;
+  /* IDLE height. Nothing is playing, so the stage is only a "Ready to stream"
+     placeholder while the channel grid is what is actually being read — the
+     grid gets the room until there is a picture to justify taking it back.
+     Clamped at both ends: a bare percentage collapses to nothing on a short
+     laptop window and balloons on a 4K panel. */
+  --live-stage-h: clamp(190px, 30vh, 380px);
+  transition: max-height 0.32s cubic-bezier(0.22, 0.61, 0.24, 1);
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   max-height: calc(var(--live-stage-h) + 22px);
 }
 
+/* PLAYING: the stage expands to its full height. Only max-height/max-width
+   animate (both derived from the variable), so this is a compositor-friendly
+   resize rather than a relayout of the channel grid on every frame. */
+body:not(.tv-layout):not(.vod-mode) .live-top-row.is-playing {
+  --live-stage-h: clamp(260px, 48vh, 600px);
+}
+
 body:not(.tv-layout):not(.vod-mode) .live-top-row .player-wrapper {
+  transition: max-width 0.32s cubic-bezier(0.22, 0.61, 0.24, 1);
   width: 100%;
   max-width: calc(var(--live-stage-h) * 16 / 9);
   margin: 0 auto;
@@ -2777,4 +2791,59 @@ body:not(.tv-layout) .live-top-row .channel-meta-text h3 {
 body:not(.tv-layout) .live-top-row .favorite-toggle-btn {
   padding: 7px 10px;
   font-size: 0.72rem;
+}
+
+
+/* ==========================================================================
+   AUTO-FULLSCREEN (9.1, desktop only) — body.player-autofs
+   Entered by player-stage.js after 15s of stillness during playback, and left
+   again on the next real input.
+
+   A CSS state rather than the Fullscreen API on purpose: requestFullscreen()
+   requires transient user activation, which an idle timer by definition does
+   not have. Electron's window fullscreen handles the window chrome; this
+   handles the page.
+
+   Mirrors the native immersive rules (body.player-fs in style.css):
+   visibility-hide the app shell rather than display:none, because
+   #video-container lives INSIDE #app-container and display:none would destroy
+   its layout — and neutralise transforms/filters on the ancestor chain, since
+   any of them would become the containing block for position:fixed and trap
+   the player inside the page instead of the viewport.
+   ========================================================================== */
+body.player-autofs:not(.app-native):not(.tv-layout) #app-container {
+  visibility: hidden !important;
+}
+
+body.player-autofs:not(.app-native):not(.tv-layout) #video-container,
+body.player-autofs:not(.app-native):not(.tv-layout) #video-container * {
+  visibility: visible !important;
+}
+
+body.player-autofs:not(.app-native):not(.tv-layout) #app-container,
+body.player-autofs:not(.app-native):not(.tv-layout) .app-layout,
+body.player-autofs:not(.app-native):not(.tv-layout) .content-viewport,
+body.player-autofs:not(.app-native):not(.tv-layout) .view-panel,
+body.player-autofs:not(.app-native):not(.tv-layout) .live-top-row,
+body.player-autofs:not(.app-native):not(.tv-layout) .player-wrapper {
+  transform: none !important;
+  filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  perspective: none !important;
+  will-change: auto !important;
+}
+
+body.player-autofs:not(.app-native):not(.tv-layout) #video-container {
+  position: fixed !important;
+  inset: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  z-index: 9000 !important;
+  background: #000 !important;
 }

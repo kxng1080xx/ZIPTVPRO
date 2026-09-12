@@ -44,7 +44,10 @@ export default defineConfig({
     port: 5673,
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        // Port 3000 is frequently taken by another local project, and the API
+        // server then can't bind at all. API_PORT lets dev run on a free port
+        // without editing this file or killing whatever owns 3000.
+        target: `http://localhost:${process.env.API_PORT || 3000}`,
         changeOrigin: true
       }
     }
