@@ -87,6 +87,67 @@ export function cleanChannelName(raw) {
   s = s.replace(/\s{2,}/g, ' ').trim();
   return s || String(raw).trim(); // never clean a name into nothing
 }
+// VOD/series titles carry the same provider junk as channel names, but in a
+// different shape: an all-caps language or country tag and a dash — "EN - The
+// Drop", "FR - Possession", "US - Meet the Owens". cleanChannelName misses
+// these because its dash allowlist holds countries only, and no language codes.
+//
+// Deliberately NARROWER than cleanChannelName: a tag is stripped only when it
+// is in the list below AND a separator follows it. A film is far likelier than
+// a channel to legitimately open with a short word, and no amount of tidy
+// prefixes is worth turning "US Marshals" into "Marshals" — so the bare
+// "XX Title" rule (tag with no separator) is not applied to VOD at all.
+//
+// For the same reason the list carries ITA and IND rather than IT and IN: a
+// two-letter code that is also an English word turns "IT: Chapter Two" into
+// "Chapter Two". Do not add those two back.
+//
+// Quality markers (4K, UHD, HD, SD) are NOT tags here and must stay in the
+// title: unlike a language code they tell you something you actually want to
+// know when picking between two copies of the same film. "EN - 4K - Dune"
+// cleans to "4K - Dune".
+const VOD_TAG = '(?:EN|ENG|UK|GB|GBR|US|USA|CA|CAN|AU|AUS|NZ|IE|IRL|ZA|IND|PK|PH'
+  + '|FR|FRA|DE|GER|ES|SPA|LAT|ITA|PT|BR|NL|DUT|AR|ARA|RU|RUS|TR|TUR|PL|POL'
+  + '|SE|SWE|NO|DK|FI|GR|RO|HU|CZ|CN|JP|KR|MULTI|MULTISUB|VIP)';
+const VOD_PREFIX = new RegExp('^' + VOD_TAG + '\\s*[-\u2013\u2014:|]\\s*(?=\\S)', 'i');
+
+// Quality markers are never stripped, in any shape — see the note above. This
+// guards the bracket and pipe rules, which would otherwise eat "[4K]" along
+// with "[EN]" because they match on shape rather than on content.
+const VOD_QUALITY = /^(?:4K|UHD|FHD|HD|SD|2160P?|1080P?|720P?|480P?|HDR10\+?|HDR|DV|ATMOS|IMAX|3D)$/i;
+const keepIfQuality = (match, inner) => (VOD_QUALITY.test(String(inner).trim()) ? match : '');
+
+export function cleanVodName(raw) {
+  if (!raw) return raw || '';
+  let s = String(raw);
+  // Several passes, because tags stack: "EN - FR - Dune".
+  for (let i = 0; i < 3; i++) {
+    const before = s;
+    s = s.trimStart();
+    s = s.replace(/^[[({]\s*([^\])}]{1,12})\s*[\])}]\s*/, keepIfQuality);  // [EN] (VIP) {MULTI}
+    s = s.replace(/^\|([^|]{1,12})\|\s*/, keepIfQuality);                  // |EN|
+    s = s.replace(VOD_PREFIX, '');                                         // EN - Title
+    // flag / pictographic emoji and variation selectors
+    s = s.replace(/^(?:[\u{1F1E6}-\u{1F1FF}\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]+\s*)+/u, '');
+    if (s === before) break;
+  }
+  s = s.replace(/\s{2,}/g, ' ').trim();
+  return s || String(raw).trim();   // never clean a title into nothing
+}
+
+function cleanVodItems(items) {
+  return items.map(it => (it && it.name) ? { ...it, name: cleanVodName(it.name) } : it);
+}
+
+/**
+ * Tidy provider tags off whichever kind of item this is. One entry point, so a
+ * new call site cannot pick up only one of the two cleaners.
+ */
+function cleanItemsForDisplay(normType, items) {
+  if (!Array.isArray(items)) return items;
+  return normType === 'live' ? cleanLiveItems(items) : cleanVodItems(items);
+}
+
 // Map live items to display shape (original name survives in the cache/DB).
 function cleanLiveItems(items) {
   return items.map(it => it && it.name ? { ...it, name: cleanChannelName(it.name) } : it);
@@ -1274,7 +1335,7 @@ export async function getStreams({ type, categoryId, page = 1, limit = 50, searc
     const response = await fetch(`/api/streams?${params.toString()}`);
     if (!response.ok) throw new Error('Failed to fetch streams');
     const data = await response.json();
-    if (normType === 'live' && Array.isArray(data.items)) data.items = cleanLiveItems(data.items);
+    if (Array.isArray(data.items)) data.items = cleanItemsForDisplay(normType, data.items);
     return data;
   } else {
     // Client Mode getStreams
@@ -1323,14 +1384,14 @@ export async function getStreams({ type, categoryId, page = 1, limit = 50, searc
       const startIndex = (page - 1) * limit;
       const paginatedItems = await collection.offset(startIndex).limit(limit).toArray();
       return {
-        items: normType === 'live' ? cleanLiveItems(paginatedItems) : paginatedItems,
+        items: cleanItemsForDisplay(normType, paginatedItems),
         pagination: { total, page, limit, pages: Math.ceil(total / limit) }
       };
     }
 
     let items = await collection.toArray();
     // Clean before search/sort so both operate on the displayed name.
-    if (normType === 'live') items = cleanLiveItems(items);
+    items = cleanItemsForDisplay(normType, items);
 
     // Filter out streams belonging to hidden categories
     if (hasHiddenCats) {
@@ -1640,11 +1701,24 @@ export async function getStreamUrl(streamId, type = 'live', containerExtension =
 }
 
 
+/**
+ * Strip provider tags from the title inside a get_vod_info / get_series_info
+ * payload. Done here rather than at the nine places that build an episode
+ * label from it, all of which would otherwise put "EN - Foundation - S03E10"
+ * in the player's title bar.
+ */
+function cleanStreamInfo(data) {
+  if (data && data.info && data.info.name) {
+    data.info = { ...data.info, name: cleanVodName(data.info.name) };
+  }
+  return data;
+}
+
 export async function getStreamInfo(id, type) {
   if (isServerMode) {
     const response = await fetch(`/api/stream-info/${encodeURIComponent(id)}?type=${encodeURIComponent(type)}`);
     if (!response.ok) throw new Error('Failed to fetch stream details');
-    return response.json();
+    return cleanStreamInfo(await response.json());
   } else {
     // Client Mode getStreamInfo
     const creds = getCredentialsLocal();
@@ -1656,6 +1730,6 @@ export async function getStreamInfo(id, type) {
     const infoUrl = `${creds.server_url}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}&action=${action}&${paramName}=${id}`;
     const response = await fetch(proxify(infoUrl));
     if (!response.ok) throw new Error('Failed to fetch stream details');
-    return response.json();
+    return cleanStreamInfo(await response.json());
   }
 }
