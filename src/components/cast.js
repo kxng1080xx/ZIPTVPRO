@@ -167,12 +167,16 @@ async function openCastPicker() {
   }, 2500);
 }
 
+function getCastOverlayParent() {
+  return document.fullscreenElement || document.webkitFullscreenElement || document.body;
+}
+
 function buildOverlay() {
   // The video container (not body) is what enters the browser Fullscreen API on
   // desktop, and a fullscreen element only renders its own descendants. Mount the
   // picker INTO the current fullscreen element so it isn't stuck behind the video
   // in fullscreen; fall back to body otherwise. appendChild moves it if needed.
-  const parent = document.fullscreenElement || document.body;
+  const parent = getCastOverlayParent();
   if (overlayEl) {
     if (overlayEl.parentElement !== parent) parent.appendChild(overlayEl);
     overlayEl.classList.remove('hidden');
@@ -207,6 +211,14 @@ function buildOverlay() {
 
   if (window.lucide) lucide.createIcons({ scope: overlayEl });
 }
+
+function syncCastOverlayParent() {
+  if (!overlayEl) return;
+  const parent = getCastOverlayParent();
+  if (overlayEl.parentElement !== parent) parent.appendChild(overlayEl);
+}
+document.addEventListener('fullscreenchange', syncCastOverlayParent);
+document.addEventListener('webkitfullscreenchange', syncCastOverlayParent);
 
 function closeOverlay() {
   clearInterval(rescanTimer);

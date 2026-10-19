@@ -1205,6 +1205,8 @@ function proxyStream(decodedUrl, req, res, opts = {}) {
     // fetches (MITM risk) — acceptable for a media proxy, revisit if it ever
     // carries anything sensitive. Ignored for http://.
     const clientReq = protocol.get(currentUrl, { headers: fetchHeaders, rejectUnauthorized: false }, (clientRes) => {
+      // Connected — clear the initial handshake timeout so long-lived streams can flow.
+      clientReq.setTimeout(0);
       // Handle HTTP redirects (301, 302, 307, 308)
       if ([301, 302, 307, 308].includes(clientRes.statusCode)) {
         let location = clientRes.headers.location;
@@ -1278,6 +1280,12 @@ function proxyStream(decodedUrl, req, res, opts = {}) {
           }
         }
 
+        // Cache proxied channel logos & posters in the browser for 24h so
+        // scrolling the guide doesn't re-request the same icons repeatedly.
+        if (contentType.startsWith('image/')) {
+          res.setHeader('Cache-Control', 'public, max-age=86400');
+        }
+
         // Cast (DLNA) responses: force the right Content-Type and advertise the
         // DLNA capabilities on the HTTP response, which Samsung validates before
         // playing. Also guarantee Accept-Ranges so the renderer can seek.
@@ -1294,6 +1302,12 @@ function proxyStream(decodedUrl, req, res, opts = {}) {
 
         clientRes.pipe(res);
       }
+    });
+
+    // Abort dead logo/upstream connections in 5s so they never tie up the
+    // browser's per-origin connection pool.
+    clientReq.setTimeout(5000, () => {
+      clientReq.destroy(Object.assign(new Error('Upstream timeout'), { code: 'ETIMEDOUT' }));
     });
 
     clientReq.on('error', (err) => {
@@ -1540,6 +1554,9 @@ app.get('/api/transcode', (req, res) => {
   }
   const mode = req.query.mode === 'full' ? 'full' : 'audio';
   const start = Math.max(0, parseInt(req.query.start, 10) || 0);
+  const audioIdx = req.query.audio !== undefined && req.query.audio !== ''
+    ? parseInt(req.query.audio, 10)
+    : -1;
   const deint = req.query.deint === '1';
   const lp = req.query.lp === '1'; // low-power: weak CPU (perf-lite) — lightest re-encode
   const reEncode = deint || mode === 'full'; // paths that actually encode video
@@ -1576,6 +1593,9 @@ app.get('/api/transcode', (req, res) => {
       '-fflags', '+genpts',
       '-i', inputUrl
     );
+    if (!isNaN(audioIdx) && audioIdx >= 0) {
+      args.push('-map', '0:v:0', '-map', `0:a:${audioIdx}?`);
+    }
     if (reEncode) {
       // Compose the software video filter (runs in system memory before the
       // encoder — hardware encoders upload from there). Deinterlace + field-
@@ -1709,8 +1729,12 @@ app.get('/api/transcode', (req, res) => {
   const begin = (info) => {
     if (begun || closed) return;
     begun = true;
-    copyAudio = !!(info && SAFE_COPY_AUDIO.has(info.acodec));
-    if (copyAudio) console.log(`[transcode] audio '${info.acodec}' is browser-safe — copying (remux, no re-encode)`);
+    const pickedTrack = (info && Array.isArray(info.audioTracks) && audioIdx >= 0)
+      ? info.audioTracks[audioIdx]
+      : null;
+    const trackCodec = (pickedTrack && pickedTrack.codec) || (info && info.acodec);
+    copyAudio = !!(trackCodec && SAFE_COPY_AUDIO.has(trackCodec));
+    if (copyAudio) console.log(`[transcode] audio '${trackCodec}' is browser-safe — copying (remux, no re-encode)`);
     const hvc1 = (mode === 'audio' && !deint) && (info && info.vcodec ? info.vcodec === 'hevc' : true);
     startProc(hvc1);
   };
@@ -1723,11 +1747,97 @@ app.get('/api/transcode', (req, res) => {
 // truehd) muxes fine but the browser can't DECODE it, so those re-encode.
 const SAFE_COPY_AUDIO = new Set(['aac', 'mp3', 'opus', 'flac']);
 
-// Shared media probe: one short ffmpeg -i run extracting duration + codecs,
+// Parse all audio and subtitle stream blocks from `ffmpeg -i` stderr output.
+function parseFfmpegStreams(stderr) {
+  const audioTracks = [];
+  const subtitleTracks = [];
+  const lines = String(stderr || '').split(/\r?\n/);
+  let current = null;
+
+  for (const line of lines) {
+    const sm = line.match(/^\s*Stream #0:(\d+)(?:\[0x[0-9a-f]+\])?(?:\(([^)]+)\))?:\s*(Audio|Subtitle):\s*([a-z0-9_]+)(.*)/i);
+    if (sm) {
+      const streamIndex = parseInt(sm[1], 10);
+      const lang = (sm[2] || '').trim();
+      const kind = sm[3].toLowerCase();
+      const codec = (sm[4] || '').toLowerCase();
+      const rest = sm[5] || '';
+      const isDefault = /\(default\)/i.test(rest);
+      const isForced = /\(forced\)/i.test(rest);
+      if (kind === 'audio') {
+        const chMatch = rest.match(/,\s*(mono|stereo|\d+\.\d+(?:\([a-z]+\))?|\d+\s*channels)/i);
+        const channels = chMatch ? chMatch[1].replace(/\([a-z]+\)/i, '') : '';
+        current = {
+          kind: 'audio',
+          index: audioTracks.length,
+          streamIndex,
+          codec,
+          lang,
+          channels,
+          title: '',
+          default: isDefault
+        };
+        audioTracks.push(current);
+      } else if (kind === 'subtitle') {
+        current = {
+          kind: 'subtitle',
+          index: subtitleTracks.length,
+          streamIndex,
+          codec,
+          lang,
+          title: '',
+          default: isDefault,
+          forced: isForced
+        };
+        subtitleTracks.push(current);
+      }
+      continue;
+    }
+    if (current && /^\s*Stream #/i.test(line)) {
+      current = null;
+      continue;
+    }
+    if (current) {
+      const tm = line.match(/^\s*title\s*:\s*(.+)$/i);
+      if (tm && !current.title) {
+        current.title = tm[1].trim();
+      }
+    }
+  }
+
+  const formatAudioLabel = (t) => {
+    const parts = [];
+    if (t.title) parts.push(t.title);
+    if (t.lang && t.lang.toLowerCase() !== 'und' && (!t.title || !t.title.toLowerCase().includes(t.lang.toLowerCase()))) {
+      parts.push(t.lang.toUpperCase());
+    }
+    if (!parts.length) parts.push(`Track ${t.index + 1}`);
+    const tech = [t.codec ? t.codec.toUpperCase() : '', t.channels || ''].filter(Boolean).join(' ');
+    if (tech) parts.push(`(${tech})`);
+    return parts.join(' ');
+  };
+
+  const formatSubLabel = (t) => {
+    const parts = [];
+    if (t.title) parts.push(t.title);
+    if (t.lang && t.lang.toLowerCase() !== 'und' && (!t.title || !t.title.toLowerCase().includes(t.lang.toLowerCase()))) {
+      parts.push(t.lang.toUpperCase());
+    }
+    if (!parts.length) parts.push(`Subtitle ${t.index + 1}`);
+    if (t.forced && !/forced/i.test(parts.join(' '))) parts.push('(Forced)');
+    return parts.join(' ');
+  };
+
+  audioTracks.forEach(t => { delete t.kind; t.label = formatAudioLabel(t); });
+  subtitleTracks.forEach(t => { delete t.kind; t.label = formatSubLabel(t); });
+  return { audioTracks, subtitleTracks };
+}
+
+// Shared media probe: one short ffmpeg -i run extracting duration + codecs + tracks,
 // cached by URL so the transcode's codec decisions (audio copy vs re-encode,
 // hvc1 tag) don't re-hit the provider. The client calls /api/probe at playback
 // start anyway, so by the time a seek restarts the transcode the cache is warm.
-const _probeCache = new Map(); // url -> { at, duration, acodec, vcodec }
+const _probeCache = new Map(); // url -> { at, duration, acodec, vcodec, audioTracks, subtitleTracks }
 const PROBE_TTL = 10 * 60 * 1000;
 
 function probeMedia(target, cb) {
@@ -1742,25 +1852,33 @@ function probeMedia(target, cb) {
   } catch (err) {
     return cb(null);
   }
-  // ffmpeg writes header/metadata then errors (no output specified). We only
-  // need the stderr chunks with Duration + stream lines; kill once we have them.
+  const killTimer = setTimeout(() => {
+    try { proc.kill('SIGKILL'); } catch (e) {}
+  }, 6000);
+  // ffmpeg writes header + all Stream # lines then exits with "At least one
+  // output file must be specified". Wait for that footer (or 32KB cap) so we
+  // capture every audio and subtitle track in the container.
   proc.stderr.on('data', (d) => {
     stderr += d;
-    if ((/Duration:\s*\d+:\d+:\d+/.test(stderr) && /Audio:/.test(stderr) && /Video:/.test(stderr)) || stderr.length > 16000) {
+    if (/At least one output file must be specified/i.test(stderr) || stderr.length > 32000) {
       try { proc.kill('SIGKILL'); } catch (e) {}
     }
   });
   let sent = false;
   const finish = () => {
     if (sent) return; sent = true;
+    clearTimeout(killTimer);
     const dm = stderr.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
     const am = stderr.match(/Stream #[^\n]*Audio:\s*([a-z0-9_]+)/i);
     const vm = stderr.match(/Stream #[^\n]*Video:\s*([a-z0-9_]+)/i);
+    const { audioTracks, subtitleTracks } = parseFfmpegStreams(stderr);
     const info = {
       at: Date.now(),
       duration: dm ? (+dm[1]) * 3600 + (+dm[2]) * 60 + parseFloat(dm[3]) : 0,
       acodec: am ? am[1].toLowerCase() : null,
-      vcodec: vm ? vm[1].toLowerCase() : null
+      vcodec: vm ? vm[1].toLowerCase() : null,
+      audioTracks,
+      subtitleTracks
     };
     // Only cache successful probes — a transient failure shouldn't pin nulls.
     if (info.duration || info.acodec || info.vcodec) _probeCache.set(target, info);
@@ -1778,9 +1896,53 @@ app.get('/api/probe', (req, res) => {
     return res.status(400).json({ error: 'missing or invalid url' });
   }
   const proc = probeMedia(target, (info) => {
-    if (!res.headersSent) res.json(info || { duration: 0 });
+    if (!res.headersSent) res.json(info || { duration: 0, audioTracks: [], subtitleTracks: [] });
   });
   req.on('close', () => { if (proc) { try { proc.kill('SIGKILL'); } catch (e) {} } });
+});
+
+// Extract an embedded text subtitle track (SRT/ASS/SSA/MOV_TEXT/WEBVTT) from a
+// VOD container as WebVTT so the browser <video> element can display it via <track>.
+app.get('/api/subtitle', (req, res) => {
+  const target = req.query.url;
+  const subIdx = Math.max(0, parseInt(req.query.index, 10) || 0);
+  const start = Math.max(0, parseInt(req.query.start, 10) || 0);
+  if (!target || !/^https?:\/\//i.test(target)) {
+    return res.status(400).send('missing or invalid url');
+  }
+  const inputUrl = /\/(movie|series)\/[^?]*\.\w+(\?|$)/i.test(target)
+    ? `http://127.0.0.1:${PORT}/api/proxy?url=${encodeURIComponent(target)}`
+    : target;
+
+  const args = [];
+  if (start > 0) args.push('-ss', String(start));
+  args.push(
+    '-user_agent', 'VLC/3.0.20',
+    '-reconnect', '1',
+    '-reconnect_at_eof', '1',
+    '-reconnect_streamed', '1',
+    '-reconnect_delay_max', '4',
+    '-i', inputUrl,
+    '-map', `0:s:${subIdx}`,
+    '-c:s', 'webvtt',
+    '-f', 'webvtt',
+    'pipe:1'
+  );
+
+  res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+
+  let proc;
+  try {
+    proc = trackChild(spawn(findFfmpeg(), args, { windowsHide: true }));
+  } catch (err) {
+    return res.status(500).end('WEBVTT\n\n');
+  }
+  const kill = () => { if (proc) { try { proc.kill('SIGKILL'); } catch (e) {} } };
+  req.on('close', kill);
+  res.on('close', kill);
+  proc.stdout.pipe(res);
+  proc.on('error', () => { if (!res.headersSent) res.status(500); try { res.end(); } catch (e) {} });
 });
 
 // ==========================================================================

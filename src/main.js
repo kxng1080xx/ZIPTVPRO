@@ -951,38 +951,77 @@ function renderPinnedCategories() {
   if (window.lucide) lucide.createIcons({ scope: list });
 }
 
-// Audio & Subtitle track picker for the player (remote/D-pad friendly).
-window.openPlayerTrackMenu = function () {
+// Separate Audio Track & Subtitles popout menus for the player (remote/D-pad friendly).
+window.openPlayerAudioMenu = async function () {
   const p = window.playerInstance;
-  if (!p || typeof p.getTrackMenu !== 'function') return;
-  const { audio, subs } = p.getTrackMenu();
+  if (!p) return;
+  const menu = typeof p.fetchTrackMenu === 'function'
+    ? await p.fetchTrackMenu()
+    : (typeof p.getTrackMenu === 'function' ? p.getTrackMenu() : { audio: [] });
+  const audio = (menu && menu.audio) || [];
+
+  if (audio.length === 0) {
+    showToast('No alternate audio tracks available', 'info');
+    return;
+  }
+
+  const activeAudio = audio.find(a => a.active);
+  const options = audio.map(a => ({
+    value: a.id,
+    label: a.label
+  }));
+
+  openSortDropdown({
+    title: 'Audio Track',
+    options,
+    current: activeAudio ? activeAudio.id : undefined,
+    onSelect: (v) => {
+      p.applyTrack(v);
+      navigation.focusDefault('player');
+    }
+  });
+};
+
+window.openPlayerSubtitleMenu = async function () {
+  const p = window.playerInstance;
+  if (!p) return;
+  const menu = typeof p.fetchTrackMenu === 'function'
+    ? await p.fetchTrackMenu()
+    : (typeof p.getTrackMenu === 'function' ? p.getTrackMenu() : { subs: [] });
+  const subs = (menu && menu.subs) || [];
 
   const options = [];
-  if (audio.length > 1) {
-    audio.forEach(a => options.push({ value: a.id, label: `Audio: ${a.label}${a.active ? '  ✓' : ''}` }));
-  }
-  // Subtitles always offered (Off + any available tracks) when there's a choice.
+  let currentSub = undefined;
   if (subs.length > 1) {
-    subs.forEach(s => options.push({
-      value: s.id,
-      label: `${s.id === 'sub:off' ? 'Subtitles: Off' : 'Subtitle: ' + s.label}${s.active ? '  ✓' : ''}`
-    }));
+    subs.forEach(s => {
+      if (s.active) currentSub = s.id;
+      options.push({
+        value: s.id,
+        label: s.id === 'sub:off' ? 'Off' : s.label
+      });
+    });
   }
 
   // VOD on desktop: offer an online subtitle search (OpenSubtitles via the
   // local server proxy) — TS streams rarely carry usable subs.
   if (p.isVod && (window.appHost || window.electronCast)) {
+    if (options.length === 0) {
+      const offActive = !subs[0] || subs[0].active;
+      if (offActive) currentSub = 'sub:off';
+      options.push({ value: 'sub:off', label: 'Off' });
+    }
     options.push({ value: 'os:search', label: 'Search online subtitles…' });
   }
 
   if (options.length === 0) {
-    showToast('No alternate audio or subtitle tracks', 'info');
+    showToast('No subtitle tracks available', 'info');
     return;
   }
 
   openSortDropdown({
-    title: 'Audio & Subtitles',
+    title: 'Subtitles',
     options,
+    current: currentSub,
     onSelect: (v) => {
       if (v === 'os:search') { searchOnlineSubtitles(); return; }
       p.applyTrack(v);
@@ -990,6 +1029,9 @@ window.openPlayerTrackMenu = function () {
     }
   });
 };
+
+window.openPlayerTrackMenu = window.openPlayerSubtitleMenu;
+window.searchOnlineSubtitles = searchOnlineSubtitles;
 
 // ==========================================================================
 // ONLINE SUBTITLES (OpenSubtitles) — search by title, download, convert
@@ -1451,12 +1493,17 @@ async function selectAndPlayChannel(channel, programBlock) {
   // up/down, the last-channel zap, a search result, a restored session.
   epgGridInstance?.setActiveChannel(channel.stream_id);
 
-  // Track history
+  // Track history in the background — never block stream startup on history I/O
+  // (especially when EPG/logo requests are in flight on the same origin).
   try {
     incrementChannelView(channel.stream_id); // local tally for the "Most Viewed" sort
-    await trackPlayback(channel.stream_id);
-    state.counts.recently_viewed = Math.min(50, state.counts.recently_viewed + 1);
-    document.getElementById('count-recently-viewed').textContent = state.counts.recently_viewed;
+    trackPlayback(channel.stream_id)
+      .then(() => {
+        state.counts.recently_viewed = Math.min(50, state.counts.recently_viewed + 1);
+        const rvEl = document.getElementById('count-recently-viewed');
+        if (rvEl) rvEl.textContent = state.counts.recently_viewed;
+      })
+      .catch(err => console.warn('History tracking failed:', err));
   } catch (err) {
     console.warn('History tracking failed:', err);
   }
@@ -4535,6 +4582,9 @@ function bindGlobalEvents() {
     const modal = document.getElementById('upscaler-modal');
     if (!modal) return;
 
+    const fsParent = document.fullscreenElement || document.webkitFullscreenElement || document.body;
+    if (modal.parentElement !== fsParent) fsParent.appendChild(modal);
+
     const p = window.playerInstance;
     const currentMode = (p && p.getUpscalerMode) ? p.getUpscalerMode() : (localStorage.getItem('upscaler_mode') || 'off');
     const currentSharp = parseFloat(localStorage.getItem('upscaler_sharpness') || '0.4');
@@ -6205,6 +6255,8 @@ function showExpiryNotice(text, { toast = true } = {}) {
 function showToast(message, type = 'success', duration = 3500) {
   const container = document.getElementById('toast-container');
   if (!container) return;
+  const fsHost = document.fullscreenElement || document.webkitFullscreenElement || document.body;
+  if (container.parentElement !== fsHost) fsHost.appendChild(container);
   const toast = document.createElement('div');
   toast.className = `toast toast-${type}`;
   const icon = type === 'error' ? 'alert-circle' : (type === 'info' ? 'info' : 'check-circle');
@@ -6221,3 +6273,21 @@ function showToast(message, type = 'success', duration = 3500) {
   }, duration);
 }
 window.showToast = showToast;
+
+// Keep top-level player modals/toasts inside the active fullscreen root so
+// Browser Fullscreen API (:fullscreen) never hides them behind the video.
+function syncGlobalModalsToFullscreen() {
+  const host = document.fullscreenElement || document.webkitFullscreenElement || document.body;
+  if (!host) return;
+  const toastContainer = document.getElementById('toast-container');
+  if (toastContainer && toastContainer.parentElement !== host) {
+    host.appendChild(toastContainer);
+  }
+  const upscalerModal = document.getElementById('upscaler-modal');
+  if (upscalerModal && upscalerModal.parentElement !== host) {
+    host.appendChild(upscalerModal);
+  }
+}
+document.addEventListener('fullscreenchange', syncGlobalModalsToFullscreen);
+document.addEventListener('webkitfullscreenchange', syncGlobalModalsToFullscreen);
+

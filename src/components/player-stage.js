@@ -75,8 +75,19 @@ function setPlaying(on) {
 // --------------------------------------------------------------------------
 // Auto fullscreen
 // --------------------------------------------------------------------------
+function hasOpenPlayerOverlay() {
+  return Boolean(
+    document.querySelector('.tvsort-overlay, .tvk-overlay, .cast-modal-overlay:not(.hidden), .modal-overlay:not(.hidden), .live-top-row.details-open') ||
+    document.body.classList.contains('tv-info-open')
+  );
+}
+
 function enterAutoFs() {
   if (autoFsActive || !playing || !armed || !desktopOnly()) return;
+  if (hasOpenPlayerOverlay()) {
+    restartIdle();
+    return;
+  }
   autoFsActive = true;
   enteredAt = Date.now();
   // Disarm immediately, not on the way out: if anything interrupts before the

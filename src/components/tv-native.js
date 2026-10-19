@@ -515,11 +515,18 @@ function onKeyDown(e) {
     // not the legacy control bar — that bar is display:none under the shell, so
     // clicking its buttons would open menus nobody can see.
     const lk = (kk && kk.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) ? kk.toLowerCase() : '';
+    if (lk === 'a') {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      osdBump();
+      openAudioPopup();
+      return;
+    }
     if (lk === 'c') {
       e.preventDefault();
       e.stopImmediatePropagation();
       osdBump();
-      openTracksPopup();
+      openSubtitlesPopup();
       return;
     }
     if (lk === 's') {
@@ -828,17 +835,20 @@ function ensureOsd() {
     openPopup({
       title: (vod ? (osdVod && osdVod.title) : (osdChannel && osdChannel.name)) || 'Options',
       items: vod ? [
-        { id: 'tracks', title: 'Audio & subtitles' },
+        { id: 'audio', title: 'Audio track' },
+        { id: 'subs', title: 'Subtitles' },
         { id: 'restart', title: 'Play from beginning' },
         { id: 'stop', title: 'Stop playback' }
       ] : [
-        { id: 'tracks', title: 'Audio & subtitles' },
+        { id: 'audio', title: 'Audio track' },
+        { id: 'subs', title: 'Subtitles' },
         { id: 'info', title: 'Channel info' },
         { id: 'stop', title: 'Stop playback' }
       ],
       onPick: (it) => {
         closePopup(false);
-        if (it.id === 'tracks') openTracksPopup();
+        if (it.id === 'audio') openAudioPopup();
+        else if (it.id === 'subs') openSubtitlesPopup();
         else if (it.id === 'info') legacyClick('player-info-btn');
         else if (it.id === 'restart') {
           // skipBy clamps to 0 on every engine (incl. native / transcode)
@@ -863,36 +873,64 @@ function ensureOsd() {
   return osdEl;
 }
 
-// Audio & subtitle picker as a SHELL popout. The legacy player-cc-btn menu is
-// a desktop-UI panel: during OS fullscreen it paints behind the video (not a
-// descendant of the fullscreen element) and its rows carry no data-nav, so
-// the D-pad can't reach it. openPopup solves both (video-container mount +
-// navigable rows).
-function openTracksPopup() {
+// Separate Audio Track and Subtitles pickers as SHELL popouts.
+async function openAudioPopup() {
   const p = window.playerInstance;
-  const menu = p && typeof p.getTrackMenu === 'function' ? p.getTrackMenu() : null;
-  const items = [];
-  if (menu) {
-    if ((menu.audio || []).length > 1) {
-      menu.audio.forEach(a => items.push({ id: a.id, title: `Audio: ${a.label}`, selected: !!a.active }));
-    }
-    if ((menu.subs || []).length > 1) {
-      menu.subs.forEach(s => items.push({
-        id: s.id,
-        title: s.id === 'sub:off' ? 'Subtitles: Off' : `Subtitle: ${s.label}`,
-        selected: !!s.active
-      }));
-    }
-  }
-  if (!items.length) {
-    if (window.showToast) window.showToast('No alternate audio or subtitle tracks', 'info', 3000);
+  if (!p) return;
+  const menu = typeof p.fetchTrackMenu === 'function'
+    ? await p.fetchTrackMenu()
+    : (typeof p.getTrackMenu === 'function' ? p.getTrackMenu() : null);
+  const audio = (menu && menu.audio) || [];
+  if (!audio.length) {
+    if (window.showToast) window.showToast('No alternate audio tracks available', 'info', 3000);
     return;
   }
+  const items = audio.map(a => ({ id: a.id, title: a.label, selected: !!a.active }));
   openPopup({
-    title: 'Audio & subtitles',
+    title: 'Audio track',
     items,
     onPick: (it) => {
       closePopup(false);
+      try { p.applyTrack(it.id); } catch (e) {}
+    }
+  });
+}
+
+async function openSubtitlesPopup() {
+  const p = window.playerInstance;
+  if (!p) return;
+  const menu = typeof p.fetchTrackMenu === 'function'
+    ? await p.fetchTrackMenu()
+    : (typeof p.getTrackMenu === 'function' ? p.getTrackMenu() : null);
+  const subs = (menu && menu.subs) || [];
+  const items = [];
+  if (subs.length > 1) {
+    subs.forEach(s => items.push({
+      id: s.id,
+      title: s.id === 'sub:off' ? 'Off' : s.label,
+      selected: !!s.active
+    }));
+  }
+  if (p.isVod && (window.appHost || window.electronCast)) {
+    if (!items.length) {
+      const offActive = !subs[0] || subs[0].active;
+      items.push({ id: 'sub:off', title: 'Off', selected: offActive });
+    }
+    items.push({ id: 'os:search', title: 'Search online subtitles…', selected: false });
+  }
+  if (!items.length) {
+    if (window.showToast) window.showToast('No subtitle tracks available', 'info', 3000);
+    return;
+  }
+  openPopup({
+    title: 'Subtitles',
+    items,
+    onPick: (it) => {
+      closePopup(false);
+      if (it.id === 'os:search') {
+        if (typeof window.searchOnlineSubtitles === 'function') window.searchOnlineSubtitles();
+        return;
+      }
       try { p.applyTrack(it.id); } catch (e) {}
     }
   });
@@ -2437,7 +2475,7 @@ async function screenGuide(params) {
           entries.forEach((en) => {
             if (en.isIntersecting && en.target._fillEpg) en.target._fillEpg();
           });
-        }, { root: rowsBox, rootMargin: '600px 0px' })
+        }, { root: rowsBox, rootMargin: '150px 0px' })
       : null;
     rowsBox._epgIo = io;
 

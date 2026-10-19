@@ -260,6 +260,7 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('disable-gpu-driver-bug-workarounds');
 app.commandLine.appendSwitch('enable-features', 'DirectComposition,ZeroCopyVideoCapture');
+app.commandLine.appendSwitch('enable-blink-features', 'AudioVideoTracks');
 
 // Only allow a single instance. A second launch would otherwise spin up another
 // server and fight over the port, which is what caused the EADDRINUSE crash.

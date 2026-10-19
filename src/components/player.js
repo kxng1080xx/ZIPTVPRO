@@ -7,7 +7,8 @@ import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { proxifyImage } from './xtream-api.js';
 import {
   isNativeAvailable, nativePlay, nativeStop, nativePlayCtl, nativePauseCtl,
-  nativeSeek, nativeSetVolume, nativeSetRect, setScreenAwake
+  nativeSeek, nativeSetVolume, nativeSetRect, setScreenAwake,
+  nativeGetAudioTracks, nativeSetAudioTrack, nativeGetSubtitleTracks, nativeSetSubtitleTrack
 } from './native-player.js';
 import { navigation } from './tv-navigation.js';
 
@@ -93,6 +94,7 @@ export class VideoPlayer {
     this.playPauseBtn = document.getElementById('player-play-pause-btn');
     this.prevBtn = document.getElementById('player-prev-btn');
     this.nextBtn = document.getElementById('player-next-btn');
+    this.audioBtn = document.getElementById('player-audio-btn');
     this.ccBtn = document.getElementById('player-cc-btn');
     this.volumeBtn = document.getElementById('player-volume-btn');
     this.volumeSlider = document.getElementById('player-volume-slider');
@@ -294,6 +296,7 @@ export class VideoPlayer {
       if (lk === 'n') return act(() => { if (this.nextBtn) this.nextBtn.click(); });
       if (lk === 'p') return act(() => { if (this.prevBtn) this.prevBtn.click(); });
       if (lk === 's') return act(() => { if (this.stopBtn) this.stopBtn.click(); });
+      if (lk === 'a') return act(() => { if (this.audioBtn) this.audioBtn.click(); });
       if (lk === 'c') return act(() => { if (this.ccBtn) this.ccBtn.click(); });
     };
     document.addEventListener('keydown', this._onHotkey, true);
@@ -309,16 +312,43 @@ export class VideoPlayer {
       });
     }
 
-    // Audio & Subtitles menu (falls back to a simple caption toggle).
+    // Separate Audio Track & Subtitles popout menus.
+    if (this.audioBtn) {
+      this.audioBtn.addEventListener('click', () => {
+        if (typeof window.openPlayerAudioMenu === 'function') window.openPlayerAudioMenu();
+      });
+    }
     this.ccBtn.addEventListener('click', () => {
-      if (typeof window.openPlayerTrackMenu === 'function') window.openPlayerTrackMenu();
+      if (typeof window.openPlayerSubtitleMenu === 'function') window.openPlayerSubtitleMenu();
+      else if (typeof window.openPlayerTrackMenu === 'function') window.openPlayerTrackMenu();
       else this.toggleCaptions();
     });
 
     // Info button toggles the program details panel. It is a drawer on every
     // layout now — off-canvas by default so the player owns the whole stage.
+    // When #video-container is the Browser Fullscreen element, move
+    // #program-details inside #video-container so it stays in the top layer.
+    const syncProgramDetailsHost = () => {
+      const panel = document.getElementById('program-details');
+      if (!panel) return;
+      const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+      if (fsEl && (fsEl === this.container || this.container.contains(fsEl))) {
+        if (panel.parentElement !== this.container) {
+          this.container.appendChild(panel);
+        }
+      } else {
+        const topRow = document.querySelector('#live-view .live-top-row');
+        if (topRow && panel.parentElement !== topRow) {
+          topRow.appendChild(panel);
+        }
+      }
+    };
+    document.addEventListener('fullscreenchange', syncProgramDetailsHost);
+    document.addEventListener('webkitfullscreenchange', syncProgramDetailsHost);
+
     if (this.infoBtn) {
       this.infoBtn.addEventListener('click', () => {
+        syncProgramDetailsHost();
         // On TV the panel is hidden by the single-column layout, so it opens as
         // a full-height overlay driven from the body class (Back closes it).
         if (document.body.classList.contains('tv-layout')) {
@@ -336,11 +366,15 @@ export class VideoPlayer {
     });
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
+      if (document.body.classList.contains('tv-info-open')) {
+        document.body.classList.remove('tv-info-open');
+        e.stopPropagation();
+        return;
+      }
       const row = document.querySelector('.live-top-row.details-open');
       if (!row) return;
-      // Let Escape keep its usual job (leaving fullscreen) when it has one.
-      if (document.fullscreenElement) return;
       row.classList.remove('details-open');
+      e.stopPropagation();
     });
 
     // VOD seek bar (movies / series only)
@@ -1014,6 +1048,12 @@ export class VideoPlayer {
     this._transcodeOffset = 0;
     this._transcodeDuration = 0;
     this._transcodeMode = null;
+    this._probedInfo = null;
+    this._selectedAudioTrack = null;
+    this._activeProbeSub = -1;
+    try { this.video.querySelectorAll('track[data-probe-sub]').forEach(t => t.remove()); } catch (e) {}
+    if (this.audioBtn) this.audioBtn.style.color = '#fff';
+    if (this.ccBtn) this.ccBtn.style.color = '#fff';
     // Timeshift: true only when this load is the rolling DVR HLS buffer (set by
     // loadLiveTimeshift just before this call). Default off for VOD/direct/recordings.
     this._timeshiftActive = !!this._pendingTimeshift;
@@ -1959,11 +1999,32 @@ export class VideoPlayer {
     const target = this._transcodeTarget(url);
     const params = new URLSearchParams({ url: target, mode });
     if (start > 0) params.set('start', String(Math.floor(start)));
+    if (Number.isInteger(this._selectedAudioTrack) && this._selectedAudioTrack >= 0) {
+      params.set('audio', String(this._selectedAudioTrack));
+    }
     if (this._deinterlaceOn()) params.set('deint', '1');
     // Low-power hint: on weak devices (perf-lite) the server picks the lightest
     // software re-encode (ultrafast + 720p) so a slow CPU can keep up.
     if (this._lowPower()) params.set('lp', '1');
     return `/api/transcode?${params.toString()}`;
+  }
+
+  async _ensureProbe() {
+    if (this._probedInfo) return this._probedInfo;
+    if (!this._isElectron() || !this._streamUrl) return null;
+    const target = this._transcodeTarget(this._streamUrl);
+    const startedFor = this._streamUrl;
+    try {
+      const r = await fetch(`/api/probe?url=${encodeURIComponent(target)}`);
+      const info = await r.json();
+      if (this._streamUrl === startedFor && info) {
+        this._probedInfo = info;
+        if (info.duration > 0 && !this._transcodeDuration) this._transcodeDuration = info.duration;
+      }
+      return this._probedInfo;
+    } catch (e) {
+      return null;
+    }
   }
 
   // Weak-device hint (perf-lite kill-switch). Drives the server's low-power
@@ -2023,6 +2084,7 @@ export class VideoPlayer {
       .then(r => r.json())
       .then(info => {
         if (this._streamUrl !== startedFor || !this._streamIsVod) return; // stale
+        if (info) this._probedInfo = info;
         if (!info || !info.acodec) return;
         const browserAudio = ['aac', 'mp3', 'opus', 'flac', 'vorbis'];
         const premiumAudio = ['eac3', 'ac3'];
@@ -2207,6 +2269,7 @@ export class VideoPlayer {
       fetch(`/api/probe?url=${encodeURIComponent(target)}`)
         .then((r) => r.json())
         .then((d) => {
+          if (d) this._probedInfo = d;
           if (d && d.duration > 0 && this._transcodeActive) {
             this._transcodeDuration = d.duration;
             if (this._refreshTimeUi) this._refreshTimeUi();
@@ -2968,7 +3031,7 @@ export class VideoPlayer {
   }
 
   // Collect the audio + subtitle tracks available from whichever engine is
-  // active (hls.js, or the native <video> for mpegts/direct play).
+  // active (hls.js, native libVLC, probed ffmpeg metadata, or <video> tracks).
   getTrackMenu() {
     const audio = [];
     const subs = [{ id: 'sub:off', label: 'Off', active: false }];
@@ -2982,20 +3045,57 @@ export class VideoPlayer {
       });
       subs[0].active = this.hls.subtitleTrack === -1;
     } else {
+      const probedAudio = (this._probedInfo && Array.isArray(this._probedInfo.audioTracks)) ? this._probedInfo.audioTracks : [];
       const at = this.video.audioTracks;
-      if (at && at.length) {
+      if (probedAudio.length > 0) {
+        const activeIdx = Number.isInteger(this._selectedAudioTrack) && this._selectedAudioTrack >= 0
+          ? this._selectedAudioTrack
+          : (() => {
+              if (at && at.length === probedAudio.length) {
+                for (let j = 0; j < at.length; j++) if (at[j].enabled) return j;
+              }
+              const defIdx = probedAudio.findIndex(t => t.default);
+              return defIdx >= 0 ? defIdx : 0;
+            })();
+        probedAudio.forEach((t, i) => {
+          audio.push({
+            id: 'audio:' + i,
+            label: t.label || `Audio ${i + 1}`,
+            active: i === activeIdx
+          });
+        });
+      } else if (at && at.length) {
         for (let i = 0; i < at.length; i++) {
           audio.push({ id: 'audio:' + i, label: at[i].label || at[i].language || `Audio ${i + 1}`, active: !!at[i].enabled });
         }
       }
+
       const tt = this.video.textTracks;
       let anySub = false;
+      // Collect non-probe textTracks (browser-exposed or online subtitles)
       if (tt && tt.length) {
         for (let i = 0; i < tt.length; i++) {
+          // Skip our synthetic probe track if we're listing probed subtitle tracks below
+          if (tt[i].label && tt[i].label.startsWith('__probe_sub_')) continue;
           const showing = tt[i].mode === 'showing';
           if (showing) anySub = true;
           subs.push({ id: 'sub:' + i, label: tt[i].label || tt[i].language || `Subtitle ${i + 1}`, active: showing });
         }
+      }
+      // If browser didn't expose embedded subtitle tracks natively, offer text-based probed subtitles
+      const probedSubs = (this._probedInfo && Array.isArray(this._probedInfo.subtitleTracks)) ? this._probedInfo.subtitleTracks : [];
+      const bitmapSubCodecs = new Set(['hdmv_pgs_subtitle', 'pgssub', 'dvd_subtitle', 'dvdsub', 'dvb_subtitle', 'dvbsub', 'xsub']);
+      if (probedSubs.length > 0 && subs.length <= 1) {
+        probedSubs.forEach((s, i) => {
+          if (s.codec && bitmapSubCodecs.has(s.codec)) return;
+          const isAct = this._activeProbeSub === i;
+          if (isAct) anySub = true;
+          subs.push({
+            id: 'sub:probe:' + i,
+            label: s.label || `Subtitle ${i + 1}`,
+            active: isAct
+          });
+        });
       }
       subs[0].active = !anySub;
     }
@@ -3003,28 +3103,118 @@ export class VideoPlayer {
     return { audio, subs };
   }
 
-  // Apply a track chosen from the menu: "audio:<i>", "sub:<i>" or "sub:off".
+  // Async version of getTrackMenu() that awaits native libVLC tracks on Android/iOS
+  // or /api/probe on Electron so all audio & subtitle tracks are populated.
+  async fetchTrackMenu() {
+    if (this._nativeActive) {
+      const [aRes, sRes] = await Promise.all([
+        nativeGetAudioTracks(),
+        nativeGetSubtitleTracks()
+      ]);
+      const audio = ((aRes && aRes.tracks) || []).map(t => ({
+        id: 'audio:native:' + t.id,
+        label: t.label || `Track ${t.id}`,
+        active: !!t.active
+      }));
+      const rawSubs = (sRes && sRes.tracks) || [];
+      const anySub = rawSubs.some(t => t.active);
+      const subs = [{ id: 'sub:off', label: 'Off', active: !anySub }];
+      rawSubs.forEach(t => {
+        subs.push({
+          id: 'sub:native:' + t.id,
+          label: t.label || `Subtitle ${t.id}`,
+          active: !!t.active
+        });
+      });
+      return { audio, subs };
+    }
+    if (this._isElectron() && this._streamUrl && !this.hls && !this._probedInfo) {
+      await this._ensureProbe();
+    }
+    return this.getTrackMenu();
+  }
+
+  // Apply a track chosen from the menu: "audio:<i>", "audio:native:<id>",
+  // "sub:<i>", "sub:probe:<i>", "sub:native:<id>", or "sub:off".
   applyTrack(id) {
-    const [kind, idxStr] = String(id).split(':');
+    const parts = String(id).split(':');
+    const kind = parts[0];
     if (kind === 'audio') {
-      const i = parseInt(idxStr, 10);
+      if (parts[1] === 'native') {
+        const nativeId = parseInt(parts[2], 10);
+        nativeSetAudioTrack(nativeId);
+        if (this.audioBtn) this.audioBtn.style.color = '#06b6d4';
+        return;
+      }
+      const i = parseInt(parts[1], 10);
+      this._selectedAudioTrack = i;
+      if (this.audioBtn) this.audioBtn.style.color = i > 0 ? '#06b6d4' : '#fff';
       if (this.hls) {
         this.hls.audioTrack = i;
-      } else if (this.video.audioTracks) {
-        for (let j = 0; j < this.video.audioTracks.length; j++) this.video.audioTracks[j].enabled = (j === i);
+        return;
+      }
+      if (this._transcodeActive) {
+        this._seekTranscode(this._currentTime() || 0);
+        return;
+      }
+      const at = this.video.audioTracks;
+      const probedTrack = (this._probedInfo && Array.isArray(this._probedInfo.audioTracks))
+        ? this._probedInfo.audioTracks[i]
+        : null;
+      const browserAudio = ['aac', 'mp3', 'opus', 'flac', 'vorbis'];
+      const premiumAudio = ['eac3', 'ac3'];
+      const codecOk = !probedTrack || !probedTrack.codec ||
+        browserAudio.includes(probedTrack.codec) ||
+        (this._premiumCodecsNative() && premiumAudio.includes(probedTrack.codec));
+
+      if (at && at.length > i && codecOk) {
+        for (let j = 0; j < at.length; j++) at[j].enabled = (j === i);
+      } else if (this._isElectron() && this._streamUrl) {
+        this.pendingSeek = Math.max(0, Math.floor(this._currentTime() || 0));
+        this._triedTranscodeAudio = true;
+        this._playViaTranscode(this._transcodeMode || 'audio');
       }
     } else if (kind === 'sub') {
-      if (idxStr === 'off') {
+      if (parts[1] === 'off') {
+        this._activeProbeSub = -1;
+        if (this._nativeActive) nativeSetSubtitleTrack(-1);
         if (this.hls) this.hls.subtitleTrack = -1;
+        try { this.video.querySelectorAll('track[data-probe-sub]').forEach(t => t.remove()); } catch (e) {}
         const tt = this.video.textTracks;
         if (tt) for (let j = 0; j < tt.length; j++) tt[j].mode = 'disabled';
-        this.ccBtn.style.color = '#fff';
+        if (this.ccBtn) this.ccBtn.style.color = '#fff';
+      } else if (parts[1] === 'native') {
+        const nativeId = parseInt(parts[2], 10);
+        nativeSetSubtitleTrack(nativeId);
+        if (this.ccBtn) this.ccBtn.style.color = '#06b6d4';
+      } else if (parts[1] === 'probe') {
+        const i = parseInt(parts[2], 10);
+        this._activeProbeSub = i;
+        try { this.video.querySelectorAll('track[data-probe-sub]').forEach(t => t.remove()); } catch (e) {}
+        const tt = this.video.textTracks;
+        if (tt) for (let j = 0; j < tt.length; j++) tt[j].mode = 'disabled';
+        const target = this._transcodeTarget(this._streamUrl);
+        const startOffset = this._transcodeActive ? Math.floor(this._transcodeOffset || 0) : 0;
+        const track = document.createElement('track');
+        track.kind = 'subtitles';
+        track.label = `__probe_sub_${i}`;
+        track.srclang = 'en';
+        track.src = `/api/subtitle?url=${encodeURIComponent(target)}&index=${i}&start=${startOffset}`;
+        track.setAttribute('data-probe-sub', '1');
+        track.default = true;
+        this.video.appendChild(track);
+        if (track.track) track.track.mode = 'showing';
+        const ttAfter = this.video.textTracks;
+        if (ttAfter && ttAfter.length) ttAfter[ttAfter.length - 1].mode = 'showing';
+        if (this.ccBtn) this.ccBtn.style.color = '#06b6d4';
       } else {
-        const i = parseInt(idxStr, 10);
+        this._activeProbeSub = -1;
+        try { this.video.querySelectorAll('track[data-probe-sub]').forEach(t => t.remove()); } catch (e) {}
+        const i = parseInt(parts[1], 10);
         if (this.hls) { this.hls.subtitleTrack = i; this.hls.subtitleDisplay = true; }
         const tt = this.video.textTracks;
         if (tt) for (let j = 0; j < tt.length; j++) tt[j].mode = (j === i) ? 'showing' : 'disabled';
-        this.ccBtn.style.color = '#06b6d4';
+        if (this.ccBtn) this.ccBtn.style.color = '#06b6d4';
       }
     }
   }

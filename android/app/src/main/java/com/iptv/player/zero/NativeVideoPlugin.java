@@ -388,6 +388,55 @@ public class NativeVideoPlugin extends Plugin {
         });
     }
 
+    @PluginMethod
+    public void setAudioTrack(final PluginCall call) {
+        final Integer id = call.getInt("id");
+        if (id == null) { call.resolve(); return; }
+        vlc().post(() -> {
+            if (player != null) {
+                try { player.setAudioTrack(id); } catch (Exception e) {}
+            }
+            call.resolve();
+        });
+    }
+
+    @PluginMethod
+    public void getSubtitleTracks(final PluginCall call) {
+        vlc().post(() -> {
+            JSArray arr = new JSArray();
+            if (player != null) {
+                try {
+                    MediaPlayer.TrackDescription[] tracks = player.getSpuTracks();
+                    int current = player.getSpuTrack();
+                    if (tracks != null) {
+                        for (MediaPlayer.TrackDescription t : tracks) {
+                            if (t.id < 0) continue; // -1 = "Disable"
+                            JSObject o = new JSObject();
+                            o.put("id", String.valueOf(t.id));
+                            o.put("label", t.name);
+                            o.put("active", t.id == current);
+                            arr.put(o);
+                        }
+                    }
+                } catch (Exception e) {}
+            }
+            JSObject ret = new JSObject();
+            ret.put("tracks", arr);
+            call.resolve(ret);
+        });
+    }
+
+    @PluginMethod
+    public void setSubtitleTrack(final PluginCall call) {
+        final Integer id = call.getInt("id", -1);
+        vlc().post(() -> {
+            if (player != null) {
+                try { player.setSpuTrack(id != null ? id : -1); } catch (Exception e) {}
+            }
+            call.resolve();
+        });
+    }
+
     @Override
     protected void handleOnDestroy() {
         // stop()/release() block (thread joins) — keep them off the main

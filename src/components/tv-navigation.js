@@ -192,11 +192,14 @@ class TVNavigation {
 
   showBackToast(msg) {
     let t = document.getElementById('back-exit-toast');
+    const host = document.fullscreenElement || document.webkitFullscreenElement || document.body;
     if (!t) {
       t = document.createElement('div');
       t.id = 'back-exit-toast';
       t.className = 'back-exit-toast';
-      document.body.appendChild(t);
+      host.appendChild(t);
+    } else if (t.parentElement !== host) {
+      host.appendChild(t);
     }
     t.textContent = msg;
     t.classList.add('show');
@@ -458,8 +461,36 @@ class TVNavigation {
   }
 
   handleKeyDown(e) {
+    // If a player control modal or info drawer is open while in fullscreen,
+    // let Escape / Backspace close the popup first instead of dropping out of fullscreen.
+    if (e.key === this.KEYS.ESCAPE || e.key === this.KEYS.BACKSPACE) {
+      const castOverlay = document.querySelector('.cast-modal-overlay:not(.hidden)');
+      if (castOverlay) {
+        castOverlay.querySelector('.cast-modal-close')?.click();
+        e.preventDefault();
+        return;
+      }
+      const upscalerModal = document.querySelector('#upscaler-modal:not(.hidden)');
+      if (upscalerModal) {
+        upscalerModal.classList.add('hidden');
+        e.preventDefault();
+        return;
+      }
+      if (document.body.classList.contains('tv-info-open')) {
+        document.body.classList.remove('tv-info-open');
+        e.preventDefault();
+        return;
+      }
+      const openDetailsRow = document.querySelector('.live-top-row.details-open');
+      if (openDetailsRow) {
+        openDetailsRow.classList.remove('details-open');
+        e.preventDefault();
+        return;
+      }
+    }
+
     // If the video player is in fullscreen, pressing Backspace or Escape exits fullscreen
-    if ((document.fullscreenElement || document.body.classList.contains('player-fs')) && (e.key === this.KEYS.ESCAPE || e.key === this.KEYS.BACKSPACE)) {
+    if ((document.fullscreenElement || document.webkitFullscreenElement || document.body.classList.contains('player-fs')) && (e.key === this.KEYS.ESCAPE || e.key === this.KEYS.BACKSPACE)) {
       const player = window.playerInstance;
       if (player && typeof player.exitFullscreen === 'function') {
         player.exitFullscreen();
@@ -1441,7 +1472,7 @@ class TVNavigation {
     
     // Row 3: Bottom icons
     const row3 = [];
-    ['player-stop-btn', 'player-info-btn', 'player-cc-btn', 'player-volume-btn', 'player-pip-btn', 'player-fullscreen-btn'].forEach(id => {
+    ['player-stop-btn', 'player-info-btn', 'player-audio-btn', 'player-cc-btn', 'player-volume-btn', 'player-pip-btn', 'player-fullscreen-btn'].forEach(id => {
       const el = document.getElementById(id);
       if (el && el.offsetParent !== null) row3.push(el);
     });

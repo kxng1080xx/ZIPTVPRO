@@ -868,7 +868,7 @@ export class EPGGrid {
         const id = row.dataset.streamId;
         if (id && !this.epgData[id]) this.fetchEPGForChannel(id);
       });
-    }, { root: this.channelsList, rootMargin: '400px 0px', threshold: 0.01 });
+    }, { root: this.channelsList, rootMargin: '150px 0px', threshold: 0.01 });
 
     rows.forEach((row) => {
       const id = row.dataset.streamId;

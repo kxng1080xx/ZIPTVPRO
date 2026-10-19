@@ -6649,7 +6649,7 @@ body.epg-fullscreen-active .epg-section-container {
 .cast-modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 4000;
+  z-index: 9500;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -7203,15 +7203,18 @@ body:has(.gsearch-overlay) .tvk-overlay {
 
 /* --- Sort dropdown --- */
 .tvsort-modal {
-  width: min(320px, 90vw);
+  width: min(360px, 90vw);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
   background: var(--bg-panel, #0d1320);
   border: 1px solid var(--border-color, #1e2a3e);
   border-radius: 14px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
   overflow: hidden;
 }
-.tvsort-title { padding: 14px 18px; font-weight: 700; border-bottom: 1px solid var(--border-color, #1e2a3e); }
-.tvsort-list { display: flex; flex-direction: column; padding: 8px; gap: 4px; }
+.tvsort-title { padding: 14px 18px; font-weight: 700; border-bottom: 1px solid var(--border-color, #1e2a3e); flex-shrink: 0; }
+.tvsort-list { display: flex; flex-direction: column; padding: 8px; gap: 4px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 .tvsort-item {
   display: flex;
   align-items: center;
@@ -7433,6 +7436,10 @@ body.tv-layout .program-details-panel {
 }
 /* Info button on TV reveals the program details as a right-side overlay (the
    single-column TV layout hides it inline). Toggled by the Info button / Back. */
+body.tv-layout.tv-info-open .program-details-panel,
+body.tv-layout.tv-info-open .program-details-panel * {
+  visibility: visible !important;
+}
 body.tv-layout.tv-info-open .program-details-panel {
   display: block !important;
   position: fixed;
@@ -7440,7 +7447,7 @@ body.tv-layout.tv-info-open .program-details-panel {
   right: 0;
   width: min(620px, 82vw);
   height: 100%;
-  z-index: 2500;
+  z-index: 9400;
   overflow-y: auto;
   padding: 40px 44px;
   background: var(--rd-glass-drawer);
@@ -8152,6 +8159,10 @@ body.wt-guest #video-container::after {
 /* ==========================================================================
    UPSCALER OPTIONS MODAL
    ========================================================================== */
+#upscaler-modal.modal-overlay {
+  z-index: 9500;
+}
+
 .upscaler-modal-card {
   position: relative;
   width: min(580px, 94vw);

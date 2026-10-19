@@ -2708,7 +2708,8 @@ body:not(.tv-layout):not(.vod-mode) .live-top-row .program-details-panel {
               visibility 0s linear 0.26s;
 }
 
-body:not(.tv-layout):not(.vod-mode) .live-top-row.details-open .program-details-panel {
+body:not(.tv-layout):not(.vod-mode) .live-top-row.details-open .program-details-panel,
+body:not(.tv-layout):not(.vod-mode) .live-top-row.details-open #video-container .program-details-panel {
   transform: none;
   opacity: 1;
   visibility: visible;
@@ -2716,6 +2717,44 @@ body:not(.tv-layout):not(.vod-mode) .live-top-row.details-open .program-details-
   transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1),
               opacity 0.2s ease,
               visibility 0s;
+}
+
+/* Fullscreen support for the Program Details drawer:
+   - In Browser Fullscreen, #program-details is temporarily moved into #video-container.
+   - In CSS Fullscreen (body.player-fs / body.player-autofs), #app-container has
+     visibility: hidden !important and #video-container has z-index: 9000. */
+#video-container .program-details-panel,
+body.player-fs:not(.tv-layout) .live-top-row .program-details-panel,
+body.player-autofs:not(.tv-layout) .live-top-row .program-details-panel {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  bottom: 18px;
+  width: 360px;
+  max-width: 78vw;
+  z-index: 9400;
+  padding: 16px 18px 20px;
+  overflow-y: auto;
+  border: 1px solid var(--rd-hairline);
+  border-radius: var(--rd-r-22, 22px);
+  background: var(--rd-glass-drawer, rgba(9, 13, 22, 0.88));
+  -webkit-backdrop-filter: var(--rd-blur-drawer, blur(20px));
+  backdrop-filter: var(--rd-blur-drawer, blur(20px));
+  box-shadow: -26px 0 60px rgba(0, 0, 0, 0.55);
+  transform: translateX(calc(100% + 26px));
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1),
+              opacity 0.2s ease,
+              visibility 0s linear 0.26s;
+}
+
+body.player-fs:not(.tv-layout) .live-top-row.details-open .program-details-panel,
+body.player-fs:not(.tv-layout) .live-top-row.details-open .program-details-panel *,
+body.player-autofs:not(.tv-layout) .live-top-row.details-open .program-details-panel,
+body.player-autofs:not(.tv-layout) .live-top-row.details-open .program-details-panel * {
+  visibility: visible !important;
 }
 
 /* Phone portrait: the player stage is only ~200px tall, so a sheet parented to

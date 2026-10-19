@@ -40,11 +40,18 @@ function proxify(url) {
 export function proxifyImage(url) {
   if (!url || typeof url !== 'string') return url || '';
   // Server mode (Electron desktop / local server): route every provider image
-  // through the local proxy. Some providers 403 a plain browser User-Agent, so a
-  // direct <img> silently fails — the proxy refetches with the VLC UA (and
-  // follows redirects) so the logos render.
+  // through the local proxy. When running on localhost/127.0.0.1, use the
+  // alternate loopback hostname so image loads get their own Chromium 6-socket
+  // connection pool and can never block /api/stream-url or video playback.
   if (isServerMode && /^https?:\/\//i.test(url)) {
-    return `/api/proxy?url=${encodeURIComponent(url)}`;
+    const path = `/api/proxy?url=${encodeURIComponent(url)}`;
+    try {
+      const h = window.location.hostname;
+      const p = window.location.port ? `:${window.location.port}` : '';
+      if (h === 'localhost') return `http://127.0.0.1${p}${path}`;
+      if (h === '127.0.0.1') return `http://localhost${p}${path}`;
+    } catch (e) {}
+    return path;
   }
   // Hosted HTTPS web build: http images are blocked as mixed content.
   if (USE_WEB_PROXY && /^http:\/\//i.test(url)) {
@@ -1440,29 +1447,73 @@ export async function getStreams({ type, categoryId, page = 1, limit = 50, searc
   }
 }
 
+// Concurrency-limited EPG queue (max 2 in-flight requests, LIFO order so the
+// rows currently on screen load first). Leaves at least 4 of the browser's 6
+// per-origin HTTP/1.1 connection slots free for instant channel zaps & video.
+const EPG_MAX_CONCURRENT = 2;
+let epgActiveCount = 0;
+const epgQueue = [];
+const epgInFlight = new Map();
+
+function pumpEpgQueue() {
+  while (epgActiveCount < EPG_MAX_CONCURRENT && epgQueue.length > 0) {
+    const job = epgQueue.pop();
+    epgActiveCount++;
+    job.run().finally(() => {
+      epgActiveCount--;
+      pumpEpgQueue();
+    });
+  }
+}
+
+function enqueueEpgFetch(key, fn) {
+  if (epgInFlight.has(key)) return epgInFlight.get(key);
+  const p = new Promise((resolve, reject) => {
+    epgQueue.push({
+      run: () => fn().then(resolve, reject)
+    });
+    pumpEpgQueue();
+  }).finally(() => {
+    epgInFlight.delete(key);
+  });
+  epgInFlight.set(key, p);
+  return p;
+}
+
 export async function getEPG(streamId) {
-  if (isServerMode) {
-    const response = await fetch(`/api/epg?stream_id=${encodeURIComponent(streamId)}`);
-    if (!response.ok) throw new Error('Failed to fetch EPG');
-    return response.json();
-  } else {
-    // Client Mode getEPG
-    const cached = epgMemoryCache[streamId];
-    if (cached && cached.expiry > Date.now()) {
-      return { listings: cached.listings };
-    }
+  const key = String(streamId);
+  const cached = epgMemoryCache[key];
+  if (cached && cached.expiry > Date.now()) {
+    return { listings: cached.listings };
+  }
 
-    const creds = getCredentialsLocal();
-    if (!creds) throw new Error('Not logged in');
+  return enqueueEpgFetch(key, async () => {
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), 8000) : null;
+    try {
+      if (isServerMode) {
+        const response = await fetch(`/api/epg?stream_id=${encodeURIComponent(streamId)}`, ctrl ? { signal: ctrl.signal } : undefined);
+        if (!response.ok) throw new Error('Failed to fetch EPG');
+        const data = await response.json();
+        const listings = (data && data.listings) || [];
+        epgMemoryCache[key] = {
+          expiry: Date.now() + 30 * 60 * 1000,
+          listings
+        };
+        return { listings };
+      } else {
+        // Client Mode getEPG
+        const creds = getCredentialsLocal();
+        if (!creds) throw new Error('Not logged in');
 
-    // get_simple_data_table returns the full schedule; get_short_epg often
-    // returns only a few entries from the start of the day (all in the past),
-    // which leaves the now/next guide empty.
-    const epgUrl = `${creds.server_url}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}&action=get_simple_data_table&stream_id=${streamId}`;
-    const response = await fetch(proxify(epgUrl));
-    if (!response.ok) throw new Error('Failed to fetch EPG');
-    const data = await response.json();
-    const rawListings = data.epg_listings || [];
+        // get_simple_data_table returns the full schedule; get_short_epg often
+        // returns only a few entries from the start of the day (all in the past),
+        // which leaves the now/next guide empty.
+        const epgUrl = `${creds.server_url}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}&action=get_simple_data_table&stream_id=${streamId}`;
+        const response = await fetch(proxify(epgUrl), ctrl ? { signal: ctrl.signal } : undefined);
+        if (!response.ok) throw new Error('Failed to fetch EPG');
+        const data = await response.json();
+        const rawListings = data.epg_listings || [];
 
     // Xtream EPG titles/descriptions are base64 of the *whole* string. Decode it
     // as one blob \u2014 never per word: real base64 has no spaces, so a value that
@@ -1522,13 +1573,17 @@ export async function getEPG(streamId) {
       };
     });
 
-    epgMemoryCache[streamId] = {
-      expiry: Date.now() + 4 * 60 * 60 * 1000,
-      listings
-    };
+        epgMemoryCache[key] = {
+          expiry: Date.now() + 4 * 60 * 60 * 1000,
+          listings
+        };
 
-    return { listings };
-  }
+        return { listings };
+      }
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  });
 }
 
 export async function toggleFavorite(type, id) {

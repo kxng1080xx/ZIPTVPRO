@@ -36,6 +36,10 @@ function isElectron() {
   return !!(window.electronCast || window.appHost);
 }
 
+function getOverlayParent() {
+  return document.fullscreenElement || document.webkitFullscreenElement || document.body;
+}
+
 export function openSearchKeyboard({ title = 'Search', initial = '', onChange, onClose } = {}) {
   closeSearchKeyboard(); // ensure single instance
 
@@ -59,7 +63,7 @@ export function openSearchKeyboard({ title = 'Search', initial = '', onChange, o
       <div class="tvk-keys"></div>
       <div class="tvk-hint"></div>
     </div>`;
-  document.body.appendChild(overlay);
+  getOverlayParent().appendChild(overlay);
 
   // The on-screen keyboard is always shown (touch users tap it; D-pad users
   // drive it; physical-keyboard users can also just type — see kbKeyHandler).
@@ -333,7 +337,7 @@ export function openSortDropdown({ title = 'Sort by', options = [], current, onS
       <div class="tvsort-title">${title}</div>
       <div class="tvsort-list"></div>
     </div>`;
-  document.body.appendChild(overlay);
+  getOverlayParent().appendChild(overlay);
 
   const list = overlay.querySelector('.tvsort-list');
   options.forEach((opt, i) => {
@@ -373,7 +377,11 @@ function focusSort() {
   const items = sd.overlay.querySelectorAll('.tvsort-item');
   items.forEach((b) => b.classList.remove('tvk-focused'));
   const el = items[sd.i];
-  if (el) { el.classList.add('tvk-focused'); try { el.focus({ preventScroll: true }); } catch (e) {} }
+  if (el) {
+    el.classList.add('tvk-focused');
+    try { el.focus({ preventScroll: true }); } catch (e) {}
+    try { el.scrollIntoView({ block: 'nearest' }); } catch (e) {}
+  }
 }
 
 function sdKeyHandler(e) {
@@ -387,3 +395,18 @@ function sdKeyHandler(e) {
   if (k === 'ArrowUp') { sd.i = Math.max(0, sd.i - 1); focusSort(); return; }
   if (k === 'ArrowDown') { sd.i = Math.min(sd.options.length - 1, sd.i + 1); focusSort(); return; }
 }
+
+function syncOverlaysToFullscreen() {
+  const parent = getOverlayParent();
+  if (kb && kb.overlay && kb.overlay.parentElement !== parent) {
+    parent.appendChild(kb.overlay);
+    focusCurrent();
+  }
+  if (sd && sd.overlay && sd.overlay.parentElement !== parent) {
+    parent.appendChild(sd.overlay);
+    focusSort();
+  }
+}
+document.addEventListener('fullscreenchange', syncOverlaysToFullscreen);
+document.addEventListener('webkitfullscreenchange', syncOverlaysToFullscreen);
+

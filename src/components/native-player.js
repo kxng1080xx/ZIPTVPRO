@@ -67,6 +67,9 @@ function impl() {
       setRect: (r) => NativePlugin.setRect(r),
       stop: () => NativePlugin.stop(),
       getAudioTracks: () => NativePlugin.getAudioTracks(),
+      setAudioTrack: (id) => NativePlugin.setAudioTrack ? NativePlugin.setAudioTrack({ id: Number(id) }) : Promise.resolve(),
+      getSubtitleTracks: () => NativePlugin.getSubtitleTracks ? NativePlugin.getSubtitleTracks() : Promise.resolve({ tracks: [] }),
+      setSubtitleTrack: (id) => NativePlugin.setSubtitleTrack ? NativePlugin.setSubtitleTrack({ id: Number(id) }) : Promise.resolve(),
       on: (event, cb) => NativePlugin.addListener(event, cb),
     };
   }
@@ -158,7 +161,10 @@ export async function nativePauseCtl() { const a = impl(); return a ? a.pause() 
 export async function nativeSeek(pos) { const a = impl(); return a ? a.seek(pos) : null; }
 export async function nativeSetVolume(v) { const a = impl(); return a ? a.setVolume(v) : null; }
 export async function nativeSetRect(r) { const a = impl(); return a && a.setRect ? a.setRect(r) : null; }
-export async function nativeGetAudioTracks() { const a = impl(); return a ? a.getAudioTracks() : { tracks: [] }; }
+export async function nativeGetAudioTracks() { const a = impl(); try { return (await a.getAudioTracks()) || { tracks: [] }; } catch (e) { return { tracks: [] }; } }
+export async function nativeSetAudioTrack(id) { const a = impl(); try { return a ? await a.setAudioTrack(id) : null; } catch (e) { return null; } }
+export async function nativeGetSubtitleTracks() { const a = impl(); try { return (await a.getSubtitleTracks()) || { tracks: [] }; } catch (e) { return { tracks: [] }; } }
+export async function nativeSetSubtitleTrack(id) { const a = impl(); try { return a ? await a.setSubtitleTrack(id) : null; } catch (e) { return null; } }
 
 export async function nativeStop() {
   const a = impl();
