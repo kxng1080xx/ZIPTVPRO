@@ -1971,19 +1971,114 @@ async function renderRecordings() {
   window.lucide?.createIcons();
 }
 
+let liveAboutSeq = 0;
+
+async function lookupLiveProgramMeta(rawTitle, channelName = '', categoryName = '') {
+  const raw = String(rawTitle || '').trim();
+  if (!raw || raw === 'No information available' || raw === 'No Schedule Data' || raw === 'No Information') {
+    return null;
+  }
+
+  // Extract explicit year hint if present in the EPG title, e.g. "Gladiator (2000)"
+  const yearMatch = raw.match(/\((19\d{2}|20\d{2})\)/) || raw.match(/\b(19\d{2}|20\d{2})\b/);
+  const year = yearMatch ? yearMatch[1] : '';
+
+  const hasEpisodeTag = /\b(?:S\d{1,2}\s*E\d{1,3}|Season\s*\d+|Episode\s*\d+|Ep\.?\s*\d+)\b/i.test(raw);
+  const isMovieHint = !hasEpisodeTag && (
+    /^\s*(?:movie|film|cinema)\s*[:\-–—]/i.test(raw) ||
+    /\b(?:movie|movies|cinema|film|films|box\s*office)\b/i.test(`${channelName} ${categoryName}`) ||
+    Boolean(yearMatch && /\((19\d{2}|20\d{2})\)/.test(raw))
+  );
+
+  const primaryType = isMovieHint ? 'movie' : 'series';
+  const secondaryType = isMovieHint ? 'series' : 'movie';
+
+  // Strip EPG broadcast noise ("(New)", "(Repeat)", "S02E05", etc.)
+  const cleanedFull = raw
+    .replace(/^\s*(?:movie|film|cinema|series|live|new|encore|premiere)\s*[:\-–—]\s*/i, '')
+    .replace(/\((?:New|Repeat|R|Live|HD|FHD|UHD|4K|CC|SAP|Stereo|Subtitled|Premiere|Finale|19\d{2}|20\d{2})\)/gi, ' ')
+    .replace(/\[(?:New|Repeat|R|Live|HD|FHD|UHD|4K|CC|SAP|Stereo|Subtitled|Premiere|Finale)\]/gi, ' ')
+    .replace(/\s*[-–—:]?\s*\b(?:S\d{1,2}\s*E\d{1,3}|Season\s*\d+\s*Episode\s*\d+|Ep\.?\s*\d+)\b.*$/i, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  if (!cleanedFull) return null;
+
+  // Many EPG titles are "Show Name: Episode/Compilation Subtitle" or "Show Name - Subtitle"
+  // (e.g. "Live PD: Greatest Shifts"). Prepare the base show name as a fallback/backfill.
+  let baseTitle = '';
+  const sepMatch = cleanedFull.match(/^(.{2,}?)\s*(?::\s+|\s+[-–—]\s+)(.+)$/);
+  if (sepMatch) {
+    const candidate = sepMatch[1].trim();
+    if (candidate.length >= 2 && !/^(?:the|a|an|live|new|movie|film|part)$/i.test(candidate)) {
+      baseTitle = candidate;
+    }
+  }
+
+  let meta = await getMeta({ type: primaryType, title: cleanedFull, year });
+  if (!meta) meta = await getMeta({ type: secondaryType, title: cleanedFull, year });
+
+  if (!meta && baseTitle) {
+    meta = await getMeta({ type: primaryType, title: baseTitle, year });
+    if (!meta) meta = await getMeta({ type: secondaryType, title: baseTitle, year });
+  }
+
+  // If the full EPG title matched a spin-off/sub-entry on TMDB (such as
+  // "Live PD: Greatest Shifts") that lacks cast or rating, backfill those
+  // missing fields from the parent series ("Live PD").
+  if (meta && baseTitle && (!meta.cast?.length || !meta.rating)) {
+    const parentMeta = await getMeta({ type: meta.type || primaryType, title: baseTitle });
+    if (parentMeta) {
+      meta = {
+        ...meta,
+        rating: meta.rating || parentMeta.rating || 0,
+        cast: meta.cast?.length ? meta.cast : (parentMeta.cast || []),
+        created_by: meta.created_by?.length ? meta.created_by : (parentMeta.created_by || []),
+        director: meta.director?.length ? meta.director : (parentMeta.director || []),
+        genres: meta.genres?.length ? meta.genres : (parentMeta.genres || []),
+        networks: meta.networks?.length ? meta.networks : (parentMeta.networks || []),
+        poster: meta.poster || parentMeta.poster || '',
+        backdrop: meta.backdrop || parentMeta.backdrop || '',
+        overview: meta.overview || parentMeta.overview || '',
+      };
+    }
+  }
+
+  return meta;
+}
+
 function updateDetailsPanel(channel, program) {
+  if (!channel) return;
+  const coverWrapper = document.getElementById('detail-cover-wrapper');
   const channelIcon = document.getElementById('detail-channel-icon');
   const channelName = document.getElementById('detail-channel-name');
   const categoryName = document.getElementById('detail-category-name');
   const favBtn = document.getElementById('detail-favorite-btn');
-  const favIcon = document.getElementById('detail-favorite-icon');
 
   const progTitle = document.getElementById('detail-program-title');
+  const progRating = document.getElementById('detail-program-rating');
+  const progYear = document.getElementById('detail-program-year');
   const progTime = document.getElementById('detail-program-time');
   const progDesc = document.getElementById('detail-program-desc');
   const progProgress = document.getElementById('detail-program-progress');
+  const progProgressWrap = document.getElementById('detail-progress-wrap');
 
-  // Setup Logo
+  // If the caller didn't pass a valid program (e.g. EPG arrived after tuning in),
+  // check the EPG cache for the currently airing show, or trigger an EPG fetch.
+  let activeProg = program;
+  const hasValid = (p) => p && p.title && p.title !== 'No information available' && p.title !== 'No Schedule Data';
+  if (!hasValid(activeProg) && epgGridInstance?.getNowNext) {
+    const nn = epgGridInstance.getNowNext(channel.stream_id);
+    if (hasValid(nn?.current)) activeProg = nn.current;
+  }
+  if (!epgGridInstance?.epgData?.[String(channel.stream_id)] && epgGridInstance?.fetchEPGForChannel) {
+    epgGridInstance.fetchEPGForChannel(String(channel.stream_id));
+  }
+
+  state.activeProgram = activeProg || program || null;
+
+  // Setup default channel logo (upgraded to TMDB poster once lookup resolves)
+  if (coverWrapper) coverWrapper.classList.remove('has-poster');
   if (channel.stream_icon) {
     channelIcon.src = proxifyImage(channel.stream_icon);
     channelIcon.classList.remove('fallback-logo');
@@ -1993,46 +2088,103 @@ function updateDetailsPanel(channel, program) {
   }
 
   channelName.textContent = channel.name || 'Live TV Channel';
-  
+
   // Find category name
   const catItem = document.querySelector(`.category-item[data-category="${channel.category_id}"]`);
-  categoryName.textContent = catItem ? catItem.querySelector('.cat-label').textContent : 'Live TV';
+  const catText = catItem ? catItem.querySelector('.cat-label').textContent : 'Live TV';
+  categoryName.textContent = catText;
 
   // Favorite button state
   const isFav = window.isChannelFavorite('live', channel.stream_id);
   favBtn.classList.toggle('favorited', isFav);
-  
-  // Set programs details
+
+  // Reset TMDB badges & ABOUT section while lookup runs
+  const liveToken = ++liveAboutSeq;
+  renderAboutPanel(null, 'series', 'live');
+  if (progRating) progRating.hidden = true;
+  if (progYear) progYear.hidden = true;
+
   const progInfoContainer = document.querySelector('.details-program-info');
-  const hasValidProgram = program && program.title && program.title !== 'No information available';
+  if (progInfoContainer) progInfoContainer.classList.remove('hidden');
 
-  if (hasValidProgram) {
-    if (progInfoContainer) progInfoContainer.classList.remove('hidden');
-    progTitle.textContent = program.title || 'No Information';
-    
-    const startMs = parseInt(program.start_timestamp) * 1000;
-    const endMs = parseInt(program.end_timestamp) * 1000;
-    const startStr = new Date(startMs).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    const endStr = new Date(endMs).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    progTime.textContent = `${startStr} - ${endStr}`;
-    
-    progDesc.textContent = program.description || 'No program details available.';
+  const validProg = hasValid(activeProg);
 
-    // Setup Progress Bar Auto Update
-    clearInterval(progressInterval);
-    const updateProgress = () => {
-      const total = endMs - startMs;
-      const elapsed = Date.now() - startMs;
-      const pct = Math.max(0, Math.min(100, (elapsed / total) * 100));
-      progProgress.style.width = `${pct}%`;
-    };
-    updateProgress();
-    progressInterval = setInterval(updateProgress, 30000); // update progress bar every 30s
+  if (validProg) {
+    progTitle.textContent = activeProg.title || channel.name || 'Live TV';
+
+    const startMs = parseInt(activeProg.start_timestamp) * 1000;
+    const endMs = parseInt(activeProg.end_timestamp) * 1000;
+    if (isFinite(startMs) && isFinite(endMs) && endMs > startMs) {
+      const startStr = new Date(startMs).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+      const endStr = new Date(endMs).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+      progTime.textContent = `${startStr} - ${endStr}`;
+      progTime.hidden = false;
+      if (progProgressWrap) progProgressWrap.classList.remove('hidden');
+
+      clearInterval(progressInterval);
+      const updateProgress = () => {
+        const total = endMs - startMs;
+        const elapsed = Date.now() - startMs;
+        const pct = Math.max(0, Math.min(100, (elapsed / total) * 100));
+        progProgress.style.width = `${pct}%`;
+      };
+      updateProgress();
+      progressInterval = setInterval(updateProgress, 30000);
+    } else {
+      progTime.hidden = true;
+      if (progProgressWrap) progProgressWrap.classList.add('hidden');
+      clearInterval(progressInterval);
+    }
+
+    const epgDesc = (activeProg.description || '').trim();
+    progDesc.textContent = epgDesc || 'Loading program details…';
+
+    // Retrieve TMDB metadata for the Now Playing program in the guide
+    lookupLiveProgramMeta(activeProg.title, channel.name, catText).then((meta) => {
+      if (liveToken !== liveAboutSeq) return;
+      if (!meta) {
+        if (!epgDesc) progDesc.textContent = 'No program details available.';
+        return;
+      }
+
+      // Swap thumbnail to TMDB poster when available (matches Series Details header)
+      if (meta.poster && channelIcon) {
+        channelIcon.src = meta.poster;
+        channelIcon.classList.remove('fallback-logo');
+        if (coverWrapper) coverWrapper.classList.add('has-poster');
+      }
+
+      // Rating badge (★ X.X)
+      if (progRating && meta.rating > 0) {
+        progRating.innerHTML = `<i data-lucide="star"></i> ${meta.rating.toFixed(1)}`;
+        progRating.hidden = false;
+        window.lucide?.createIcons({ scope: progRating });
+      }
+
+      // Release date / year badge (YYYY-MM-DD)
+      if (progYear && meta.release_date) {
+        progYear.textContent = meta.release_date;
+        progYear.hidden = false;
+      }
+
+      // Use TMDB overview if EPG had no description (or a placeholder)
+      if ((!epgDesc || epgDesc === 'No program details available.') && meta.overview) {
+        progDesc.textContent = meta.overview;
+      } else if (!epgDesc) {
+        progDesc.textContent = 'No program details available.';
+      }
+
+      renderAboutPanel(meta, meta.type || 'series', 'live');
+    }).catch(() => {
+      if (liveToken === liveAboutSeq && !epgDesc) {
+        progDesc.textContent = 'No program details available.';
+      }
+    });
   } else {
-    if (progInfoContainer) progInfoContainer.classList.add('hidden');
-    progTitle.textContent = 'No Schedule Data';
-    progTime.textContent = '12:00 AM - 12:00 AM';
-    progDesc.textContent = 'No program details available.';
+    progTitle.textContent = channel.name || 'No Schedule Data';
+    progTime.hidden = true;
+    if (progProgressWrap) progProgressWrap.classList.add('hidden');
+    progDesc.textContent = 'No program details available in the guide for this channel.';
     progProgress.style.width = '0%';
     clearInterval(progressInterval);
   }
@@ -2040,6 +2192,12 @@ function updateDetailsPanel(channel, program) {
   // Channel-specific "Up Next" schedule (fills the details panel's lower area)
   renderUpcomingPrograms(channel);
 }
+
+window.refreshActiveChannelDetails = function () {
+  if (!state.activeChannel) return;
+  const nn = epgGridInstance?.getNowNext ? epgGridInstance.getNowNext(state.activeChannel.stream_id) : null;
+  updateDetailsPanel(state.activeChannel, nn?.current || state.activeProgram);
+};
 
 // Render the next few upcoming programs for a channel into the details panel.
 function renderUpcomingPrograms(channel) {

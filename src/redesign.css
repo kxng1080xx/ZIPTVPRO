@@ -2688,10 +2688,10 @@ body:not(.tv-layout):not(.vod-mode) .live-top-row .program-details-panel {
   top: 18px;
   right: 18px;
   bottom: 4px;
-  width: 360px;
-  max-width: 78vw;
+  width: 420px;
+  max-width: 86vw;
   z-index: 2;
-  padding: 16px 18px 20px;
+  padding: 18px 20px 20px;
   overflow-y: auto;
   border: 1px solid var(--rd-hairline);
   border-radius: var(--rd-r-22, 22px);
@@ -2730,10 +2730,10 @@ body.player-autofs:not(.tv-layout) .live-top-row .program-details-panel {
   top: 18px;
   right: 18px;
   bottom: 18px;
-  width: 360px;
-  max-width: 78vw;
+  width: 420px;
+  max-width: 86vw;
   z-index: 9400;
-  padding: 16px 18px 20px;
+  padding: 18px 20px 20px;
   overflow-y: auto;
   border: 1px solid var(--rd-hairline);
   border-radius: var(--rd-r-22, 22px);
@@ -2808,24 +2808,24 @@ body.perf-lite .live-top-row .program-details-panel {
 /* The TV layout drives its drawer with the remote's Back key. */
 body.tv-layout .details-close-btn { display: none; }
 
-/* The header row has to fit logo + name + Favorite + close inside 360px. */
+/* Header proportions inside the Live TV details drawer (matches Series Details). */
 body:not(.tv-layout) .live-top-row .details-header-row {
-  gap: 10px;
-  margin-bottom: 14px;
+  gap: 14px;
+  margin-bottom: 0;
 }
 body:not(.tv-layout) .live-top-row .channel-logo-wrapper {
-  width: 44px;
-  height: 44px;
+  width: 64px;
+  height: 64px;
   padding: 6px;
+}
+body:not(.tv-layout) .live-top-row .channel-logo-wrapper.has-poster {
+  padding: 0;
 }
 body:not(.tv-layout) .live-top-row .channel-meta-text {
   min-width: 0;
 }
 body:not(.tv-layout) .live-top-row .channel-meta-text h3 {
-  font-size: 1rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 1.15rem;
 }
 body:not(.tv-layout) .live-top-row .favorite-toggle-btn {
   padding: 7px 10px;

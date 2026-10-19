@@ -349,6 +349,7 @@ export class VideoPlayer {
     if (this.infoBtn) {
       this.infoBtn.addEventListener('click', () => {
         syncProgramDetailsHost();
+        window.refreshActiveChannelDetails?.();
         // On TV the panel is hidden by the single-column layout, so it opens as
         // a full-height overlay driven from the body class (Back closes it).
         if (document.body.classList.contains('tv-layout')) {

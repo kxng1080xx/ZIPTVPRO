@@ -477,35 +477,50 @@
 
             <!-- Program Info Details Panel -->
             <div class="program-details-panel" id="program-details">
-              <div class="details-header-row">
-                <div class="channel-logo-wrapper">
+              <div class="series-details-header details-header-row">
+                <div class="series-cover-wrapper channel-logo-wrapper" id="detail-cover-wrapper">
                   <img id="detail-channel-icon" src="" alt="Z" class="fallback-logo">
                 </div>
-                <div class="channel-meta-text">
-                  <h3 id="detail-channel-name">Select a Channel</h3>
-                  <p id="detail-category-name">Live TV</p>
+                <div class="series-meta-text channel-meta-text">
+                  <h3 id="detail-program-title">No Program Information</h3>
+                  <div class="series-badge-row" id="detail-badge-row">
+                    <span class="series-rating-badge" id="detail-program-rating" hidden><i data-lucide="star"></i> N/A</span>
+                    <span class="series-year-badge" id="detail-program-year" hidden>N/A</span>
+                    <span class="series-year-badge program-time-range" id="detail-program-time">11:00 AM - 7:00 PM</span>
+                  </div>
+                  <p class="detail-channel-sub"><span id="detail-channel-name">Select a Channel</span> <span class="detail-channel-sep">·</span> <span id="detail-category-name">Live TV</span></p>
                 </div>
-                <button class="favorite-toggle-btn" id="detail-favorite-btn">
-                  <span>Favorite</span>
-                  <i data-lucide="star" id="detail-favorite-icon"></i>
-                </button>
-                <button class="details-close-btn" id="details-close-btn" title="Close details" aria-label="Close details"><i data-lucide="x"></i></button>
+                <div class="details-header-actions">
+                  <button class="favorite-toggle-btn" id="detail-favorite-btn" title="Favorite channel">
+                    <span>Favorite</span>
+                    <i data-lucide="star" id="detail-favorite-icon"></i>
+                  </button>
+                  <button class="details-close-btn" id="details-close-btn" title="Close details" aria-label="Close details"><i data-lucide="x"></i></button>
+                </div>
               </div>
 
               <div class="details-program-info">
-                <div class="info-label">Program</div>
-                <h2 id="detail-program-title">No Program Information</h2>
-                <div class="program-time-range" id="detail-program-time">11:00 AM - 7:00 PM</div>
-                
                 <!-- Progress bar -->
-                <div class="details-progress-bar-container">
+                <div class="details-progress-bar-container" id="detail-progress-wrap">
                   <div class="details-progress-bar" id="detail-program-progress" style="width: 0%;"></div>
                 </div>
-                
-                <div class="info-label">Description</div>
-                <p class="program-description-text" id="detail-program-desc">
-                  No program details available. Select a channel to view the current schedule and start watching live streams.
-                </p>
+
+                <div class="series-plot-section">
+                  <div class="info-label">Plot Summary</div>
+                  <p class="program-description-text" id="detail-program-desc">
+                    No program details available. Select a channel to view the current schedule and start watching live streams.
+                  </p>
+                </div>
+
+                <!-- TMDB enrichment for Now Playing program -->
+                <div class="series-about-section" id="live-about" hidden>
+                  <div class="info-label" id="live-about-label">About</div>
+                  <dl class="about-facts" id="live-about-facts"></dl>
+                  <div class="about-cast" id="live-about-cast" hidden>
+                    <div class="info-label">Cast</div>
+                    <div class="about-cast-strip" id="live-about-cast-strip"></div>
+                  </div>
+                </div>
 
                 <!-- Upcoming programs for this channel -->
                 <div class="details-upcoming hidden" id="detail-upcoming">

@@ -923,28 +923,42 @@ export class EPGGrid {
 
   // Hot replace a specific channel row in the DOM after EPG is fetched
   updateChannelProgramRow(streamId) {
+    const listings = this.epgData[streamId] || [];
+    if (listings.length === 0) return;
+
+    const nn = this.getNowNext(streamId);
+    const channel = this.channels.find(c => String(c.stream_id) === String(streamId));
+
+    // If this is the currently playing channel and its EPG just arrived,
+    // refresh the player's Now/Next bar and the Live Info details panel.
+    if (String(this.activeStreamId) === String(streamId) && channel) {
+      if (window.playerInstance && !window.playerInstance.isVod) {
+        if (nn.current?.title && window.playerInstance.subTitleEl) {
+          window.playerInstance.subTitleEl.textContent = nn.current.title;
+        }
+        window.playerInstance.showProgramGuide?.(nn.current, nn.next);
+      }
+      this.onChannelFocus?.(channel, nn.current);
+    }
+
+    // Refresh the inline "now" guide text shown next to the channel name
+    const nowEl = document.querySelector(`.epg-channel-row-now[data-now-for="${streamId}"]`);
+    if (nowEl) {
+      nowEl.innerHTML = this.buildInlineGuide(nn);
+    }
+
     const progRow = document.querySelector(`.epg-programs-row[data-stream-id="${streamId}"]`);
     if (!progRow) return;
 
     const { startTime, endTime } = this.getGuideTimeWindow();
     const pxPerMs = this.pxPerHour / (60 * 60 * 1000);
-    const listings = this.epgData[streamId] || [];
     const windowStart = startTime.getTime();
     const windowEnd = endTime.getTime();
-
-    if (listings.length === 0) return;
-
-    // Refresh the inline "now" guide text shown next to the channel name
-    const nowEl = document.querySelector(`.epg-channel-row-now[data-now-for="${streamId}"]`);
-    if (nowEl) {
-      nowEl.innerHTML = this.buildInlineGuide(this.getNowNext(streamId));
-    }
 
     progRow.innerHTML = '';
 
     // Find corresponding channel row for trigger mapping
     const chanRow = document.querySelector(`.epg-channel-row[data-stream-id="${streamId}"]`);
-    const channel = this.channels.find(c => String(c.stream_id) === String(streamId));
 
     listings.forEach(prog => {
       const startMs = parseInt(prog.start_timestamp) * 1000;

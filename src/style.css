@@ -2750,31 +2750,33 @@ body.vod-mode .now-next-bar {
 
 /* Program Details Panel */
 .program-details-panel {
-  padding: 24px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
+  gap: 13px;
   overflow-y: auto;
   border-left: 1px solid var(--border-color);
 }
 
 .details-header-row {
   display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 20px;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 0;
 }
 
 .channel-logo-wrapper {
-  width: 60px;
-  height: 60px;
-  border-radius: var(--border-radius-md);
-  background: var(--bg-panel);
+  width: 64px;
+  height: 64px;
+  border-radius: var(--border-radius-sm);
+  background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--border-color);
-  padding: 8px;
+  padding: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  overflow: hidden;
 }
 
 .channel-logo-wrapper img {
@@ -2783,35 +2785,68 @@ body.vod-mode .now-next-bar {
   object-fit: contain;
 }
 
+.channel-logo-wrapper.has-poster {
+  padding: 0;
+}
+
+.channel-logo-wrapper.has-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .fallback-logo {
   filter: drop-shadow(0 0 5px rgba(255,255,255,0.1));
 }
 
 .channel-meta-text {
   flex-grow: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.channel-meta-text h3 {
+.channel-meta-text h3,
+#detail-program-title {
   font-family: var(--font-title);
-  font-size: 1.15rem;
+  font-size: 1.18rem;
   font-weight: 700;
-  margin-bottom: 2px;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.28;
 }
 
-.channel-meta-text p {
-  font-size: 0.8rem;
+.detail-channel-sub {
+  font-size: 0.76rem;
   color: var(--text-secondary);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.detail-channel-sep {
+  opacity: 0.5;
+  margin: 0 3px;
+}
+
+.details-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .favorite-toggle-btn {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px;
+  padding: 7px 12px;
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-md);
-  font-size: 0.8rem;
+  font-size: 0.76rem;
   font-weight: 700;
   color: var(--text-primary);
 }
@@ -2833,6 +2868,7 @@ body.vod-mode .now-next-bar {
 .details-program-info {
   display: flex;
   flex-direction: column;
+  gap: 13px;
   flex-grow: 1;
 }
 
@@ -2845,26 +2881,20 @@ body.vod-mode .now-next-bar {
   margin-bottom: 4px;
 }
 
-#detail-program-title {
-  font-family: var(--font-title);
-  font-size: 1.3rem;
-  font-weight: 700;
-  margin-bottom: 6px;
-}
-
 .program-time-range {
-  font-size: 0.8rem;
+  font-size: 0.76rem;
   color: var(--accent-cyan);
+  background: rgba(6, 182, 212, 0.12);
   font-weight: 600;
-  margin-bottom: 12px;
+  margin-bottom: 0;
 }
 
 .details-progress-bar-container {
-  height: 6px;
+  height: 5px;
   background: var(--bg-panel);
   border-radius: 3px;
   overflow: hidden;
-  margin-bottom: 24px;
+  margin-bottom: 0;
   border: 1px solid var(--border-color);
 }
 
@@ -2875,14 +2905,17 @@ body.vod-mode .now-next-bar {
 }
 
 .program-description-text {
-  font-size: 0.9rem;
+  font-size: 0.84rem;
   line-height: 1.5;
   color: var(--text-secondary);
+  margin: 0;
 }
 
 /* Channel-specific "Up Next" schedule in the details panel */
 .details-upcoming {
-  margin-top: 18px;
+  margin-top: 2px;
+  padding-top: 11px;
+  border-top: 1px solid var(--border-color);
 }
 
 .details-upcoming.hidden {

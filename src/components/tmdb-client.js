@@ -42,10 +42,18 @@ export function cleanTitle(raw) {
     const before = s;
     s = s
       .replace(/^\s*[[({|]\s*[A-Za-z0-9 .+-]{1,18}\s*[\])}|]\s*/, '')
-      .replace(/^\s*(?:VOD|MOVIES?|SERIES|4K|UHD|HD|FHD|SD)\s*[-:|]\s*/i, '')
-      .replace(/^\s*[A-Za-z]{2,6}\s*[:|]\s*/, '');
+      .replace(/^\s*(?:VOD|MOVIES?|FILM|SERIES|LIVE|NEW|ENCORE|PREMIERE|4K|UHD|HD|FHD|SD)\s*[-:|]\s*/i, '')
+      .replace(/^\s*[A-Za-z]{2,6}\s*\|\s*/, '')
+      .replace(/^\s*(?:EN|ENG|US|USA|UK|GB|CA|CAN|AU|FR|DE|ES|IT|ITA|PT|BR|NL|AR|ARA|TR|RU|PL|IN|IND|VIP|MULTI)\s*[:\-–—]\s*/i, '')
+      .replace(/^\s*مسلسل\s+/, '');
     if (s === before) break;
   }
+
+  s = s
+    .replace(/\((?:New|Repeat|R|Live|HD|FHD|UHD|4K|CC|SAP|Stereo|Subtitled|Premiere|Finale)\)/gi, ' ')
+    .replace(/\[(?:New|Repeat|R|Live|HD|FHD|UHD|4K|CC|SAP|Stereo|Subtitled|Premiere|Finale)\]/gi, ' ')
+    .replace(/\s*[-–—:]?\s*\bS\d{1,2}\s*E\d{1,3}\b.*$/i, ' ')
+    .replace(/\s*[-–—:]?\s*\bSeason\s*\d+\s*Episode\s*\d+\b.*$/i, ' ');
 
   let year = '';
   const paren = s.match(/\((19\d{2}|20\d{2})\)/);
