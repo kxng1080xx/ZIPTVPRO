@@ -2051,6 +2051,7 @@ body.vod-mode .live-top-row {
   gap: 0 !important;
 }
 
+body.vod-mode #live-details-col,
 body.vod-mode .program-details-panel,
 body.vod-mode .epg-section-container {
   display: none !important;

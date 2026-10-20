@@ -2098,14 +2098,18 @@ function updateDetailsPanel(channel, program) {
   const isFav = window.isChannelFavorite('live', channel.stream_id);
   favBtn.classList.toggle('favorited', isFav);
 
-  // Reset TMDB badges & ABOUT section while lookup runs
+  // Reset TMDB badges & ABOUT section while lookup runs (same defaults as Series panel)
   const liveToken = ++liveAboutSeq;
   renderAboutPanel(null, 'series', 'live');
-  if (progRating) progRating.hidden = true;
-  if (progYear) progYear.hidden = true;
-
-  const progInfoContainer = document.querySelector('.details-program-info');
-  if (progInfoContainer) progInfoContainer.classList.remove('hidden');
+  if (progRating) {
+    progRating.innerHTML = `<i data-lucide="star"></i> N/A`;
+    progRating.hidden = false;
+    window.lucide?.createIcons({ scope: progRating });
+  }
+  if (progYear) {
+    progYear.textContent = 'N/A';
+    progYear.hidden = false;
+  }
 
   const validProg = hasValid(activeProg);
 
@@ -2117,33 +2121,30 @@ function updateDetailsPanel(channel, program) {
     if (isFinite(startMs) && isFinite(endMs) && endMs > startMs) {
       const startStr = new Date(startMs).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
       const endStr = new Date(endMs).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-      progTime.textContent = `${startStr} - ${endStr}`;
-      progTime.hidden = false;
-      if (progProgressWrap) progProgressWrap.classList.remove('hidden');
+      if (progTime) progTime.textContent = `${startStr} - ${endStr}`;
+      if (progYear) progYear.textContent = `${startStr} - ${endStr}`;
 
       clearInterval(progressInterval);
       const updateProgress = () => {
         const total = endMs - startMs;
         const elapsed = Date.now() - startMs;
         const pct = Math.max(0, Math.min(100, (elapsed / total) * 100));
-        progProgress.style.width = `${pct}%`;
+        if (progProgress) progProgress.style.width = `${pct}%`;
       };
       updateProgress();
       progressInterval = setInterval(updateProgress, 30000);
     } else {
-      progTime.hidden = true;
-      if (progProgressWrap) progProgressWrap.classList.add('hidden');
       clearInterval(progressInterval);
     }
 
     const epgDesc = (activeProg.description || '').trim();
-    progDesc.textContent = epgDesc || 'Loading program details…';
+    progDesc.textContent = epgDesc || 'Loading description details...';
 
     // Retrieve TMDB metadata for the Now Playing program in the guide
     lookupLiveProgramMeta(activeProg.title, channel.name, catText).then((meta) => {
       if (liveToken !== liveAboutSeq) return;
       if (!meta) {
-        if (!epgDesc) progDesc.textContent = 'No program details available.';
+        if (!epgDesc) progDesc.textContent = 'No summary available.';
         return;
       }
 
@@ -2157,35 +2158,31 @@ function updateDetailsPanel(channel, program) {
       // Rating badge (★ X.X)
       if (progRating && meta.rating > 0) {
         progRating.innerHTML = `<i data-lucide="star"></i> ${meta.rating.toFixed(1)}`;
-        progRating.hidden = false;
         window.lucide?.createIcons({ scope: progRating });
       }
 
       // Release date / year badge (YYYY-MM-DD)
       if (progYear && meta.release_date) {
         progYear.textContent = meta.release_date;
-        progYear.hidden = false;
       }
 
-      // Use TMDB overview if EPG had no description (or a placeholder)
-      if ((!epgDesc || epgDesc === 'No program details available.') && meta.overview) {
+      // Prefer TMDB overview or EPG description
+      if (meta.overview) {
         progDesc.textContent = meta.overview;
       } else if (!epgDesc) {
-        progDesc.textContent = 'No program details available.';
+        progDesc.textContent = 'No summary available.';
       }
 
       renderAboutPanel(meta, meta.type || 'series', 'live');
     }).catch(() => {
       if (liveToken === liveAboutSeq && !epgDesc) {
-        progDesc.textContent = 'No program details available.';
+        progDesc.textContent = 'No summary available.';
       }
     });
   } else {
-    progTitle.textContent = channel.name || 'No Schedule Data';
-    progTime.hidden = true;
-    if (progProgressWrap) progProgressWrap.classList.add('hidden');
-    progDesc.textContent = 'No program details available in the guide for this channel.';
-    progProgress.style.width = '0%';
+    progTitle.textContent = channel.name || 'Select a Channel';
+    progDesc.textContent = 'No summary available.';
+    if (progProgress) progProgress.style.width = '0%';
     clearInterval(progressInterval);
   }
 

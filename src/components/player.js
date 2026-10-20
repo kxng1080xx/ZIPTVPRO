@@ -89,6 +89,7 @@ export class VideoPlayer {
     // boxed/fullscreen-toggle model (and hide the VOD player box while browsing).
     try { if (Capacitor.isNativePlatform()) document.body.classList.add('app-native'); } catch (e) {}
     this._wasLandscape = this.isLandscape();
+    this.container = document.getElementById('video-container');
     this.video = document.getElementById('main-video-player');
     this.controls = document.getElementById('player-controls');
     this.playPauseBtn = document.getElementById('player-play-pause-btn');
@@ -331,15 +332,16 @@ export class VideoPlayer {
     const syncProgramDetailsHost = () => {
       const panel = document.getElementById('program-details');
       if (!panel) return;
+      const container = this.container || document.getElementById('video-container');
       const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
-      if (fsEl && (fsEl === this.container || this.container.contains(fsEl))) {
-        if (panel.parentElement !== this.container) {
-          this.container.appendChild(panel);
+      if (fsEl && container && (fsEl === container || container.contains(fsEl))) {
+        if (panel.parentElement !== container) {
+          container.appendChild(panel);
         }
       } else {
-        const topRow = document.querySelector('#live-view .live-top-row');
-        if (topRow && panel.parentElement !== topRow) {
-          topRow.appendChild(panel);
+        const hostCol = document.getElementById('live-details-col') || document.querySelector('#live-view .live-top-row');
+        if (hostCol && panel.parentElement !== hostCol) {
+          hostCol.appendChild(panel);
         }
       }
     };

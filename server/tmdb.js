@@ -237,6 +237,9 @@ function pickLogo(images) {
 
 function normalize(type, d) {
   const isSeries = type === 'series';
+  const rawCast = (d.credits?.cast && d.credits.cast.length)
+    ? d.credits.cast
+    : (d.aggregate_credits?.cast || []);
   return {
     ok: true,
     tmdb_id: d.id,
@@ -260,11 +263,12 @@ function normalize(type, d) {
     backdrop: img(d.backdrop_path, 'w1280'),
     poster: img(d.poster_path, 'w500'),
     logo: pickLogo(d.images),
-    cast: (d.credits?.cast || []).slice(0, 20).map((c) => ({
+    cast: rawCast.slice(0, 20).map((c) => ({
       name: c.name,
-      character: c.character || '',
+      character: c.character || c.roles?.[0]?.character || '',
       profile: img(c.profile_path, 'w185')
     })),
+    agg_checked: true,
     trailer: pickTrailer(d.videos)
   };
 }
@@ -299,7 +303,11 @@ export async function lookup({ type = 'movie', title = '', year = '', tmdbId = '
 
   const db = loadStore();
   const cached = db[key];
-  if (cached && Date.now() - cached.at < (cached.data.ok ? TTL_HIT : TTL_MISS)) {
+  if (
+    cached &&
+    Date.now() - cached.at < (cached.data.ok ? TTL_HIT : TTL_MISS) &&
+    !(kind === 'series' && cached.data.ok && !cached.data.cast?.length && !cached.data.agg_checked)
+  ) {
     return cached.data;
   }
 
@@ -326,7 +334,9 @@ export async function lookup({ type = 'movie', title = '', year = '', tmdbId = '
   }
 
   const detail = await call(token, `/${seg}/${id}`, {
-    append_to_response: 'credits,videos,images,external_ids',
+    append_to_response: seg === 'tv'
+      ? 'credits,aggregate_credits,videos,images,external_ids'
+      : 'credits,videos,images,external_ids',
     // Logos are language-tagged; `null` keeps textless artwork in the running.
     include_image_language: 'en,null'
   });

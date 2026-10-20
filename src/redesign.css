@@ -2648,28 +2648,18 @@ body:not(.tv-layout) #settings-modal .settings-card {
    Toggled by the player's Info button (see player.js), Esc, or its close button.
    ========================================================================== */
 body:not(.tv-layout):not(.vod-mode) .live-top-row {
-  /* Height of the video stage itself. The row's max-height adds its own
-     18px/4px padding back on top; the player's max-width is derived from it so
-     the 16:9 frame is never wider than the height cap allows (otherwise the
-     glass frame stretches and the video pillarboxes inside it). */
-  /* IDLE height. Nothing is playing, so the stage is only a "Ready to stream"
-     placeholder while the channel grid is what is actually being read — the
-     grid gets the room until there is a picture to justify taking it back.
-     Clamped at both ends: a bare percentage collapses to nothing on a short
-     laptop window and balloons on a 4K panel. */
-  --live-stage-h: clamp(190px, 30vh, 380px);
+  --live-stage-h: clamp(260px, 46vh, 560px);
   transition: max-height 0.32s cubic-bezier(0.22, 0.61, 0.24, 1);
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: 1.7fr 1fr;
+  gap: 20px;
+  align-items: stretch;
   max-height: calc(var(--live-stage-h) + 22px);
 }
 
-/* PLAYING: the stage expands to its full height. Only max-height/max-width
-   animate (both derived from the variable), so this is a compositor-friendly
-   resize rather than a relayout of the channel grid on every frame. */
 body:not(.tv-layout):not(.vod-mode) .live-top-row.is-playing {
-  --live-stage-h: clamp(260px, 48vh, 600px);
+  --live-stage-h: clamp(280px, 48vh, 600px);
 }
 
 body:not(.tv-layout):not(.vod-mode) .live-top-row .player-wrapper {
@@ -2677,38 +2667,29 @@ body:not(.tv-layout):not(.vod-mode) .live-top-row .player-wrapper {
   width: 100%;
   max-width: calc(var(--live-stage-h) * 16 / 9);
   margin: 0 auto;
-  /* Own stacking context. The idle screen and the controls overlay inside it
-     carry their own z-indexes, and without this they compete with the drawer
-     directly in the row's context and paint over it. */
   z-index: 1;
 }
 
 body:not(.tv-layout):not(.vod-mode) .live-top-row .program-details-panel {
   position: absolute;
-  top: 18px;
-  right: 18px;
-  bottom: 4px;
-  width: 420px;
-  max-width: 86vw;
+  inset: 0;
+  width: auto;
+  max-width: none;
   z-index: 2;
-  padding: 18px 20px 20px;
+  padding: 20px;
   overflow-y: auto;
-  border: 1px solid var(--rd-hairline);
-  border-radius: var(--rd-r-22, 22px);
-  background: var(--rd-glass-drawer, rgba(9, 13, 22, 0.88));
-  -webkit-backdrop-filter: var(--rd-blur-drawer, blur(20px));
-  backdrop-filter: var(--rd-blur-drawer, blur(20px));
-  box-shadow: -26px 0 60px rgba(0, 0, 0, 0.55);
-  transform: translateX(calc(100% + 26px));
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1),
-              opacity 0.2s ease,
-              visibility 0s linear 0.26s;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-md);
+  background: var(--bg-panel);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+  transform: none;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
 
-body:not(.tv-layout):not(.vod-mode) .live-top-row.details-open .program-details-panel,
 body:not(.tv-layout):not(.vod-mode) .live-top-row.details-open #video-container .program-details-panel {
   transform: none;
   opacity: 1;
@@ -2730,16 +2711,15 @@ body.player-autofs:not(.tv-layout) .live-top-row .program-details-panel {
   top: 18px;
   right: 18px;
   bottom: 18px;
+  left: auto;
   width: 420px;
   max-width: 86vw;
   z-index: 9400;
-  padding: 18px 20px 20px;
+  padding: 20px;
   overflow-y: auto;
-  border: 1px solid var(--rd-hairline);
-  border-radius: var(--rd-r-22, 22px);
-  background: var(--rd-glass-drawer, rgba(9, 13, 22, 0.88));
-  -webkit-backdrop-filter: var(--rd-blur-drawer, blur(20px));
-  backdrop-filter: var(--rd-blur-drawer, blur(20px));
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-md);
+  background: var(--bg-panel, #0d1220);
   box-shadow: -26px 0 60px rgba(0, 0, 0, 0.55);
   transform: translateX(calc(100% + 26px));
   opacity: 0;
@@ -2748,6 +2728,13 @@ body.player-autofs:not(.tv-layout) .live-top-row .program-details-panel {
   transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1),
               opacity 0.2s ease,
               visibility 0s linear 0.26s;
+}
+
+body.player-fs:not(.tv-layout) .live-top-row.details-open .program-details-panel,
+body.player-autofs:not(.tv-layout) .live-top-row.details-open .program-details-panel {
+  transform: none;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 body.player-fs:not(.tv-layout) .live-top-row.details-open .program-details-panel,
@@ -2761,6 +2748,12 @@ body.player-autofs:not(.tv-layout) .live-top-row.details-open .program-details-p
    the row would bury it. Anchor this one to the viewport instead — it rises
    over the channel list below and leaves the player alone. */
 @media (max-width: 620px) and (orientation: portrait) {
+  body:not(.tv-layout):not(.vod-mode) .live-top-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  body:not(.tv-layout):not(.vod-mode) .live-top-row #live-details-col {
+    position: static;
+  }
   body:not(.tv-layout):not(.vod-mode) .live-top-row .program-details-panel {
     position: fixed;
     top: auto;
@@ -2772,10 +2765,18 @@ body.player-autofs:not(.tv-layout) .live-top-row.details-open .program-details-p
     max-height: 62vh;
     z-index: 60;
     border-radius: 20px 20px 0 0;
-    /* clear the bottom tab bar */
     padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
     transform: translateY(100%);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
     box-shadow: 0 -18px 50px rgba(0, 0, 0, 0.6);
+  }
+  body:not(.tv-layout):not(.vod-mode) .live-top-row.details-open .program-details-panel {
+    transform: none;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
   }
 }
 

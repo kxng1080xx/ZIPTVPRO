@@ -475,41 +475,24 @@
               </div>
             </div>
 
-            <!-- Program Info Details Panel -->
-            <div class="program-details-panel" id="program-details">
-              <div class="series-details-header details-header-row">
-                <div class="series-cover-wrapper channel-logo-wrapper" id="detail-cover-wrapper">
-                  <img id="detail-channel-icon" src="" alt="Z" class="fallback-logo">
-                </div>
-                <div class="series-meta-text channel-meta-text">
-                  <h3 id="detail-program-title">No Program Information</h3>
-                  <div class="series-badge-row" id="detail-badge-row">
-                    <span class="series-rating-badge" id="detail-program-rating" hidden><i data-lucide="star"></i> N/A</span>
-                    <span class="series-year-badge" id="detail-program-year" hidden>N/A</span>
-                    <span class="series-year-badge program-time-range" id="detail-program-time">11:00 AM - 7:00 PM</span>
+            <!-- Program Info Details Panel (matches Series Details panel) -->
+            <div class="series-details-col" id="live-details-col">
+              <div class="program-details-panel series-details-panel" id="program-details">
+                <div class="series-details-header">
+                  <div class="series-cover-wrapper" id="detail-cover-wrapper">
+                    <img id="detail-channel-icon" src="" alt="" class="fallback-logo">
                   </div>
-                  <p class="detail-channel-sub"><span id="detail-channel-name">Select a Channel</span> <span class="detail-channel-sep">·</span> <span id="detail-category-name">Live TV</span></p>
+                  <div class="series-meta-text">
+                    <h3 id="detail-program-title">Select a Channel</h3>
+                    <div class="series-badge-row" id="detail-badge-row">
+                      <span class="series-rating-badge" id="detail-program-rating"><i data-lucide="star"></i> N/A</span>
+                      <span class="series-year-badge" id="detail-program-year">N/A</span>
+                    </div>
+                  </div>
                 </div>
-                <div class="details-header-actions">
-                  <button class="favorite-toggle-btn" id="detail-favorite-btn" title="Favorite channel">
-                    <span>Favorite</span>
-                    <i data-lucide="star" id="detail-favorite-icon"></i>
-                  </button>
-                  <button class="details-close-btn" id="details-close-btn" title="Close details" aria-label="Close details"><i data-lucide="x"></i></button>
-                </div>
-              </div>
-
-              <div class="details-program-info">
-                <!-- Progress bar -->
-                <div class="details-progress-bar-container" id="detail-progress-wrap">
-                  <div class="details-progress-bar" id="detail-program-progress" style="width: 0%;"></div>
-                </div>
-
                 <div class="series-plot-section">
                   <div class="info-label">Plot Summary</div>
-                  <p class="program-description-text" id="detail-program-desc">
-                    No program details available. Select a channel to view the current schedule and start watching live streams.
-                  </p>
+                  <p id="detail-program-desc">No summary available.</p>
                 </div>
 
                 <!-- TMDB enrichment for Now Playing program -->
@@ -522,10 +505,14 @@
                   </div>
                 </div>
 
-                <!-- Upcoming programs for this channel -->
-                <div class="details-upcoming hidden" id="detail-upcoming">
-                  <div class="info-label">Up Next</div>
-                  <div class="upcoming-list" id="detail-upcoming-list"></div>
+                <div hidden>
+                  <span id="detail-channel-name"></span>
+                  <span id="detail-category-name"></span>
+                  <span id="detail-program-time"></span>
+                  <div id="detail-progress-wrap"><div id="detail-program-progress"></div></div>
+                  <button id="detail-favorite-btn"><i id="detail-favorite-icon"></i></button>
+                  <button id="details-close-btn"></button>
+                  <div id="detail-upcoming"><div id="detail-upcoming-list"></div></div>
                 </div>
               </div>
             </div>
