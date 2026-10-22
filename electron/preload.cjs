@@ -85,6 +85,13 @@ contextBridge.exposeInMainWorld('appHost', {
     },
   },
 
+  // Built-in OpenVPN cloud profile integration
+  vpn: {
+    apply: (data) => ipcRenderer.invoke('vpn:apply', data),
+    stop: () => ipcRenderer.invoke('vpn:stop'),
+    status: () => ipcRenderer.invoke('vpn:status')
+  },
+
   // Close-to-tray with playback stopped (TV power button / programmatic close).
   hideToTray: () => ipcRenderer.invoke('app:hide-to-tray'),
   // Fires whenever the window is being hidden to the tray (X button or

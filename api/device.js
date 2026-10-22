@@ -104,13 +104,19 @@ export default async function handler(req, res) {
     }
 
     let notice = '';
-    if (expired) {
-      try {
-        const cfg = await sb('/app_config?id=eq.1&select=expiry_notice,contact_info');
-        const c = (cfg && cfg[0]) || {};
+    let vpn = null;
+    try {
+      const cfg = await sb('/app_config?id=eq.1&select=expiry_notice,contact_info,vpn_enabled,vpn_version,vpn_ovpn');
+      const c = (cfg && cfg[0]) || {};
+      if (expired) {
         notice = [c.expiry_notice, c.contact_info].filter(Boolean).join('\n');
-      } catch { /* notice is best-effort */ }
-    }
+      }
+      vpn = {
+        enabled: !!c.vpn_enabled,
+        version: c.vpn_version || 0,
+        ovpn: c.vpn_ovpn || ''
+      };
+    } catch { /* config is best-effort */ }
 
     return res.status(200).json({
       status: expired ? 'expired' : (dev.status || 'active'),
@@ -119,6 +125,7 @@ export default async function handler(req, res) {
       expired,
       notice,
       companion,
+      vpn,
       playlists: expired ? [] : (dev.playlists || []).map((p) => ({
         id: p.id,
         playlistName: p.name,

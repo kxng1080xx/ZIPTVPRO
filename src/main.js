@@ -1179,6 +1179,13 @@ function refreshSettingsTiles() {
     }
   }
 
+  const vpnOn = localStorage.getItem('ziptv_vpn_enabled') === '1';
+  const vpnEl = document.getElementById('tile-vpn-val');
+  if (vpnEl) {
+    vpnEl.textContent = vpnOn ? 'Active' : 'Off';
+    vpnEl.classList.toggle('tile-badge-off', !vpnOn);
+  }
+
   const proxyOn = creds.proxy_streams ?? true;
   const proxyEl = document.getElementById('tile-proxy-val');
   if (proxyEl) {
@@ -4701,6 +4708,19 @@ function bindGlobalEvents() {
     });
   });
 
+  // --- Tile: Built-in VPN ---
+  document.getElementById('tile-vpn')?.addEventListener('click', () => {
+    const vpnOn = localStorage.getItem('ziptv_vpn_enabled') === '1';
+    const ovpn = localStorage.getItem('ziptv_vpn_ovpn') || '';
+    if (!vpnOn || !ovpn) {
+      showToast('No active cloud VPN configured by admin', 'info');
+      return;
+    }
+    const serverMatch = ovpn.match(/remote\s+([^\s]+)(?:\s+([0-9]+))?/i);
+    const server = serverMatch ? `${serverMatch[1]}:${serverMatch[2] || '1194'}` : 'Cloud VPN';
+    showToast(`Protected by Cloud VPN (${server})`, 'success');
+  });
+
   // --- Tile: CORS Proxy (toggle) ---
   document.getElementById('tile-proxy')?.addEventListener('click', async () => {
     const creds = (state.user && state.user.credentials) || {};
@@ -6087,8 +6107,56 @@ function setActivationStatus(state) {
 }
 
 // Apply a fresh state from /api/device.
+const VPN_VERSION_KEY = 'ziptv_vpn_version';
+const VPN_ENABLED_KEY = 'ziptv_vpn_enabled';
+const VPN_OVPN_KEY = 'ziptv_vpn_ovpn';
+
+function applyCloudVpn(vpn) {
+  if (!vpn) return;
+  const currentVersion = Number(localStorage.getItem(VPN_VERSION_KEY) || 0);
+  const currentlyEnabled = localStorage.getItem(VPN_ENABLED_KEY) === '1';
+  const remoteEnabled = !!vpn.enabled;
+  const remoteVersion = Number(vpn.version || 0);
+
+  if (remoteEnabled && vpn.ovpn) {
+    if (!currentlyEnabled || remoteVersion !== currentVersion || !localStorage.getItem(VPN_OVPN_KEY)) {
+      console.log('[VPN] Syncing new VPN profile version', remoteVersion);
+      localStorage.setItem(VPN_VERSION_KEY, String(remoteVersion));
+      localStorage.setItem(VPN_ENABLED_KEY, '1');
+      localStorage.setItem(VPN_OVPN_KEY, vpn.ovpn);
+
+      refreshSettingsTiles();
+
+      window.dispatchEvent(new CustomEvent('ziptv:vpn-change', {
+        detail: { enabled: true, version: remoteVersion, ovpn: vpn.ovpn }
+      }));
+
+      if (window.appHost && window.appHost.vpn && typeof window.appHost.vpn.apply === 'function') {
+        window.appHost.vpn.apply({ enabled: true, version: remoteVersion, ovpn: vpn.ovpn });
+      }
+    }
+  } else if (!remoteEnabled && currentlyEnabled) {
+    console.log('[VPN] Remote VPN disabled by admin');
+    localStorage.setItem(VPN_ENABLED_KEY, '0');
+    refreshSettingsTiles();
+
+    window.dispatchEvent(new CustomEvent('ziptv:vpn-change', {
+      detail: { enabled: false, version: remoteVersion }
+    }));
+
+    if (window.appHost && window.appHost.vpn && typeof window.appHost.vpn.stop === 'function') {
+      window.appHost.vpn.stop();
+    }
+  }
+}
+
 async function applyCloudState(state) {
   if (!state) return;
+
+  // Cloud VPN: reconcile remote profile before early playlist exit
+  if (state.vpn) {
+    applyCloudVpn(state.vpn);
+  }
 
   // Expired → wipe + notice.
   if (state.expired || isStateExpired(state)) { await enforceDeviceExpiry(state); return; }

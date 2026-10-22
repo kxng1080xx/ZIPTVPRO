@@ -162,7 +162,7 @@ async function handle({ request, env }) {
       return json({ ok: true });
     }
 
-    // ---- Config (expiry notice / contact) ----------------------------------
+    // ---- Config (expiry notice / contact / vpn) ----------------------------
     if (action === 'config' && request.method === 'GET') {
       const rows = await sb(env, '/app_config?id=eq.1&select=*');
       return json({ config: (rows && rows[0]) || {} });
@@ -172,6 +172,12 @@ async function handle({ request, env }) {
       const patch = { updated_at: new Date().toISOString() };
       if ('expiry_notice' in b) patch.expiry_notice = b.expiry_notice;
       if ('contact_info' in b) patch.contact_info = b.contact_info;
+      if ('vpn_enabled' in b) patch.vpn_enabled = !!b.vpn_enabled;
+      if ('vpn_ovpn' in b) {
+        patch.vpn_ovpn = String(b.vpn_ovpn || '');
+        patch.vpn_version = Date.now();
+        patch.vpn_updated_at = new Date().toISOString();
+      }
       // Reusable playlist credentials for device setup. Admin-only: the
       // device endpoint never selects this column, so it can't leak to apps.
       if ('saved_playlists' in b) {

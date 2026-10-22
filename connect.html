@@ -157,6 +157,41 @@
         <div class="sec-h">Contact info</div>
         <input id="cfg-contact" type="text" placeholder="WhatsApp / Telegram / email" />
       </div>
+
+      <div class="sec" style="border-top:1px solid rgba(255,255,255,0.08); padding-top:16px;">
+        <div class="sec-h" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+          <span>Built-in VPN (OpenVPN)</span>
+          <label style="display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-size:0.82rem; font-weight:normal; text-transform:none; letter-spacing:0;">
+            <input type="checkbox" id="cfg-vpn-toggle" style="accent-color:var(--cyan); width:16px; height:16px; cursor:pointer;" />
+            <span id="cfg-vpn-status-text" style="color:var(--text-2);">Disabled</span>
+          </label>
+        </div>
+        <div class="topbar-note" style="margin-bottom:12px;">Upload an .ovpn profile to tunnel stream traffic through your VPN. When enabled, all customer devices sync and use it automatically.</div>
+        
+        <div id="cfg-vpn-card" class="hidden" style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:12px 14px; margin-bottom:12px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="pill pill-online"><span class="d"></span><span id="cfg-vpn-badge">Ready</span></span>
+              <span id="cfg-vpn-server" style="font-weight:700; font-size:0.88rem; color:#fff;"></span>
+            </div>
+            <button class="btn-ghost" id="cfg-vpn-clear" type="button" style="padding:4px 8px; font-size:0.75rem; color:var(--red);" title="Remove configuration">Remove</button>
+          </div>
+          <div style="display:flex; flex-wrap:wrap; gap:12px; font-size:0.75rem; color:var(--text-2);">
+            <span id="cfg-vpn-proto"></span>
+            <span id="cfg-vpn-cipher"></span>
+            <span id="cfg-vpn-size"></span>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:8px; align-items:center;">
+          <input type="file" id="cfg-vpn-file" accept=".ovpn,.conf,text/plain" style="display:none;" />
+          <button class="btn-ghost" id="cfg-vpn-upload-btn" type="button" style="width:100%; justify-content:center; border:1px dashed rgba(255,255,255,0.2); padding:10px;">
+            <i data-lucide="upload" style="width:15px; height:15px; margin-right:6px;"></i>
+            <span id="cfg-vpn-upload-label">Upload .ovpn file</span>
+          </button>
+        </div>
+      </div>
+
       <div class="sec">
         <button class="btn" id="cfg-save" style="justify-content:center; width:100%;">Save settings</button>
       </div>
@@ -1054,6 +1089,62 @@
     });
 
     // ---------------------------- settings drawer ----------------------------
+    let currentVpnOvpn = '';
+
+    function updateVpnStatusText() {
+      const enabled = $('cfg-vpn-toggle').checked;
+      $('cfg-vpn-status-text').textContent = enabled ? 'Enabled' : 'Disabled';
+      $('cfg-vpn-status-text').style.color = enabled ? 'var(--cyan)' : 'var(--text-2)';
+    }
+
+    function renderVpnCard(ovpn) {
+      if (!ovpn || !ovpn.trim()) {
+        $('cfg-vpn-card').classList.add('hidden');
+        $('cfg-vpn-upload-label').textContent = 'Upload .ovpn file';
+        return;
+      }
+      const remoteMatch = ovpn.match(/remote\s+([^\s]+)(?:\s+([0-9]+))?/i);
+      const protoMatch = ovpn.match(/proto\s+([^\s]+)/i);
+      const cipherMatch = ovpn.match(/(?:data-ciphers|cipher)\s+([^\r\n]+)/i);
+
+      const serverStr = remoteMatch ? `${remoteMatch[1]}${remoteMatch[2] ? ':' + remoteMatch[2] : ''}` : 'Custom VPN Server';
+      const protoStr = protoMatch ? protoMatch[1].toUpperCase() : 'UDP';
+      const cipherStr = cipherMatch ? cipherMatch[1].trim() : 'Default Cipher';
+      const sizeStr = `${(ovpn.length / 1024).toFixed(1)} KB`;
+
+      $('cfg-vpn-server').textContent = serverStr;
+      $('cfg-vpn-proto').textContent = `Proto: ${protoStr}`;
+      $('cfg-vpn-cipher').textContent = `Cipher: ${cipherStr}`;
+      $('cfg-vpn-size').textContent = `Size: ${sizeStr}`;
+      $('cfg-vpn-card').classList.remove('hidden');
+      $('cfg-vpn-upload-label').textContent = 'Replace .ovpn file';
+      if (window.lucide) window.lucide.createIcons();
+    }
+
+    $('cfg-vpn-toggle').addEventListener('change', updateVpnStatusText);
+    $('cfg-vpn-upload-btn').addEventListener('click', () => $('cfg-vpn-file').click());
+    $('cfg-vpn-file').addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        currentVpnOvpn = evt.target.result;
+        $('cfg-vpn-toggle').checked = true;
+        updateVpnStatusText();
+        renderVpnCard(currentVpnOvpn);
+        toast(`Loaded ${file.name}`);
+      };
+      reader.readAsText(file);
+    });
+    $('cfg-vpn-clear').addEventListener('click', () => {
+      currentVpnOvpn = '';
+      $('cfg-vpn-file').value = '';
+      $('cfg-vpn-toggle').checked = false;
+      updateVpnStatusText();
+      renderVpnCard('');
+      toast('VPN configuration removed');
+    });
+
     function closeCfg() { $('cfg-drawer').classList.remove('show'); if (!openId) $('scrim').classList.remove('show'); }
     $('cfg-close').addEventListener('click', closeCfg);
     $('btn-config').addEventListener('click', async () => {
@@ -1061,6 +1152,10 @@
       try { ({ config: cfg } = await api('config')); } catch (e) { return toast(e.message, true); }
       $('cfg-notice').value = cfg.expiry_notice || '';
       $('cfg-contact').value = cfg.contact_info || '';
+      currentVpnOvpn = cfg.vpn_ovpn || '';
+      $('cfg-vpn-toggle').checked = !!cfg.vpn_enabled;
+      updateVpnStatusText();
+      renderVpnCard(currentVpnOvpn);
       savedPlaylists = Array.isArray(cfg.saved_playlists) ? cfg.saved_playlists : [];
       fillPresetSelect();
       renderCfgPls();
@@ -1072,7 +1167,9 @@
       try {
         await api('config', { method: 'POST', body: {
           expiry_notice: $('cfg-notice').value,
-          contact_info: $('cfg-contact').value
+          contact_info: $('cfg-contact').value,
+          vpn_enabled: $('cfg-vpn-toggle').checked,
+          vpn_ovpn: currentVpnOvpn
         }});
         toast('Settings saved'); closeCfg();
       } catch (e) { toast(e.message, true); }

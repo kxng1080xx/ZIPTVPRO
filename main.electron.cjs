@@ -100,6 +100,43 @@ async function setAdblock(enabled) {
 ipcMain.handle('adblock:set', (_e, enabled) => setAdblock(!!enabled));
 ipcMain.handle('adblock:get', () => ({ enabled: adblockEnabled }));
 
+// --- Built-in VPN Profile Manager (9.4) -------------------------------------
+let activeVpnProcess = null;
+let activeVpnState = { enabled: false, version: 0, connected: false };
+
+ipcMain.handle('vpn:apply', async (_e, data = {}) => {
+  try {
+    const ovpnContent = data.ovpn || '';
+    activeVpnState.enabled = !!data.enabled;
+    activeVpnState.version = data.version || 0;
+
+    const vpnDir = path.join(app.getPath('userData'), 'vpn');
+    if (!fs.existsSync(vpnDir)) fs.mkdirSync(vpnDir, { recursive: true });
+
+    const activeOvpnPath = path.join(vpnDir, 'active.ovpn');
+    if (ovpnContent) {
+      fs.writeFileSync(activeOvpnPath, ovpnContent, 'utf8');
+      console.log('[VPN] Saved active cloud profile to', activeOvpnPath);
+    }
+    return { ok: true, path: activeOvpnPath };
+  } catch (err) {
+    console.error('[VPN] Failed to apply profile:', err);
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('vpn:stop', async () => {
+  if (activeVpnProcess) {
+    try { activeVpnProcess.kill(); } catch (e) {}
+    activeVpnProcess = null;
+  }
+  activeVpnState.enabled = false;
+  activeVpnState.connected = false;
+  return { ok: true };
+});
+
+ipcMain.handle('vpn:status', () => ({ ...activeVpnState }));
+
 // --- Trailer session (9.0) --------------------------------------------------
 // Poster-dwell trailers render in a <webview partition="persist:trailers">
 // rather than an <iframe>, for two reasons:
