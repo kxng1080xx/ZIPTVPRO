@@ -6125,6 +6125,8 @@ function setActivationStatus(state) {
 const VPN_VERSION_KEY = 'ziptv_vpn_version';
 const VPN_ENABLED_KEY = 'ziptv_vpn_enabled';
 const VPN_OVPN_KEY = 'ziptv_vpn_ovpn';
+const VPN_USER_KEY = 'ziptv_vpn_user';
+const VPN_PASS_KEY = 'ziptv_vpn_pass';
 
 function applyCloudVpn(vpn) {
   if (!vpn) return;
@@ -6139,15 +6141,19 @@ function applyCloudVpn(vpn) {
       localStorage.setItem(VPN_VERSION_KEY, String(remoteVersion));
       localStorage.setItem(VPN_ENABLED_KEY, '1');
       localStorage.setItem(VPN_OVPN_KEY, vpn.ovpn);
+      if (vpn.username) localStorage.setItem(VPN_USER_KEY, vpn.username);
+      else localStorage.removeItem(VPN_USER_KEY);
+      if (vpn.password) localStorage.setItem(VPN_PASS_KEY, vpn.password);
+      else localStorage.removeItem(VPN_PASS_KEY);
 
       refreshSettingsTiles();
 
       window.dispatchEvent(new CustomEvent('ziptv:vpn-change', {
-        detail: { enabled: true, version: remoteVersion, ovpn: vpn.ovpn }
+        detail: { enabled: true, version: remoteVersion, ovpn: vpn.ovpn, username: vpn.username || '', password: vpn.password || '' }
       }));
 
       if (window.appHost && window.appHost.vpn && typeof window.appHost.vpn.apply === 'function') {
-        window.appHost.vpn.apply({ enabled: true, version: remoteVersion, ovpn: vpn.ovpn });
+        window.appHost.vpn.apply({ enabled: true, version: remoteVersion, ovpn: vpn.ovpn, username: vpn.username || '', password: vpn.password || '' });
       }
     }
   } else if (!remoteEnabled && currentlyEnabled) {

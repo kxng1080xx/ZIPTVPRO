@@ -178,6 +178,8 @@ async function handle({ request, env }) {
         patch.vpn_version = Date.now();
         patch.vpn_updated_at = new Date().toISOString();
       }
+      if ('vpn_username' in b) patch.vpn_username = String(b.vpn_username || '').trim();
+      if ('vpn_password' in b) patch.vpn_password = String(b.vpn_password || '').trim();
       // Reusable playlist credentials for device setup. Admin-only: the
       // device endpoint never selects this column, so it can't leak to apps.
       if ('saved_playlists' in b) {

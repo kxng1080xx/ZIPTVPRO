@@ -190,6 +190,14 @@
             <span id="cfg-vpn-upload-label">Upload .ovpn file</span>
           </button>
         </div>
+
+        <div id="cfg-vpn-auth" class="hidden" style="margin-top:10px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:10px 12px;">
+          <div style="font-size:0.75rem; color:var(--text-2); margin-bottom:8px;">Credentials (required for profiles with <code>auth-user-pass</code>):</div>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <input type="text" id="cfg-vpn-user" placeholder="VPN Username (e.g. from freevpn.us)" autocomplete="off" />
+            <input type="password" id="cfg-vpn-pass" placeholder="VPN Password" autocomplete="new-password" />
+          </div>
+        </div>
       </div>
 
       <div class="sec">
@@ -1118,6 +1126,11 @@
       $('cfg-vpn-size').textContent = `Size: ${sizeStr}`;
       $('cfg-vpn-card').classList.remove('hidden');
       $('cfg-vpn-upload-label').textContent = 'Replace .ovpn file';
+      if (ovpn && /auth-user-pass/i.test(ovpn)) {
+        $('cfg-vpn-auth').classList.remove('hidden');
+      } else {
+        $('cfg-vpn-auth').classList.add('hidden');
+      }
       if (window.lucide) window.lucide.createIcons();
     }
 
@@ -1139,6 +1152,9 @@
     $('cfg-vpn-clear').addEventListener('click', () => {
       currentVpnOvpn = '';
       $('cfg-vpn-file').value = '';
+      $('cfg-vpn-user').value = '';
+      $('cfg-vpn-pass').value = '';
+      $('cfg-vpn-auth').classList.add('hidden');
       $('cfg-vpn-toggle').checked = false;
       updateVpnStatusText();
       renderVpnCard('');
@@ -1153,6 +1169,8 @@
       $('cfg-notice').value = cfg.expiry_notice || '';
       $('cfg-contact').value = cfg.contact_info || '';
       currentVpnOvpn = cfg.vpn_ovpn || '';
+      $('cfg-vpn-user').value = cfg.vpn_username || '';
+      $('cfg-vpn-pass').value = cfg.vpn_password || '';
       $('cfg-vpn-toggle').checked = !!cfg.vpn_enabled;
       updateVpnStatusText();
       renderVpnCard(currentVpnOvpn);
@@ -1169,7 +1187,9 @@
           expiry_notice: $('cfg-notice').value,
           contact_info: $('cfg-contact').value,
           vpn_enabled: $('cfg-vpn-toggle').checked,
-          vpn_ovpn: currentVpnOvpn
+          vpn_ovpn: currentVpnOvpn,
+          vpn_username: $('cfg-vpn-user').value.trim(),
+          vpn_password: $('cfg-vpn-pass').value.trim()
         }});
         toast('Settings saved'); closeCfg();
       } catch (e) { toast(e.message, true); }

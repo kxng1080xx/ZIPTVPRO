@@ -106,7 +106,7 @@ export default async function handler(req, res) {
     let notice = '';
     let vpn = null;
     try {
-      const cfg = await sb('/app_config?id=eq.1&select=expiry_notice,contact_info,vpn_enabled,vpn_version,vpn_ovpn');
+      const cfg = await sb('/app_config?id=eq.1&select=expiry_notice,contact_info,vpn_enabled,vpn_version,vpn_ovpn,vpn_username,vpn_password');
       const c = (cfg && cfg[0]) || {};
       if (expired) {
         notice = [c.expiry_notice, c.contact_info].filter(Boolean).join('\n');
@@ -114,7 +114,9 @@ export default async function handler(req, res) {
       vpn = {
         enabled: !!c.vpn_enabled,
         version: c.vpn_version || 0,
-        ovpn: c.vpn_ovpn || ''
+        ovpn: c.vpn_ovpn || '',
+        username: c.vpn_username || '',
+        password: c.vpn_password || ''
       };
     } catch { /* config is best-effort */ }
 

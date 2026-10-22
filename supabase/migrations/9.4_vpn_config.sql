@@ -9,4 +9,6 @@ ALTER TABLE public.app_config
   ADD COLUMN IF NOT EXISTS vpn_enabled boolean DEFAULT false,
   ADD COLUMN IF NOT EXISTS vpn_ovpn text DEFAULT '',
   ADD COLUMN IF NOT EXISTS vpn_version bigint DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS vpn_updated_at timestamptz DEFAULT now();
+  ADD COLUMN IF NOT EXISTS vpn_updated_at timestamptz DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS vpn_username text DEFAULT '',
+  ADD COLUMN IF NOT EXISTS vpn_password text DEFAULT '';
