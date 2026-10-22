@@ -140,75 +140,106 @@ export async function renderHome(h) {
   const view = document.getElementById('home-view');
   if (!view) return;
 
-  // Pull everything in parallel; each source fails soft to an empty list.
-  const soft = (p) => p.then((r) => r.items || []).catch(() => []);
-  const [recentCh, favCh, newMovies, newSeries] = await Promise.all([
-    soft(getStreams({ type: 'live', categoryId: 'recently_viewed', page: 1, limit: 5 })),
-    soft(getStreams({ type: 'live', categoryId: 'favorites', page: 1, limit: 12 })),
-    soft(getStreams({ type: 'movies', categoryId: 'all', page: 1, limit: 12 })),
-    soft(getStreams({ type: 'series', categoryId: 'all', page: 1, limit: 12 }))
-  ]);
-  const cwMovies = getContinueWatching('movie');
-  const cwSeries = seriesCW();
-  const cwAll = getContinueWatching(); // newest first, for the hero
+  // Show a clean loading placeholder immediately if the view has no content yet,
+  // preventing a black screen while data is loading.
+  if (!view.querySelector('.home-scroll')) {
+    view.innerHTML = `
+      <div class="home-scroll" style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:55vh; gap:16px; color:var(--text-2);">
+        <div style="width:36px; height:36px; border:3px solid rgba(255,255,255,0.1); border-top-color:var(--cyan, #00f3ff); border-radius:50%; animation:spin 0.8s linear infinite;"></div>
+        <span style="font-size:0.95rem; font-weight:500;">Loading your library…</span>
+      </div>`;
+  }
 
-  view.innerHTML = `
-    <div class="home-scroll">
-      ${heroHtml(cwAll, recentCh)}
+  try {
+    // Pull everything in parallel; each source fails soft to an empty list with a 6s timeout
+    const soft = (p) => Promise.race([
+      p.then((r) => (r && Array.isArray(r.items)) ? r.items : []).catch(() => []),
+      new Promise((res) => setTimeout(() => res([]), 6000))
+    ]);
 
-      ${row({
-        title: 'Recently Watched Channels', icon: 'tv', wide: true,
-        cards: recentCh.map((ch) => card('home-card-live', { act: 'channel', id: ch.stream_id }, channelTile(ch)))
-      })}
+    const [recentCh, favCh, newMovies, newSeries] = await Promise.all([
+      soft(getStreams({ type: 'live', categoryId: 'recently_viewed', page: 1, limit: 5 })),
+      soft(getStreams({ type: 'live', categoryId: 'favorites', page: 1, limit: 12 })),
+      soft(getStreams({ type: 'movies', categoryId: 'all', page: 1, limit: 12 })),
+      soft(getStreams({ type: 'series', categoryId: 'all', page: 1, limit: 12 }))
+    ]);
+    const cwMovies = (typeof getContinueWatching === 'function' ? getContinueWatching('movie') : []) || [];
+    const cwSeries = (typeof seriesCW === 'function' ? seriesCW() : []) || [];
+    const cwAll = (typeof getContinueWatching === 'function' ? getContinueWatching() : []) || [];
 
-      ${row({
-        title: 'Continue Watching · Movies', icon: 'film',
-        cards: cwMovies.map((it) => card('home-card-cw', { act: 'resume', id: it.id }, posterTile({
-          img: it.logo ? proxifyImage(it.logo) : '',
-          title: it.cardTitle || it.name,
-          sub: `Resume · ${fmtClock(it.position)}`,
-          pct: (it.duration && it.position) ? Math.min(100, (it.position / it.duration) * 100) : 0,
-          removeId: it.id,
-          removeType: 'movie'
-        })))
-      })}
+    view.innerHTML = `
+      <div class="home-scroll">
+        ${heroHtml(cwAll, recentCh)}
 
-      ${row({
-        title: 'Continue Watching · Series', icon: 'clapperboard',
-        cards: cwSeries.map((it) => card('home-card-cw', { act: 'resume', id: it.id }, posterTile({
-          img: it.logo ? proxifyImage(it.logo) : '',
-          title: it.cardTitle || it.seriesName || it.name,
-          sub: it.episodeLabel || 'Continue',
-          pct: (it.duration && it.position) ? Math.min(100, (it.position / it.duration) * 100) : 0,
-          removeId: it.seriesId || it.seriesName || it.id,
-          removeType: 'series'
-        })))
-      })}
+        ${row({
+          title: 'Recently Watched Channels', icon: 'tv', wide: true,
+          cards: recentCh.map((ch) => card('home-card-live', { act: 'channel', id: ch.stream_id }, channelTile(ch)))
+        })}
 
-      ${row({
-        title: 'Favorite Channels', icon: 'star', wide: true,
-        cards: favCh.map((ch) => card('home-card-live', { act: 'channel', id: ch.stream_id }, channelTile(ch)))
-      })}
+        ${row({
+          title: 'Continue Watching · Movies', icon: 'film',
+          cards: cwMovies.map((it) => card('home-card-cw', { act: 'resume', id: it.id }, posterTile({
+            img: it.logo ? proxifyImage(it.logo) : '',
+            title: it.cardTitle || it.name,
+            sub: `Resume · ${fmtClock(it.position)}`,
+            pct: (it.duration && it.position) ? Math.min(100, (it.position / it.duration) * 100) : 0,
+            removeId: it.id,
+            removeType: 'movie'
+          })))
+        })}
 
-      ${row({
-        title: 'Recently Added · Movies', icon: 'sparkles',
-        cards: newMovies.map((m) => card('home-card-vod', { act: 'movie', id: m.stream_id }, posterTile({
-          img: m.stream_icon ? proxifyImage(m.stream_icon) : '',
-          title: m.name,
-          sub: m.rating ? `★ ${m.rating}` : '',
-          watched: isCompleted(m.stream_id)
-        })))
-      })}
+        ${row({
+          title: 'Continue Watching · Series', icon: 'clapperboard',
+          cards: cwSeries.map((it) => card('home-card-cw', { act: 'resume', id: it.id }, posterTile({
+            img: it.logo ? proxifyImage(it.logo) : '',
+            title: it.cardTitle || it.seriesName || it.name,
+            sub: it.episodeLabel || 'Continue',
+            pct: (it.duration && it.position) ? Math.min(100, (it.position / it.duration) * 100) : 0,
+            removeId: it.seriesId || it.seriesName || it.id,
+            removeType: 'series'
+          })))
+        })}
 
-      ${row({
-        title: 'Recently Added · Series', icon: 'sparkles',
-        cards: newSeries.map((s) => card('home-card-vod', { act: 'series', id: s.series_id }, posterTile({
-          img: s.cover ? proxifyImage(s.cover) : '',
-          title: s.name,
-          sub: s.rating ? `★ ${s.rating}` : ''
-        })))
-      })}
-    </div>`;
+        ${row({
+          title: 'Favorite Channels', icon: 'star', wide: true,
+          cards: favCh.map((ch) => card('home-card-live', { act: 'channel', id: ch.stream_id }, channelTile(ch)))
+        })}
+
+        ${row({
+          title: 'Recently Added · Movies', icon: 'sparkles',
+          cards: newMovies.map((m) => card('home-card-vod', { act: 'movie', id: m.stream_id }, posterTile({
+            img: m.stream_icon ? proxifyImage(m.stream_icon) : '',
+            title: m.name,
+            sub: m.rating ? `★ ${m.rating}` : '',
+            watched: isCompleted(m.stream_id)
+          })))
+        })}
+
+        ${row({
+          title: 'Recently Added · Series', icon: 'sparkles',
+          cards: newSeries.map((s) => card('home-card-vod', { act: 'series', id: s.series_id }, posterTile({
+            img: s.cover ? proxifyImage(s.cover) : '',
+            title: s.name,
+            sub: s.rating ? `★ ${s.rating}` : ''
+          })))
+        })}
+      </div>`;
+  } catch (err) {
+    console.error('[Home] Error rendering home view:', err);
+    view.innerHTML = `
+      <div class="home-scroll">
+        <div class="home-hero home-hero-empty" data-hrow>
+          <div class="home-hero-info">
+            <span class="home-hero-kicker">${greeting()}</span>
+            <h2 class="home-hero-title">Welcome to ZIPTV Pro</h2>
+            <span class="home-hero-sub">Start watching — browse your live channels, movies, and series below.</span>
+            <button class="home-card home-hero-btn" tabindex="0" data-act="gotab" data-id="live">
+              <i data-lucide="tv"></i> Browse Live TV
+            </button>
+          </div>
+        </div>
+      </div>`;
+  }
 
   if (window.lucide) { try { window.lucide.createIcons(); } catch (e) {} }
 

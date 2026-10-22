@@ -64,7 +64,7 @@ let deviceCode = null;
 // Application State
 const state = {
   user: null,
-  activeTab: 'live', // 'live', 'movies', 'series'
+  activeTab: 'home', // 'home', 'live', 'movies', 'series'
   activeCategory: null, // null until the user picks one (avoids auto-loading huge "All")
   activeChannel: null,
   activeProgram: null,
@@ -4481,14 +4481,15 @@ function bindGlobalEvents() {
           state.favorites = status.favorites;
         }
         showDashboard();
+        await switchTab('home');
 
         // Initial sync: Live TV paints as soon as its data is cached; movies
         // and series finish downloading behind the live UI.
         state.activeCategory = null;
         await triggerFullSync({
-          onLiveReady: async () => { await loadTabCategoriesAndContent(); }
+          onLiveReady: async () => { await renderHome(homeHandlers); }
         });
-        if (!state.activeCategory) await loadTabCategoriesAndContent();
+        await renderHome(homeHandlers);
       }
     } catch (err) {
       errorMsg.textContent = err.message || 'Login connection failed.';
@@ -5683,13 +5684,13 @@ async function autoEnterSinglePlaylist(id, activeId) {
       // re-downloading everything on every boot crushed weak devices.
       maybeBackgroundSync();
     } else {
-      // First run: sync, then land on Home (it'll mostly show the "recently
-      // added" rows until the user has watched something).
+      // First run: land on Home immediately with loading state, sync, then repaint
       state.activeCategory = null;
+      await switchTab('home');
       await triggerFullSync({
-        onLiveReady: async () => { await switchTab('home'); }
+        onLiveReady: async () => { await renderHome(homeHandlers); }
       });
-      if (state.activeTab === 'home') await switchTab('home'); // repaint with full data
+      if (state.activeTab === 'home') await renderHome(homeHandlers); // repaint with full data
     }
   } catch (err) {
     console.error('Auto-enter single playlist failed:', err);
@@ -5719,16 +5720,27 @@ async function switchToPlaylist(id) {
     const hasCache = await hasCachedData();
 
     state.activeCategory = null;
-    if (hasCache) {
-      await loadTabCategoriesAndContent();
-      // Background refresh only when stale (12h TTL) — full re-downloads on
-      // every switch made weak devices crawl.
-      maybeBackgroundSync();
+    const targetTab = state.activeTab || 'home';
+    if (targetTab === 'home') {
+      await switchTab('home');
+      if (hasCache) {
+        maybeBackgroundSync();
+      } else {
+        await triggerFullSync({
+          onLiveReady: async () => { await renderHome(homeHandlers); }
+        });
+        if (state.activeTab === 'home') await renderHome(homeHandlers);
+      }
     } else {
-      await triggerFullSync({
-        onLiveReady: async () => { await loadTabCategoriesAndContent(); }
-      });
-      if (!state.activeCategory) await loadTabCategoriesAndContent();
+      await switchTab(targetTab);
+      if (hasCache) {
+        maybeBackgroundSync();
+      } else {
+        await triggerFullSync({
+          onLiveReady: async () => { await loadTabCategoriesAndContent(); }
+        });
+        if (!state.activeCategory) await loadTabCategoriesAndContent();
+      }
     }
   } catch (err) {
     console.error('Failed to switch playlist:', err);
@@ -5783,6 +5795,9 @@ function showDashboard() {
   document.getElementById('app-container').classList.remove('hidden');
   document.getElementById('login-back-btn')?.classList.add('hidden');
   
+  // Synchronize initial tab state class on body
+  document.body.classList.toggle('home-tab', (state.activeTab || 'home') === 'home');
+
   // Hide remote login box and stop polling
   const box = document.getElementById('remote-login-box');
   if (box) box.classList.add('hidden');
