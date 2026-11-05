@@ -2419,6 +2419,11 @@ export class VideoPlayer {
     const name = playing ? 'pause' : 'play';
     this.playPauseBtn.innerHTML = `<i class="play-icon" data-lucide="${name}"></i>`;
     try { lucide.createIcons({ attrs: { class: 'play-icon' }, nameList: [name], scope: this.playPauseBtn }); } catch (e) {}
+    // Native (libVLC) playback never fires <video> play/pause, so tell the
+    // activity here — otherwise pressing Home doesn't auto-enter PiP.
+    if (this._nativeActive && Capacitor.isNativePlatform()) {
+      try { registerPlugin('PipPlugin').setPlaybackState({ active: !!playing }); } catch (e) {}
+    }
   }
 
   // Watch Together: a guest follows the host, so their own transport controls go

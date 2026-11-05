@@ -20,6 +20,13 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(CastPlugin.class);
         registerPlugin(NativeVideoPlugin.class);
         super.onCreate(savedInstanceState);
+        // Draw into the camera cutout instead of letterboxing it black while the
+        // status bar is hidden. The page pads itself with env(safe-area-inset-*).
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
+            lp.layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            getWindow().setAttributes(lp);
+        }
     }
 
     @Override
@@ -44,7 +51,15 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode, Configuration newConfig) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
-        
+
+        // Native (libVLC) video sits BEHIND the transparent WebView, so the PiP
+        // window would show whatever page is open (e.g. the catalog). Show only
+        // the video surface while in PiP.
+        PluginHandle nv = bridge.getPlugin("NativeVideo");
+        if (nv != null && nv.getInstance() != null) {
+            ((NativeVideoPlugin) nv.getInstance()).setPipMode(isInPictureInPictureMode);
+        }
+
         PluginHandle handle = bridge.getPlugin("PipPlugin");
         if (handle != null) {
             PipPlugin plugin = (PipPlugin) handle.getInstance();

@@ -5275,6 +5275,14 @@ body.vod-mode .now-next-bar {
 }
 
 
+/* Android draws into the camera cutout (MainActivity SHORT_EDGES); keep the
+   app chrome clear of the hole. Fixed fullscreen video ignores this padding. */
+body.app-native .app-layout {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
 /* Picture-in-Picture Mode Overrides */
 body.app-native.pip-mode-active .top-header,
 body.app-native.pip-mode-active .sidebar,

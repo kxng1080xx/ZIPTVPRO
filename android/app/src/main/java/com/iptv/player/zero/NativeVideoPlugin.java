@@ -45,6 +45,9 @@ public class NativeVideoPlugin extends Plugin {
     private final Handler ui = new Handler(Looper.getMainLooper());
     private boolean readyFired = false;
     private long lengthMs = 0;
+    private boolean inPip = false;
+    private ViewGroup.LayoutParams preservedLp; // boxed rect to restore after PiP
+    private int preservedVis = View.VISIBLE;
 
     // ALL blocking libVLC calls (stop/setMedia/play/release) run on this
     // serial background thread, NEVER the main thread. libVLC's stop() joins
@@ -298,6 +301,20 @@ public class NativeVideoPlugin extends Plugin {
         final int w = call.getInt("w", 0);
         final int h = call.getInt("h", 0);
         ui.post(() -> {
+            if (inPip) {
+                // PiP owns the layout (full window). Remember the box for later.
+                if (w > 0 && h > 0) {
+                    FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(w, h);
+                    lp.leftMargin = x;
+                    lp.topMargin = y;
+                    preservedLp = lp;
+                    preservedVis = View.VISIBLE;
+                } else {
+                    preservedVis = View.GONE;
+                }
+                call.resolve();
+                return;
+            }
             if (videoLayout != null) {
                 if (w <= 0 || h <= 0) {
                     // Player box not on screen (e.g. browsing the catalog while audio
@@ -316,6 +333,30 @@ public class NativeVideoPlugin extends Plugin {
                 }
             }
             call.resolve();
+        });
+    }
+
+    // Called by MainActivity on PiP enter/exit. In PiP: hide the WebView (it
+    // would cover the video with whatever page is open) and fill the window
+    // with the video. On exit: restore the boxed layout and the WebView.
+    public void setPipMode(boolean pip) {
+        ui.post(() -> {
+            WebView web = getBridge().getWebView();
+            boolean active = backing != null && backing.getVisibility() == View.VISIBLE;
+            if (pip && active && !inPip) {
+                inPip = true;
+                preservedLp = videoLayout.getLayoutParams();
+                preservedVis = videoLayout.getVisibility();
+                videoLayout.setLayoutParams(new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+                videoLayout.setVisibility(View.VISIBLE);
+                if (web != null) web.setVisibility(View.INVISIBLE);
+            } else if (!pip && inPip) {
+                inPip = false;
+                if (preservedLp != null) videoLayout.setLayoutParams(preservedLp);
+                videoLayout.setVisibility(preservedVis);
+                if (web != null) web.setVisibility(View.VISIBLE);
+            }
         });
     }
 
