@@ -158,12 +158,47 @@ private fun SyncingScreen(message: String) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Wordmark(30)
-        Spacer(Modifier.height(32.dp))
-        CircularProgressIndicator(color = Z.focus)
-        Spacer(Modifier.height(20.dp))
-        Text(message, color = Z.textMuted, style = MaterialTheme.typography.bodyLarge)
+        Spacer(Modifier.height(36.dp))
+        // Step-based progress: the core reports each list it downloads. Big lists get a bigger
+        // share, and the bar creeps toward the step's end while one downloads (never sits still).
+        val label = message.removePrefix("Retrying ").substringBefore(" (")
+        val i = SYNC_STEPS.indexOfFirst { it.first == label }.coerceAtLeast(0)
+        val from = SYNC_STEPS[i].second
+        val to = SYNC_STEPS.getOrNull(i + 1)?.second ?: 1f
+        var target by androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+        androidx.compose.runtime.LaunchedEffect(i) {
+            target = maxOf(target, from)
+            while (true) { kotlinx.coroutines.delay(250); target += (to - 0.01f - target) * 0.06f }
+        }
+        val shown by androidx.compose.animation.core.animateFloatAsState(target, androidx.compose.animation.core.tween(400), label = "sync")
+        Column(Modifier.widthIn(max = 420.dp).fillMaxWidth(0.8f)) {
+            Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Z.surfaceHigh)) {
+                Box(Modifier.fillMaxWidth(shown).fillMaxHeight().clip(RoundedCornerShape(3.dp)).background(Z.accentGradient))
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth()) {
+                val steps = if (label == "Playlist" || SYNC_STEPS[i].third) 2 else 8
+                val n = if (steps == 2) (if (label == "Saving") 2 else 1) else i + 1
+                Text("Step $n of $steps · $message", Modifier.weight(1f), color = Z.textMuted,
+                    style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                Text("${(shown * 100).toInt()}%", color = Z.text, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            }
+        }
     }
 }
+
+/** (core progress label, where it starts on the bar, M3U-only step). Lists weigh more than categories. */
+private val SYNC_STEPS = listOf(
+    Triple("Connecting", 0.0f, false),
+    Triple("Live categories", 0.04f, false),
+    Triple("Live channels", 0.08f, false),
+    Triple("Movie categories", 0.34f, false),
+    Triple("Movies", 0.38f, false),
+    Triple("Series categories", 0.68f, false),
+    Triple("Series", 0.72f, false),
+    Triple("Saving", 0.95f, false),
+    Triple("Playlist", 0.05f, true),
+)
 
 @Composable
 private fun MainScaffold(model: AppModel, wide: Boolean) {
