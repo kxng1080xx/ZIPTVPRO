@@ -80,7 +80,9 @@ fun BoxScope.PlayerChrome(model: AppModel, item: Playable, inFullscreen: Boolean
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        if (item.live || item.kind == PlayKind.Catchup) NowNext(model, item, Modifier.weight(1f), compact = !inFullscreen) else Spacer(Modifier.weight(1f))
+        // Phone page player: no room for NOW/NEXT next to the buttons (the guide is a tap away).
+        if ((item.live || item.kind == PlayKind.Catchup) && (inFullscreen || LocalWide.current))
+            NowNext(model, item, Modifier.weight(1f), compact = !inFullscreen) else Spacer(Modifier.weight(1f))
         if (item.live || item.kind == PlayKind.Catchup) {
             ControlIcon(Icons.Rounded.Sensors, if (item.live) "Go to live" else "Back to live", size) { model.goLive(); onInteract() }
         }

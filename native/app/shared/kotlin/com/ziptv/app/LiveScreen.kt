@@ -57,6 +57,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import coil3.request.transformations
+import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.animation.togetherWith
 import com.ziptv.core.Channel
 import com.ziptv.core.ContentKind
 import com.ziptv.core.Programme
@@ -83,6 +85,9 @@ fun loadChannels(model: AppModel, categoryId: String): List<Channel> {
 
 @Composable
 fun LiveScreen(model: AppModel) {
+    // Phone panel mode; declared before the guide's early return so Back from the guide keeps it.
+    // Reopened on a saved category: show its channels.
+    var showChannels by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(model.liveCategory != CAT_ALL) }
     if (model.showGuide) {
         model.platform.BackHandler(enabled = !model.fullscreen) { model.showGuide = false }
         GuideScreen(model)
@@ -100,11 +105,13 @@ fun LiveScreen(model: AppModel) {
     fun choose(ch: Channel) {
         val already = model.nowPlaying?.live == true && model.nowPlaying?.streamId == ch.streamId
         selected = ch
-        // Wide: first press previews, second press goes fullscreen. Compact: straight to fullscreen.
-        model.playChannel(ch, channels, full = !wide || already)
+        // First press plays in the page's player, pressing the playing channel again goes fullscreen.
+        model.playChannel(ch, channels, full = already)
     }
 
-    if (wide) {
+    val phone = model.platform.device == DeviceClass.Touch
+    if (phone) model.platform.BackHandler(enabled = showChannels && !model.fullscreen) { showChannels = false }
+    if (wide && !phone) {
         Row(Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             // Narrow lists, wide player (v9 proportions).
             CategoryColumn(model, ContentKind.LIVE, categories, categoryId, Modifier.width(200.dp).fillMaxHeight()) { categoryId = it }
@@ -117,9 +124,21 @@ fun LiveScreen(model: AppModel) {
             PreviewPane(model, shown, Modifier.weight(1f).fillMaxHeight())
         }
     } else {
-        Column(Modifier.fillMaxSize()) {
-            CategoryChips(model, ContentKind.LIVE, categories, categoryId) { categoryId = it }
-            ChannelList(model, channels, selected, Modifier.weight(1f), ::choose)
+        // Phones: the page's player plus one panel (categories, then that category's channels):
+        // below the player in portrait, beside it in landscape.
+        val playingId = model.nowPlaying?.takeIf { it.live }?.streamId
+        val panel = @Composable { m: Modifier ->
+            LivePanel(model, categories, categoryId, channels, selected ?: channels.firstOrNull { it.streamId == playingId },
+                showChannels, { showChannels = it }, { categoryId = it }, ::choose, m)
+        }
+        if (wide) Row(Modifier.fillMaxSize().padding(end = 8.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+                InlinePlayer(model, Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)))
+            }
+            panel(Modifier.width(340.dp).fillMaxHeight())
+        } else Column(Modifier.fillMaxSize()) {
+            InlinePlayer(model, Modifier.fillMaxWidth())
+            panel(Modifier.weight(1f).fillMaxWidth())
         }
     }
 }
@@ -204,6 +223,55 @@ fun ChannelLogo(url: String?, modifier: Modifier, alt: String? = null) {
             }
             AsyncImage(req, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.padding(6.dp).fillMaxSize(),
                 onError = { if (src == url && !alt.isNullOrBlank() && alt != url) failed = true })
+        }
+    }
+}
+
+@Composable
+private fun LivePanel(
+    model: AppModel, categories: List<CatEntry>, categoryId: String, channels: List<Channel>, current: Channel?,
+    showChannels: Boolean, setShowChannels: (Boolean) -> Unit, pick: (String) -> Unit, choose: (Channel) -> Unit, modifier: Modifier,
+) {
+    androidx.compose.animation.AnimatedContent(showChannels, modifier, transitionSpec = {
+        val dir = if (targetState) 1 else -1
+        (androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInHorizontally { dir * it / 3 }) togetherWith
+            (androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutHorizontally { -dir * it / 3 })
+    }, label = "livePanel") { channelsMode ->
+        Column(Modifier.fillMaxSize()) {
+            if (channelsMode) {
+                Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconAction(Icons.Rounded.ArrowBack, "Back to categories") { setShowChannels(false) }
+                    Text(categories.firstOrNull { it.id == categoryId }?.name ?: "Channels", Modifier.weight(1f),
+                        style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (categoryId != CAT_ALL) IconAction(Icons.Rounded.CalendarViewWeek, "Full guide") { model.showGuide = true }
+                }
+                ChannelList(model, channels, current, Modifier.weight(1f).padding(horizontal = 6.dp), choose)
+            } else {
+                Text("Categories", Modifier.padding(start = 16.dp, top = 12.dp, bottom = 6.dp),
+                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                CategoryColumn(model, ContentKind.LIVE, categories, categoryId, Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp)) {
+                    pick(it); setShowChannels(true)
+                }
+            }
+        }
+    }
+}
+
+/** The page's own player (phone Live): video + the same controls as the preview pane. */
+@Composable
+private fun InlinePlayer(model: AppModel, modifier: Modifier) {
+    Box(modifier.aspectRatio(16f / 9f).background(Color.Black)) {
+        val playing = model.nowPlaying
+        if (playing != null && !model.fullscreen && !model.pip) {
+            model.player.Surface(Modifier.fillMaxSize())
+            PlayerChrome(model, playing, inFullscreen = false)
+        } else if (playing == null) {
+            Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Rounded.LiveTv, null, tint = Z.textMuted, modifier = Modifier.size(36.dp))
+                Spacer(Modifier.height(6.dp))
+                Text("Pick a channel to watch", color = Z.textMuted, style = MaterialTheme.typography.bodyMedium)
+            }
         }
     }
 }

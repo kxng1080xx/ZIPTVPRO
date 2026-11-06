@@ -67,7 +67,13 @@ fun rememberCategories(model: AppModel, kind: ContentKind): List<CatEntry> {
 
 @Composable
 fun CategoryColumn(model: AppModel, kind: ContentKind, entries: List<CatEntry>, selectedId: String, modifier: Modifier, onSelect: (String) -> Unit) {
-    LazyColumn(modifier.clip(RoundedCornerShape(16.dp)).background(Z.surface), contentPadding = PaddingValues(8.dp)) {
+    // Opens scrolled to the selected category.
+    val state = androidx.compose.foundation.lazy.rememberLazyListState()
+    androidx.compose.runtime.LaunchedEffect(entries.isNotEmpty()) { // once the list has loaded
+        val i = entries.indexOfFirst { it.id == selectedId }
+        if (i > 2) state.scrollToItem(i - 2)
+    }
+    LazyColumn(modifier.clip(RoundedCornerShape(16.dp)).background(Z.surface), state, contentPadding = PaddingValues(8.dp)) {
         items(entries, key = { it.id }) { c ->
             androidx.compose.foundation.layout.Box(Modifier.animateItem()) { // pinning slides the row to the top
                 CategoryRow(c, selectedId == c.id, onClick = { onSelect(c.id) },

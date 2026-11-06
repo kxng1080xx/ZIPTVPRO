@@ -118,7 +118,15 @@ class AppModel(val platform: Platform, private val scope: CoroutineScope) {
     var openSeries by mutableStateOf<com.ziptv.core.Series?>(null)
     var showGuide by mutableStateOf(false)
     /** Live TV's selected category; the full guide opens on the same one. */
-    var liveCategory by mutableStateOf(CAT_ALL)
+    private var liveCategoryState = mutableStateOf(CAT_ALL)
+    /** Remembered per playlist, so the app reopens on the category you left. */
+    var liveCategory: String
+        get() = liveCategoryState.value
+        set(v) {
+            if (v == liveCategoryState.value) return
+            liveCategoryState.value = v
+            user?.setSetting("live_cat", v.takeIf { it != CAT_ALL })
+        }
     /** True while the OS picture-in-picture window is showing (Android): render video only. */
     var inSystemPip by mutableStateOf(false)
     /** "Picture in picture" on desktop: force the mini player even on the Live page. */
@@ -192,6 +200,7 @@ class AppModel(val platform: Platform, private val scope: CoroutineScope) {
         library = lib
         user = UserStore(fileFor(p, "user"))
         player.deinterlace = user?.setting("deinterlace") == "1"
+        liveCategoryState.value = user?.setting("live_cat") ?: CAT_ALL
         userVersion++
         scope.launch {
             val cached = withContext(Dispatchers.IO) {

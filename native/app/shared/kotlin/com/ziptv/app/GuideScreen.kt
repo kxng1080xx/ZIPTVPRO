@@ -65,7 +65,8 @@ fun GuideScreen(model: AppModel) {
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconAction(Icons.Rounded.ArrowBack, "Back to channels") { model.showGuide = false }
-            Text("TV guide", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+            Text("TV guide", style = if (LocalWide.current) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.titleLarge,
+                maxLines = 1, modifier = Modifier.weight(1f))
             IconAction(Icons.Rounded.ChevronLeft, "Earlier") { from -= 3600 }
             Text(clock(from) + " – " + clock(to), color = Z.textMuted, style = MaterialTheme.typography.labelLarge)
             IconAction(Icons.Rounded.ChevronRight, "Later") { from += 3600 }
@@ -78,7 +79,8 @@ fun GuideScreen(model: AppModel) {
             Column(Modifier.fillMaxSize()) {
                 // Time ruler: a slot every 30 min, hours bold.
                 Box(Modifier.fillMaxWidth().height(34.dp)) {
-                    slots.forEach { t ->
+                    val roomy = gridW / slots.size >= 84.dp // phones: hours only, or the labels overlap
+                    slots.filter { roomy || it % 3600 == 0L }.forEach { t ->
                         Text(clock(t), Modifier.offset(x = xOf(t) + 6.dp).align(Alignment.CenterStart),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = if (t % 3600 == 0L) androidx.compose.ui.text.font.FontWeight.Bold else null,
