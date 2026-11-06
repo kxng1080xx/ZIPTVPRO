@@ -117,9 +117,11 @@ for (const [id, c] of channels) {
   writeFileSync(`${OUT}/ch/${file}.json`, JSON.stringify(c.progs));
   const i = urls.push(file) - 1;
   ids[id.toLowerCase()] = i;
-  let cc = (id.split('.').pop() || '').toLowerCase();
+  // ids end in a country, sometimes with a feed number: "CNN.us", "BBC.America.HD.us2"
+  const ccMatch = /\.([a-z]{2})\d*$/i.exec(id);
+  let cc = ccMatch ? ccMatch[1].toLowerCase() : '';
   if (cc === 'uk') cc = 'gb';
-  const aliases = [...c.names, id.replace(/\.[a-z]{2}$/i, '').replace(/\./g, ' ')];
+  const aliases = [...c.names, id.replace(/\.[a-z]{2}\d*$/i, '').replace(/\./g, ' ')];
   const iptv = aliases.map((n) => iptvByKey.get(`${logoKey(n).name}.${cc}`)).find(Boolean);
   if (iptv) {
     if (ids[iptv.id.toLowerCase()] === undefined) ids[iptv.id.toLowerCase()] = i;
