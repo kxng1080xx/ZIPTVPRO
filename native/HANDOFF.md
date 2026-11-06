@@ -24,7 +24,7 @@ native/
     src/tmdb.rs        TMDB lookup (title cleaning, best_match by exact title + votes), disk cache
     src/update.rs      check_update: newest v10+ GitHub release + platform asset
     src/recorder.rs    DVR: records live TS to file, reconnects, schedules (wired into the UI)
-    src/m3u.rs         plain-M3U parser (tested, NOT wired into Provider yet — see Left to do #4)
+    src/m3u.rs         plain-M3U parser (group-title, tvg-logo, tvg-id; VOD by extension)
     build.sh           tests + desktop DLL + Kotlin bindings + Android .so (4 ABIs incl. x86)
                        FAST=1 = dev build (no LTO, no tests, arm64 only; ABIS="x86" for the TV
                        emulator) ~16 s vs ~6 min. Optimized builds run on GitHub (below).
@@ -105,18 +105,11 @@ fullscreen (PC window / Android immersive); single instance (PC); remove-all pla
    plugins only, ~100 MB) from VLC_DIR / Program Files into app resources; VlcjPlayer points
    jna.library.path at it (`~/.ziptv10/vlc.log` says which VLC loaded; ZIPTV_SYSTEM_VLC=1 forces
    the installed one). Packaging needs a JDK with jpackage (JPACKAGE_JDK, default JDK 26).
-4. **M3U (non-Xtream) playlists** — IN PROGRESS. `core/src/m3u.rs::parse()` is done + tested
-   (group-title→category, tvg-logo, tvg-id, stable FNV ids from the URL, VOD by extension or
-   /movie/ /series/ paths). Still to wire:
-   - `xtream.rs`: make `get_text` pub(crate); add a cheap `probe` (read first 512 bytes, expect
-     `#EXTM3U`/`#EXTINF`) for login.
-   - `lib.rs` Provider: `m3u: Option<String>` (set when username is empty; server = playlist URL);
-     owner `m3u|<url>`; Catalog gets `#[serde(default)] urls: HashMap<String,String>`;
-     `sync()` downloads + `m3u::parse` (3x retry) and fills channels/movies/categories/urls
-     (then `count_categories`); `live_url`/`movie_url` return `urls[id]` first; `login()`
-     probes; `epg()` skips the provider fallback for M3U; `episodes()` empty.
-   - Kotlin PlaylistForm (AccountScreens.kt ~l.103): when the link is not an Xtream get.php
-     (`parseM3uUrl` == null) save `Playlist(name, server = link, username = "", password = "")`.
+4. ~~M3U playlists~~ DONE (core tests incl. an end-to-end local-server test): a playlist with an
+   empty username is a plain M3U (server = playlist URL). Provider.sync downloads + `m3u::parse`,
+   entries keep their own URL (`Catalog.urls`), login only probes the first bytes, EPG = external
+   guide only. Add-playlist form saves non-get.php links as M3U. Not yet tried with a real
+   provider M3U on a device.
 5. **Stalker portal playlists** (v9 stalker-api.js).
 6. **Built-in VPN** — desktop: port v9 main.electron.cjs OpenVPN GUI hand-off (profile from
    `DeviceState.vpn`); Android: decide.

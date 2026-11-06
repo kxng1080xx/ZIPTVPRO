@@ -98,9 +98,10 @@ fun PlaylistForm(model: AppModel, onAdded: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
+    val plainM3u = m3u.trim().let { it.startsWith("http", ignoreCase = true) && parseM3uUrl(it) == null }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Field("Playlist name", name) { name = it }
-        Field("M3U link (fills the fields below)", m3u, KeyboardType.Uri) {
+        Field("M3U link (Xtream links fill the fields below)", m3u, KeyboardType.Uri) {
             m3u = it
             parseM3uUrl(it.trim())?.let { (h, u, p) -> server = h; user = u; pass = p }
         }
@@ -113,10 +114,13 @@ fun PlaylistForm(model: AppModel, onAdded: () -> Unit) {
         Button(
             onClick = {
                 busy = true; error = null
-                val p = Playlist(name.ifBlank { server.substringAfter("://").substringBefore(':') }, server.trim(), user.trim(), pass)
+                val link = m3u.trim()
+                // A plain M3U (not an Xtream get.php link) is saved as-is: empty username = M3U in the core.
+                val p = if (plainM3u) Playlist(name.ifBlank { link.substringAfter("://").substringBefore('/') }, link, "", "")
+                    else Playlist(name.ifBlank { server.substringAfter("://").substringBefore(':') }, server.trim(), user.trim(), pass)
                 model.add(p) { err -> busy = false; error = err; if (err == null) onAdded() }
             },
-            enabled = !busy && server.isNotBlank() && user.isNotBlank() && pass.isNotBlank(),
+            enabled = !busy && (plainM3u || (server.isNotBlank() && user.isNotBlank() && pass.isNotBlank())),
             colors = ButtonDefaults.buttonColors(containerColor = Z.accent),
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier.fillMaxWidth().height(52.dp).focusRing(),

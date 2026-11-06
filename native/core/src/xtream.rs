@@ -53,7 +53,7 @@ impl Client {
         format!("{}/{kind}/{}/{}", self.host, urlencode(&self.username), urlencode(&self.password))
     }
 
-    fn get_text(&self, url: &str) -> Result<String, CoreError> {
+    pub fn get_text(&self, url: &str) -> Result<String, CoreError> {
         let resp = self.agent.get(url).call().map_err(|e| CoreError::Network { message: friendly(&e) })?;
         // Not into_string(): it refuses bodies over 10 MB, and live lists are bigger.
         let mut text = String::new();
@@ -97,6 +97,19 @@ impl Client {
             }
         }
         None
+    }
+
+    /// Cheap M3U check for "add playlist": reads only the first bytes of the link.
+    pub fn probe_m3u(&self, url: &str) -> Result<(), CoreError> {
+        let resp = self.agent.get(url).call().map_err(|e| CoreError::Network { message: friendly(&e) })?;
+        let mut head = [0u8; 1024];
+        let n = std::io::Read::read(&mut resp.into_reader(), &mut head).unwrap_or(0);
+        let text = String::from_utf8_lossy(&head[..n]);
+        if text.trim_start_matches('\u{feff}').trim_start().starts_with("#EXT") {
+            Ok(())
+        } else {
+            Err(CoreError::Auth { message: "That link isn't an M3U playlist".into() })
+        }
     }
 
     pub fn get_json(&self, url: &str) -> Option<Value> {

@@ -151,11 +151,16 @@ struct Catalog {
     channels: Vec<Channel>,
     movies: Vec<Movie>,
     series: Vec<Series>,
+    /// M3U playlists: stream id -> the entry's own URL.
+    #[serde(default)]
+    urls: HashMap<String, String>,
 }
 
 #[derive(uniffi::Object)]
 pub struct Provider {
     client: Client,
+    /// Plain M3U playlist URL (a playlist saved with an empty username); None = Xtream.
+    m3u: Option<String>,
     owner: String,
     catalog: RwLock<Catalog>,
     logos: RwLock<Option<KeyIndex>>,
@@ -168,9 +173,14 @@ impl Provider {
     #[uniffi::constructor]
     pub fn new(server_url: String, username: String, password: String) -> Arc<Self> {
         let client = Client::new(&server_url, &username, &password);
-        let owner = format!("{}|{}", client.host(), username);
+        let m3u = username.trim().is_empty().then(|| server_url.trim().to_string());
+        let owner = match &m3u {
+            Some(url) => format!("m3u|{url}"),
+            None => format!("{}|{}", client.host(), username),
+        };
         Arc::new(Self {
             client,
+            m3u,
             owner,
             catalog: RwLock::new(Catalog::default()),
             logos: RwLock::new(None),
@@ -181,6 +191,10 @@ impl Provider {
 
     /// Checks the login. Network failures and bad credentials are separate errors.
     pub fn login(&self) -> Result<AccountInfo, CoreError> {
+        if let Some(url) = &self.m3u {
+            self.client.probe_m3u(url)?;
+            return Ok(AccountInfo { status: "Active".into(), expires_at: None, max_connections: 0, active_connections: 0 });
+        }
         let v = self.client.account()?;
         let u = v.get("user_info").cloned().unwrap_or(Value::Null);
         let exp = u.get("exp_date").map(as_i64).filter(|&t| t > 0);
@@ -204,6 +218,9 @@ impl Provider {
     /// A list that still fails keeps its previous copy (same playlist only).
     pub fn sync(&self, listener: Box<dyn SyncListener>) -> Result<SyncSummary, CoreError> {
         let say = |m: &str| listener.on_progress(m.to_string());
+        if let Some(url) = &self.m3u {
+            return self.sync_m3u(url, &say);
+        }
         let mut skipped = vec![];
         let mut fetch = |action: &str, label: &str| {
             say(label);
@@ -331,10 +348,16 @@ impl Provider {
     }
 
     pub fn live_url(&self, stream_id: String) -> String {
+        if let Some(u) = self.catalog.read().unwrap().urls.get(&stream_id) {
+            return u.clone();
+        }
         format!("{}/{}.ts", self.client.stream_base("live"), stream_id)
     }
 
     pub fn movie_url(&self, stream_id: String, extension: Option<String>) -> String {
+        if let Some(u) = self.catalog.read().unwrap().urls.get(&stream_id) {
+            return u.clone();
+        }
         let ext = extension.filter(|e| !e.is_empty()).unwrap_or_else(|| "mp4".into());
         format!("{}/{}.{}", self.client.stream_base("movie"), stream_id, ext)
     }
@@ -413,13 +436,40 @@ impl Provider {
             let idx = self.external_index()?;
             epg::external(&self.client, &idx, &c.raw_name, c.epg_id.as_deref())
         });
-        let list = ext.unwrap_or_else(|| epg::provider(&self.client, &stream_id));
+        // M3U has no player_api to ask; the external guide is all there is.
+        let list = ext.unwrap_or_else(|| if self.m3u.is_some() { vec![] } else { epg::provider(&self.client, &stream_id) });
         self.epg_cache.write().unwrap().insert(stream_id, (Instant::now(), list.clone()));
         list
     }
 }
 
 impl Provider {
+    /// M3U sync: one download (3 tries), parse, replace the catalog.
+    fn sync_m3u(&self, url: &str, say: &dyn Fn(&str)) -> Result<SyncSummary, CoreError> {
+        say("Playlist");
+        let mut text = None;
+        let mut last = String::new();
+        for n in 1..=3 {
+            match self.client.get_text(url) {
+                Ok(t) => { text = Some(t); break; }
+                Err(e) => { last = e.to_string(); say(&format!("Retrying playlist ({n}/3): {last}")); }
+            }
+        }
+        let Some(text) = text else { return Err(CoreError::Network { message: last }) };
+        say("Saving");
+        let parsed = m3u::parse(&text, self.logos.read().unwrap().as_ref());
+        let mut cat = self.catalog.write().unwrap();
+        cat.channels = parsed.channels;
+        cat.movies = parsed.movies;
+        cat.series.clear();
+        cat.urls = parsed.urls;
+        let mut cats = parsed.categories;
+        count_categories(&mut cats, &cat);
+        cat.categories = cats;
+        cat.synced_for = self.owner.clone();
+        Ok(SyncSummary { live: cat.channels.len() as u32, movies: cat.movies.len() as u32, series: 0, skipped: vec![] })
+    }
+
     fn external_index(&self) -> Option<Arc<KeyIndex>> {
         if let Some((t, idx)) = self.ext_epg.read().unwrap().as_ref() {
             if t.elapsed() < Duration::from_secs(6 * 3600) {
@@ -595,6 +645,35 @@ fn ranked<T: Clone>(items: &[T], q: &str, limit: usize, name: impl Fn(&T) -> &St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct Quiet;
+    impl SyncListener for Quiet {
+        fn on_progress(&self, _: String) {}
+    }
+
+    #[test]
+    fn m3u_playlist_logs_in_syncs_and_plays_entry_urls() {
+        use std::io::{Read, Write};
+        let body = "#EXTM3U\n#EXTINF:-1 group-title=\"News\",CNN\nhttp://cdn/cnn.m3u8\n#EXTINF:-1 group-title=\"Films\",Film\nhttp://cdn/film.mp4\n";
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for s in listener.incoming().take(2) {
+                let mut s = s.unwrap();
+                let _ = s.read(&mut [0u8; 2048]);
+                let _ = write!(s, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+            }
+        });
+        let p = Provider::new(format!("http://127.0.0.1:{port}/list.m3u"), String::new(), String::new());
+        assert!(p.login().is_ok());
+        let sum = p.sync(Box::new(Quiet)).unwrap();
+        assert_eq!((sum.live, sum.movies), (1, 1));
+        let ch = &p.channels(None)[0];
+        assert_eq!(p.live_url(ch.stream_id.clone()), "http://cdn/cnn.m3u8");
+        let m = &p.movies(None)[0];
+        assert_eq!(p.movie_url(m.stream_id.clone(), None), "http://cdn/film.mp4");
+        assert_eq!(p.categories(ContentKind::Live)[0].count, 1);
+    }
 
     #[test]
     fn channels_get_clean_names_and_index_logos() {
