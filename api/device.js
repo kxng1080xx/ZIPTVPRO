@@ -43,6 +43,11 @@ export default async function handler(req, res) {
     if (b.action === 'unpair') return await unpair(res, deviceId);
     if (b.action === 'add_playlist') return await addPlaylist(res, deviceId, b);
     if (b.action === 'remove_playlist') return await removeManagedPlaylist(res, deviceId, b.playlist_id);
+    if (b.action === 'remove_all_playlists') {
+      // Scoped to this device_id only — same trust boundary as remove_playlist.
+      await sb(`/playlists?device_id=eq.${encodeURIComponent(deviceId)}`, { method: 'DELETE', prefer: 'return=minimal' });
+      return res.status(200).json({ ok: true });
+    }
 
     // Heartbeat upsert: only touch heartbeat fields. merge-duplicates updates
     // just the supplied columns, so admin fields (label/expires_at/status) and

@@ -590,7 +590,7 @@ function initAutoUpdate() {
 // icon restores the window; the menu offers explicit Show/Quit actions.
 function createTray() {
   if (tray) return;
-  const iconPath = path.join(__dirname, 'assets', 'icon.png');
+  const iconPath = path.join(__dirname, 'assets', 'icon-z.png');
   let trayImage = nativeImage.createFromPath(iconPath);
   if (!trayImage.isEmpty()) {
     trayImage = trayImage.resize({ width: 16, height: 16 });

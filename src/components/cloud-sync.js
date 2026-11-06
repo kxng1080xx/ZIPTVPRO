@@ -229,6 +229,13 @@ export async function removePlaylistFromCloud(deviceCode, remoteId) {
   if (!res.ok) throw new Error(j.error || `Could not remove playlist from server (${res.status})`);
 }
 
+/** Remove EVERY playlist on this device's cloud record (device-added and admin-added). */
+export async function removeAllPlaylistsFromCloud(deviceCode) {
+  const res = await cloudFetch('/api/device', { action: 'remove_all_playlists', device_id: deviceCode });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error || `Could not remove playlists from server (${res.status})`);
+}
+
 /** Remove the companion link (both sides). */
 export async function unpairCompanion(deviceCode) {
   const res = await cloudFetch('/api/device', { action: 'unpair', device_id: deviceCode });

@@ -1728,6 +1728,8 @@ class TVNavigation {
     if (addBtn && addBtn.offsetParent !== null) {
       items.push(addBtn);
     }
+    const removeAllBtn = document.getElementById('playlist-remove-all-btn');
+    if (removeAllBtn && removeAllBtn.offsetParent !== null) items.push(removeAllBtn);
 
     // Find if focused element is a delete button
     const isDelBtn = this.focusedElement && this.focusedElement.classList.contains('playlist-row-del');

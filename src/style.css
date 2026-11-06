@@ -1194,6 +1194,20 @@ button {
   height: 15px;
 }
 
+/* Destructive twin of the add button: quiet until hovered/focused. */
+.playlist-add-btn.playlist-remove-all-btn {
+  margin-top: 8px;
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  color: #f87171;
+  box-shadow: none;
+}
+.playlist-add-btn.playlist-remove-all-btn:hover,
+.playlist-add-btn.playlist-remove-all-btn.tv-focused {
+  background: rgba(239, 68, 68, 0.14);
+  box-shadow: none;
+}
+
 .login-back-btn {
   display: inline-flex;
   align-items: center;

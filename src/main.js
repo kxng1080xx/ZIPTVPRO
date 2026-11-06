@@ -41,7 +41,7 @@ import { checkForUpdate, downloadApp, startPeriodicUpdateCheck, initElectronUpda
 import { openSearchKeyboard, openSortDropdown } from './components/tv-search.js';
 import { openGlobalSearch, setGlobalSearchQuery } from './components/global-search.js';
 import { isNativeAvailable, nativeIsTv } from './components/native-player.js';
-import { getDeviceCode, syncDevice, detectPlatform, readCachedState, clearCachedState, isStateExpired, pairCompanion, unpairCompanion, fetchCompanionHistory, addPlaylistToCloud, removePlaylistFromCloud } from './components/cloud-sync.js';
+import { getDeviceCode, syncDevice, detectPlatform, readCachedState, clearCachedState, isStateExpired, pairCompanion, unpairCompanion, fetchCompanionHistory, addPlaylistToCloud, removePlaylistFromCloud, removeAllPlaylistsFromCloud } from './components/cloud-sync.js';
 import { initWebTabs, openWebTab, openManageTabs, toggleAdblock, isAdblockOn, applyHiddenTabs } from './components/web-tabs.js';
 import { renderHome } from './components/home.js';
 import { getStoredUiMode, setStoredUiMode, showDeviceChooser, initTvNative, enterTvNative, exitTvNative, isTvNativeActive } from './components/tv-native.js';
@@ -4537,6 +4537,7 @@ function bindGlobalEvents() {
     });
   }
   document.getElementById('playlist-add-btn')?.addEventListener('click', showAddPlaylist);
+  document.getElementById('playlist-remove-all-btn')?.addEventListener('click', deleteAllPlaylists);
   // Drawer close affordances (the scrim is a DOM child of .profile-wrap, so the
   // generic outside-click handler below won't catch it — close it explicitly).
   document.getElementById('playlist-drawer-close')?.addEventListener('click', (e) => {
@@ -5788,6 +5789,23 @@ async function deletePlaylist(id) {
     await renderPlaylistDropdown();
   } catch (err) {
     alert('Could not remove playlist: ' + (err.message || err));
+  }
+}
+
+// Wipe every playlist from the cloud record AND this device. Cloud goes first:
+// if it can't be reached we stop, otherwise the next sync would re-add them all.
+async function deleteAllPlaylists() {
+  if (!confirm('Remove ALL playlists from this device and the server? This cannot be undone.')) return;
+  try {
+    if (deviceCode) await removeAllPlaylistsFromCloud(deviceCode);
+    const { playlists } = await getPlaylists();
+    for (const p of (playlists || [])) await removePlaylist(p.id);
+    closePlaylistDropdown();
+    state.user = null;
+    showLogin();
+    showToast('All playlists removed', 'success');
+  } catch (err) {
+    alert('Could not remove playlists: ' + (err.message || err));
   }
 }
 
