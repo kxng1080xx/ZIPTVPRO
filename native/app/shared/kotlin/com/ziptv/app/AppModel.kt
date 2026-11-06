@@ -386,11 +386,14 @@ class AppModel(val platform: Platform, private val scope: CoroutineScope) {
         play(Playable(title, "Catch-up · ${ch.name}", lib.catchupUrl(ch.streamId, start, minutes), PlayKind.Catchup, ch.streamId, ch.logo), true)
     }
 
+    fun setSetting(key: String, value: String?) { user?.setSetting(key, value); userVersion++ }
+
     /** Remembered per playlist; restarts the current stream so it takes effect now. */
     fun toggleDeinterlace() {
         val on = !player.deinterlace
         player.deinterlace = on
         user?.setSetting("deinterlace", if (on) "1" else null)
+        userVersion++
         nowPlaying?.let { item -> val full = fullscreen; nowPlaying = null; play(item, full) }
         error = if (on) "Deinterlace on (smooth 60fps)" else "Deinterlace off"
     }

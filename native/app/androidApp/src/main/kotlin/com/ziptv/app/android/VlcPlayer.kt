@@ -80,11 +80,25 @@ class VlcPlayer(context: Context) : VideoPlayer {
         mp.stop(); mp.release(); vlc.release()
     }
 
+    // libVLC renders into one view at a time and throws if attached twice. Several Surfaces can
+    // briefly coexist (fullscreen over the Live preview, mini player animating in), so the newest
+    // one takes the video and, when it goes away, the previous one still on screen gets it back.
+    private val layouts = ArrayList<VLCVideoLayout>()
+
+    private fun attach(v: VLCVideoLayout) {
+        if (mp.vlcVout.areViewsAttached()) mp.detachViews()
+        mp.attachViews(v, null, false, false)
+    }
+
     @Composable
     override fun Surface(modifier: Modifier) {
         AndroidView(
-            factory = { ctx -> VLCVideoLayout(ctx).also { mp.attachViews(it, null, false, false) } },
-            onRelease = { mp.detachViews() },
+            factory = { ctx -> VLCVideoLayout(ctx).also { layouts += it; attach(it) } },
+            onRelease = { v ->
+                val wasCurrent = layouts.lastOrNull() === v
+                layouts.remove(v)
+                if (wasCurrent) layouts.lastOrNull()?.let(::attach) ?: mp.detachViews()
+            },
             modifier = modifier,
         )
     }

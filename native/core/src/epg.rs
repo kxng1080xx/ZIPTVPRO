@@ -35,10 +35,15 @@ impl KeyIndex {
         if key.is_empty() {
             return None;
         }
-        let i = (!cc.is_empty())
-            .then(|| self.names.get(&format!("{key}.{cc}")))
-            .flatten()
-            .or_else(|| self.names.get(&key))?;
+        // Providers and guides disagree on a trailing "TV" ("Cozi" vs "Cozi TV"): try both spellings.
+        let alt = match key.strip_suffix("tv") {
+            Some(k) if !k.is_empty() => k.to_string(),
+            _ => format!("{key}tv"),
+        };
+        let get = |k: &str| {
+            (!cc.is_empty()).then(|| self.names.get(&format!("{k}.{cc}"))).flatten().or_else(|| self.names.get(k))
+        };
+        let i = get(&key).or_else(|| get(&alt))?;
         self.urls.get(*i).map(|s| s.as_str())
     }
 }
@@ -127,5 +132,21 @@ mod tests {
         assert_eq!(idx.lookup("US: CNN HD", None), Some("c"));
         assert_eq!(idx.lookup("CNN", None), Some("b"));
         assert_eq!(idx.lookup("zzz", None), None);
+    }
+}
+
+#[cfg(test)]
+mod tv_suffix_tests {
+    use super::*;
+    #[test]
+    fn matches_with_or_without_tv() {
+        let mut idx = KeyIndex::default();
+        idx.urls = vec!["cozi".into(), "metv".into()];
+        idx.names.insert("cozitv".into(), 0);
+        idx.names.insert("me".into(), 1);
+        assert_eq!(idx.lookup("Cozi", None), Some("cozi"));
+        assert_eq!(idx.lookup("US| COZI TV", None), Some("cozi"));
+        assert_eq!(idx.lookup("Me TV", None), Some("metv"));
+        assert_eq!(idx.lookup("Nothing", None), None);
     }
 }

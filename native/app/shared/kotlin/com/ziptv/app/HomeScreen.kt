@@ -246,7 +246,7 @@ private fun RecordingsRow(model: AppModel) {
                     com.ziptv.core.RecordingStatus.FAILED -> "Failed"
                 }
                 Column(
-                    Modifier.width(240.dp).focusRing(RoundedCornerShape(12.dp)).clip(RoundedCornerShape(12.dp)).background(Z.surface)
+                    Modifier.animateItem().width(240.dp).focusRing(RoundedCornerShape(12.dp)).clip(RoundedCornerShape(12.dp)).background(Z.surface)
                         .combinedClickable(
                             onClick = { if (r.status == com.ziptv.core.RecordingStatus.DONE || r.status == com.ziptv.core.RecordingStatus.RECORDING) model.playRecording(r) },
                             onLongClick = { model.deleteRecording(r) },
@@ -272,7 +272,7 @@ private fun ProgressRow(title: String, items: List<WatchProgress>, model: AppMod
     LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         items(items, key = { it.key }) { p ->
             val art = rememberBackdrop(model, p)
-            Column(Modifier.width(270.dp).focusRing(RoundedCornerShape(12.dp)).clip(RoundedCornerShape(12.dp)).clickable { model.resume(p) }) {
+            Column(Modifier.animateItem().width(270.dp).focusRing(RoundedCornerShape(12.dp)).clip(RoundedCornerShape(12.dp)).clickable { model.resume(p) }) {
                 Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp)).background(Z.surfaceHigh),
                     contentAlignment = Alignment.Center) {
                     Icon(Icons.Rounded.Movie, null, tint = Z.textMuted)

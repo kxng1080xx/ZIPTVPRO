@@ -181,13 +181,15 @@ private fun ChannelPanel(model: AppModel, item: Playable, modifier: Modifier, po
     val list = model.zapList
     val cur = list.indexOfFirst { it.streamId == item.streamId }.coerceAtLeast(0)
     val now = remember(item.streamId) { java.text.SimpleDateFormat("h:mm a · EEE, MMM d", java.util.Locale.getDefault()).format(java.util.Date()) }
+    val phone = LocalDevice.current == DeviceClass.Touch // landscape phone: ~400dp tall, keep it small
     Column(
-        modifier.padding(16.dp).width(320.dp).clip(RoundedCornerShape(16.dp))
+        modifier.padding(if (phone) 10.dp else 16.dp).width(if (phone) 240.dp else 320.dp).clip(RoundedCornerShape(16.dp))
             .background(Brush.verticalGradient(listOf(Z.bg.copy(alpha = 0.92f), Z.bg.copy(alpha = 0.75f)))).padding(12.dp),
     ) {
-        Text(item.title, style = MaterialTheme.typography.titleLarge, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(now, color = Z.textMuted, style = MaterialTheme.typography.labelLarge)
-        Spacer(Modifier.size(10.dp))
+        Text(item.title, style = if (phone) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleLarge,
+            color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(now, color = Z.textMuted, style = if (phone) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelLarge)
+        Spacer(Modifier.size(if (phone) 6.dp else 10.dp))
         // The playing channel + the next 3 (wrapping), like v9 — no scrolling list.
         Column {
             (0 until minOf(4, list.size)).forEach { k ->
@@ -198,15 +200,16 @@ private fun ChannelPanel(model: AppModel, item: Playable, modifier: Modifier, po
                     Modifier.fillMaxWidth().padding(vertical = 2.dp).focusRing(RoundedCornerShape(10.dp), lift = 1.01f)
                         .clip(RoundedCornerShape(10.dp))
                         .background(if (playing) Z.accentGradient else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent)))
-                        .clickable { model.playChannel(ch, list, full = true); poke() }.padding(8.dp),
+                        .clickable { model.playChannel(ch, list, full = true); poke() }.padding(if (phone) 5.dp else 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    ChannelLogo(ch.logo, Modifier.size(36.dp), ch.altLogo)
-                    Spacer(Modifier.width(10.dp))
+                    ChannelLogo(ch.logo, Modifier.size(if (phone) 26.dp else 36.dp), ch.altLogo)
+                    Spacer(Modifier.width(if (phone) 8.dp else 10.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(ch.name, color = Color.White, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(ch.name, color = Color.White, style = if (phone) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(prog?.title ?: "—", color = if (playing) Color.White.copy(alpha = 0.85f) else Z.textMuted,
-                            style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            style = if (phone) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     qualityBadge(ch.rawName)?.let { Badge(it) }
                 }

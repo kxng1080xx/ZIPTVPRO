@@ -1,5 +1,14 @@
 package com.ziptv.app
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -96,13 +105,23 @@ fun App(model: AppModel) {
             val wide = model.platform.device != DeviceClass.Touch || maxWidth >= 720.dp
             val logoTransform = androidx.compose.runtime.remember { model.platform.logoTransformation() }
             CompositionLocalProvider(LocalWide provides wide, LocalLogoTransform provides logoTransform) {
-                when (val s = model.screen) {
-                    Screen.Welcome -> WelcomeScreen(model)
-                    is Screen.Syncing -> SyncingScreen(s.message)
-                    Screen.Main -> MainScaffold(model, wide)
+                AnimatedContent(model.screen, contentKey = { it::class }, // sync progress text doesn't re-animate
+                    transitionSpec = { fadeIn(tween(260)) togetherWith fadeOut(tween(160)) }) { s ->
+                    when (s) {
+                        Screen.Welcome -> WelcomeScreen(model)
+                        is Screen.Syncing -> SyncingScreen(s.message)
+                        Screen.Main -> MainScaffold(model, wide)
+                    }
                 }
-                if (miniPlayerVisible(model, wide)) MiniPlayer(model, Modifier.align(Alignment.BottomEnd))
-                if (model.fullscreen && model.nowPlaying != null) PlayerScreen(model)
+                // Exits stay short: the video surface can only be in one place at a time.
+                AnimatedVisibility(miniPlayerVisible(model, wide), Modifier.align(Alignment.BottomEnd),
+                    enter = slideInVertically(tween(260)) { it / 3 } + fadeIn(tween(260)), exit = fadeOut(tween(90))) {
+                    MiniPlayer(model, Modifier)
+                }
+                AnimatedVisibility(model.fullscreen && model.nowPlaying != null,
+                    enter = fadeIn(tween(220)) + scaleIn(tween(260), initialScale = 0.94f), exit = fadeOut(tween(90))) {
+                    PlayerScreen(model)
+                }
                 val screenFull = model.fullscreen && model.nowPlaying != null
                 androidx.compose.runtime.LaunchedEffect(screenFull) { model.platform.setScreenFullscreen(screenFull) }
                 ReminderBanner(model, Modifier.align(Alignment.TopCenter))
@@ -261,14 +280,16 @@ private fun RowScope.BottomItem(model: AppModel, t: TabItem) {
 
 @Composable
 private fun TabContent(model: AppModel) {
-    when (model.tab) {
+    AnimatedContent(model.tab, transitionSpec = {
+        (fadeIn(tween(240)) + slideInVertically(tween(240)) { it / 40 }) togetherWith fadeOut(tween(70))
+    }) { tab -> when (tab) {
         Tab.Home -> HomeScreen(model)
         Tab.Live -> LiveScreen(model)
         Tab.Movies -> MoviesScreen(model)
         Tab.Series -> SeriesScreen(model)
         Tab.Search -> SearchScreen(model)
         Tab.Settings -> SettingsScreen(model)
-    }
+    } }
 }
 
 @Composable

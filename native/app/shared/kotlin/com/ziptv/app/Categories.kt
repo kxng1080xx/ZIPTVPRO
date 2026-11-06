@@ -69,8 +69,10 @@ fun rememberCategories(model: AppModel, kind: ContentKind): List<CatEntry> {
 fun CategoryColumn(model: AppModel, kind: ContentKind, entries: List<CatEntry>, selectedId: String, modifier: Modifier, onSelect: (String) -> Unit) {
     LazyColumn(modifier.clip(RoundedCornerShape(16.dp)).background(Z.surface), contentPadding = PaddingValues(8.dp)) {
         items(entries, key = { it.id }) { c ->
-            CategoryRow(c, selectedId == c.id, onClick = { onSelect(c.id) },
-                onLongClick = { if (!c.id.startsWith('\u0000')) model.togglePin(kind, c.id) })
+            androidx.compose.foundation.layout.Box(Modifier.animateItem()) { // pinning slides the row to the top
+                CategoryRow(c, selectedId == c.id, onClick = { onSelect(c.id) },
+                    onLongClick = { if (!c.id.startsWith('\u0000')) model.togglePin(kind, c.id) })
+            }
         }
     }
 }
@@ -108,7 +110,7 @@ fun CategoryChips(model: AppModel, kind: ContentKind, entries: List<CatEntry>, s
                 c.name, maxLines = 1, // pinned ones are already first
                 color = if (sel) Color.White else Z.textMuted,
                 style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.focusRing(RoundedCornerShape(50)).clip(RoundedCornerShape(50))
+                modifier = Modifier.animateItem().focusRing(RoundedCornerShape(50)).clip(RoundedCornerShape(50))
                     .background(if (sel) Z.accentGradient else androidx.compose.ui.graphics.SolidColor(Z.surfaceHigh))
                     .combinedClickable(onClick = { onSelect(c.id) },
                         onLongClick = { if (!c.id.startsWith('\u0000')) model.togglePin(kind, c.id) })

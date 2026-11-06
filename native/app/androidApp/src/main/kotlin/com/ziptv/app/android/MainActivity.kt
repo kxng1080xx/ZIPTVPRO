@@ -13,6 +13,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.displayCutout
 import androidx.lifecycle.lifecycleScope
 import com.ziptv.app.App
@@ -125,7 +127,13 @@ class AndroidPlatform(private val activity: ComponentActivity) : Platform {
     override fun logoTransformation() = LogoContrast()
 
     @Composable
-    override fun cutoutPadding() = androidx.compose.foundation.layout.WindowInsets.displayCutout.asPaddingValues()
+    override fun cutoutPadding(): androidx.compose.foundation.layout.PaddingValues {
+        // Sides only (landscape keeps content off the camera); the top stays usable so the
+        // header sits level with the punch-hole camera instead of dropping below it.
+        val p = androidx.compose.foundation.layout.WindowInsets.displayCutout.asPaddingValues()
+        val dir = androidx.compose.ui.platform.LocalLayoutDirection.current
+        return androidx.compose.foundation.layout.PaddingValues(start = p.calculateStartPadding(dir), end = p.calculateEndPadding(dir))
+    }
 
     @Composable
     override fun BackHandler(enabled: Boolean, onBack: () -> Unit) =
