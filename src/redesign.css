@@ -2652,7 +2652,9 @@ body:not(.tv-layout):not(.vod-mode) .live-top-row {
   transition: max-height 0.32s cubic-bezier(0.22, 0.61, 0.24, 1);
   position: relative;
   display: grid;
-  grid-template-columns: 1.7fr 1fr;
+  /* Player column = the 16:9 player's own max width, so there is no spare
+     space to leave as a gap on either side; the details panel takes the rest. */
+  grid-template-columns: minmax(0, calc(var(--live-stage-h) * 16 / 9)) minmax(300px, 1fr);
   gap: 20px;
   align-items: stretch;
   max-height: calc(var(--live-stage-h) + 22px);
@@ -2666,9 +2668,7 @@ body:not(.tv-layout):not(.vod-mode) .live-top-row .player-wrapper {
   transition: max-width 0.32s cubic-bezier(0.22, 0.61, 0.24, 1);
   width: 100%;
   max-width: calc(var(--live-stage-h) * 16 / 9);
-  /* Hug the details panel: centring left the column's spare width as a wide
-     gap between player and panel. Spare space now sits on the outer left. */
-  margin: 0 0 0 auto;
+  margin: 0;
   z-index: 1;
 }
 
