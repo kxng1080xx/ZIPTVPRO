@@ -34,7 +34,9 @@ android {
         targetSdk = 36
         versionName = providers.gradleProperty("ziptv.version").get()
         versionCode = providers.gradleProperty("ziptv.versionCode").get().toInt()
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86") }
+        // -Pziptv.abis=armeabi-v7a -> one-ABI APK (~4x smaller), e.g. for sideloading onto a Fire TV stick.
+        ndk { abiFilters += (providers.gradleProperty("ziptv.abis").orNull?.split(",")
+            ?: listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")) }
     }
 
     sourceSets["main"].apply {

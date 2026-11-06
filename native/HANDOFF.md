@@ -58,6 +58,10 @@ native/
   `MSYS_NO_PATHCONV=1`). Seed a test playlist: push playlists.tsv and copy it into
   `files/` via `run-as com.ziptv.app`.
 - TMDB token is read from the repo `.env` (`TMDB_TOKEN`) at build time.
+- Fire TV (Stick 4K `AFTMM`, Fire OS 6.7 = API 25, 32-bit armeabi-v7a) over Wi-Fi adb
+  (192.168.0.26:5555): plain `adb install` drops the link. Build a one-ABI APK
+  (`-Pziptv.abis=armeabi-v7a`, ~42 MB), push it in 4 MB `split` chunks (retry each), `cat`
+  them on the device, then `nohup pm install -r` and read the log.
 - Phone over wireless adb: adb is `%LOCALAPPDATA%/Android/Sdk/platform-tools/adb.exe`; the port
   changes — reconnect with `adb mdns services` + `adb connect <ip:port>` (needs sandbox off).
 - PC installer: `./gradlew.bat :desktopApp:createDistributable` (or `packageMsi`) — bundles the
