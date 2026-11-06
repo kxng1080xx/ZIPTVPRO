@@ -109,6 +109,7 @@ import {
   updatePlaylistSettings
 } from './cache.js';
 import { lookup as tmdbLookup, tmdbToken } from './tmdb.js';
+import { fillChannelLogos } from './channel-logos.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -474,6 +475,15 @@ app.post('/api/sync', async (req, res) => {
     ]);
 
     sendEvent({ progress: 'Saving all cached contents...' });
+    if (Array.isArray(liveStreams)) {
+      // Bundled iptv-org logo index (public/ → dist/ at build); dev falls back to public/.
+      for (const dir of ['../dist', '../public']) {
+        try {
+          fillChannelLogos(liveStreams, JSON.parse(fs.readFileSync(path.join(__dirname, dir, 'channel-logos.json'), 'utf8')));
+          break;
+        } catch (e) {}
+      }
+    }
     updatePlaylistCache({
       live_categories: Array.isArray(liveCategories) ? liveCategories : [],
       live_streams: Array.isArray(liveStreams) ? liveStreams : [],

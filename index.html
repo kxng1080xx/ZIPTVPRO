@@ -20,6 +20,7 @@
       // failed to load (script/link/img). Name it — that's the culprit.
       var t = e && e.target;
       if (t && t.tagName && (t.src || t.href)) {
+        if (t.tagName === 'IMG') return; // ponytail: broken images aren't boot failures
         var url = String(t.src || t.href || '');
         setText('LOAD FAIL: ' + t.tagName + ' ' + url.replace(/^https?:\/\//, '').slice(0, 120));
         return;

@@ -3,6 +3,7 @@
  * or querying the IPTV server directly (using client-side IndexedDB cache).
  */
 import { db } from './db.js';
+import { fillChannelLogos } from '../../server/channel-logos.js';
 import { getDeviceCode, backupWatchHistory, deleteWatchHistory } from './cloud-sync.js';
 
 let isServerMode = false;
@@ -1102,9 +1103,11 @@ export async function syncPlaylist(progressCallback = null, { onLiveReady = null
     let liveCount = 0;
     if (!hiddenTabs.includes('live')) {
     if (progressCallback) progressCallback('Downloading live channels…');
-    let [liveCategories, liveStreams] = await Promise.all([
+    let [liveCategories, liveStreams, logoIndex] = await Promise.all([
       jget('get_live_categories'),
-      jget('get_live_streams')
+      jget('get_live_streams'),
+      // Bundled iptv-org logo index; missing/unreadable just means no fallback logos.
+      fetch('./channel-logos.json').then((r) => r.json()).catch(() => null)
     ]);
     liveStreams = dropHiddenRows(liveStreams);
     liveCategories = dropHiddenCats(liveCategories);
@@ -1118,6 +1121,8 @@ export async function syncPlaylist(progressCallback = null, { onLiveReady = null
       tv_archive_duration: s.tv_archive_duration || 0
     })) : [];
     liveStreams = null; // release the raw payload before the next download
+    fillChannelLogos(liveStreamsMapped, logoIndex);
+    logoIndex = null;
     const liveCatsMapped = embedCounts(liveCategories, countByCategory(liveStreamsMapped));
     liveCategories = null;
 
