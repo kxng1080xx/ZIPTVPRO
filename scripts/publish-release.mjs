@@ -125,14 +125,39 @@ async function uploadAsset(filePath, assetName) {
   closeSync(fd);
 
   console.log(`Uploading ${assetName} (${(size / 1048576).toFixed(1)} MB)...`);
+  // Stream the buffer in 1 MB pulls so we can draw a progress bar. fetch pulls
+  // the next chunk only as the socket drains, so "sent" tracks the real upload.
+  const CHUNK = 1 << 20;
+  const started = Date.now();
+  let sent = 0, lastLogged = -1;
+  const progress = () => {
+    const pct = Math.floor((sent / size) * 100);
+    const mbps = sent / 1048576 / Math.max(0.001, (Date.now() - started) / 1000);
+    const eta = mbps > 0 ? Math.round((size - sent) / 1048576 / mbps) : 0;
+    const bar = '#'.repeat(Math.floor(pct / 4)).padEnd(25, '-');
+    const line = `  [${bar}] ${String(pct).padStart(3)}%  ${(sent / 1048576).toFixed(1)}/${(size / 1048576).toFixed(1)} MB  ${mbps.toFixed(2)} MB/s  ETA ${eta}s`;
+    if (process.stdout.isTTY) process.stdout.write(`\r${line}`);
+    else if (pct >= lastLogged + 10 || sent === size) { lastLogged = pct; console.log(line); } // piped: one line per 10%
+  };
+  const body = new ReadableStream({
+    pull(controller) {
+      if (sent >= size) { controller.close(); return; }
+      const chunk = buf.subarray(sent, Math.min(sent + CHUNK, size));
+      sent += chunk.length;
+      controller.enqueue(chunk);
+      progress();
+    },
+  });
   const up = await fetch(
     `${uploads}/repos/${OWNER}/${REPO}/releases/${release.id}/assets?name=${assetName}`,
     {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/octet-stream', 'Content-Length': String(size) },
-      body: buf,
+      body,
+      duplex: 'half', // required by Node's fetch for a streamed request body
     }
   );
+  if (process.stdout.isTTY) process.stdout.write('\n');
   if (!up.ok) {
     throw new Error(`Upload failed -> ${up.status} ${await up.text()}`);
   }
