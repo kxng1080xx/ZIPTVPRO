@@ -1,4 +1,4 @@
-# ZIPTV v10 — handoff log (2026-11-06)
+# ZIPTV v10 — handoff log (updated 2026-11-06, end of session 2)
 
 v10 = full native rebuild for **speed + reliability** with **one unified UI** that
 adapts to the device (TV/projector, phone/tablet, Windows PC) — no mode switching,
@@ -24,7 +24,10 @@ native/
     src/tmdb.rs        TMDB lookup (title cleaning, best_match by exact title + votes), disk cache
     src/update.rs      check_update: newest v10+ GitHub release + platform asset
     src/recorder.rs    DVR: records live TS to file, reconnects, schedules (wired into the UI)
+    src/m3u.rs         plain-M3U parser (tested, NOT wired into Provider yet — see Left to do #4)
     build.sh           tests + desktop DLL + Kotlin bindings + Android .so (4 ABIs incl. x86)
+                       FAST=1 = dev build (no LTO, no tests, arm64 only; ABIS="x86" for the TV
+                       emulator) ~16 s vs ~6 min. Optimized builds run on GitHub (below).
     examples/smoke.rs  live test: cargo run --release --example smoke -- <server> <user> <pass> [--sync]
   app/                 Gradle 8.14.3, AGP 8.13, Kotlin 2.4.20, CMP 1.12.2
     shared/kotlin/     ONE UI for all devices (both apps compile it via srcDir, no KMP module)
@@ -55,6 +58,14 @@ native/
   `MSYS_NO_PATHCONV=1`). Seed a test playlist: push playlists.tsv and copy it into
   `files/` via `run-as com.ziptv.app`.
 - TMDB token is read from the repo `.env` (`TMDB_TOKEN`) at build time.
+- Phone over wireless adb: adb is `%LOCALAPPDATA%/Android/Sdk/platform-tools/adb.exe`; the port
+  changes — reconnect with `adb mdns services` + `adb connect <ip:port>` (needs sandbox off).
+- PC installer: `./gradlew.bat :desktopApp:createDistributable` (or `packageMsi`) — bundles the
+  trimmed VLC. Uses JDK 26's jpackage (JBR has none); override with JPACKAGE_JDK.
+- Release: GitHub Actions `.github/workflows/native-release.yml` (manual) builds optimized
+  core + APK + MSI and publishes `v<ziptv.version>` with `--latest=false` (v9 keeps "latest").
+  Needs repo secrets ANDROID_DEBUG_KEYSTORE (base64 ~/.android/debug.keystore) and TMDB_TOKEN —
+  NOT set yet; the workflow has never been run.
 
 ## Build gotchas (all solved, keep them)
 - gradle.properties: `org.gradle.java.home=C:/Program Files/Android/Android Studio/jbr`
@@ -90,7 +101,18 @@ fullscreen (PC window / Android immersive); single instance (PC); remove-all pla
    plugins only, ~100 MB) from VLC_DIR / Program Files into app resources; VlcjPlayer points
    jna.library.path at it (`~/.ziptv10/vlc.log` says which VLC loaded; ZIPTV_SYSTEM_VLC=1 forces
    the installed one). Packaging needs a JDK with jpackage (JPACKAGE_JDK, default JDK 26).
-4. **M3U (non-Xtream) playlists** — parse #EXTINF (tvg-id, tvg-logo, group-title) in Rust.
+4. **M3U (non-Xtream) playlists** — IN PROGRESS. `core/src/m3u.rs::parse()` is done + tested
+   (group-title→category, tvg-logo, tvg-id, stable FNV ids from the URL, VOD by extension or
+   /movie/ /series/ paths). Still to wire:
+   - `xtream.rs`: make `get_text` pub(crate); add a cheap `probe` (read first 512 bytes, expect
+     `#EXTM3U`/`#EXTINF`) for login.
+   - `lib.rs` Provider: `m3u: Option<String>` (set when username is empty; server = playlist URL);
+     owner `m3u|<url>`; Catalog gets `#[serde(default)] urls: HashMap<String,String>`;
+     `sync()` downloads + `m3u::parse` (3x retry) and fills channels/movies/categories/urls
+     (then `count_categories`); `live_url`/`movie_url` return `urls[id]` first; `login()`
+     probes; `epg()` skips the provider fallback for M3U; `episodes()` empty.
+   - Kotlin PlaylistForm (AccountScreens.kt ~l.103): when the link is not an Xtream get.php
+     (`parseM3uUrl` == null) save `Playlist(name, server = link, username = "", password = "")`.
 5. **Stalker portal playlists** (v9 stalker-api.js).
 6. **Built-in VPN** — desktop: port v9 main.electron.cjs OpenVPN GUI hand-off (profile from
    `DeviceState.vpn`); Android: decide.
@@ -108,7 +130,26 @@ fullscreen (PC window / Android immersive); single instance (PC); remove-all pla
 ## Open bugs / to verify
 - ~~Black movies/episodes on PC~~ FIXED: GPU decoding never reached the frame callback;
   VlcjPlayer now plays with `:avcodec-hw=none` (ZIPTV_HW_DECODE=1 to re-enable).
-- DVR: two CSI: NY recordings show "Failed" on Home — investigate the recorder.
+- DVR "Failed" recordings: cause = one-stream plans (player held the only connection; recorder
+  got refused → 0-byte files). FIXED for "Record this channel" (checks login max_connections,
+  stops playback first). Scheduled recordings that start while you watch can still fail —
+  needs the same check when the schedule fires (or record from the player's stream).
+  Recordings row doesn't show *why* a recording failed (no error field yet).
 - Verify every screen with the D-pad on the TV emulator (only Home/rail checked so far).
 - Phone layout not yet tested on an emulator (phone AVD `ZIPTV_Phone` exists but booted black).
 - Nothing of v10 is committed to `main`; work is on branch `v10-native`.
+
+## Session 2 (2026-11-06) — what changed, for context
+Settings redone as v9 sections (Account & Playlists / Playback / Network / Application; phones:
+list → section). Native animations (tab/screen crossfade, player zoom, mini slide, list items,
+shimmer skeletons for posters/episodes/TMDB info, image fade-in). Phone Live redesign: player on
+top + one panel (categories → channels, back), landscape = player + panel side by side; reopens
+on the last category (setting `live_cat`, per playlist). Movies/Series have NO categories now
+(search + Home "My list" rows). Auto-next episode with Up next card (PlayerState.Ended). Slim
+seek bar inside the control row. Guide: time ruler + now line, no chips, Guide button hidden
+on "All channels". Phone menus are bottom sheets. Mini player: phone size 220 dp, shows in
+portrait above the tab bar; TVs/sticks never use system PiP (in-app mini instead).
+Android fixes: crash closing fullscreen (double attachViews) and black video after moving
+between views (VlcPlayer.attach: video track off → swap views → on). Cozi guide (EPG lookup
+tries with/without a trailing "tv"). PC: preview no longer huge on big windows; black VOD fixed
+(CPU decode); VLC bundled. All on branch `v10-native` (last pushed commits listed by `git log`).

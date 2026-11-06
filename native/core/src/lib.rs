@@ -3,6 +3,7 @@
 
 mod cloud;
 mod epg;
+mod m3u;
 mod names;
 mod recorder;
 mod tmdb;
