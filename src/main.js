@@ -1,4 +1,5 @@
 import './compat.js'; // MUST be first: patches globals old TV WebViews lack
+import './components/logo-contrast.js';
 import {
   getStatus,
   login,
