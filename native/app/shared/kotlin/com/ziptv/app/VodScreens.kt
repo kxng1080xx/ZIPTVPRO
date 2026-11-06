@@ -1,5 +1,7 @@
 package com.ziptv.app
 
+import androidx.compose.animation.core.animateFloat
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -111,8 +113,9 @@ private fun CatalogScreen(model: AppModel, kind: ContentKind, load: (String) -> 
     val wide = LocalWide.current
     var categoryId by rememberSaveable(kind) { mutableStateOf(CAT_ALL) }
     val categories = rememberCategories(model, kind)
-    val posters by produceState(emptyList<Poster>(), model.library, kind, categoryId, model.catalogVersion,
+    val posters by produceState<List<Poster>?>(null, model.library, kind, categoryId, model.catalogVersion,
         if (categoryId == CAT_FAV) model.userVersion else 0) {
+        if (categoryId != CAT_FAV) value = null // category switch: show the skeleton, not the old list
         value = withContext(Dispatchers.IO) { load(categoryId) }
     }
     if (wide) {
@@ -129,14 +132,49 @@ private fun CatalogScreen(model: AppModel, kind: ContentKind, load: (String) -> 
 }
 
 @Composable
-private fun PosterGrid(items: List<Poster>, modifier: Modifier, onOpen: (Poster) -> Unit) {
+private fun PosterGrid(items: List<Poster>?, modifier: Modifier, onOpen: (Poster) -> Unit) {
+    val min = if (LocalDevice.current == DeviceClass.Touch && !LocalWide.current) 110.dp else 150.dp
+    androidx.compose.animation.Crossfade(items == null, modifier, label = "posters") { loading ->
+        if (loading) PosterSkeleton(min) else PosterGridLoaded(items.orEmpty(), min, onOpen)
+    }
+}
+
+/** Grey poster shapes with a moving shine while the catalog loads. */
+@Composable
+private fun PosterSkeleton(min: androidx.compose.ui.unit.Dp) {
+    val shine = shimmerBrush()
+    LazyVerticalGrid(GridCells.Adaptive(min), Modifier.fillMaxSize(), contentPadding = PaddingValues(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(18.dp),
+        userScrollEnabled = false) {
+        items(24) {
+            Column {
+                Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(12.dp)).background(shine))
+                Box(Modifier.padding(top = 10.dp).fillMaxWidth(0.8f).height(12.dp).clip(RoundedCornerShape(6.dp)).background(shine))
+                Box(Modifier.padding(top = 6.dp).fillMaxWidth(0.35f).height(10.dp).clip(RoundedCornerShape(5.dp)).background(shine))
+            }
+        }
+    }
+}
+
+@Composable
+fun shimmerBrush(): androidx.compose.ui.graphics.Brush {
+    val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "shimmer")
+    val x by t.animateFloat(-600f, 1600f, androidx.compose.animation.core.infiniteRepeatable(
+        androidx.compose.animation.core.tween(1300, easing = androidx.compose.animation.core.LinearEasing)), label = "x")
+    return androidx.compose.ui.graphics.Brush.linearGradient(
+        listOf(Z.surface, Z.surfaceHigh, Color(0xFF232836), Z.surfaceHigh, Z.surface),
+        start = androidx.compose.ui.geometry.Offset(x, 0f), end = androidx.compose.ui.geometry.Offset(x + 600f, 300f),
+    )
+}
+
+@Composable
+private fun PosterGridLoaded(items: List<Poster>, min: androidx.compose.ui.unit.Dp, onOpen: (Poster) -> Unit) {
     if (items.isEmpty()) {
-        Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Nothing here yet", color = Z.textMuted) }
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Nothing here yet", color = Z.textMuted) }
         return
     }
-    val min = if (LocalDevice.current == DeviceClass.Touch && !LocalWide.current) 110.dp else 150.dp
     LazyVerticalGrid(
-        GridCells.Adaptive(min), modifier,
+        GridCells.Adaptive(min), Modifier.fillMaxSize(),
         contentPadding = PaddingValues(8.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
@@ -243,7 +281,7 @@ private fun EpisodesScreen(model: AppModel, series: Series, onBack: () -> Unit) 
         }
         val eps = episodes
         when {
-            eps == null -> item { Text("Loading episodes…", color = Z.textMuted) }
+            eps == null -> items(6) { EpisodeSkeleton() }
             eps.isEmpty() -> item { Text("No episodes found", color = Z.textMuted) }
             else -> eps.groupBy { it.season }.forEach { (season, list) ->
                 item(key = "s$season") {
@@ -251,6 +289,20 @@ private fun EpisodesScreen(model: AppModel, series: Series, onBack: () -> Unit) 
                 }
                 items(list, key = { it.id }) { e -> EpisodeRow(model, series, e) }
             }
+        }
+    }
+}
+
+@Composable
+private fun EpisodeSkeleton() {
+    val shine = shimmerBrush()
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Z.surface).padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(24.dp, 16.dp).clip(RoundedCornerShape(4.dp)).background(shine))
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Box(Modifier.fillMaxWidth(0.55f).height(14.dp).clip(RoundedCornerShape(6.dp)).background(shine))
+            Box(Modifier.padding(top = 8.dp).fillMaxWidth(0.85f).height(10.dp).clip(RoundedCornerShape(5.dp)).background(shine))
         }
     }
 }
