@@ -110,9 +110,8 @@ fullscreen (PC window / Android immersive); single instance (PC); remove-all pla
    entries keep their own URL (`Catalog.urls`), login only probes the first bytes, EPG = external
    guide only. Add-playlist form saves non-get.php links as M3U. Not yet tried with a real
    provider M3U on a device.
-5. **Stalker portal playlists** (v9 stalker-api.js).
-6. **Built-in VPN** — desktop: port v9 main.electron.cjs OpenVPN GUI hand-off (profile from
-   `DeviceState.vpn`); Android: decide.
+5. ~~Stalker portal playlists~~ SKIPPED (user decision, 2026-11-06: not needed in v10).
+6. ~~Built-in VPN~~ SKIPPED (user decision, 2026-11-06).
 7. **Watch Together** (v9 watch-together.js + its cloud endpoints).
 8. **Chromecast** (Android Cast SDK; v9 cast.js).
 9. **Online subtitle search** (needs an OpenSubtitles key).

@@ -19,7 +19,7 @@ Legend: ✅ done · 🟡 partial · ⬜ not started
 | External EPG (epg-data branch) + provider fallback | ✅ | |
 | Search (accent/case-insensitive, prefix first) | ✅ | |
 | Series episodes | ✅ | |
-| Stalker portal playlists | ⬜ | v9 stalker-api.js |
+| Stalker portal playlists | ➖ skipped | v9 stalker-api.js |
 | M3U (non-Xtream) playlists | ⬜ | |
 | Hidden categories / hidden tabs (admin pre-add visibility) | ✅ | |
 | Catch-up / timeshift (tv_archive) | ✅ | `archive_days` already parsed |
@@ -70,6 +70,6 @@ Legend: ✅ done · 🟡 partial · ⬜ not started
 | Remove-all playlists (device + cloud) | ✅ | |
 | Companion device sync (continue watching hand-off) | ✅ | |
 | Watch Together | ⬜ | |
-| Built-in VPN (OpenVPN profile) | ⬜ | |
+| Built-in VPN (OpenVPN profile) | ➖ skipped | |
 | Update check / auto-update | 🟡 | check + Download banner (v10+ GitHub releases, platform asset); no silent install | |
 | Share tunnel / TV link | ⬜ | |
