@@ -112,6 +112,10 @@ class VlcjPlayer : VideoPlayer {
         _state.value = PlayerState.Buffering(0)
         val opts = buildList {
             if (startMs > 0) add(":start-time=${startMs / 1000}")
+            // GPU decoding (d3d11va, picked for HEVC movies/episodes) never reaches our frame callback:
+            // picture stays black while audio plays. CPU decoding is cheap enough (~13% for 1080p HEVC).
+            // ZIPTV_HW_DECODE=1 turns GPU decoding back on.
+            if (System.getenv("ZIPTV_HW_DECODE") == null) add(":avcodec-hw=none")
             if (deinterlace) { add(":deinterlace=1"); add(":deinterlace-mode=yadif2x") }
         }.toTypedArray()
         worker.execute { mp.media().play(url, *opts) }

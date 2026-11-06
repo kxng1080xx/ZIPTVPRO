@@ -86,8 +86,10 @@ fullscreen (PC window / Android immersive); single instance (PC); remove-all pla
 2. ~~Update check~~ DONE (core `check_update`, banner with Download; only tags >= v10,
    picks .msi/.exe for PC, .apk for Android). Left: silent install, and v10 releases must
    attach those assets (MSI from `:desktopApp:packageMsi`, APK).
-3. **Bundle VLC with the PC installer** (vlcj currently needs VLC installed) — ship
-   libvlc.dll/libvlccore.dll/plugins in the jpackage app and point vlcj NativeDiscovery at it.
+3. ~~Bundle VLC with the PC installer~~ DONE: `prepareVlc` copies a trimmed VLC (playback
+   plugins only, ~100 MB) from VLC_DIR / Program Files into app resources; VlcjPlayer points
+   jna.library.path at it (`~/.ziptv10/vlc.log` says which VLC loaded; ZIPTV_SYSTEM_VLC=1 forces
+   the installed one). Packaging needs a JDK with jpackage (JPACKAGE_JDK, default JDK 26).
 4. **M3U (non-Xtream) playlists** — parse #EXTINF (tvg-id, tvg-logo, group-title) in Rust.
 5. **Stalker portal playlists** (v9 stalker-api.js).
 6. **Built-in VPN** — desktop: port v9 main.electron.cjs OpenVPN GUI hand-off (profile from
@@ -104,8 +106,9 @@ fullscreen (PC window / Android immersive); single instance (PC); remove-all pla
     installers, publishing.
 
 ## Open bugs / to verify
-- A movie (X2) once showed black on PC; live channels render fine — check VOD containers
-  (mkv/HEVC) with vlcj.
+- ~~Black movies/episodes on PC~~ FIXED: GPU decoding never reached the frame callback;
+  VlcjPlayer now plays with `:avcodec-hw=none` (ZIPTV_HW_DECODE=1 to re-enable).
+- DVR: two CSI: NY recordings show "Failed" on Home — investigate the recorder.
 - Verify every screen with the D-pad on the TV emulator (only Home/rail checked so far).
 - Phone layout not yet tested on an emulator (phone AVD `ZIPTV_Phone` exists but booted black).
 - Nothing of v10 is committed to `main`; work is on branch `v10-native`.
