@@ -54,14 +54,11 @@ impl Client {
     }
 
     fn get_text(&self, url: &str) -> Result<String, CoreError> {
-        let resp = self.agent.get(url).call().map_err(|e| match e {
-            ureq::Error::Status(code, _) => CoreError::Network { message: format!("HTTP {code}") },
-            other => CoreError::Network { message: other.to_string() },
-        })?;
+        let resp = self.agent.get(url).call().map_err(|e| CoreError::Network { message: friendly(&e) })?;
         // Not into_string(): it refuses bodies over 10 MB, and live lists are bigger.
         let mut text = String::new();
         std::io::Read::read_to_string(&mut resp.into_reader(), &mut text)
-            .map_err(|e| CoreError::Network { message: e.to_string() })?;
+            .map_err(|_| CoreError::Network { message: "The server closed the connection mid-download".into() })?;
         Ok(text)
     }
 
@@ -104,6 +101,22 @@ impl Client {
 
     pub fn get_json(&self, url: &str) -> Option<Value> {
         self.get_text(url).ok().and_then(|t| serde_json::from_str(&t).ok())
+    }
+}
+
+/// User-facing text for an HTTP failure. Never includes the URL: Xtream URLs carry
+/// the username and password, and ureq's Display put them on screen.
+pub fn friendly(e: &ureq::Error) -> String {
+    match e {
+        ureq::Error::Status(code, _) => format!("The server answered HTTP {code}"),
+        ureq::Error::Transport(t) => match t.kind() {
+            ureq::ErrorKind::Dns => "Server not found (check the address)".into(),
+            ureq::ErrorKind::ConnectionFailed => "Couldn't connect to the server".into(),
+            ureq::ErrorKind::Io => "The server or your network reset the connection (try a VPN)".into(),
+            ureq::ErrorKind::TooManyRedirects => "The server keeps redirecting".into(),
+            ureq::ErrorKind::BadStatus | ureq::ErrorKind::BadHeader => "The server sent an invalid reply".into(),
+            _ => "Network problem".into(),
+        },
     }
 }
 

@@ -119,6 +119,8 @@ class AppModel(val platform: Platform, private val scope: CoroutineScope) {
     var showGuide by mutableStateOf(false)
     /** Live TV's selected category; the full guide opens on the same one. */
     var liveCategory by mutableStateOf(CAT_ALL)
+    /** True while the OS picture-in-picture window is showing (Android): render video only. */
+    var inSystemPip by mutableStateOf(false)
     /** "Picture in picture" on desktop: force the mini player even on the Live page. */
     var pip by mutableStateOf(false)
     /** The header search box (shared by every screen); typing opens the results. */

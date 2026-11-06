@@ -74,6 +74,11 @@ import kotlinx.coroutines.delay
 @Composable
 fun PlayerScreen(model: AppModel) {
     val item = model.nowPlaying ?: return
+    // In the OS PiP window only the picture fits — no controls, panels or guide.
+    if (model.inSystemPip) {
+        Box(Modifier.fillMaxSize().background(Color.Black)) { model.player.Surface(Modifier.fillMaxSize()) }
+        return
+    }
     val state by model.player.state.collectAsState()
     var poke by remember { mutableIntStateOf(0) }
     var controls by remember { mutableStateOf(true) }
@@ -127,7 +132,8 @@ fun PlayerScreen(model: AppModel) {
         AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize()) {
                 TopBar(model, item, exit, Modifier.align(Alignment.TopCenter))
-                if (item.live && model.zapList.size > 1) ChannelPanel(model, item, Modifier.align(Alignment.TopStart)) { poke++ }
+                // Panel needs room: wide layouts (PC/TV/tablet, phone in landscape) only.
+                if (item.live && model.zapList.size > 1 && LocalWide.current) ChannelPanel(model, item, Modifier.align(Alignment.TopStart)) { poke++ }
                 CenterControls(model, item, state, Modifier.align(Alignment.Center)) { poke++ }
                 if (item.seekable) SeekBar(model, item, Modifier.align(Alignment.BottomCenter).padding(bottom = 76.dp)) { poke++ }
                 PlayerChrome(model, item, inFullscreen = true, onActive = { popOpen = it }, onInteract = { poke++ })
@@ -143,7 +149,7 @@ private fun TopBar(model: AppModel, item: Playable, exit: () -> Unit, modifier: 
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Live: the channel panel (top left) carries name + clock, so the bar only shows the rest.
-        Column(Modifier.weight(1f).padding(start = if (item.live && model.zapList.size > 1) 340.dp else 0.dp)) {
+        Column(Modifier.weight(1f).padding(start = if (item.live && model.zapList.size > 1 && LocalWide.current) 340.dp else 0.dp)) {
             if (item.live) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("LIVE", color = Color.White, style = MaterialTheme.typography.labelMedium,

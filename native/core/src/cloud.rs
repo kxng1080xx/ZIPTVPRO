@@ -171,7 +171,7 @@ impl Cloud {
                     (code, r.into_string().unwrap_or_default(), j)
                 }
                 Err(e) => {
-                    last = e.to_string();
+                    last = crate::xtream::friendly(&e);
                     continue;
                 }
             };

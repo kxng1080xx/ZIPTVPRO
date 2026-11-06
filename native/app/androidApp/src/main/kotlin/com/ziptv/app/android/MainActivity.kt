@@ -30,9 +30,22 @@ class MainActivity : ComponentActivity() {
         setContent { App(model) }
     }
 
+    // Home while watching fullscreen -> PiP (like YouTube) instead of stopping.
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (model.nowPlaying != null && model.fullscreen) model.platform.enterPip()
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        model.inSystemPip = isInPictureInPictureMode
+        if (isInPictureInPictureMode) model.fullscreen = true
+    }
+
     override fun onStop() {
         super.onStop()
-        if (!isChangingConfigurations) model.stop()
+        // PiP keeps playing; a real background (home without PiP, app switch) stops.
+        if (!isChangingConfigurations && !(android.os.Build.VERSION.SDK_INT >= 24 && isInPictureInPictureMode)) model.stop()
     }
 
     override fun onDestroy() {
@@ -61,6 +74,11 @@ class AndroidPlatform(private val activity: ComponentActivity) : Platform {
         activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "10"
 
     override fun setScreenFullscreen(on: Boolean) {
+        // Phones: fullscreen video turns landscape, like any video app (TVs are already landscape).
+        if (device == DeviceClass.Touch) {
+            activity.requestedOrientation = if (on) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
         val c = androidx.core.view.WindowCompat.getInsetsController(activity.window, activity.window.decorView)
         if (on) {
             c.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
