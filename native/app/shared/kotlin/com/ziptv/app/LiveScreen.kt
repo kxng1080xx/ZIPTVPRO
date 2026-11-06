@@ -240,7 +240,8 @@ fun GuideList(model: AppModel, channel: Channel, guide: List<Programme>, modifie
             Row(
                 Modifier.fillMaxWidth().focusRing(RoundedCornerShape(10.dp), lift = 1.01f).clip(RoundedCornerShape(10.dp))
                     .background(if (isNow) Z.activeTint else SolidColor(Color.Transparent))
-                    .clickable {
+                    // Long-press an upcoming (or current) show = record it.
+                    .combinedClickable(onLongClick = { if (!past) model.recordProgramme(channel, p.title, p.start, p.end) }) {
                         when {
                             isNow -> model.playChannel(channel, listOf(channel), full = true)
                             past -> model.playCatchup(channel, p.title, p.start, p.end)

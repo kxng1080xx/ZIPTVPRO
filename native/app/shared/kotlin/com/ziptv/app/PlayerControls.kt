@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.FiberManualRecord
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material.icons.rounded.MoreHoriz
@@ -102,6 +103,7 @@ fun BoxScope.PlayerChrome(model: AppModel, item: Playable, inFullscreen: Boolean
         Pop.More -> Popover(popMod) {
             MenuItem(Icons.Rounded.Translate, "Audio track") { pop = Pop.Tracks }
             MenuItem(Icons.Rounded.Subtitles, "Subtitles") { pop = Pop.Tracks }
+            if (item.live) MenuItem(Icons.Rounded.FiberManualRecord, "Record this channel") { model.recordNow(); pop = Pop.None }
             MenuItem(Icons.Rounded.Bolt, if (model.player.deinterlace) "Deinterlace (60fps) · On" else "Deinterlace (60fps)") {
                 model.toggleDeinterlace(); pop = Pop.None
             }

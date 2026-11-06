@@ -22,7 +22,7 @@ native/
                        add/remove/remove-all playlists, pair/unpair, history mirror.
                        Cloudflare Pages ONLY (user: "scratch Vercel completely")
     src/tmdb.rs        TMDB lookup (title cleaning, best_match by exact title + votes), disk cache
-    src/recorder.rs    DVR: records live TS to file, reconnects, schedules (NEW, UI not wired yet)
+    src/recorder.rs    DVR: records live TS to file, reconnects, schedules (wired into the UI)
     build.sh           tests + desktop DLL + Kotlin bindings + Android .so (4 ABIs incl. x86)
     examples/smoke.rs  live test: cargo run --release --example smoke -- <server> <user> <pass> [--sync]
   app/                 Gradle 8.14.3, AGP 8.13, Kotlin 2.4.20, CMP 1.12.2
@@ -79,10 +79,9 @@ stop; PiP button on the bar); mini player (cable-style, also desktop PiP); whole
 fullscreen (PC window / Android immersive); single instance (PC); remove-all playlists.
 
 ## Left to do (in suggested order)
-1. **Wire the recorder (DVR) UI** — core done + tested (`Recorder`): add to AppModel
-   (`Recorder(dataDir/recordings)`), "Record" item in the More menu for live (until the
-   current programme ends), record icon on future guide rows, a Recordings row on Home /
-   section in Settings (play the .ts via player.play("file:///…"), delete).
+1. ~~DVR UI~~ DONE: More → "Record this channel" (until the show ends), long-press a guide
+   row to schedule, Home "Recordings" row (tap = play, long-press = stop/delete).
+   Not yet verified end-to-end on a real channel.
 2. **Update check / auto-update** — compare app version with the latest GitHub release
    (kxng1080xx/ZIPTVPRO); banner + download link. Release assets for v10 TBD (MSI/EXE from
    `:desktopApp:packageMsi`, APK).

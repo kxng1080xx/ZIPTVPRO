@@ -67,7 +67,7 @@ sealed interface Screen {
     data object Main : Screen
 }
 
-enum class PlayKind { Live, Catchup, Movie, Episode }
+enum class PlayKind { Live, Catchup, Movie, Episode, Recording }
 
 /** Everything the player and Continue Watching need about what's playing. */
 data class Playable(
@@ -91,6 +91,9 @@ data class Playable(
 
 class AppModel(val platform: Platform, private val scope: CoroutineScope) {
     private val store = PlaylistStore(platform.dataDir)
+    val recorder by lazy { com.ziptv.core.Recorder(File(platform.dataDir, "recordings").path) }
+    /** Bumped when recordings change; the list also refreshes on a timer while one is running. */
+    var recordingsVersion by mutableStateOf(0); private set
     val tmdb by lazy { com.ziptv.core.Tmdb(platform.tmdbToken(), File(platform.dataDir, "tmdb.json").path) }
     val cloud: Cloud = Cloud(File(platform.dataDir, "device_code").path, platform.cloudPlatform, platform.appVersion)
 
@@ -380,6 +383,39 @@ class AppModel(val platform: Platform, private val scope: CoroutineScope) {
         user?.setSetting("deinterlace", if (on) "1" else null)
         nowPlaying?.let { item -> val full = fullscreen; nowPlaying = null; play(item, full) }
         error = if (on) "Deinterlace on (smooth 60fps)" else "Deinterlace off"
+    }
+
+    /** Records the live channel until the current show ends (1h when there's no guide). */
+    fun recordNow() {
+        val item = nowPlaying?.takeIf { it.live } ?: return
+        val lib = library ?: return
+        scope.launch {
+            val t = System.currentTimeMillis() / 1000
+            val end = withContext(Dispatchers.IO) {
+                runCatching { lib.epg(item.streamId) }.getOrDefault(emptyList()).firstOrNull { it.start <= t && it.end > t }
+            }
+            val title = end?.title ?: item.title
+            recorder.record(item.url, title, item.title, t, end?.end ?: (t + 3600))
+            recordingsVersion++
+            error = "Recording $title"
+        }
+    }
+
+    /** Schedules a future (or current) programme; the app must stay open (same as v9). */
+    fun recordProgramme(ch: Channel, title: String, start: Long, end: Long) {
+        val lib = library ?: return
+        recorder.record(lib.liveUrl(ch.streamId), title, ch.name, start, end)
+        recordingsVersion++
+        error = "Recording scheduled: $title"
+    }
+
+    fun playRecording(r: com.ziptv.core.Recording) {
+        val url = java.io.File(r.path).toURI().toString()
+        play(Playable(r.title, "Recording · ${r.channel}", url, PlayKind.Recording, r.id), full = true)
+    }
+
+    fun deleteRecording(r: com.ziptv.core.Recording) {
+        recorder.delete(r.id); recordingsVersion++
     }
 
     fun setSleepTimer(minutes: Int?) {

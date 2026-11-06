@@ -58,7 +58,7 @@ Legend: ✅ done · 🟡 partial · ⬜ not started
 | Deinterlace, upscaler | 🟡 | deinterlace (VLC yadif2x) done; upscaler not in VLC | |
 | Picture-in-picture | 🟡 | Android; desktop has no OS PiP |
 | Chromecast | ⬜ | v9 cast.js |
-| Recording (DVR) + recordings list | ⬜ | |
+| Recording (DVR) + recordings list | ✅ | Rust Recorder; More menu, long-press guide rows, Home row | |
 | Short-cycle provider resilience (reconnect/resume) | 🟡 | VLC `--http-reconnect`; v9 had PTS splice |
 | Bundle VLC with the PC installer | ⬜ | currently uses installed VLC |
 

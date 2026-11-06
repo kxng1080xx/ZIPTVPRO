@@ -2,6 +2,7 @@ package com.ziptv.app
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -93,6 +95,7 @@ fun HomeScreen(model: AppModel) {
         item { Hero(model, d) }
         if (d.cont.isNotEmpty()) item { ProgressRow("Continue watching", d.cont, model) }
         if (d.companion.isNotEmpty()) item { ProgressRow("From your other device", d.companion, model) }
+        item { RecordingsRow(model) }
         if (d.recent.isNotEmpty()) item { ChannelRow("Recently watched channels", d.recent, model) }
         if (d.favChannels.isNotEmpty()) item { ChannelRow("Favorite channels", d.favChannels, model) }
         if (d.newMovies.isNotEmpty()) item {
@@ -210,6 +213,42 @@ private fun HeroButton(icon: ImageVector?, label: String, primary: Boolean, ghos
 @Composable
 fun LiveBadge() = Text("LIVE", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.labelMedium,
     fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Z.live).padding(horizontal = 8.dp, vertical = 2.dp))
+
+/** v9's Recordings: DVR captures, newest first. Tap = play, long-press = stop/delete. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun RecordingsRow(model: AppModel) {
+    var tick by androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val list = androidx.compose.runtime.remember(model.recordingsVersion, tick) { model.recorder.list() }
+    val active = list.any { it.status == com.ziptv.core.RecordingStatus.RECORDING || it.status == com.ziptv.core.RecordingStatus.SCHEDULED }
+    androidx.compose.runtime.LaunchedEffect(active, tick) { if (active) { kotlinx.coroutines.delay(5000); tick++ } }
+    if (list.isEmpty()) return
+    Column {
+        RowTitle("Recordings")
+        LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            items(list, key = { it.id }) { r ->
+                val status = when (r.status) {
+                    com.ziptv.core.RecordingStatus.RECORDING -> "● REC · ${r.bytes.toLong() / (1 shl 20)} MB"
+                    com.ziptv.core.RecordingStatus.SCHEDULED -> "Scheduled · ${clock(r.start)}"
+                    com.ziptv.core.RecordingStatus.DONE -> "${r.bytes.toLong() / (1 shl 20)} MB"
+                    com.ziptv.core.RecordingStatus.FAILED -> "Failed"
+                }
+                Column(
+                    Modifier.width(240.dp).focusRing(RoundedCornerShape(12.dp)).clip(RoundedCornerShape(12.dp)).background(Z.surface)
+                        .combinedClickable(
+                            onClick = { if (r.status == com.ziptv.core.RecordingStatus.DONE || r.status == com.ziptv.core.RecordingStatus.RECORDING) model.playRecording(r) },
+                            onLongClick = { model.deleteRecording(r) },
+                        ).padding(14.dp),
+                ) {
+                    Text(r.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(r.channel, color = Z.textMuted, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(status, color = if (r.status == com.ziptv.core.RecordingStatus.RECORDING) Z.live else Z.textMuted,
+                        style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun RowTitle(title: String) =
