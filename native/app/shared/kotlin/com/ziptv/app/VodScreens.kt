@@ -1,5 +1,6 @@
 package com.ziptv.app
 
+import androidx.compose.runtime.remember
 import androidx.compose.animation.core.animateFloat
 
 import androidx.compose.foundation.background
@@ -180,9 +181,13 @@ fun PosterCard(title: String, image: String?, rating: Float, year: String?, onCl
 
 @Composable
 private fun PosterImage(image: String?, title: String, rating: Float, modifier: Modifier) {
-    Box(modifier.aspectRatio(2f / 3f).clip(RoundedCornerShape(12.dp)).background(Z.surfaceHigh), contentAlignment = Alignment.Center) {
-        Icon(Icons.Rounded.Movie, null, tint = Z.textMuted, modifier = Modifier.size(36.dp))
-        if (!image.isNullOrBlank()) AsyncImage(image, contentDescription = title, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+    // Shimmer until the artwork arrives; the movie icon only when there's no (working) artwork.
+    var state by remember(image) { mutableStateOf(if (image.isNullOrBlank()) 2 else 0) } // 0 loading, 1 loaded, 2 none
+    Box(modifier.aspectRatio(2f / 3f).clip(RoundedCornerShape(12.dp))
+        .background(if (state == 0) shimmerBrush() else SolidColor(Z.surfaceHigh)), contentAlignment = Alignment.Center) {
+        if (state == 2) Icon(Icons.Rounded.Movie, null, tint = Z.textMuted, modifier = Modifier.size(36.dp))
+        if (!image.isNullOrBlank()) AsyncImage(image, contentDescription = title, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(),
+            onSuccess = { state = 1 }, onError = { state = 2 })
         if (rating > 0f) {
             Row(
                 Modifier.align(Alignment.TopEnd).padding(6.dp).clip(RoundedCornerShape(8.dp))

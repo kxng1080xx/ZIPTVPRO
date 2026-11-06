@@ -1,5 +1,6 @@
 package com.ziptv.app
 
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -43,10 +44,11 @@ import kotlinx.coroutines.withContext
 /** v9's "About" panel: plot, facts, cast and a trailer, from TMDB. Silent when TMDB has nothing. */
 @Composable
 fun MetaSection(model: AppModel, kind: ContentKind, title: String, year: String?) {
-    val meta by produceState<Meta?>(null, kind, title) {
-        value = withContext(Dispatchers.IO) { runCatching { model.tmdb.lookup(kind, title, year) }.getOrNull() }
+    val result by produceState<Pair<Boolean, Meta?>>(false to null, kind, title) { // (loaded, meta)
+        value = true to withContext(Dispatchers.IO) { runCatching { model.tmdb.lookup(kind, title, year) }.getOrNull() }
     }
-    val m = meta ?: return
+    if (!result.first) { MetaSkeleton(); return }
+    val m = result.second ?: return
     Column(Modifier.padding(top = 20.dp)) {
         if (m.overview.isNotBlank()) {
             Label("PLOT SUMMARY")
@@ -107,5 +109,19 @@ private fun Fact(name: String, value: String) {
     Row(Modifier.padding(vertical = 3.dp)) {
         Text(name, Modifier.width(120.dp), color = Z.textMuted, style = MaterialTheme.typography.bodyMedium)
         Text(value, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+/** Placeholder lines + cast circles while TMDB loads. */
+@Composable
+private fun MetaSkeleton() {
+    val shine = shimmerBrush()
+    Column(Modifier.padding(top = 20.dp)) {
+        listOf(0.9f, 0.95f, 0.7f).forEach { w ->
+            Box(Modifier.padding(bottom = 8.dp).fillMaxWidth(w).height(12.dp).clip(RoundedCornerShape(6.dp)).background(shine))
+        }
+        Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            repeat(4) { Box(Modifier.size(72.dp).clip(RoundedCornerShape(50)).background(shine)) }
+        }
     }
 }

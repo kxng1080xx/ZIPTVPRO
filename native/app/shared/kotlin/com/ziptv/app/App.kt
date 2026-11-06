@@ -1,5 +1,7 @@
 package com.ziptv.app
 
+import coil3.request.crossfade
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -91,7 +93,7 @@ private const val IMAGE_UA = "ZIPTVPro/10 (+https://github.com/kxng1080xx/ZIPTVP
 @Composable
 fun App(model: AppModel) {
     coil3.compose.setSingletonImageLoaderFactory { ctx ->
-        coil3.ImageLoader.Builder(ctx).components {
+        coil3.ImageLoader.Builder(ctx).crossfade(true).components { // images fade in
             add(coil3.network.okhttp.OkHttpNetworkFetcherFactory(callFactory = {
                 okhttp3.OkHttpClient.Builder()
                     .addInterceptor { chain -> chain.proceed(chain.request().newBuilder().header("User-Agent", IMAGE_UA).build()) }
