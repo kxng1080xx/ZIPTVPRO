@@ -1,0 +1,96 @@
+package com.ziptv.app.android
+
+import android.app.UiModeManager
+import android.content.Context
+import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.os.Bundle
+import android.view.WindowManager
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.lifecycle.lifecycleScope
+import com.ziptv.app.App
+import com.ziptv.app.AppModel
+import com.ziptv.app.DeviceClass
+import com.ziptv.app.Platform
+import com.ziptv.app.VideoPlayer
+
+class MainActivity : ComponentActivity() {
+    private lateinit var model: AppModel
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        model = AppModel(AndroidPlatform(this), lifecycleScope)
+        model.start()
+        setContent { App(model) }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) model.stop()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        model.player.release()
+    }
+}
+
+/**
+ * TV = the system says so, OR the device has the TV feature, OR it has no
+ * touchscreen at all (projectors, Android boxes, sticks). Decided once.
+ */
+fun detectDevice(ctx: Context): DeviceClass {
+    val ui = ctx.getSystemService(Context.UI_MODE_SERVICE) as UiModeManager
+    val pm = ctx.packageManager
+    val tv = ui.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION ||
+        pm.hasSystemFeature(PackageManager.FEATURE_LEANBACK) ||
+        !pm.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
+    return if (tv) DeviceClass.Tv else DeviceClass.Touch
+}
+
+class AndroidPlatform(private val activity: ComponentActivity) : Platform {
+    override val device = detectDevice(activity)
+    override val cloudPlatform = "apk"
+    override val appVersion: String =
+        activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "10"
+
+    override fun setScreenFullscreen(on: Boolean) {
+        val c = androidx.core.view.WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+        if (on) {
+            c.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            c.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+        } else {
+            c.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    override fun enterPip(): Boolean {
+        if (android.os.Build.VERSION.SDK_INT < 26 ||
+            !activity.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) return false
+        return activity.enterPictureInPictureMode(
+            android.app.PictureInPictureParams.Builder().setAspectRatio(android.util.Rational(16, 9)).build()
+        )
+    }
+    override fun tmdbToken(): String =
+        runCatching { activity.assets.open("tmdb.token").bufferedReader().use { it.readText().trim() } }.getOrDefault("")
+
+    override fun openUrl(url: String): Boolean = runCatching {
+        activity.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+    }.isSuccess
+
+    override val dataDir: String = activity.filesDir.path
+    override fun logoIndexJson(): String? =
+        runCatching { activity.assets.open("channel-logos.json").bufferedReader().use { it.readText() } }.getOrNull()
+    override fun createPlayer(): VideoPlayer = VlcPlayer(activity)
+    override fun logoTransformation() = LogoContrast()
+
+    @Composable
+    override fun BackHandler(enabled: Boolean, onBack: () -> Unit) =
+        androidx.activity.compose.BackHandler(enabled, onBack)
+}

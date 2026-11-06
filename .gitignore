@@ -79,3 +79,13 @@ android-legacy/.idea/
 
 # Build-time TMDB token (baked into packaged builds, never committed)
 server/tmdb-baked.json
+
+# v10 native apps
+native/core/target/
+native/app/.kotlin/
+native/app/**/build/
+native/app/.gradle/
+native/app/local.properties
+native/app/androidApp/src/main/jniLibs/
+native/app/desktopApp/src/main/resources/win32-x86-64/
+native/core/target-smoke/
