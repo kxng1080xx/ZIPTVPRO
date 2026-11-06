@@ -1,5 +1,7 @@
 package com.ziptv.app
 
+import androidx.compose.material.icons.rounded.Groups
+
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -115,6 +117,9 @@ fun BoxScope.PlayerChrome(model: AppModel, item: Playable, inFullscreen: Boolean
                 val recording = model.liveRecordings.let { model.recordingOf(item.streamId) } != null
                 if (recording) MenuItem(Icons.Rounded.Stop, "Stop recording", tint = Z.live) { model.stopRecording(item.streamId); pop = Pop.None }
                 else MenuItem(Icons.Rounded.FiberManualRecord, "Record this channel") { model.recordNow(); pop = Pop.None }
+            }
+            if ((item.kind == PlayKind.Movie || item.kind == PlayKind.Episode) && !model.watch.active) {
+                MenuItem(Icons.Rounded.Groups, "Watch together") { model.watch.host(); pop = Pop.None }
             }
             MenuItem(Icons.Rounded.Bolt, if (model.player.deinterlace) "Deinterlace (60fps) · On" else "Deinterlace (60fps)") {
                 model.toggleDeinterlace(); pop = Pop.None

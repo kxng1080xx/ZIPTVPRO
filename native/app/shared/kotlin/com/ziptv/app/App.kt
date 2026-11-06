@@ -128,6 +128,7 @@ fun App(model: AppModel) {
                 val screenFull = model.fullscreen && model.nowPlaying != null
                 androidx.compose.runtime.LaunchedEffect(screenFull) { model.platform.setScreenFullscreen(screenFull) }
                 ReminderBanner(model, Modifier.align(Alignment.TopCenter))
+                WatchBanner(model, Modifier.align(Alignment.TopCenter)) // over the player too
                 UpdateBanner(model, Modifier.align(Alignment.BottomStart))
                 model.error?.let { msg ->
                     LaunchedEffect(msg) { delay(5000); model.error = null }

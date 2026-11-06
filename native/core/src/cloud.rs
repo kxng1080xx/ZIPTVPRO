@@ -307,3 +307,150 @@ mod tests {
         assert!(c.bytes().all(|b| CODE_CHARS.contains(&b)));
     }
 }
+
+// ---------------------------------------------------------------- Watch Together
+// Same wire protocol as v9 (functions/api/watch.js), so v9 and v10 devices can share a room.
+// Rooms are matched on a SHA-256 of the provider host only; credentials never leave the device.
+
+#[derive(uniffi::Record, Clone, Debug)]
+pub struct WatchContent {
+    /// "movie" or "series" (an episode), as in v9.
+    pub kind: String,
+    pub stream_id: String,
+    pub ext: String,
+    pub name: String,
+    pub logo: String,
+}
+
+#[derive(uniffi::Record, Clone, Debug)]
+pub struct WatchState {
+    pub code: String,
+    /// "lobby" | "playing" | "ended"
+    pub state: String,
+    /// Host position in seconds when it last reported.
+    pub position: f64,
+    pub paused: bool,
+    pub host_updated_ms: i64,
+    pub host_device: String,
+    pub guests: Vec<String>,
+    pub content: Option<WatchContent>,
+    pub server_now_ms: i64,
+}
+
+/// "http://Host:8080/" -> sha256("host:8080") hex, like v9's subHash().
+pub fn sub_hash(server: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let key = server.trim().to_lowercase();
+    let key = key.trim_start_matches("http://").trim_start_matches("https://").trim_end_matches('/');
+    Sha256::digest(key.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// ISO-8601 UTC ("2026-11-06T16:40:10.123Z" or "+00:00") -> unix ms. 0 if unparsable.
+fn iso_ms(s: &str) -> i64 {
+    let b = s.as_bytes();
+    if b.len() < 19 { return 0; }
+    let n = |r: std::ops::Range<usize>| s.get(r).and_then(|x| x.parse::<i64>().ok()).unwrap_or(0);
+    let (y, m, d) = (n(0..4), n(5..7), n(8..10));
+    let (hh, mm, ss) = (n(11..13), n(14..16), n(17..19));
+    let mut ms = 0;
+    if b.get(19) == Some(&b'.') {
+        let frac: String = s[20..].chars().take_while(|c| c.is_ascii_digit()).collect();
+        ms = format!("{frac:0<3}")[..3].parse().unwrap_or(0);
+    }
+    // days from civil (Howard Hinnant)
+    let y2 = if m <= 2 { y - 1 } else { y };
+    let era = y2.div_euclid(400);
+    let yoe = y2 - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    ((days * 86400 + hh * 3600 + mm * 60 + ss) * 1000) + ms
+}
+
+fn watch_state(v: &Value) -> WatchState {
+    let content = v.get("content").filter(|c| c.is_object()).map(|c| WatchContent {
+        kind: field(c, "type"), stream_id: field(c, "streamId"), ext: field(c, "ext"),
+        name: field(c, "name"), logo: field(c, "logo"),
+    });
+    WatchState {
+        code: field(v, "code"),
+        state: field(v, "state"),
+        position: v.get("position").and_then(|p| p.as_f64()).unwrap_or(0.0),
+        paused: v.get("paused").and_then(|p| p.as_bool()).unwrap_or(true),
+        host_updated_ms: iso_ms(&field(v, "host_updated_at")),
+        host_device: field(v, "host_device"),
+        guests: v.get("guests").and_then(|g| g.as_array())
+            .map(|a| a.iter().map(|g| field(g, "device")).collect()).unwrap_or_default(),
+        content,
+        server_now_ms: iso_ms(&field(v, "server_now")),
+    }
+}
+
+fn watch_error(e: CoreError) -> CoreError {
+    let msg = e.to_string();
+    let friendly = match msg.as_str() {
+        "not_found" => "That code isn't valid — check it and try again.",
+        "subscription_mismatch" => "Can't join — that session is on a different provider.",
+        "not_host" => "Only the host can control this session.",
+        _ => return e,
+    };
+    CoreError::Auth { message: friendly.into() }
+}
+
+#[uniffi::export]
+impl Cloud {
+    /// Host: opens a room for `content` on the playlist at `server`. Returns the 4-letter code.
+    pub fn watch_create(&self, server: String, content: WatchContent) -> Result<String, CoreError> {
+        let v = self.post("/api/watch", serde_json::json!({
+            "action": "create", "device_id": self.code, "sub_hash": sub_hash(&server),
+            "content": { "type": content.kind, "streamId": content.stream_id, "ext": content.ext,
+                         "name": content.name, "logo": content.logo, "backdrop": "" }
+        })).map_err(watch_error)?;
+        Ok(field(&v, "code"))
+    }
+
+    pub fn watch_join(&self, server: String, code: String) -> Result<WatchState, CoreError> {
+        self.post("/api/watch", serde_json::json!({
+            "action": "join", "code": code.trim().to_uppercase(), "device_id": self.code, "sub_hash": sub_hash(&server)
+        })).map(|v| watch_state(&v)).map_err(watch_error)
+    }
+
+    /// Err with "That code isn't valid…" once the room is gone (host ended / expired).
+    pub fn watch_poll(&self, code: String) -> Result<WatchState, CoreError> {
+        self.post("/api/watch", serde_json::json!({ "action": "poll", "code": code, "device_id": self.code }))
+            .map(|v| watch_state(&v)).map_err(watch_error)
+    }
+
+    /// Host only. `state`: "playing" to release the guests, "ended" to close.
+    pub fn watch_update(&self, code: String, position: f64, paused: bool, state: Option<String>) -> Result<(), CoreError> {
+        let mut body = serde_json::json!({ "action": "update", "code": code, "device_id": self.code,
+                                           "position": position, "paused": paused });
+        if let Some(s) = state { body["state"] = Value::String(s); }
+        self.post("/api/watch", body).map(|_| ()).map_err(watch_error)
+    }
+
+    pub fn watch_end(&self, code: String) {
+        let _ = self.post("/api/watch", serde_json::json!({ "action": "end", "code": code, "device_id": self.code }));
+    }
+}
+
+#[cfg(test)]
+mod watch_tests {
+    use super::*;
+
+    #[test]
+    fn sub_hash_matches_v9_normalisation() {
+        // v9: lowercase, strip scheme + trailing slashes, then SHA-256 hex.
+        assert_eq!(sub_hash("HTTP://Cord-Cutter.net:8080/"), sub_hash("cord-cutter.net:8080"));
+        assert_eq!(sub_hash("abc").len(), 64);
+        assert_eq!(sub_hash("abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    }
+
+    #[test]
+    fn iso_times_parse() {
+        assert_eq!(iso_ms("1970-01-01T00:00:01.500Z"), 1500);
+        assert_eq!(iso_ms("2000-03-01T00:00:00Z"), 951868800000);
+        assert_eq!(iso_ms("2026-11-06T16:40:10.1+00:00"), iso_ms("2026-11-06T16:40:10Z") + 100);
+    }
+}

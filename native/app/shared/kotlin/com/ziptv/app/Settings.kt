@@ -180,6 +180,10 @@ private fun AccountSection(model: AppModel) {
             onClick = { model.sync(background = false) })
     }
     CompanionGroup(model)
+    Group("Watch Together") {
+        SettingRow(Icons.Rounded.Devices, "Join a friend's room", "Same provider · start one from ⋯ while watching a movie")
+        WatchJoinField(model)
+    }
     if (model.playlists.isNotEmpty()) Group(null) {
         SettingRow(Icons.Rounded.DeleteSweep, "Remove all playlists", "From this device and the server", tint = Z.live,
             onClick = { confirmRemoveAll = !confirmRemoveAll })

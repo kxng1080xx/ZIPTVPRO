@@ -861,6 +861,16 @@ internal open class UniffiVTableCallbackInterfaceSyncListener(
 
 
 
+
+
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -897,6 +907,16 @@ fun uniffi_ziptv_core_checksum_method_cloud_remove_all_playlists(
 fun uniffi_ziptv_core_checksum_method_cloud_remove_playlist(
 ): Short
 fun uniffi_ziptv_core_checksum_method_cloud_unpair(
+): Short
+fun uniffi_ziptv_core_checksum_method_cloud_watch_create(
+): Short
+fun uniffi_ziptv_core_checksum_method_cloud_watch_end(
+): Short
+fun uniffi_ziptv_core_checksum_method_cloud_watch_join(
+): Short
+fun uniffi_ziptv_core_checksum_method_cloud_watch_poll(
+): Short
+fun uniffi_ziptv_core_checksum_method_cloud_watch_update(
 ): Short
 fun uniffi_ziptv_core_checksum_method_provider_catchup_url(
 ): Short
@@ -1071,6 +1091,16 @@ fun uniffi_ziptv_core_fn_method_cloud_remove_all_playlists(`ptr`: Pointer,uniffi
 fun uniffi_ziptv_core_fn_method_cloud_remove_playlist(`ptr`: Pointer,`remoteId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_ziptv_core_fn_method_cloud_unpair(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_ziptv_core_fn_method_cloud_watch_create(`ptr`: Pointer,`server`: RustBuffer.ByValue,`content`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_ziptv_core_fn_method_cloud_watch_end(`ptr`: Pointer,`code`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_ziptv_core_fn_method_cloud_watch_join(`ptr`: Pointer,`server`: RustBuffer.ByValue,`code`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_ziptv_core_fn_method_cloud_watch_poll(`ptr`: Pointer,`code`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_ziptv_core_fn_method_cloud_watch_update(`ptr`: Pointer,`code`: RustBuffer.ByValue,`position`: Double,`paused`: Byte,`state`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_ziptv_core_fn_clone_provider(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Pointer
@@ -1343,6 +1373,21 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ziptv_core_checksum_method_cloud_unpair() != 55225.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_cloud_watch_create() != 21744.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_cloud_watch_end() != 64649.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_cloud_watch_join() != 44315.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_cloud_watch_poll() != 2495.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_cloud_watch_update() != 8154.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ziptv_core_checksum_method_provider_catchup_url() != 46353.toShort()) {
@@ -1761,6 +1806,29 @@ public object FfiConverterFloat: FfiConverter<Float, Float> {
 /**
  * @suppress
  */
+public object FfiConverterDouble: FfiConverter<Double, Double> {
+    override fun lift(value: Double): Double {
+        return value
+    }
+
+    override fun read(buf: ByteBuffer): Double {
+        return buf.getDouble()
+    }
+
+    override fun lower(value: Double): Double {
+        return value
+    }
+
+    override fun allocationSize(value: Double) = 8UL
+
+    override fun write(value: Double, buf: ByteBuffer) {
+        buf.putDouble(value)
+    }
+}
+
+/**
+ * @suppress
+ */
 public object FfiConverterBoolean: FfiConverter<Boolean, Byte> {
     override fun lift(value: Byte): Boolean {
         return value.toInt() != 0
@@ -1970,6 +2038,25 @@ public interface CloudInterface {
     fun `removePlaylist`(`remoteId`: kotlin.String)
     
     fun `unpair`()
+    
+    /**
+     * Host: opens a room for `content` on the playlist at `server`. Returns the 4-letter code.
+     */
+    fun `watchCreate`(`server`: kotlin.String, `content`: WatchContent): kotlin.String
+    
+    fun `watchEnd`(`code`: kotlin.String)
+    
+    fun `watchJoin`(`server`: kotlin.String, `code`: kotlin.String): WatchState
+    
+    /**
+     * Err with "That code isn't valid…" once the room is gone (host ended / expired).
+     */
+    fun `watchPoll`(`code`: kotlin.String): WatchState
+    
+    /**
+     * Host only. `state`: "playing" to release the guests, "ended" to close.
+     */
+    fun `watchUpdate`(`code`: kotlin.String, `position`: kotlin.Double, `paused`: kotlin.Boolean, `state`: kotlin.String?)
     
     companion object
 }
@@ -2195,6 +2282,77 @@ open class Cloud: Disposable, AutoCloseable, CloudInterface
     uniffiRustCallWithError(CoreException) { _status ->
     UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_cloud_unpair(
         it, _status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Host: opens a room for `content` on the playlist at `server`. Returns the 4-letter code.
+     */
+    @Throws(CoreException::class)override fun `watchCreate`(`server`: kotlin.String, `content`: WatchContent): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(CoreException) { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_cloud_watch_create(
+        it, FfiConverterString.lower(`server`),FfiConverterTypeWatchContent.lower(`content`),_status)
+}
+    }
+    )
+    }
+    
+
+    override fun `watchEnd`(`code`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_cloud_watch_end(
+        it, FfiConverterString.lower(`code`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(CoreException::class)override fun `watchJoin`(`server`: kotlin.String, `code`: kotlin.String): WatchState {
+            return FfiConverterTypeWatchState.lift(
+    callWithPointer {
+    uniffiRustCallWithError(CoreException) { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_cloud_watch_join(
+        it, FfiConverterString.lower(`server`),FfiConverterString.lower(`code`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Err with "That code isn't valid…" once the room is gone (host ended / expired).
+     */
+    @Throws(CoreException::class)override fun `watchPoll`(`code`: kotlin.String): WatchState {
+            return FfiConverterTypeWatchState.lift(
+    callWithPointer {
+    uniffiRustCallWithError(CoreException) { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_cloud_watch_poll(
+        it, FfiConverterString.lower(`code`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Host only. `state`: "playing" to release the guests, "ended" to close.
+     */
+    @Throws(CoreException::class)override fun `watchUpdate`(`code`: kotlin.String, `position`: kotlin.Double, `paused`: kotlin.Boolean, `state`: kotlin.String?)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(CoreException) { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_cloud_watch_update(
+        it, FfiConverterString.lower(`code`),FfiConverterDouble.lower(`position`),FfiConverterBoolean.lower(`paused`),FfiConverterOptionalString.lower(`state`),_status)
 }
     }
     
@@ -4777,6 +4935,53 @@ public object FfiConverterTypeVpnConfig: FfiConverterRustBuffer<VpnConfig> {
 
 
 
+data class WatchContent (
+    /**
+     * "movie" or "series" (an episode), as in v9.
+     */
+    var `kind`: kotlin.String, 
+    var `streamId`: kotlin.String, 
+    var `ext`: kotlin.String, 
+    var `name`: kotlin.String, 
+    var `logo`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWatchContent: FfiConverterRustBuffer<WatchContent> {
+    override fun read(buf: ByteBuffer): WatchContent {
+        return WatchContent(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WatchContent) = (
+            FfiConverterString.allocationSize(value.`kind`) +
+            FfiConverterString.allocationSize(value.`streamId`) +
+            FfiConverterString.allocationSize(value.`ext`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterString.allocationSize(value.`logo`)
+    )
+
+    override fun write(value: WatchContent, buf: ByteBuffer) {
+            FfiConverterString.write(value.`kind`, buf)
+            FfiConverterString.write(value.`streamId`, buf)
+            FfiConverterString.write(value.`ext`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterString.write(value.`logo`, buf)
+    }
+}
+
+
+
 data class WatchProgress (
     /**
      * "movie:123", "episode:456" or "live:789".
@@ -4846,6 +5051,72 @@ public object FfiConverterTypeWatchProgress: FfiConverterRustBuffer<WatchProgres
             FfiConverterLong.write(value.`positionMs`, buf)
             FfiConverterLong.write(value.`durationMs`, buf)
             FfiConverterLong.write(value.`updatedAt`, buf)
+    }
+}
+
+
+
+data class WatchState (
+    var `code`: kotlin.String, 
+    /**
+     * "lobby" | "playing" | "ended"
+     */
+    var `state`: kotlin.String, 
+    /**
+     * Host position in seconds when it last reported.
+     */
+    var `position`: kotlin.Double, 
+    var `paused`: kotlin.Boolean, 
+    var `hostUpdatedMs`: kotlin.Long, 
+    var `hostDevice`: kotlin.String, 
+    var `guests`: List<kotlin.String>, 
+    var `content`: WatchContent?, 
+    var `serverNowMs`: kotlin.Long
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWatchState: FfiConverterRustBuffer<WatchState> {
+    override fun read(buf: ByteBuffer): WatchState {
+        return WatchState(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterLong.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceString.read(buf),
+            FfiConverterOptionalTypeWatchContent.read(buf),
+            FfiConverterLong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WatchState) = (
+            FfiConverterString.allocationSize(value.`code`) +
+            FfiConverterString.allocationSize(value.`state`) +
+            FfiConverterDouble.allocationSize(value.`position`) +
+            FfiConverterBoolean.allocationSize(value.`paused`) +
+            FfiConverterLong.allocationSize(value.`hostUpdatedMs`) +
+            FfiConverterString.allocationSize(value.`hostDevice`) +
+            FfiConverterSequenceString.allocationSize(value.`guests`) +
+            FfiConverterOptionalTypeWatchContent.allocationSize(value.`content`) +
+            FfiConverterLong.allocationSize(value.`serverNowMs`)
+    )
+
+    override fun write(value: WatchState, buf: ByteBuffer) {
+            FfiConverterString.write(value.`code`, buf)
+            FfiConverterString.write(value.`state`, buf)
+            FfiConverterDouble.write(value.`position`, buf)
+            FfiConverterBoolean.write(value.`paused`, buf)
+            FfiConverterLong.write(value.`hostUpdatedMs`, buf)
+            FfiConverterString.write(value.`hostDevice`, buf)
+            FfiConverterSequenceString.write(value.`guests`, buf)
+            FfiConverterOptionalTypeWatchContent.write(value.`content`, buf)
+            FfiConverterLong.write(value.`serverNowMs`, buf)
     }
 }
 
@@ -5209,6 +5480,38 @@ public object FfiConverterOptionalTypeVpnConfig: FfiConverterRustBuffer<VpnConfi
         } else {
             buf.put(1)
             FfiConverterTypeVpnConfig.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeWatchContent: FfiConverterRustBuffer<WatchContent?> {
+    override fun read(buf: ByteBuffer): WatchContent? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeWatchContent.read(buf)
+    }
+
+    override fun allocationSize(value: WatchContent?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeWatchContent.allocationSize(value)
+        }
+    }
+
+    override fun write(value: WatchContent?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeWatchContent.write(value, buf)
         }
     }
 }

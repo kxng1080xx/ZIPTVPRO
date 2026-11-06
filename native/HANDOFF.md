@@ -114,8 +114,8 @@ fullscreen (PC window / Android immersive); single instance (PC); remove-all pla
 6. ~~Built-in VPN~~ SKIPPED (user decision, 2026-11-06).
 7. **Watch Together** (v9 watch-together.js + its cloud endpoints).
 8. **Chromecast** (Android Cast SDK; v9 cast.js).
-9. **Online subtitle search** (needs an OpenSubtitles key).
-10. **Muted trailer preview on poster dwell** (Android WebView/ExoPlayer; desktop TBD).
+9. ~~Online subtitle search~~ SKIPPED (user, 2026-11-06).
+10. ~~Muted trailer preview on poster dwell~~ SKIPPED (user, 2026-11-06).
 11. **Share tunnel / TV link** — v9-desktop-only (cloudflared exposing the local server);
     v10 has no local server — confirm with the user whether it's still needed.
 12. Short-cycle provider resilience beyond VLC `--http-reconnect` (v9 PTS splice) — only if

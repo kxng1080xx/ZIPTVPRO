@@ -89,7 +89,7 @@ data class Playable(
     }
 }
 
-class AppModel(val platform: Platform, private val scope: CoroutineScope) {
+class AppModel(val platform: Platform, val scope: CoroutineScope) {
     private val store = PlaylistStore(platform.dataDir)
     val recorder by lazy { com.ziptv.core.Recorder(File(platform.dataDir, "recordings").path) }
     /** Bumped when recordings change; the list also refreshes on a timer while one is running. */
@@ -111,6 +111,7 @@ class AppModel(val platform: Platform, private val scope: CoroutineScope) {
     var userVersion by mutableStateOf(0); private set
 
     val player: VideoPlayer = platform.createPlayer()
+    val watch = WatchTogether(this)
     var nowPlaying by mutableStateOf<Playable?>(null); private set
     var fullscreen by mutableStateOf(false)
     /** Detail pages opened from elsewhere (Home, Search). */
