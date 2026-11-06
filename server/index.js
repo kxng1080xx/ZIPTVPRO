@@ -106,10 +106,12 @@ import {
   setActivePlaylist,
   removePlaylist,
   deactivateActivePlaylist,
-  updatePlaylistSettings
+  updatePlaylistSettings,
+  getLiveStream
 } from './cache.js';
 import { lookup as tmdbLookup, tmdbToken } from './tmdb.js';
 import { fillChannelLogos } from './channel-logos.js';
+import { fetchExternalEpg } from './ext-epg.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -601,12 +603,19 @@ app.get('/api/epg', async (req, res) => {
 
   const cached = getCachedEPG(stream_id);
   if (cached) {
-    const normalizedCached = cached.map(prog => normalizeListing(prog));
+    const normalizedCached = cached.map(prog => (prog.ext ? prog : normalizeListing(prog)));
     return res.json({ listings: normalizedCached });
   }
 
   const creds = getCredentials();
   if (!creds) return res.status(401).json({ error: 'Not logged in' });
+
+  // External guide first (provider EPG is often wrong); provider is the fallback.
+  const ext = await fetchExternalEpg(getLiveStream(stream_id));
+  if (ext) {
+    setCachedEPG(stream_id, ext, 2 * 60 * 60 * 1000);
+    return res.json({ listings: ext });
+  }
 
   // get_simple_data_table returns the full schedule; get_short_epg often returns
   // only a few past entries, leaving the now/next guide empty.

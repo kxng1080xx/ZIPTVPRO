@@ -310,6 +310,12 @@ export function setCachedEPG(streamId, listings, ttlMs = 4 * 60 * 60 * 1000) { /
   }
 }
 
+// ponytail: linear scan, fine for an EPG miss (result is then cached); index by id if it shows up in profiles
+export function getLiveStream(streamId) {
+  const id = String(streamId);
+  return (cache.live_streams || []).find((s) => String(s.stream_id) === id) || null;
+}
+
 // Data query helpers
 export function getCategories(type) {
   const normType = type === 'movies' ? 'movie' : type;

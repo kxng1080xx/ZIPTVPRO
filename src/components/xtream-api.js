@@ -4,6 +4,7 @@
  */
 import { db } from './db.js';
 import { fillChannelLogos } from '../../server/channel-logos.js';
+import { fetchExternalEpg } from '../../server/ext-epg.js';
 import { getDeviceCode, backupWatchHistory, deleteWatchHistory } from './cloud-sync.js';
 
 let isServerMode = false;
@@ -1510,6 +1511,14 @@ export async function getEPG(streamId) {
         // Client Mode getEPG
         const creds = getCredentialsLocal();
         if (!creds) throw new Error('Not logged in');
+
+        // External guide first (provider EPG is often wrong); provider is the fallback.
+        const channel = await db.live_streams.get(key).catch(() => null);
+        const ext = await fetchExternalEpg(channel);
+        if (ext) {
+          epgMemoryCache[key] = { expiry: Date.now() + 2 * 60 * 60 * 1000, listings: ext };
+          return { listings: ext };
+        }
 
         // get_simple_data_table returns the full schedule; get_short_epg often
         // returns only a few entries from the start of the day (all in the past),

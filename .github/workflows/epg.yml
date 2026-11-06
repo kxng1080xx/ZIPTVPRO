@@ -1,0 +1,32 @@
+name: EPG data
+
+# Rebuilds the external guide (scripts/build-epg.mjs) and force-pushes it as a
+# single orphan commit to the `epg-data` branch, which the apps read from
+# raw.githubusercontent.com. Orphan + force push keeps the branch at one commit.
+on:
+  schedule:
+    - cron: '17 4,16 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/build-epg.mjs epg-out
+      - name: Publish to epg-data branch
+        run: |
+          cd epg-out
+          git init -q -b epg-data
+          git config user.name "epg-bot"
+          git config user.email "epg-bot@users.noreply.github.com"
+          git add -A
+          git commit -qm "EPG $(date -u +%FT%H:%MZ)"
+          git push -fq "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" epg-data
