@@ -289,7 +289,7 @@ private fun ChannelRow(title: String, channels: List<Channel>, model: AppModel) 
                 .clickable { model.playChannel(ch, channels, full = true) }) {
                 Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp)).background(Z.surfaceHigh),
                     contentAlignment = Alignment.Center) {
-                    ChannelLogo(ch.logo, Modifier.fillMaxSize(0.62f))
+                    ChannelLogo(ch.logo, Modifier.fillMaxSize(0.62f), ch.altLogo)
                     Box(Modifier.align(Alignment.TopStart).padding(8.dp)) { LiveBadge() }
                 }
                 Text(ch.name, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)

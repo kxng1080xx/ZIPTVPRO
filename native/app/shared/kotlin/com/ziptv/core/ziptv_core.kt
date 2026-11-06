@@ -4018,6 +4018,10 @@ data class Channel (
     var `rawName`: kotlin.String, 
     var `categoryId`: kotlin.String, 
     var `logo`: kotlin.String?, 
+    /**
+     * iptv-org logo, used when the provider's `logo` link is dead (404, bad SSL…).
+     */
+    var `altLogo`: kotlin.String?, 
     var `epgId`: kotlin.String?, 
     var `archiveDays`: kotlin.UInt
 ) {
@@ -4037,6 +4041,7 @@ public object FfiConverterTypeChannel: FfiConverterRustBuffer<Channel> {
             FfiConverterString.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
             FfiConverterUInt.read(buf),
         )
     }
@@ -4047,6 +4052,7 @@ public object FfiConverterTypeChannel: FfiConverterRustBuffer<Channel> {
             FfiConverterString.allocationSize(value.`rawName`) +
             FfiConverterString.allocationSize(value.`categoryId`) +
             FfiConverterOptionalString.allocationSize(value.`logo`) +
+            FfiConverterOptionalString.allocationSize(value.`altLogo`) +
             FfiConverterOptionalString.allocationSize(value.`epgId`) +
             FfiConverterUInt.allocationSize(value.`archiveDays`)
     )
@@ -4057,6 +4063,7 @@ public object FfiConverterTypeChannel: FfiConverterRustBuffer<Channel> {
             FfiConverterString.write(value.`rawName`, buf)
             FfiConverterString.write(value.`categoryId`, buf)
             FfiConverterOptionalString.write(value.`logo`, buf)
+            FfiConverterOptionalString.write(value.`altLogo`, buf)
             FfiConverterOptionalString.write(value.`epgId`, buf)
             FfiConverterUInt.write(value.`archiveDays`, buf)
     }

@@ -195,7 +195,7 @@ private fun ChannelPanel(model: AppModel, item: Playable, modifier: Modifier, po
                         .clickable { model.playChannel(ch, list, full = true); poke() }.padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    ChannelLogo(ch.logo, Modifier.size(36.dp))
+                    ChannelLogo(ch.logo, Modifier.size(36.dp), ch.altLogo)
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Text(ch.name, color = Color.White, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)

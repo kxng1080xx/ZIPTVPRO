@@ -97,7 +97,7 @@ private fun GuideRow(model: AppModel, ch: Channel, from: Long, to: Long, labelW:
                 .background(Z.surface).clickable { model.playChannel(ch, listOf(ch), full = true) }.padding(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ChannelLogo(ch.logo, Modifier.size(44.dp))
+            ChannelLogo(ch.logo, Modifier.size(44.dp), ch.altLogo)
             Spacer(Modifier.width(8.dp))
             Text(ch.name, style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }

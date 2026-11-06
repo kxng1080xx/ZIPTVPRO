@@ -69,6 +69,9 @@ pub struct Channel {
     pub raw_name: String,
     pub category_id: String,
     pub logo: Option<String>,
+    /// iptv-org logo, used when the provider's `logo` link is dead (404, bad SSL…).
+    #[serde(default)]
+    pub alt_logo: Option<String>,
     pub epg_id: Option<String>,
     pub archive_days: u32,
 }
@@ -461,14 +464,15 @@ fn parse_channels(v: &Value, logos: Option<&KeyIndex>) -> Vec<Channel> {
         .map(|s| {
             let raw = field(s, "name");
             let epg_id = opt_field(s, "epg_channel_id");
-            let logo = opt_field(s, "stream_icon")
-                .or_else(|| logos.and_then(|l| l.lookup(&raw, epg_id.as_deref())).map(str::to_string));
+            let alt_logo = logos.and_then(|l| l.lookup(&raw, epg_id.as_deref())).map(str::to_string);
+            let logo = opt_field(s, "stream_icon").or_else(|| alt_logo.clone());
             Channel {
                 stream_id: field(s, "stream_id"),
                 name: names::clean_channel_name(&raw),
                 raw_name: raw,
                 category_id: field(s, "category_id"),
                 logo,
+                alt_logo,
                 epg_id,
                 archive_days: s.get("tv_archive_duration").map(as_i64).unwrap_or(0).max(0) as u32,
             }

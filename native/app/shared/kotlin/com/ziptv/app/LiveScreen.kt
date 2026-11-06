@@ -159,7 +159,7 @@ private fun ChannelList(model: AppModel, channels: List<Channel>, selected: Chan
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ChannelLogo(ch.logo, Modifier.size(40.dp))
+                ChannelLogo(ch.logo, Modifier.size(40.dp), ch.altLogo)
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -189,17 +189,21 @@ private val WIKI_THUMB = Regex("""(upload\.wikimedia\.org/.+/thumb/.+/)\d+px-"""
 /** Wikimedia rejects non-standard thumbnail widths ("Use thumbnail sizes listed…"); ask for 500px. */
 fun fixLogoUrl(url: String): String = WIKI_THUMB.replace(url) { it.groupValues[1] + "500px-" }
 
+/** Channel logo; when the provider's link is dead it falls back to the iptv-org logo ([alt]). */
 @Composable
-fun ChannelLogo(url: String?, modifier: Modifier) {
+fun ChannelLogo(url: String?, modifier: Modifier, alt: String? = null) {
+    var failed by remember(url) { mutableStateOf(false) }
+    val src = (if (failed || url.isNullOrBlank()) alt else url)?.takeIf { it.isNotBlank() }
     Box(modifier.clip(RoundedCornerShape(10.dp)).background(Z.surfaceHigh), contentAlignment = Alignment.Center) {
-        if (url.isNullOrBlank()) Icon(Icons.Rounded.LiveTv, null, tint = Z.textMuted)
+        if (src == null) Icon(Icons.Rounded.LiveTv, null, tint = Z.textMuted)
         else {
             val t = LocalLogoTransform.current
             val ctx = coil3.compose.LocalPlatformContext.current
-            val req = androidx.compose.runtime.remember(url, t) {
-                coil3.request.ImageRequest.Builder(ctx).data(fixLogoUrl(url)).apply { if (t != null) transformations(t) }.build()
+            val req = remember(src, t) {
+                coil3.request.ImageRequest.Builder(ctx).data(fixLogoUrl(src)).apply { if (t != null) transformations(t) }.build()
             }
-            AsyncImage(req, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.padding(6.dp).fillMaxSize())
+            AsyncImage(req, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.padding(6.dp).fillMaxSize(),
+                onError = { if (src == url && !alt.isNullOrBlank() && alt != url) failed = true })
         }
     }
 }
