@@ -12,6 +12,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.displayCutout
 import androidx.lifecycle.lifecycleScope
 import com.ziptv.app.App
 import com.ziptv.app.AppModel
@@ -25,9 +27,30 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // Full-screen app: draw edge to edge (incl. the camera cut-out area; the UI pads for it)
+        // and keep the system bars hidden. Swiping from an edge shows them briefly.
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+        hideSystemBars()
         model = AppModel(AndroidPlatform(this), lifecycleScope)
         model.start()
         setContent { App(model) }
+    }
+
+    private fun hideSystemBars() {
+        val c = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+        c.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        c.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+    }
+
+    // The system re-shows bars after dialogs, the keyboard, returning from another app…
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideSystemBars()
     }
 
     // Home while watching fullscreen -> PiP (like YouTube) instead of stopping.
@@ -79,13 +102,6 @@ class AndroidPlatform(private val activity: ComponentActivity) : Platform {
             activity.requestedOrientation = if (on) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                 else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
-        val c = androidx.core.view.WindowCompat.getInsetsController(activity.window, activity.window.decorView)
-        if (on) {
-            c.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            c.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-        } else {
-            c.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-        }
     }
 
     override fun enterPip(): Boolean {
@@ -107,6 +123,9 @@ class AndroidPlatform(private val activity: ComponentActivity) : Platform {
         runCatching { activity.assets.open("channel-logos.json").bufferedReader().use { it.readText() } }.getOrNull()
     override fun createPlayer(): VideoPlayer = VlcPlayer(activity)
     override fun logoTransformation() = LogoContrast()
+
+    @Composable
+    override fun cutoutPadding() = androidx.compose.foundation.layout.WindowInsets.displayCutout.asPaddingValues()
 
     @Composable
     override fun BackHandler(enabled: Boolean, onBack: () -> Unit) =

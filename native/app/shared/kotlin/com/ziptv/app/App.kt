@@ -91,7 +91,7 @@ fun App(model: AppModel) {
         }.build()
     }
     ZipTheme(model.platform.device) {
-        BoxWithConstraints(Modifier.fillMaxSize().background(Z.bg)) {
+        BoxWithConstraints(Modifier.fillMaxSize().background(Z.bg).padding(model.platform.cutoutPadding())) {
             // TV and desktop always get the wide layout; touch decides by width (tablets/landscape).
             val wide = model.platform.device != DeviceClass.Touch || maxWidth >= 720.dp
             val logoTransform = androidx.compose.runtime.remember { model.platform.logoTransformation() }

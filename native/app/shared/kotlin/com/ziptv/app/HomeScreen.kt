@@ -131,12 +131,13 @@ private fun Hero(model: AppModel, d: HomeData) {
     val preferVod = cont != null && (ch == null || System.currentTimeMillis() / 1000 - cont.updatedAt < 6 * 3600)
     val wide = LocalWide.current
     val backdrop = if (preferVod) rememberBackdrop(model, cont!!) else null
-    Box(Modifier.fillMaxWidth().height(if (wide) 430.dp else 300.dp)) {
+    Box(Modifier.fillMaxWidth().height(if (wide) 430.dp else 340.dp)) {
         if (backdrop != null) AsyncImage(backdrop, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         // Fade the art into the page: left for the text, bottom into the rows.
         Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Z.bg.copy(alpha = 0.95f), Z.bg.copy(alpha = 0.55f), Color.Transparent))))
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.55f to Color.Transparent, 1f to Z.bg)))
-        Column(Modifier.align(Alignment.BottomStart).padding(start = 32.dp, end = 32.dp, bottom = 28.dp).widthIn(max = 620.dp)) {
+        Column(Modifier.align(Alignment.BottomStart).padding(start = if (wide) 32.dp else 20.dp, end = if (wide) 32.dp else 20.dp,
+            bottom = if (wide) 28.dp else 16.dp).widthIn(max = 620.dp)) {
             if (preferVod) {
                 val c = cont!!
                 val kindLabel = if (c.kind == ContentKind.MOVIE) "Movie" else "Series"
@@ -147,7 +148,8 @@ private fun Hero(model: AppModel, d: HomeData) {
                 Spacer(Modifier.height(6.dp))
                 val left = ((c.durationMs - c.positionMs) / 60_000).coerceAtLeast(1)
                 val ep = c.title.substringAfter(" · ", "")
-                Text(listOf("$left min left", ep, c.subtitle).filter { it.isNotBlank() && it != "Movie" }.distinct().joinToString(" · "),
+                Text(listOf("$left min left", ep, cleanEpisodeTitle(c.subtitle, c.title.substringBefore(" · ")))
+                    .filter { it.isNotBlank() && it != "Movie" }.distinct().joinToString(" · "),
                     color = Z.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(10.dp))
                 Box(Modifier.width(220.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Z.surfaceHigh)) {
@@ -155,7 +157,7 @@ private fun Hero(model: AppModel, d: HomeData) {
                         .fillMaxHeight().background(Z.accentGradient))
                 }
                 Spacer(Modifier.height(18.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(horizontalArrangement = Arrangement.spacedBy(if (wide) 12.dp else 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     HeroButton(Icons.Rounded.PlayArrow, "Resume", primary = true) { model.resume(c) }
                     HeroButton(null, "Details", primary = false) { openDetails(model, c) }
                     val favKind = if (c.kind == ContentKind.MOVIE) ContentKind.MOVIE else ContentKind.SERIES
@@ -194,7 +196,17 @@ private fun openDetails(model: AppModel, p: WatchProgress) {
 }
 
 @Composable
+/** "Euphoria - S01E06 - The Next Episode" -> "The Next Episode" (providers repeat the show + code). */
+fun cleanEpisodeTitle(raw: String, series: String): String {
+    var t = raw.trim()
+    if (series.isNotBlank() && t.startsWith(series, ignoreCase = true)) t = t.substring(series.length)
+    t = t.replace(Regex("""^[\s\-–—:|]*S\d{1,2}\s*E\d{1,3}[\s\-–—:|]*""", RegexOption.IGNORE_CASE), "")
+    return t.trim().trimStart('-', '–', '—', ':', '|').trim()
+}
+
+@Composable
 private fun HeroButton(icon: ImageVector?, label: String, primary: Boolean, ghost: Boolean = false, onClick: () -> Unit) {
+    val compact = !LocalWide.current
     Row(
         Modifier.focusRing(RoundedCornerShape(50)).clip(RoundedCornerShape(50))
             .background(when {
@@ -202,7 +214,7 @@ private fun HeroButton(icon: ImageVector?, label: String, primary: Boolean, ghos
                 ghost -> SolidColor(Color.Transparent)
                 else -> SolidColor(Color.White.copy(alpha = 0.12f))
             })
-            .clickable(onClick = onClick).padding(horizontal = 22.dp, vertical = 11.dp),
+            .clickable(onClick = onClick).padding(horizontal = if (compact) 14.dp else 22.dp, vertical = if (compact) 9.dp else 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) { Icon(icon, null, tint = Color.White, modifier = Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)) }

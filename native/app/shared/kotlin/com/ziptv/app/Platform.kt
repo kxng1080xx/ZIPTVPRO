@@ -70,6 +70,10 @@ interface Platform {
     /** Picture-in-picture where the OS supports it; false = not available. */
     fun enterPip(): Boolean = false
 
+    /** Space to keep clear of a camera cut-out (Android full-screen); zero elsewhere. */
+    @Composable
+    fun cutoutPadding(): androidx.compose.foundation.layout.PaddingValues = androidx.compose.foundation.layout.PaddingValues()
+
     /** Android: system back / remote BACK. Desktop: Escape. */
     @Composable
     fun BackHandler(enabled: Boolean, onBack: () -> Unit)
