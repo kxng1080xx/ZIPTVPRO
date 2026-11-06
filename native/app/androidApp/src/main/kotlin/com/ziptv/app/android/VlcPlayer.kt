@@ -87,8 +87,16 @@ class VlcPlayer(context: Context) : VideoPlayer {
     private val layouts = ArrayList<VLCVideoLayout>()
 
     private fun attach(v: VLCVideoLayout) {
-        if (mp.vlcVout.areViewsAttached()) mp.detachViews()
+        // Mid-playback hand-off (fullscreen <-> mini <-> preview): libVLC keeps drawing into the old,
+        // dead surface (black picture, audio fine). Like the VLC app: video track off, swap views,
+        // then back on once the new view has its surface, which rebuilds the video output there.
+        val live = mp.hasMedia() && _state.value.let { it == PlayerState.Playing || it == PlayerState.Paused || it is PlayerState.Buffering }
+        if (mp.vlcVout.areViewsAttached()) {
+            if (live) mp.setVideoTrackEnabled(false)
+            mp.detachViews()
+        }
         mp.attachViews(v, null, false, false)
+        if (live) v.postDelayed({ if (layouts.lastOrNull() === v) mp.setVideoTrackEnabled(true) }, 150)
     }
 
     @Composable
