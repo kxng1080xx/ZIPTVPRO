@@ -76,8 +76,20 @@ private val allTabs = listOf(
     TabItem(Tab.Settings, "Settings", Icons.Rounded.Settings),
 )
 
+/** Logo/poster hosts (Wikimedia, imgur) refuse anonymous "okhttp" clients, so identify the app. */
+private const val IMAGE_UA = "ZIPTVPro/10 (+https://github.com/kxng1080xx/ZIPTVPRO)"
+
 @Composable
 fun App(model: AppModel) {
+    coil3.compose.setSingletonImageLoaderFactory { ctx ->
+        coil3.ImageLoader.Builder(ctx).components {
+            add(coil3.network.okhttp.OkHttpNetworkFetcherFactory(callFactory = {
+                okhttp3.OkHttpClient.Builder()
+                    .addInterceptor { chain -> chain.proceed(chain.request().newBuilder().header("User-Agent", IMAGE_UA).build()) }
+                    .build()
+            }))
+        }.build()
+    }
     ZipTheme(model.platform.device) {
         BoxWithConstraints(Modifier.fillMaxSize().background(Z.bg)) {
             // TV and desktop always get the wide layout; touch decides by width (tablets/landscape).

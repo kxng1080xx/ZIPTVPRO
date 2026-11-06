@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -183,6 +184,11 @@ fun Badge(text: String) {
         .padding(horizontal = 6.dp, vertical = 1.dp), color = Z.textMuted, style = MaterialTheme.typography.labelMedium)
 }
 
+private val WIKI_THUMB = Regex("""(upload\.wikimedia\.org/.+/thumb/.+/)\d+px-""")
+
+/** Wikimedia rejects non-standard thumbnail widths ("Use thumbnail sizes listed…"); ask for 500px. */
+fun fixLogoUrl(url: String): String = WIKI_THUMB.replace(url) { it.groupValues[1] + "500px-" }
+
 @Composable
 fun ChannelLogo(url: String?, modifier: Modifier) {
     Box(modifier.clip(RoundedCornerShape(10.dp)).background(Z.surfaceHigh), contentAlignment = Alignment.Center) {
@@ -191,7 +197,7 @@ fun ChannelLogo(url: String?, modifier: Modifier) {
             val t = LocalLogoTransform.current
             val ctx = coil3.compose.LocalPlatformContext.current
             val req = androidx.compose.runtime.remember(url, t) {
-                coil3.request.ImageRequest.Builder(ctx).data(url).apply { if (t != null) transformations(t) }.build()
+                coil3.request.ImageRequest.Builder(ctx).data(fixLogoUrl(url)).apply { if (t != null) transformations(t) }.build()
             }
             AsyncImage(req, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.padding(6.dp).fillMaxSize())
         }
@@ -225,50 +231,92 @@ private fun PreviewPane(model: AppModel, channel: Channel?, modifier: Modifier) 
 }
 
 /**
- * The channel's schedule. Past shows on catch-up channels replay; upcoming
- * shows toggle a reminder; the current one plays live.
+ * The channel's schedule as a timeline: the current show as a card with a
+ * progress bar; then upcoming shows on a rail with start time and length.
+ * Past shows on catch-up channels replay; upcoming ones toggle a reminder
+ * (long-press = record); the current one plays live.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun GuideList(model: AppModel, channel: Channel, guide: List<Programme>, modifier: Modifier) {
     val nowSec = System.currentTimeMillis() / 1000
     val archiveFrom = nowSec - channel.archiveDays.toLong() * 86_400
-    val shown = guide.filter { it.end > minOf(nowSec, if (channel.archiveDays > 0u) archiveFrom else nowSec) }
-        .takeLast(48).let { all -> all.dropWhile { channel.archiveDays == 0u && it.end <= nowSec } }
+    val shown = guide.filter { it.end > (if (channel.archiveDays > 0u) archiveFrom else nowSec) }.take(40)
+    val dayFmt = SimpleDateFormat("EEEE, MMM d", Locale.getDefault())
     Column(modifier) {
         if (shown.isEmpty()) Text("No guide information", Modifier.padding(8.dp), color = Z.textMuted)
+        var lastDay = dayFmt.format(Date(nowSec * 1000))
         shown.forEach { p ->
             val isNow = p.start <= nowSec && p.end > nowSec
             val past = p.end <= nowSec
+            val day = dayFmt.format(Date(p.start * 1000))
+            if (day != lastDay) {
+                lastDay = day
+                Text(day.uppercase(), Modifier.padding(start = 70.dp, top = 12.dp, bottom = 4.dp), color = Z.textMuted,
+                    style = MaterialTheme.typography.labelMedium)
+            }
             val reminded = model.userVersion.let { model.hasReminder(channel.streamId, p.start) }
-            Row(
-                Modifier.fillMaxWidth().focusRing(RoundedCornerShape(10.dp), lift = 1.01f).clip(RoundedCornerShape(10.dp))
-                    .background(if (isNow) Z.activeTint else SolidColor(Color.Transparent))
-                    // Long-press an upcoming (or current) show = record it.
-                    .combinedClickable(onLongClick = { if (!past) model.recordProgramme(channel, p.title, p.start, p.end) }) {
-                        when {
-                            isNow -> model.playChannel(channel, listOf(channel), full = true)
-                            past -> model.playCatchup(channel, p.title, p.start, p.end)
-                            reminded -> model.removeReminder(Reminder(channel.streamId, channel.name, p.title, p.start))
-                            else -> model.addReminder(Reminder(channel.streamId, channel.name, p.title, p.start))
-                        }
-                    }
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
-            ) {
-                Text(clock(p.start), Modifier.width(76.dp), color = if (isNow) Z.focus else Z.textMuted,
-                    style = MaterialTheme.typography.labelLarge)
-                Column(Modifier.weight(1f)) {
-                    Text(p.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        fontWeight = if (isNow) FontWeight.SemiBold else FontWeight.Normal, color = if (past) Z.textMuted else Z.text)
-                    if (isNow && p.description.isNotBlank()) {
-                        Text(p.description, color = Z.textMuted, style = MaterialTheme.typography.bodyMedium, maxLines = 4)
-                    }
-                }
+            val onClick = {
                 when {
-                    past -> Icon(Icons.Rounded.History, "Watch from start", tint = Z.textMuted, modifier = Modifier.size(18.dp))
-                    !isNow -> Icon(if (reminded) Icons.Rounded.NotificationsActive else Icons.Rounded.Notifications,
-                        if (reminded) "Reminder set" else "Remind me", tint = if (reminded) Z.focus else Z.textMuted, modifier = Modifier.size(18.dp))
+                    isNow -> model.playChannel(channel, listOf(channel), full = true)
+                    past -> model.playCatchup(channel, p.title, p.start, p.end)
+                    reminded -> model.removeReminder(Reminder(channel.streamId, channel.name, p.title, p.start))
+                    else -> model.addReminder(Reminder(channel.streamId, channel.name, p.title, p.start))
                 }
             }
+            val click = Modifier.focusRing(RoundedCornerShape(12.dp), lift = 1.01f).clip(RoundedCornerShape(12.dp))
+                .combinedClickable(onLongClick = { if (!past) model.recordProgramme(channel, p.title, p.start, p.end) }, onClick = onClick)
+            if (isNow) NowCard(p, nowSec, click) else TimelineRow(p, past, reminded, click)
+        }
+    }
+}
+
+@Composable
+private fun NowCard(p: Programme, nowSec: Long, modifier: Modifier) {
+    val frac = ((nowSec - p.start).toFloat() / (p.end - p.start).coerceAtLeast(1)).coerceIn(0f, 1f)
+    Column(modifier.fillMaxWidth().background(Z.activeTint).padding(14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("NOW", color = Color.White, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
+                modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Z.accentGradient).padding(horizontal = 8.dp, vertical = 2.dp))
+            Spacer(Modifier.width(10.dp))
+            Text("${clock(p.start)} – ${clock(p.end)}", color = Z.focus, style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.weight(1f))
+            Text("${((p.end - nowSec) / 60).coerceAtLeast(1)} min left", color = Z.textMuted, style = MaterialTheme.typography.labelMedium)
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(p.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        if (p.description.isNotBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Text(p.description, color = Z.textMuted, style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        }
+        Spacer(Modifier.height(10.dp))
+        Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Z.surfaceHigh)) {
+            Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(Z.accentGradient))
+        }
+    }
+}
+
+@Composable
+private fun TimelineRow(p: Programme, past: Boolean, reminded: Boolean, modifier: Modifier) {
+    Row(modifier.fillMaxWidth().height(androidx.compose.foundation.layout.IntrinsicSize.Min).padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Text(clock(p.start), Modifier.width(58.dp), color = Z.textMuted, style = MaterialTheme.typography.labelLarge)
+        // The rail: a thin line with a dot per show.
+        Box(Modifier.width(16.dp).fillMaxHeight(), contentAlignment = Alignment.Center) {
+            Box(Modifier.width(2.dp).fillMaxHeight().background(Z.surfaceHigh))
+            Box(Modifier.size(8.dp).clip(RoundedCornerShape(50)).background(if (reminded) Z.focus else Z.textMuted.copy(alpha = 0.6f)))
+        }
+        Column(Modifier.weight(1f).padding(horizontal = 10.dp, vertical = 10.dp)) {
+            Text(p.title, color = if (past) Z.textMuted else Z.text, style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("${((p.end - p.start) / 60).coerceAtLeast(1)} min" + if (past) " · watch from start" else "",
+                color = Z.textMuted, style = MaterialTheme.typography.labelMedium)
+        }
+        when {
+            past -> Icon(Icons.Rounded.History, "Watch from start", tint = Z.textMuted, modifier = Modifier.size(18.dp))
+            else -> Icon(if (reminded) Icons.Rounded.NotificationsActive else Icons.Rounded.Notifications,
+                if (reminded) "Reminder set" else "Remind me", tint = if (reminded) Z.focus else Z.textMuted.copy(alpha = 0.6f),
+                modifier = Modifier.size(18.dp))
         }
     }
 }
