@@ -107,7 +107,8 @@ import {
   removePlaylist,
   deactivateActivePlaylist,
   updatePlaylistSettings,
-  getLiveStream
+  getLiveStream,
+  getCachedList
 } from './cache.js';
 import { lookup as tmdbLookup, tmdbToken } from './tmdb.js';
 import { fillChannelLogos } from './channel-logos.js';
@@ -448,9 +449,27 @@ app.post('/api/sync', async (req, res) => {
     // threw ("Unexpected token … ftypmp… is not valid JSON") and killed the
     // WHOLE sync. Now a bad endpoint is logged (with which action + what came
     // back) and treated as empty, so the rest of the catalog still syncs.
+    // A provider (or VPN) that cuts a big list mid-download makes r.text() throw
+    // "terminated", which used to abort the WHOLE sync. Retry that list, and if it
+    // still fails return null: the caller keeps the previously cached copy of
+    // just that list and the rest of the catalog still syncs.
     const fetchJson = async (action) => {
-      const r = await fetchXtream(`${baseApiUrl}&action=${action}`);
-      const text = await r.text();
+      let r, text;
+      for (let attempt = 1; ; attempt++) {
+        try {
+          r = await fetchXtream(`${baseApiUrl}&action=${action}`);
+          text = await r.text();
+          break;
+        } catch (err) {
+          console.error(`Sync: '${action}' attempt ${attempt} failed: ${err.message}`);
+          if (attempt >= 3) {
+            sendEvent({ progress: `Could not download ${action} (${err.message}) — skipped, will retry next sync.` });
+            return null;
+          }
+          sendEvent({ progress: `Retrying ${action}…` });
+          await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
+        }
+      }
       try {
         return JSON.parse(text);
       } catch (e) {
@@ -469,12 +488,14 @@ app.post('/api/sync', async (req, res) => {
       fetchJson('get_series_categories')
     ]);
 
-    sendEvent({ progress: 'Downloading streams (live, movies, series)...' });
-    const [liveStreams, vodStreams, seriesStreams] = await Promise.all([
-      fetchJson('get_live_streams'),
-      fetchJson('get_vod_streams'),
-      fetchJson('get_series')
-    ]);
+    // The three big lists go one at a time (like the client-mode sync): three
+    // parallel multi-MB downloads are what flaky providers/VPNs cut off.
+    sendEvent({ progress: 'Downloading live channels…' });
+    const liveStreams = await fetchJson('get_live_streams');
+    sendEvent({ progress: 'Downloading movies…' });
+    const vodStreams = await fetchJson('get_vod_streams');
+    sendEvent({ progress: 'Downloading series…' });
+    const seriesStreams = await fetchJson('get_series');
 
     sendEvent({ progress: 'Saving all cached contents...' });
     if (Array.isArray(liveStreams)) {
@@ -486,22 +507,33 @@ app.post('/api/sync', async (req, res) => {
         } catch (e) {}
       }
     }
-    updatePlaylistCache({
-      live_categories: Array.isArray(liveCategories) ? liveCategories : [],
-      live_streams: Array.isArray(liveStreams) ? liveStreams : [],
-      vod_categories: Array.isArray(vodCategories) ? vodCategories : [],
-      vod_streams: Array.isArray(vodStreams) ? vodStreams : [],
-      series_categories: Array.isArray(seriesCategories) ? seriesCategories : [],
-      series_streams: Array.isArray(seriesStreams) ? seriesStreams : []
-    });
+    // null = download failed after retries: leave that key out so
+    // updatePlaylistCache's merge keeps the previous copy.
+    const lists = {
+      live_categories: liveCategories,
+      live_streams: liveStreams,
+      vod_categories: vodCategories,
+      vod_streams: vodStreams,
+      series_categories: seriesCategories,
+      series_streams: seriesStreams
+    };
+    // Only a copy synced for THIS playlist is worth keeping; after adding or
+    // switching playlists the cache still holds the previous one's lists.
+    const syncedFor = `${creds.server_url}|${creds.username}`;
+    const samePlaylist = getCachedList('synced_for') === syncedFor;
+    const update = { synced_for: syncedFor };
+    let failed = 0;
+    for (const [k, v] of Object.entries(lists)) {
+      if (v === null) { failed++; if (!samePlaylist) update[k] = []; }
+      else update[k] = Array.isArray(v) ? v : [];
+    }
+    if (failed === Object.keys(lists).length) throw new Error('provider closed every download — check your connection or VPN');
+    updatePlaylistCache(update);
 
+    const count = (key) => (getCachedList(key) || []).length;
     sendEvent({
       success: true,
-      counts: {
-        live: Array.isArray(liveStreams) ? liveStreams.length : 0,
-        movies: Array.isArray(vodStreams) ? vodStreams.length : 0,
-        series: Array.isArray(seriesStreams) ? seriesStreams.length : 0
-      }
+      counts: { live: count('live_streams'), movies: count('vod_streams'), series: count('series_streams') }
     });
     res.end();
   } catch (err) {

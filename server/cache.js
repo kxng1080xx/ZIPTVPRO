@@ -315,6 +315,10 @@ export function setCachedEPG(streamId, listings, ttlMs = 4 * 60 * 60 * 1000) { /
   }
 }
 
+export function getCachedList(key) {
+  return cache[key];
+}
+
 // ponytail: linear scan, fine for an EPG miss (result is then cached); index by id if it shows up in profiles
 export function getLiveStream(streamId) {
   const id = String(streamId);
