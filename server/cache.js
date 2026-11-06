@@ -290,9 +290,13 @@ export function updatePlaylistCache(newData) {
 }
 
 // EPG Cache helpers
+// Bump when the EPG source changes so entries saved by an older app are refetched
+// (v2 = external guide first; pre-v2 disk cache held up to 4h of stale provider EPG).
+const EPG_CACHE_VERSION = 2;
+
 export function getCachedEPG(streamId) {
   const cached = epgCache[streamId];
-  if (cached && cached.expiry > Date.now()) {
+  if (cached && cached.v === EPG_CACHE_VERSION && cached.expiry > Date.now()) {
     return cached.listings;
   }
   return null;
@@ -300,6 +304,7 @@ export function getCachedEPG(streamId) {
 
 export function setCachedEPG(streamId, listings, ttlMs = 4 * 60 * 60 * 1000) { // Default EPG cache is 4 hours
   epgCache[streamId] = {
+    v: EPG_CACHE_VERSION,
     expiry: Date.now() + ttlMs,
     listings
   };
