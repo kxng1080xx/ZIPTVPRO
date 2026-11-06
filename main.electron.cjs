@@ -100,42 +100,66 @@ async function setAdblock(enabled) {
 ipcMain.handle('adblock:set', (_e, enabled) => setAdblock(!!enabled));
 ipcMain.handle('adblock:get', () => ({ enabled: adblockEnabled }));
 
-// --- Built-in VPN Profile Manager (9.4) -------------------------------------
-let activeVpnProcess = null;
-let activeVpnState = { enabled: false, version: 0, connected: false };
+// --- Built-in VPN (9.4) ------------------------------------------------------
+// Bringing up a tunnel on Windows needs admin rights (Wintun/TAP adapter +
+// routes), so we don't run openvpn.exe ourselves: we drop the cloud profile into
+// OpenVPN GUI's per-user config dir and ask the GUI to connect. Its interactive
+// service does the privileged part, no UAC prompt.
+// ponytail: fire-and-forget — we don't read back real tunnel state; add the
+// GUI's management interface if the tile ever needs live "connected" status.
+const VPN_NAME = 'ziptv';
+let vpnState = { started: false, sig: '', error: '' };
+
+function openvpnGuiPath() {
+  const roots = [process.env.ProgramW6432, process.env.ProgramFiles, process.env['ProgramFiles(x86)']].filter(Boolean);
+  for (const r of roots) {
+    const p = path.join(r, 'OpenVPN', 'bin', 'openvpn-gui.exe');
+    if (fs.existsSync(p)) return p;
+  }
+  return '';
+}
+
+function vpnGui(args) {
+  const gui = openvpnGuiPath();
+  if (gui) require('child_process').spawn(gui, args, { detached: true, stdio: 'ignore' }).unref();
+}
+
+function stopVpn() {
+  if (vpnState.started) vpnGui(['--command', 'disconnect', VPN_NAME]);
+  vpnState = { started: false, sig: '', error: '' };
+}
 
 ipcMain.handle('vpn:apply', async (_e, data = {}) => {
   try {
-    const ovpnContent = data.ovpn || '';
-    activeVpnState.enabled = !!data.enabled;
-    activeVpnState.version = data.version || 0;
+    if (process.platform !== 'win32') throw new Error('unsupported');
+    if (!openvpnGuiPath()) throw new Error('openvpn-missing');
+    const user = String(data.username || '');
+    const pass = String(data.password || '');
+    let ovpn = String(data.ovpn || '');
+    const sig = [ovpn, user, pass].join('\0');
+    if (vpnState.started && vpnState.sig === sig) return { ok: true };
 
-    const vpnDir = path.join(app.getPath('userData'), 'vpn');
-    if (!fs.existsSync(vpnDir)) fs.mkdirSync(vpnDir, { recursive: true });
-
-    const activeOvpnPath = path.join(vpnDir, 'active.ovpn');
-    if (ovpnContent) {
-      fs.writeFileSync(activeOvpnPath, ovpnContent, 'utf8');
-      console.log('[VPN] Saved active cloud profile to', activeOvpnPath);
+    const dir = path.join(app.getPath('home'), 'OpenVPN', 'config', VPN_NAME);
+    fs.mkdirSync(dir, { recursive: true });
+    if (user) {
+      // OpenVPN GUI runs openvpn with --cd <config dir>, so a relative path works.
+      fs.writeFileSync(path.join(dir, 'auth.txt'), `${user}\n${pass}\n`, 'utf8');
+      ovpn = ovpn.replace(/^[ \t]*auth-user-pass\b.*$/m, 'auth-user-pass auth.txt');
     }
-    return { ok: true, path: activeOvpnPath };
+    fs.writeFileSync(path.join(dir, `${VPN_NAME}.ovpn`), ovpn, 'utf8');
+
+    if (vpnState.started) vpnGui(['--command', 'disconnect', VPN_NAME]); // new profile → reconnect
+    vpnGui(['--silent_connection', '1', '--connect', `${VPN_NAME}.ovpn`]);
+    vpnState = { started: true, sig, error: '' };
+    return { ok: true };
   } catch (err) {
-    console.error('[VPN] Failed to apply profile:', err);
+    vpnState.error = err.message;
     return { ok: false, error: err.message };
   }
 });
 
-ipcMain.handle('vpn:stop', async () => {
-  if (activeVpnProcess) {
-    try { activeVpnProcess.kill(); } catch (e) {}
-    activeVpnProcess = null;
-  }
-  activeVpnState.enabled = false;
-  activeVpnState.connected = false;
-  return { ok: true };
-});
-
-ipcMain.handle('vpn:status', () => ({ ...activeVpnState }));
+ipcMain.handle('vpn:stop', async () => { stopVpn(); return { ok: true }; });
+ipcMain.handle('vpn:status', () => ({ started: vpnState.started, error: vpnState.error }));
 
 // --- Trailer session (9.0) --------------------------------------------------
 // Poster-dwell trailers render in a <webview partition="persist:trailers">
@@ -331,6 +355,8 @@ if (!gotLock) {
     try { if (globalThis.__ziptvKillChildren) globalThis.__ziptvKillChildren(); } catch (e) {}
     // Tear down the Cloudflare tunnel so cloudflared doesn't outlive the app.
     try { shutdownTunnel(); } catch (e) {}
+    // Don't leave the cloud VPN up after the app is gone.
+    try { stopVpn(); } catch (e) {}
   });
 
   // Backstop: also clean up right before the process exits, in case quit was

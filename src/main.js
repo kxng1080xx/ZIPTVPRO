@@ -4710,16 +4710,28 @@ function bindGlobalEvents() {
   });
 
   // --- Tile: Built-in VPN ---
-  document.getElementById('tile-vpn')?.addEventListener('click', () => {
+  document.getElementById('tile-vpn')?.addEventListener('click', async () => {
     const vpnOn = localStorage.getItem('ziptv_vpn_enabled') === '1';
     const ovpn = localStorage.getItem('ziptv_vpn_ovpn') || '';
     if (!vpnOn || !ovpn) {
       showToast('No active cloud VPN configured by admin', 'info');
       return;
     }
+    const host = window.appHost && window.appHost.vpn;
+    if (!host) {
+      showToast('Built-in VPN is only available in the Windows app', 'info');
+      return;
+    }
+    const st = await host.status().catch(() => ({}));
+    if (st.error === 'openvpn-missing') {
+      showToast('Install OpenVPN (free) to use the built-in VPN', 'info');
+      window.appHost.openExternal?.('https://openvpn.net/community-downloads/');
+      return;
+    }
     const serverMatch = ovpn.match(/remote\s+([^\s]+)(?:\s+([0-9]+))?/i);
     const server = serverMatch ? `${serverMatch[1]}:${serverMatch[2] || '1194'}` : 'Cloud VPN';
-    showToast(`Protected by Cloud VPN (${server})`, 'success');
+    if (st.started) showToast(`VPN connecting via OpenVPN (${server})`, 'success');
+    else showToast(`VPN not started${st.error ? `: ${st.error}` : ''}`, 'error');
   });
 
   // --- Tile: CORS Proxy (toggle) ---
@@ -6125,49 +6137,28 @@ function setActivationStatus(state) {
 const VPN_VERSION_KEY = 'ziptv_vpn_version';
 const VPN_ENABLED_KEY = 'ziptv_vpn_enabled';
 const VPN_OVPN_KEY = 'ziptv_vpn_ovpn';
-const VPN_USER_KEY = 'ziptv_vpn_user';
-const VPN_PASS_KEY = 'ziptv_vpn_pass';
 
 function applyCloudVpn(vpn) {
   if (!vpn) return;
-  const currentVersion = Number(localStorage.getItem(VPN_VERSION_KEY) || 0);
-  const currentlyEnabled = localStorage.getItem(VPN_ENABLED_KEY) === '1';
-  const remoteEnabled = !!vpn.enabled;
-  const remoteVersion = Number(vpn.version || 0);
+  const on = !!(vpn.enabled && vpn.ovpn);
+  const wasOn = localStorage.getItem(VPN_ENABLED_KEY) === '1';
+  localStorage.setItem(VPN_ENABLED_KEY, on ? '1' : '0');
+  localStorage.setItem(VPN_VERSION_KEY, String(Number(vpn.version || 0)));
+  if (on) localStorage.setItem(VPN_OVPN_KEY, vpn.ovpn);
+  localStorage.removeItem('ziptv_vpn_pass'); // 9.4.2 stored it in plaintext; host gets it per-sync now
+  if (on !== wasOn) refreshSettingsTiles();
 
-  if (remoteEnabled && vpn.ovpn) {
-    if (!currentlyEnabled || remoteVersion !== currentVersion || !localStorage.getItem(VPN_OVPN_KEY)) {
-      console.log('[VPN] Syncing new VPN profile version', remoteVersion);
-      localStorage.setItem(VPN_VERSION_KEY, String(remoteVersion));
-      localStorage.setItem(VPN_ENABLED_KEY, '1');
-      localStorage.setItem(VPN_OVPN_KEY, vpn.ovpn);
-      if (vpn.username) localStorage.setItem(VPN_USER_KEY, vpn.username);
-      else localStorage.removeItem(VPN_USER_KEY);
-      if (vpn.password) localStorage.setItem(VPN_PASS_KEY, vpn.password);
-      else localStorage.removeItem(VPN_PASS_KEY);
-
-      refreshSettingsTiles();
-
-      window.dispatchEvent(new CustomEvent('ziptv:vpn-change', {
-        detail: { enabled: true, version: remoteVersion, ovpn: vpn.ovpn, username: vpn.username || '', password: vpn.password || '' }
-      }));
-
-      if (window.appHost && window.appHost.vpn && typeof window.appHost.vpn.apply === 'function') {
-        window.appHost.vpn.apply({ enabled: true, version: remoteVersion, ovpn: vpn.ovpn, username: vpn.username || '', password: vpn.password || '' });
-      }
-    }
-  } else if (!remoteEnabled && currentlyEnabled) {
-    console.log('[VPN] Remote VPN disabled by admin');
-    localStorage.setItem(VPN_ENABLED_KEY, '0');
-    refreshSettingsTiles();
-
-    window.dispatchEvent(new CustomEvent('ziptv:vpn-change', {
-      detail: { enabled: false, version: remoteVersion }
-    }));
-
-    if (window.appHost && window.appHost.vpn && typeof window.appHost.vpn.stop === 'function') {
-      window.appHost.vpn.stop();
-    }
+  // Desktop host connects via OpenVPN GUI. Sent every sync on purpose: the main
+  // process no-ops when the profile/credentials are unchanged, and this is what
+  // reconnects after an app restart.
+  const host = window.appHost && window.appHost.vpn;
+  if (!host) return;
+  if (on) {
+    host.apply({ ovpn: vpn.ovpn, username: vpn.username || '', password: vpn.password || '' })
+      .then((r) => { if (r && !r.ok) console.warn('[VPN] apply failed:', r.error); })
+      .catch(() => {});
+  } else if (wasOn) {
+    host.stop();
   }
 }
 
