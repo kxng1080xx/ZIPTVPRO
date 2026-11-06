@@ -2253,6 +2253,70 @@ body.vod-mode .now-next-bar {
   gap: 12px;
 }
 
+/* Info is redundant where the details panel is always on screen. Kept on phone
+   portrait (panel is a bottom sheet only Info opens) and the TV layout (drawer). */
+body:not(.tv-layout) #player-info-btn { display: none; }
+@media (max-width: 620px) and (orientation: portrait) {
+  body:not(.tv-layout) #player-info-btn { display: flex; }
+}
+
+/* "More" menu: secondary player controls as a labelled list popping upward. */
+.player-more-wrap {
+  position: relative;
+  display: flex;
+}
+.player-more-menu {
+  display: none;
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  min-width: 220px;
+  padding: 6px;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: rgba(10, 14, 22, 0.95);
+  border: 1px solid var(--rd-hairline-soft);
+  border-radius: 14px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+  z-index: 20;
+}
+.player-more-wrap.open .player-more-menu {
+  display: flex;
+}
+.player-more-wrap.open #player-more-btn {
+  background: rgba(255, 255, 255, 0.2);
+}
+.player-more-menu .player-control-icon {
+  flex-shrink: 0;
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  gap: 12px;
+  justify-content: flex-start;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+/* Label each row from its title, so titles player.js updates stay in sync. */
+.player-more-menu .player-control-icon::after {
+  content: attr(title);
+}
+.player-more-menu .player-control-icon:hover,
+.player-more-menu .player-control-icon.tv-focused {
+  background: rgba(255, 255, 255, 0.1);
+  transform: none;
+}
+.player-more-menu .player-control-icon.tv-focused {
+  border-radius: 10px !important;
+}
+
 /* Volume: vertical slider in a flyout above the speaker icon (PC UI).
    The input keeps its native horizontal value axis and is rotated -90°, so
    dragging up = louder; all existing JS (value/input events) is untouched. */

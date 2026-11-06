@@ -313,6 +313,37 @@ export class VideoPlayer {
       });
     }
 
+    // "More" menu holding the secondary controls. Item handlers fire first
+    // (target phase), then the bubbling click closes the menu.
+    const moreWrap = document.getElementById('player-more-wrap');
+    const moreBtn = document.getElementById('player-more-btn');
+    const moreMenu = document.getElementById('player-more-menu');
+    if (moreWrap && moreBtn && moreMenu) {
+      const setMoreOpen = (open) => {
+        if (open) {
+          // Keep the menu inside the (possibly short, phone-portrait) player.
+          const host = this.container || document.getElementById('video-container');
+          const room = host ? moreBtn.getBoundingClientRect().top - host.getBoundingClientRect().top - 12 : 0;
+          moreMenu.style.maxHeight = room > 80 ? `${Math.floor(room)}px` : '';
+        }
+        moreWrap.classList.toggle('open', open);
+        moreBtn.setAttribute('aria-expanded', String(open));
+      };
+      moreBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setMoreOpen(!moreWrap.classList.contains('open'));
+      });
+      moreMenu.addEventListener('click', (e) => {
+        if (e.target.closest('button')) setMoreOpen(false);
+      });
+      document.addEventListener('click', (e) => {
+        if (!moreWrap.contains(e.target)) setMoreOpen(false);
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && moreWrap.classList.contains('open')) setMoreOpen(false);
+      });
+    }
+
     // Separate Audio Track & Subtitles popout menus.
     if (this.audioBtn) {
       this.audioBtn.addEventListener('click', () => {

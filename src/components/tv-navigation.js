@@ -1470,9 +1470,19 @@ class TVNavigation {
     if (seekInput && seekInput.offsetParent !== null) row2.push(seekInput);
     if (row2.length > 0) rows.push(row2);
     
-    // Row 3: Bottom icons
+    // Open "More" menu: one row per visible item, sitting above the bottom bar
+    // (it pops upward), so Up/Down walk the list and Down from the last item
+    // lands back on the bar.
+    const moreMenu = document.getElementById('player-more-menu');
+    if (moreMenu && moreMenu.offsetParent !== null) {
+      moreMenu.querySelectorAll('button').forEach(el => {
+        if (el.offsetParent !== null) rows.push([el]);
+      });
+    }
+
+    // Row 3: Bottom icons (secondary controls are in the More menu)
     const row3 = [];
-    ['player-stop-btn', 'player-info-btn', 'player-audio-btn', 'player-cc-btn', 'player-volume-btn', 'player-pip-btn', 'player-fullscreen-btn'].forEach(id => {
+    ['player-golive-btn', 'player-info-btn', 'player-volume-btn', 'player-more-btn', 'player-fullscreen-btn'].forEach(id => {
       const el = document.getElementById(id);
       if (el && el.offsetParent !== null) row3.push(el);
     });

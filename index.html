@@ -404,12 +404,7 @@
 
                     <div class="control-row-right">
                       <button class="player-control-icon timeshift-only" id="player-golive-btn" title="Go to Live"><i data-lucide="radio"></i></button>
-                      <button class="player-control-icon dvr-only" id="player-record-btn" title="Record this channel"><i data-lucide="circle-dot"></i></button>
-                      <button class="player-control-icon desktop-ffmpeg-only" id="player-deint-btn" title="Deinterlace (60fps)"><i data-lucide="zap"></i></button>
-                      <button class="player-control-icon" id="player-stop-btn" title="Stop"><i data-lucide="square"></i></button>
                       <button class="player-control-icon" id="player-info-btn" title="Channel Info"><i data-lucide="info"></i></button>
-                      <button class="player-control-icon" id="player-audio-btn" title="Audio Track"><i data-lucide="languages"></i></button>
-                      <button class="player-control-icon" id="player-cc-btn" title="Subtitles"><i data-lucide="subtitles"></i></button>
                       <div class="player-volume-wrap">
                         <button class="player-control-icon" id="player-volume-btn" title="Mute"><i data-lucide="volume-2"></i></button>
                         <div class="player-volume-flyout">
@@ -418,9 +413,23 @@
                           </div>
                         </div>
                       </div>
-                      <button class="player-control-icon" id="player-upscaler-btn" title="Video Upscaler Options"><i data-lucide="sparkles"></i></button>
-                      <button class="player-control-icon" id="player-pip-btn" title="Picture in Picture"><i data-lucide="picture-in-picture"></i></button>
-                      <button class="player-control-icon cast-only" id="player-cast-btn" title="Cast to TV" style="display:none;"><i data-lucide="cast"></i></button>
+                      <!-- Secondary controls live in one menu. The buttons keep their
+                           ids/classes, so player.js handlers and the dvr-only /
+                           cast-only / desktop-ffmpeg-only visibility rules still apply.
+                           Menu rows are labelled from each button's title (CSS). -->
+                      <div class="player-more-wrap" id="player-more-wrap">
+                        <button class="player-control-icon" id="player-more-btn" title="More options" aria-label="More options" aria-haspopup="menu" aria-expanded="false"><i data-lucide="ellipsis"></i></button>
+                        <div class="player-more-menu" id="player-more-menu" role="menu">
+                          <button class="player-control-icon" id="player-audio-btn" title="Audio Track" role="menuitem"><i data-lucide="languages"></i></button>
+                          <button class="player-control-icon" id="player-cc-btn" title="Subtitles" role="menuitem"><i data-lucide="subtitles"></i></button>
+                          <button class="player-control-icon dvr-only" id="player-record-btn" title="Record this channel" role="menuitem"><i data-lucide="circle-dot"></i></button>
+                          <button class="player-control-icon desktop-ffmpeg-only" id="player-deint-btn" title="Deinterlace (60fps)" role="menuitem"><i data-lucide="zap"></i></button>
+                          <button class="player-control-icon" id="player-upscaler-btn" title="Video Upscaler Options" role="menuitem"><i data-lucide="sparkles"></i></button>
+                          <button class="player-control-icon" id="player-pip-btn" title="Picture in Picture" role="menuitem"><i data-lucide="picture-in-picture"></i></button>
+                          <button class="player-control-icon cast-only" id="player-cast-btn" title="Cast to TV" role="menuitem" style="display:none;"><i data-lucide="cast"></i></button>
+                          <button class="player-control-icon" id="player-stop-btn" title="Stop" role="menuitem"><i data-lucide="square"></i></button>
+                        </div>
+                      </div>
                       <button class="player-control-icon" id="player-fullscreen-btn" title="Fullscreen"><i data-lucide="maximize"></i></button>
                     </div>
                     </div>
