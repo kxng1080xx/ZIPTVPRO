@@ -194,7 +194,9 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
 
     fun start() {
         playlists.firstOrNull()?.let { open(it) }
-        scope.launch { while (isActive) { heartbeat(); delay(5 * 60_000) } }
+        // Waiting on the activation screen: check every 10 s so a playlist added on /connect shows up
+        // right away (5 min looked like "cloud sync doesn't work"). Set up: every 5 min.
+        scope.launch { while (isActive) { heartbeat(); delay(if (playlists.isEmpty()) 10_000 else 5 * 60_000) } }
         scope.launch { while (isActive) { tick(); delay(15_000) } }
         scope.launch {
             delay(20_000) // after startup work
@@ -220,7 +222,9 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
         }
         val remoteIds = remote.map { it.id }.toSet()
         // Cloud is the source of truth for cloud-linked playlists; device-only ones stay.
-        val merged = remote + playlists.filter { it.remoteId == null && it.id !in remoteIds }
+        val merged = (remote + playlists.filter { it.remoteId == null && it.id !in remoteIds })
+            // The same login added twice (or typed in and also sent from /connect) shows once.
+            .distinctBy { Triple(it.server.trim().trimEnd('/').lowercase(), it.username.trim(), it.password) }
         if (merged != playlists) {
             val wasEmpty = playlists.isEmpty()
             playlists = merged
