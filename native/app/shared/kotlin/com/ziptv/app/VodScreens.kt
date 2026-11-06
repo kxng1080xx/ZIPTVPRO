@@ -110,25 +110,11 @@ fun SeriesScreen(model: AppModel) {
 
 @Composable
 private fun CatalogScreen(model: AppModel, kind: ContentKind, load: (String) -> List<Poster>, onOpen: (Poster) -> Unit) {
-    val wide = LocalWide.current
-    var categoryId by rememberSaveable(kind) { mutableStateOf(CAT_ALL) }
-    val categories = rememberCategories(model, kind)
-    val posters by produceState<List<Poster>?>(null, model.library, kind, categoryId, model.catalogVersion,
-        if (categoryId == CAT_FAV) model.userVersion else 0) {
-        if (categoryId != CAT_FAV) value = null // category switch: show the skeleton, not the old list
-        value = withContext(Dispatchers.IO) { load(categoryId) }
+    // ponytail: no category browsing for movies/series — everything in one grid, search finds the rest.
+    val posters by produceState<List<Poster>?>(null, model.library, kind, model.catalogVersion) {
+        value = withContext(Dispatchers.IO) { load(CAT_ALL) }
     }
-    if (wide) {
-        Row(Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            CategoryColumn(model, kind, categories, categoryId, Modifier.width(250.dp).fillMaxHeight()) { categoryId = it }
-            PosterGrid(posters, Modifier.weight(1f), onOpen)
-        }
-    } else {
-        Column(Modifier.fillMaxSize()) {
-            CategoryChips(model, kind, categories, categoryId) { categoryId = it }
-            PosterGrid(posters, Modifier.fillMaxSize(), onOpen)
-        }
-    }
+    PosterGrid(posters, Modifier.fillMaxSize().padding(horizontal = if (LocalWide.current) 16.dp else 6.dp), onOpen)
 }
 
 @Composable

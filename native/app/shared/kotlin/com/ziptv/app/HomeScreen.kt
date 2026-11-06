@@ -63,6 +63,8 @@ private data class HomeData(
     val favChannels: List<Channel> = emptyList(),
     val newMovies: List<Movie> = emptyList(),
     val newSeries: List<Series> = emptyList(),
+    val favMovies: List<Movie> = emptyList(),
+    val favSeries: List<Series> = emptyList(),
 )
 
 /** v9 home: pick up where you left off, recent + favorite channels, recently added. */
@@ -78,6 +80,9 @@ fun HomeScreen(model: AppModel) {
                 favChannels = lib.channelsByIds(user.favorites(ContentKind.LIVE)),
                 newMovies = if (model.isHiddenTab(Tab.Movies)) emptyList() else lib.recentlyAddedMovies(30u),
                 newSeries = if (model.isHiddenTab(Tab.Series)) emptyList() else lib.recentlyAddedSeries(30u),
+                // Movies/Series have no categories any more, so favorites ("My list") live here.
+                favMovies = lib.moviesByIds(user.favorites(ContentKind.MOVIE)),
+                favSeries = lib.seriesByIds(user.favorites(ContentKind.SERIES)),
             )
         }
         // The paired device's history (PC <-> phone hand-off) arrives later; never blocks the page.
@@ -98,6 +103,16 @@ fun HomeScreen(model: AppModel) {
         item { RecordingsRow(model) }
         if (d.recent.isNotEmpty()) item { ChannelRow("Recently watched channels", d.recent, model) }
         if (d.favChannels.isNotEmpty()) item { ChannelRow("Favorite channels", d.favChannels, model) }
+        if (d.favMovies.isNotEmpty()) item {
+            PosterRow("My list · Movies", d.favMovies.map { Triple(it.name, it.poster, it) }, ratings = d.favMovies.map { it.rating }) { m ->
+                model.tab = Tab.Movies; model.openMovie = m as Movie
+            }
+        }
+        if (d.favSeries.isNotEmpty()) item {
+            PosterRow("My list · Series", d.favSeries.map { Triple(it.name, it.cover, it) }, ratings = d.favSeries.map { it.rating }) { s ->
+                model.tab = Tab.Series; model.openSeries = s as Series
+            }
+        }
         if (d.newMovies.isNotEmpty()) item {
             PosterRow("Recently added · Movies", d.newMovies.map { Triple(it.name, it.poster, it) }, ratings = d.newMovies.map { it.rating }) { m ->
                 model.tab = Tab.Movies; model.openMovie = m as Movie
