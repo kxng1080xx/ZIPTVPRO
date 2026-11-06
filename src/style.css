@@ -1235,27 +1235,44 @@ button {
   height: 16px;
 }
 
+/* Circular to match the pill search field beside it (same 40px height). */
 .header-icon-btn {
-  width: 38px;
-  height: 38px;
-  background: var(--rd-glass-panel);
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--rd-hairline-soft);
-  border-radius: var(--rd-r-12);
+  border-radius: 999px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast),
+              border-color var(--transition-fast), transform 0.12s ease;
 }
 
-.header-icon-btn i {
+.header-icon-btn i,
+.header-icon-btn svg {
   width: 18px;
   height: 18px;
+  stroke-width: 1.75;
 }
 
-.header-icon-btn:hover {
+.header-icon-btn:hover,
+.header-icon-btn:focus-visible {
   color: var(--text-primary);
-  border-color: var(--rd-hairline-strong);
-  background: rgba(255,255,255,0.06);
+  border-color: var(--rd-active-border);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.header-icon-btn:focus-visible {
+  outline: 2px solid var(--rd-focus);
+  outline-offset: 2px;
+}
+
+.header-icon-btn:active {
+  transform: scale(0.94);
 }
 
 /* ==========================================================================

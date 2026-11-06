@@ -2666,7 +2666,9 @@ body:not(.tv-layout):not(.vod-mode) .live-top-row .player-wrapper {
   transition: max-width 0.32s cubic-bezier(0.22, 0.61, 0.24, 1);
   width: 100%;
   max-width: calc(var(--live-stage-h) * 16 / 9);
-  margin: 0 auto;
+  /* Hug the details panel: centring left the column's spare width as a wide
+     gap between player and panel. Spare space now sits on the outer left. */
+  margin: 0 0 0 auto;
   z-index: 1;
 }
 

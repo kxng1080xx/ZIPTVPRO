@@ -1,7 +1,7 @@
 {
   "name": "iptv-player-zero",
   "productName": "ZIPTV Pro",
-  "version": "9.6.0",
+  "version": "9.6.2",
   "description": "Premium IPTV Player - ZIPTV Pro",
   "main": "main.electron.cjs",
   "type": "module",
@@ -61,7 +61,10 @@
       "electron/**/*",
       "assets/**/*",
       "main.electron.cjs",
-      "package.json"
+      "package.json",
+      "!**/node_modules/**/android/**",
+      "!**/node_modules/**/ios/**",
+      "!**/node_modules/**/.gradle/**"
     ],
     "extraResources": [
       {
