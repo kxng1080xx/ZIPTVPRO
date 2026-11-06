@@ -1,5 +1,6 @@
 package com.ziptv.app
 
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -81,8 +82,11 @@ fun BoxScope.PlayerChrome(model: AppModel, item: Playable, inFullscreen: Boolean
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         // Phone page player: no room for NOW/NEXT next to the buttons (the guide is a tap away).
-        if ((item.live || item.kind == PlayKind.Catchup) && (inFullscreen || LocalWide.current))
-            NowNext(model, item, Modifier.weight(1f), compact = !inFullscreen) else Spacer(Modifier.weight(1f))
+        when {
+            item.seekable -> SeekInline(model, item, Modifier.weight(1f), onInteract) // VOD/catch-up: slim seek in the bar
+            item.live && (inFullscreen || LocalWide.current) -> NowNext(model, item, Modifier.weight(1f), compact = !inFullscreen)
+            else -> Spacer(Modifier.weight(1f))
+        }
         if (item.live || item.kind == PlayKind.Catchup) {
             ControlIcon(Icons.Rounded.Sensors, if (item.live) "Go to live" else "Back to live", size) { model.goLive(); onInteract() }
         }
@@ -218,3 +222,35 @@ private fun Modifier.vertical(): Modifier = this
             minHeight = constraints.minWidth, maxHeight = constraints.maxWidth))
         layout(p.height, p.width) { p.place(-(p.width - p.height) / 2, (p.width - p.height) / 2) }
     }
+
+/** Minimal seek: small times either side of a thin line with a small dot; sits in the control row. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun SeekInline(model: AppModel, item: Playable, modifier: Modifier, poke: () -> Unit) {
+    var pos by remember { mutableStateOf(0L) }
+    var dur by remember { mutableStateOf(0L) }
+    var dragging by remember { mutableStateOf(false) }
+    var dragValue by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(item.url) {
+        while (true) { if (!dragging) { pos = model.player.positionMs(); dur = model.player.durationMs() }; kotlinx.coroutines.delay(500) }
+    }
+    if (dur <= 0) { Spacer(modifier); return }
+    val colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Z.focus, inactiveTrackColor = Color.White.copy(alpha = 0.22f))
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        val time = MaterialTheme.typography.labelMedium
+        Text(hms(if (dragging) (dragValue * dur).toLong() else pos), color = Color.White, style = time)
+        Slider(
+            value = if (dragging) dragValue else (pos.toFloat() / dur).coerceIn(0f, 1f),
+            onValueChange = { dragging = true; dragValue = it; poke() },
+            onValueChangeFinished = { model.player.seekTo((dragValue * dur).toLong()); pos = (dragValue * dur).toLong(); dragging = false },
+            colors = colors,
+            thumb = { Box(Modifier.size(if (dragging) 14.dp else 10.dp).clip(RoundedCornerShape(50)).background(Color.White)) },
+            track = { st ->
+                SliderDefaults.Track(sliderState = st, modifier = Modifier.height(3.dp), colors = colors,
+                    thumbTrackGapSize = 0.dp, drawStopIndicator = null)
+            },
+            modifier = Modifier.weight(1f).padding(horizontal = 10.dp).height(24.dp),
+        )
+        Text("-" + hms((dur - pos).coerceAtLeast(0)), color = Z.textMuted, style = time)
+    }
+}

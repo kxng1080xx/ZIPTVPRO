@@ -138,7 +138,6 @@ fun PlayerScreen(model: AppModel) {
                 // Panel needs room: wide layouts (PC/TV/tablet, phone in landscape) only.
                 if (item.live && model.zapList.size > 1 && LocalWide.current) ChannelPanel(model, item, Modifier.align(Alignment.TopStart)) { poke++ }
                 CenterControls(model, item, state, Modifier.align(Alignment.Center)) { poke++ }
-                if (item.seekable) SeekBar(model, item, Modifier.align(Alignment.BottomCenter).padding(bottom = 76.dp)) { poke++ }
                 PlayerChrome(model, item, inFullscreen = true, onActive = { popOpen = it }, onInteract = { poke++ })
             }
         }
@@ -267,32 +266,6 @@ private fun CenterControls(model: AppModel, item: Playable, state: PlayerState, 
         ) { model.player.togglePause(); poke() }
         if (item.seekable) RoundButton(Icons.Rounded.Forward10, "Forward 10 seconds") { model.player.seekTo(model.player.positionMs() + 10_000); poke() }
         if (item.live) RoundButton(Icons.Rounded.KeyboardArrowDown, "Next channel") { model.zap(1); poke() }
-    }
-}
-
-@Composable
-private fun SeekBar(model: AppModel, item: Playable, modifier: Modifier, poke: () -> Unit) {
-    var pos by remember { mutableLongStateOf(0L) }
-    var dur by remember { mutableLongStateOf(0L) }
-    var dragging by remember { mutableStateOf(false) }
-    var dragValue by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(item.url) {
-        while (true) { if (!dragging) { pos = model.player.positionMs(); dur = model.player.durationMs() }; delay(500) }
-    }
-    Column(modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
-        if (item.seekable && dur > 0) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(hms(if (dragging) (dragValue * dur).toLong() else pos), color = Color.White, style = MaterialTheme.typography.labelLarge)
-                Slider(
-                    value = if (dragging) dragValue else (pos.toFloat() / dur).coerceIn(0f, 1f),
-                    onValueChange = { dragging = true; dragValue = it; poke() },
-                    onValueChangeFinished = { model.player.seekTo((dragValue * dur).toLong()); pos = (dragValue * dur).toLong(); dragging = false },
-                    colors = SliderDefaults.colors(thumbColor = Z.focus, activeTrackColor = Z.accent, inactiveTrackColor = Color.White.copy(alpha = 0.25f)),
-                    modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
-                )
-                Text(hms(dur), color = Z.textMuted, style = MaterialTheme.typography.labelLarge)
-            }
-        }
     }
 }
 
