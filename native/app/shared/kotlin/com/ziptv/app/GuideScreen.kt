@@ -73,11 +73,31 @@ fun GuideScreen(model: AppModel) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             val labelW = if (LocalWide.current) 200.dp else 120.dp
             val gridW = maxWidth - labelW
-            LazyColumn(contentPadding = PaddingValues(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(channels, key = { it.streamId }) { ch ->
-                    GuideRow(model, ch, from, to, labelW, gridW)
+            val slots = (0 until (WINDOW / 1800).toInt()).map { from + it * 1800L }
+            fun xOf(t: Long) = labelW + 6.dp + gridW * ((t - from).toFloat() / WINDOW) // same scale as the show blocks
+            Column(Modifier.fillMaxSize()) {
+                // Time ruler: a slot every 30 min, hours bold.
+                Box(Modifier.fillMaxWidth().height(34.dp)) {
+                    slots.forEach { t ->
+                        Text(clock(t), Modifier.offset(x = xOf(t) + 6.dp).align(Alignment.CenterStart),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = if (t % 3600 == 0L) androidx.compose.ui.text.font.FontWeight.Bold else null,
+                            color = if (t % 3600 == 0L) Z.text else Z.textMuted)
+                    }
+                    Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(1.dp).background(Z.outline))
+                }
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    slots.forEach { t -> Box(Modifier.offset(x = xOf(t)).width(1.dp).fillMaxHeight().background(Z.outline)) }
+                    LazyColumn(contentPadding = PaddingValues(top = 6.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(channels, key = { it.streamId }) { ch ->
+                            GuideRow(model, ch, from, to, labelW, gridW)
+                        }
+                    }
                 }
             }
+            // Now line, across the ruler and the grid.
+            val now = rememberNowSec()
+            if (now in from until to) Box(Modifier.offset(x = xOf(now)).width(2.dp).fillMaxHeight().background(Z.live))
         }
     }
 }
@@ -134,4 +154,13 @@ private fun GuideRow(model: AppModel, ch: Channel, from: Long, to: Long, labelW:
             }
         }
     }
+}
+
+/** Current time in seconds, ticking every 30s so the now line moves. */
+@Composable
+private fun rememberNowSec(): Long {
+    val now by produceState(System.currentTimeMillis() / 1000) {
+        while (true) { kotlinx.coroutines.delay(30_000); value = System.currentTimeMillis() / 1000 }
+    }
+    return now
 }
