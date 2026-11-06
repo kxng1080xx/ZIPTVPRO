@@ -11,6 +11,8 @@ const cache = new Map(); // src -> Promise<dataURL | null>
 
 const isDarkNeutral = (r, g, b) =>
   0.2126 * r + 0.7152 * g + 0.0722 * b < 90 && Math.max(r, g, b) - Math.min(r, g, b) < 45;
+const isLightNeutral = (r, g, b) =>
+  0.2126 * r + 0.7152 * g + 0.0722 * b > 200 && Math.max(r, g, b) - Math.min(r, g, b) < 45;
 
 export function recolor(img) {
   const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
@@ -23,15 +25,18 @@ export function recolor(img) {
   ctx.drawImage(img, 0, 0, w, h);
   const data = ctx.getImageData(0, 0, w, h); // throws when CORS-tainted
   const px = data.data;
-  let clear = 0, opaque = 0, dark = 0;
+  let clear = 0, opaque = 0, dark = 0, white = 0;
   for (let i = 0; i < px.length; i += 4) {
     if (px[i + 3] < 40) { clear++; continue; }
     opaque++;
     if (isDarkNeutral(px[i], px[i + 1], px[i + 2])) dark++;
+    else if (isLightNeutral(px[i], px[i + 1], px[i + 2])) white++;
   }
   const total = w * h;
-  // Needs a see-through background and a real chunk of dark ink.
-  if (clear / total < 0.1 || !opaque || dark / opaque < 0.2) return null;
+  // Needs a see-through background and a real chunk of dark ink — and no real
+  // white already: black+white designs (Cartoon Network's checkerboard, ~36%
+  // white) would collapse into one white blob. Logos fixed here are <=6% white.
+  if (clear / total < 0.1 || !opaque || dark / opaque < 0.2 || white / opaque > 0.15) return null;
   for (let i = 0; i < px.length; i += 4) {
     if (px[i + 3] && isDarkNeutral(px[i], px[i + 1], px[i + 2])) {
       // ponytail: hard swap to white; anti-aliased edges keep their alpha so they still blend
