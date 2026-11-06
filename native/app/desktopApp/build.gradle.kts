@@ -29,6 +29,20 @@ val writeTmdbToken by tasks.registering {
     }
 }
 
+// Trimmed VLC for the installer: playback plugins only (no Qt GUI, visualizations, stream
+// output, Lua, services discovery…) ~100 MB instead of ~140. From VLC_DIR or the installed VLC.
+val prepareVlc by tasks.registering(Sync::class) {
+    val vlcDir = System.getenv("VLC_DIR") ?: "C:/Program Files/VideoLAN/VLC"
+    from(vlcDir) {
+        include("libvlc.dll", "libvlccore.dll", "plugins/**")
+        exclude("plugins/plugins.dat") // stale cache once plugins are removed; VLC rescans
+        listOf("gui", "visualization", "lua", "control", "services_discovery", "meta_engine",
+            "stream_out", "access_output", "mux", "video_splitter").forEach { exclude("plugins/$it/**") }
+    }
+    into(layout.buildDirectory.dir("vlcResources/windows/vlc"))
+    doFirst { require(file("$vlcDir/libvlc.dll").exists()) { "VLC not found at $vlcDir (set VLC_DIR)" } }
+}
+
 sourceSets["main"].resources.srcDir(layout.buildDirectory.dir("generated/ziptvResources"))
 tasks.named("processResources") { dependsOn(copyLogoIndex, writeTmdbToken) }
 
@@ -46,11 +60,16 @@ dependencies {
 compose.desktop {
     application {
         mainClass = "com.ziptv.desktop.MainKt"
+        // Packaging needs jpackage, which Android Studio's JBR lacks (Gradle itself still runs on JBR).
+        (System.getenv("JPACKAGE_JDK") ?: "C:/Program Files/Java/jdk-26.0.2.1").let { if (file(it).exists()) javaHome = it }
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)
             packageName = "ZIPTV Pro"
             packageVersion = providers.gradleProperty("ziptv.version").get()
+            appResourcesRootDir.set(layout.buildDirectory.dir("vlcResources")) // windows/vlc -> <app>/resources/vlc
             windows { menuGroup = "ZIPTV Pro"; shortcut = true; iconFile.set(rootProject.file("../../build/icon.ico")) }
         }
     }
 }
+
+tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(prepareVlc) }

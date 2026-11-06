@@ -28,10 +28,24 @@ import java.util.concurrent.Executors
 /**
  * VLC 3 via vlcj, rendered into a Compose bitmap (not a heavyweight AWT
  * canvas) so the player controls can draw on top of the video.
- * Uses the VLC installed on the PC; bundling VLC with the installer is a TODO.
+ * The installer ships its own trimmed VLC (app resources/vlc); dev runs use the installed VLC.
  */
 class VlcjPlayer : VideoPlayer {
-    private val factory = MediaPlayerFactory("--network-caching=1500", "--http-reconnect", "--no-video-title-show")
+    private val factory = run {
+        // vlcj's discovery checks jna.library.path first; plugins/ next to libvlc.dll is found by VLC itself.
+        // ZIPTV_SYSTEM_VLC=1 forces the installed VLC (A/B debugging).
+        if (System.getenv("ZIPTV_SYSTEM_VLC") == null) System.getProperty("compose.application.resources.dir")?.let { java.io.File(it, "vlc") }
+            ?.takeIf { java.io.File(it, "libvlc.dll").exists() }
+            ?.let { System.setProperty("jna.library.path", it.absolutePath) }
+        val discovery = uk.co.caprica.vlcj.factory.discovery.NativeDiscovery()
+        val found = discovery.discover()
+        // One line so "which VLC is this?" is answerable from a user's PC.
+        runCatching {
+            java.io.File(System.getProperty("user.home"), ".ziptv10").apply { mkdirs() }
+                .resolve("vlc.log").writeText("found=$found path=${discovery.discoveredPath()}")
+        }
+        MediaPlayerFactory(discovery, "--network-caching=1500", "--http-reconnect", "--no-video-title-show")
+    }
     private val mp = factory.mediaPlayers().newEmbeddedMediaPlayer()
     private val worker = Executors.newSingleThreadExecutor()
     private val _state = MutableStateFlow<PlayerState>(PlayerState.Idle)

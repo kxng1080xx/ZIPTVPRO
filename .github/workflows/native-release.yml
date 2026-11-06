@@ -84,9 +84,14 @@ jobs:
           [ -n "$TMDB_TOKEN" ] && echo "TMDB_TOKEN=$TMDB_TOKEN" > .env || true
           mkdir -p ~/.gradle
           echo "org.gradle.java.home=$(cygpath -m "$JAVA_HOME")" >> ~/.gradle/gradle.properties
+      - name: VLC to bundle (a trimmed copy goes into the installer)
+        run: choco install vlc -y --no-progress
       - name: MSI
         working-directory: native/app
+        env:
+          VLC_DIR: C:/Program Files/VideoLAN/VLC
         run: |
+          export JPACKAGE_JDK="$(cygpath -m "$JAVA_HOME")"  # Temurin 17 has jpackage
           ./gradlew.bat :desktopApp:packageMsi --console=plain
           v=$(grep '^ziptv.version=' gradle.properties | cut -d= -f2 | tr -d '[:space:]')
           cp desktopApp/build/compose/binaries/main/msi/*.msi "$GITHUB_WORKSPACE/ZIPTV-Pro-$v.msi"
