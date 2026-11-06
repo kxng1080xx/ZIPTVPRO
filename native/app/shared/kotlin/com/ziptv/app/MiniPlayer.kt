@@ -40,15 +40,20 @@ fun miniPlayerVisible(model: AppModel, wide: Boolean): Boolean =
 @Composable
 fun MiniPlayer(model: AppModel, modifier: Modifier) {
     val item = model.nowPlaying ?: return
+    val phone = model.platform.device == DeviceClass.Touch // landscape phone: a small corner window, not half the screen
     Column(
-        modifier.padding(20.dp).width(380.dp).shadow(24.dp, RoundedCornerShape(16.dp))
+        modifier.padding(if (phone) 12.dp else 20.dp).width(if (phone) 220.dp else 380.dp).shadow(24.dp, RoundedCornerShape(16.dp))
             .clip(RoundedCornerShape(16.dp)).background(Z.surface),
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black).clickable { model.pip = false; model.fullscreen = true }) {
             model.player.Surface(Modifier.fillMaxSize())
             if (item.live) Box(Modifier.align(Alignment.TopStart).padding(8.dp)) { LiveBadge() }
         }
-        Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (phone) Row(Modifier.padding(start = 10.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(item.title, Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            IconAction(Icons.Rounded.Close, "Close player", Z.textMuted) { model.stop() }
+        } else Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(item.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 val now = if (item.live) model.zapList.firstOrNull { it.streamId == item.streamId }?.let { rememberNow(model, it) } else null
