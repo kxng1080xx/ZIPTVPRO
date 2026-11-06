@@ -194,9 +194,9 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
 
     fun start() {
         playlists.firstOrNull()?.let { open(it) }
-        // Waiting on the activation screen: check every 10 s so a playlist added on /connect shows up
+        // Waiting on the activation screen: check every 3 s so a playlist added on /connect shows up
         // right away (5 min looked like "cloud sync doesn't work"). Set up: every 5 min.
-        scope.launch { while (isActive) { heartbeat(); delay(if (playlists.isEmpty()) 10_000 else 5 * 60_000) } }
+        scope.launch { while (isActive) { heartbeat(); delay(if (playlists.isEmpty()) 3_000 else 5 * 60_000) } }
         scope.launch { while (isActive) { tick(); delay(15_000) } }
         scope.launch {
             delay(20_000) // after startup work
