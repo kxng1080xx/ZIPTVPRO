@@ -145,8 +145,14 @@ private fun TopBar(model: AppModel, item: Playable, exit: () -> Unit, modifier: 
         // Live: the channel panel (top left) carries name + clock, so the bar only shows the rest.
         Column(Modifier.weight(1f).padding(start = if (item.live && model.zapList.size > 1) 340.dp else 0.dp)) {
             if (item.live) {
-                Text("LIVE", color = Color.White, style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Z.live).padding(horizontal = 8.dp, vertical = 2.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("LIVE", color = Color.White, style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Z.live).padding(horizontal = 8.dp, vertical = 2.dp))
+                    if (model.liveRecordings.let { model.recordingOf(item.streamId) } != null) {
+                        Spacer(Modifier.width(8.dp))
+                        Text("● REC", color = Z.live, style = MaterialTheme.typography.labelLarge, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    }
+                }
                 Spacer(Modifier.size(6.dp))
             }
             Text(item.title, style = MaterialTheme.typography.headlineMedium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -205,7 +211,7 @@ private fun ChannelPanel(model: AppModel, item: Playable, modifier: Modifier, po
 
 /** v9's NOW / NEXT for the live channel, laid out inline with the player buttons. */
 @Composable
-fun NowNext(model: AppModel, item: Playable, modifier: Modifier) {
+fun NowNext(model: AppModel, item: Playable, modifier: Modifier, compact: Boolean = false) {
     val lib = model.library ?: return
     val guide by androidx.compose.runtime.produceState(emptyList<com.ziptv.core.Programme>(), item.streamId) {
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -218,20 +224,22 @@ fun NowNext(model: AppModel, item: Playable, modifier: Modifier) {
     val next = if (i >= 0) guide.getOrNull(i + 1) else guide.firstOrNull { it.start > t }
     if (now == null && next == null) { Spacer(modifier); return }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        now?.let { GuideCell("NOW", it, Z.focus, Modifier.weight(1f)) }
-        next?.let { GuideCell("NEXT", it, Z.textMuted, Modifier.weight(1f)) }
+        now?.let { GuideCell("NOW", it, Z.focus, Modifier.weight(1f), compact) }
+        next?.let { GuideCell("NEXT", it, Z.textMuted, Modifier.weight(1f), compact) }
     }
 }
 
 @Composable
-private fun GuideCell(tag: String, p: com.ziptv.core.Programme, accent: Color, modifier: Modifier) {
+private fun GuideCell(tag: String, p: com.ziptv.core.Programme, accent: Color, modifier: Modifier, compact: Boolean = false) {
     Row(modifier.padding(end = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(tag, color = Color.White, style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(if (tag == "NOW") Z.accentGradient
                 else Brush.linearGradient(listOf(Z.surfaceHigh, Z.surfaceHigh))).padding(horizontal = 8.dp, vertical = 3.dp))
         Spacer(Modifier.width(10.dp))
-        Text("${clock(p.start)} – ${clock(p.end)}", color = accent, style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.width(10.dp))
+        if (!compact) {
+            Text("${clock(p.start)} – ${clock(p.end)}", color = accent, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+            Spacer(Modifier.width(10.dp))
+        }
         Text(p.title, color = Color.White, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

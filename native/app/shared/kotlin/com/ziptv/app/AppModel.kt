@@ -401,10 +401,29 @@ class AppModel(val platform: Platform, private val scope: CoroutineScope) {
                 runCatching { lib.epg(item.streamId) }.getOrDefault(emptyList()).firstOrNull { it.start <= t && it.end > t }
             }
             val title = end?.title ?: item.title
-            recorder.record(item.url, title, item.title, t, end?.end ?: (t + 3600))
+            val id = recorder.record(item.url, title, item.title, t, end?.end ?: (t + 3600))
+            liveRecordings = liveRecordings + (item.streamId to id)
             recordingsVersion++
             error = "Recording $title"
         }
+    }
+
+    /** stream id -> recording id for "record now" captures, so the menu can offer Stop. */
+    var liveRecordings by mutableStateOf<Map<String, String>>(emptyMap()); private set
+
+    /** The running "record now" capture of this channel, if any (finished ones drop out). */
+    fun recordingOf(streamId: String): String? {
+        val id = liveRecordings[streamId] ?: return null
+        val running = recorder.list().any { it.id == id && it.status == com.ziptv.core.RecordingStatus.RECORDING }
+        if (!running) liveRecordings = liveRecordings - streamId
+        return id.takeIf { running }
+    }
+
+    fun stopRecording(streamId: String) {
+        liveRecordings[streamId]?.let { recorder.stop(it) }
+        liveRecordings = liveRecordings - streamId
+        recordingsVersion++
+        error = "Recording stopped — it's in Recordings on Home"
     }
 
     /** Schedules a future (or current) programme; the app must stay open (same as v9). */

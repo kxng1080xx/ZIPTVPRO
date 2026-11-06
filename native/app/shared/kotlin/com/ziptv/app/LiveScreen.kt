@@ -105,12 +105,15 @@ fun LiveScreen(model: AppModel) {
 
     if (wide) {
         Row(Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            CategoryColumn(model, ContentKind.LIVE, categories, categoryId, Modifier.width(250.dp).fillMaxHeight()) { categoryId = it }
-            Column(Modifier.weight(1f).fillMaxHeight()) {
+            // Narrow lists, wide player (v9 proportions).
+            CategoryColumn(model, ContentKind.LIVE, categories, categoryId, Modifier.width(200.dp).fillMaxHeight()) { categoryId = it }
+            Column(Modifier.width(320.dp).fillMaxHeight()) {
                 GuideButton(model)
                 ChannelList(model, channels, selected, Modifier.weight(1f), ::choose)
             }
-            PreviewPane(model, selected, Modifier.weight(1.25f).fillMaxHeight())
+            // Started elsewhere (Home, mini player)? Show the playing channel's info anyway.
+            val shown = selected ?: model.nowPlaying?.takeIf { it.live }?.let { p -> model.zapList.firstOrNull { it.streamId == p.streamId } }
+            PreviewPane(model, shown, Modifier.weight(1f).fillMaxHeight())
         }
     } else {
         Column(Modifier.fillMaxSize()) {
@@ -140,7 +143,7 @@ private fun ChannelList(model: AppModel, channels: List<Channel>, selected: Chan
         Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Text("No channels here", color = Z.textMuted) }
         return
     }
-    LazyColumn(modifier, contentPadding = PaddingValues(vertical = 4.dp, horizontal = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    LazyColumn(modifier, contentPadding = PaddingValues(vertical = 4.dp, horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         items(channels, key = { it.streamId }) { ch ->
             val now = rememberNow(model, ch)
             val fav = model.userVersion.let { model.isFavorite(ContentKind.LIVE, ch.streamId) }
@@ -152,14 +155,14 @@ private fun ChannelList(model: AppModel, channels: List<Channel>, selected: Chan
                     .background(if (isSel) Z.activeTint else SolidColor(Z.surface))
                     // Long-press = favorite (touch, remote OK-hold, mouse hold).
                     .combinedClickable(onClick = { onChoose(ch) }, onLongClick = { model.toggleFavorite(ContentKind.LIVE, ch.streamId) })
-                    .padding(10.dp),
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ChannelLogo(ch.logo, Modifier.size(52.dp))
-                Spacer(Modifier.width(14.dp))
+                ChannelLogo(ch.logo, Modifier.size(40.dp))
+                Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(ch.name, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.titleMedium,
+                        Text(ch.name, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelLarge,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                         qualityBadge(ch.rawName)?.let { Badge(it) }
                         if (ch.archiveDays > 0u) Icon(Icons.Rounded.History, "Catch-up", tint = Z.textMuted,

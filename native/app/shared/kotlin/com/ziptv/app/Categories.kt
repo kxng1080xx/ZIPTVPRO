@@ -84,7 +84,7 @@ private fun CategoryRow(c: CatEntry, selected: Boolean, onClick: () -> Unit, onL
             .clip(RoundedCornerShape(10.dp))
             .background(if (selected) Z.activeTint else androidx.compose.ui.graphics.SolidColor(Color.Transparent))
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val icon = c.icon ?: if (c.pinned) Icons.Rounded.PushPin else null

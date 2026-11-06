@@ -8,6 +8,8 @@ use std::sync::LazyLock;
 const COUNTRIES_2: &str = "US|UK|GB|CA|AU|NZ|IE|AR|BR|MX|DE|FR|ES|IT|PT|NL|BE|CH|PL|TR|GR|RO|SE|NO|DK|FI|IN|PK|ZA|EG|SA|AE|QA|KW|IL|RU|UA|CZ|SK|HU|HR|RS|BG|PH|MY|SG|TH|VN|KR|JP|CN|HK|TW|CL|CO|PE|VE|EC|UY|PY|BO|CR|PA|DO|JM|TT";
 const COUNTRY_WORDS: &str = "USA|US|UK|GB|GBR|ENG|CA|CAN|AU|AUS|NZ|NZL|IE|IRL|UAE|AE|ZA|RSA|IN|IND|PK|PAK|PH|PHL";
 
+// Some providers leak M3U syntax into names: "#EXTINF:0,Audio Noir Radio".
+static EXTINF: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*#EXTINF:[^,]*,\s*").unwrap());
 static BRACKET_TAG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\[({]\s*[^\])}]{1,12}\s*[\])}]\s*").unwrap());
 static PIPE_TAG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\|[^|]{1,12}\|\s*").unwrap());
 static CAPS_TAG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Z]{2,4}(?:\s[A-Z]{2,12}){0,2}\s*[:|]\s*").unwrap());
@@ -37,6 +39,7 @@ pub fn clean_channel_name(raw: &str) -> String {
     for _ in 0..4 {
         let before = s.clone();
         s = s.trim_start().to_string();
+        s = strip(&EXTINF, &s);
         s = strip(&BRACKET_TAG, &s);
         s = strip(&PIPE_TAG, &s);
         s = strip(&CAPS_TAG, &s);
@@ -96,6 +99,7 @@ mod tests {
         assert_eq!(clean_channel_name("USA - CATCHY COMEDY"), "CATCHY COMEDY");
         assert_eq!(clean_channel_name("MTV - Classic"), "MTV - Classic");
         assert_eq!(clean_channel_name("US"), "US"); // never cleaned into nothing
+        assert_eq!(clean_channel_name("#EXTINF:0,Ambient Sleeping Pill [Opt-1]"), "Ambient Sleeping Pill [Opt-1]");
     }
 
     #[test]

@@ -80,7 +80,7 @@ fun BoxScope.PlayerChrome(model: AppModel, item: Playable, inFullscreen: Boolean
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        if (item.live || item.kind == PlayKind.Catchup) NowNext(model, item, Modifier.weight(1f)) else Spacer(Modifier.weight(1f))
+        if (item.live || item.kind == PlayKind.Catchup) NowNext(model, item, Modifier.weight(1f), compact = !inFullscreen) else Spacer(Modifier.weight(1f))
         if (item.live || item.kind == PlayKind.Catchup) {
             ControlIcon(Icons.Rounded.Sensors, if (item.live) "Go to live" else "Back to live", size) { model.goLive(); onInteract() }
         }
@@ -103,7 +103,11 @@ fun BoxScope.PlayerChrome(model: AppModel, item: Playable, inFullscreen: Boolean
         Pop.More -> Popover(popMod) {
             MenuItem(Icons.Rounded.Translate, "Audio track") { pop = Pop.Tracks }
             MenuItem(Icons.Rounded.Subtitles, "Subtitles") { pop = Pop.Tracks }
-            if (item.live) MenuItem(Icons.Rounded.FiberManualRecord, "Record this channel") { model.recordNow(); pop = Pop.None }
+            if (item.live) {
+                val recording = model.liveRecordings.let { model.recordingOf(item.streamId) } != null
+                if (recording) MenuItem(Icons.Rounded.Stop, "Stop recording", tint = Z.live) { model.stopRecording(item.streamId); pop = Pop.None }
+                else MenuItem(Icons.Rounded.FiberManualRecord, "Record this channel") { model.recordNow(); pop = Pop.None }
+            }
             MenuItem(Icons.Rounded.Bolt, if (model.player.deinterlace) "Deinterlace (60fps) · On" else "Deinterlace (60fps)") {
                 model.toggleDeinterlace(); pop = Pop.None
             }
@@ -160,14 +164,14 @@ private fun Popover(modifier: Modifier, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun MenuItem(icon: ImageVector?, label: String, onClick: () -> Unit) {
+private fun MenuItem(icon: ImageVector?, label: String, tint: Color = Z.text, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().focusRing(RoundedCornerShape(10.dp), lift = 1f).clip(RoundedCornerShape(10.dp))
             .clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (icon != null) { Icon(icon, null, tint = Z.text, modifier = Modifier.size(20.dp)); Spacer(Modifier.width(12.dp)) }
-        Text(label, color = Z.text, fontWeight = FontWeight.Medium)
+        if (icon != null) { Icon(icon, null, tint = tint, modifier = Modifier.size(20.dp)); Spacer(Modifier.width(12.dp)) }
+        Text(label, color = tint, fontWeight = FontWeight.Medium)
     }
 }
 
