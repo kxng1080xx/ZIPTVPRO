@@ -91,10 +91,8 @@ fun BoxScope.PlayerChrome(model: AppModel, item: Playable, inFullscreen: Boolean
         ControlIcon(Icons.Rounded.PictureInPictureAlt, "Picture in picture", size) {
             pop = Pop.None; onInteract()
             // No OS picture-in-picture (desktop): the in-app mini player is the PiP.
-            if (!model.platform.enterPip()) {
-                if (wide) { model.fullscreen = false; model.pip = true }
-                else model.error = "Picture-in-picture isn't available on this device"
-            }
+            // No system PiP (desktop, TVs, older phones): the app's own mini player is the PiP.
+            if (!model.platform.enterPip()) { model.fullscreen = false; model.pip = true }
         }
         ControlIcon(if (inFullscreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
             if (inFullscreen) "Exit fullscreen" else "Fullscreen", size) { model.fullscreen = !inFullscreen; onInteract() }

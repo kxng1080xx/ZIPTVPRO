@@ -107,7 +107,8 @@ class AndroidPlatform(private val activity: ComponentActivity) : Platform {
     }
 
     override fun enterPip(): Boolean {
-        if (android.os.Build.VERSION.SDK_INT < 26 ||
+        // TVs/projectors/sticks: no system PiP worth using (Fire TV has none) -> the app's own mini player.
+        if (device == DeviceClass.Tv || android.os.Build.VERSION.SDK_INT < 26 ||
             !activity.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) return false
         return activity.enterPictureInPictureMode(
             android.app.PictureInPictureParams.Builder().setAspectRatio(android.util.Rational(16, 9)).build()

@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.dp
 
 /** Show the mini player? Wide layouts only, whenever playback continues but no other surface shows it. */
 fun miniPlayerVisible(model: AppModel, wide: Boolean): Boolean =
-    wide && model.screen == Screen.Main && !model.fullscreen && model.nowPlaying != null &&
+    model.screen == Screen.Main && !model.fullscreen && model.nowPlaying != null &&
         (model.pip || !(model.tab == Tab.Live && !model.showGuide)) // the Live page has its own preview unless PiP was asked for
 
 /**

@@ -114,7 +114,8 @@ fun App(model: AppModel) {
                     }
                 }
                 // Exits stay short: the video surface can only be in one place at a time.
-                AnimatedVisibility(miniPlayerVisible(model, wide), Modifier.align(Alignment.BottomEnd),
+                AnimatedVisibility(miniPlayerVisible(model, wide),
+                    Modifier.align(Alignment.BottomEnd).padding(bottom = if (wide) 0.dp else 80.dp), // portrait: above the tab bar
                     enter = slideInVertically(tween(260)) { it / 3 } + fadeIn(tween(260)), exit = fadeOut(tween(90))) {
                     MiniPlayer(model, Modifier)
                 }
