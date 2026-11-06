@@ -467,10 +467,16 @@ class AppModel(val platform: Platform, private val scope: CoroutineScope) {
                 runCatching { lib.epg(item.streamId) }.getOrDefault(emptyList()).firstOrNull { it.start <= t && it.end > t }
             }
             val title = end?.title ?: item.title
+            // One-stream plans: the player already holds the only connection, so the recorder's
+            // would be refused (0-byte "Failed" recordings). Free it for the recording instead.
+            val maxCons = withContext(Dispatchers.IO) { runCatching { lib.login().maxConnections }.getOrNull() } ?: 0u
+            val single = maxCons == 1u
+            if (single) stop()
             val id = recorder.record(item.url, title, item.title, t, end?.end ?: (t + 3600))
             liveRecordings = liveRecordings + (item.streamId to id)
             recordingsVersion++
-            error = "Recording $title"
+            error = if (single) "Recording $title. Your plan allows one stream at a time, so playback stopped — it'll be in Recordings."
+                else "Recording $title"
         }
     }
 
