@@ -1,5 +1,6 @@
 package com.ziptv.app
 
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -128,6 +129,8 @@ fun PlayerScreen(model: AppModel) {
                 Text("Couldn't play this stream. ${s.message}", Modifier.align(Alignment.Center).padding(24.dp), color = Z.text)
             else -> {}
         }
+
+        model.upNext?.let { UpNextCard(model, it, Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 140.dp)) }
 
         AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize()) {
@@ -302,4 +305,32 @@ private fun RoundButton(icon: ImageVector, label: String, big: Boolean = false, 
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { Icon(icon, label, tint = Color.White, modifier = Modifier.size(if (big) 40.dp else 26.dp)) }
+}
+
+/** Netflix-style "Up next" for series: shows the last ~20s of an episode, plays the next when it ends. */
+@Composable
+private fun UpNextCard(model: AppModel, next: Playable, modifier: Modifier) {
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(next.url) { runCatching { focus.requestFocus() } } // remote: OK = play now
+    Row(
+        modifier.widthIn(max = 460.dp).clip(RoundedCornerShape(16.dp)).background(Z.bg.copy(alpha = 0.92f)).padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(width = 128.dp, height = 72.dp).clip(RoundedCornerShape(10.dp)).background(Z.surfaceHigh)) {
+            next.image?.let { coil3.compose.AsyncImage(it, null, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
+        }
+        Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
+            Text("UP NEXT · ${next.title.substringAfter(" · ")}", color = Z.focus, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+            Text(next.subtitle, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("Starts in ${model.upNextIn}s", color = Z.textMuted, style = MaterialTheme.typography.labelMedium)
+            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Play now", color = Color.White, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.focusRequester(focus).focusRing(RoundedCornerShape(50)).clip(RoundedCornerShape(50))
+                        .background(Z.accentGradient).clickable { model.playUpNext() }.padding(horizontal = 14.dp, vertical = 7.dp))
+                Text("Cancel", color = Z.text,
+                    modifier = Modifier.focusRing(RoundedCornerShape(50)).clip(RoundedCornerShape(50))
+                        .background(Z.surfaceHigh).clickable { model.cancelUpNext() }.padding(horizontal = 14.dp, vertical = 7.dp))
+            }
+        }
+    }
 }

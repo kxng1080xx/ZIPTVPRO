@@ -37,7 +37,8 @@ class VlcPlayer(context: Context) : VideoPlayer {
                 MediaPlayer.Event.Playing -> _state.value = PlayerState.Playing
                 MediaPlayer.Event.Paused -> _state.value = PlayerState.Paused
                 MediaPlayer.Event.EncounteredError -> _state.value = PlayerState.Failed("The provider refused or dropped the stream.")
-                MediaPlayer.Event.Stopped -> if (_state.value !is PlayerState.Failed) _state.value = PlayerState.Idle
+                MediaPlayer.Event.EndReached -> _state.value = PlayerState.Ended
+                MediaPlayer.Event.Stopped -> if (_state.value !is PlayerState.Failed && _state.value != PlayerState.Ended) _state.value = PlayerState.Idle
             }
         }
     }

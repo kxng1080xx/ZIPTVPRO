@@ -18,6 +18,8 @@ sealed interface PlayerState {
     data class Buffering(val percent: Int) : PlayerState
     data object Playing : PlayerState
     data object Paused : PlayerState
+    /** Reached the end of a VOD file (auto-next hooks on this). */
+    data object Ended : PlayerState
     data class Failed(val message: String) : PlayerState
 }
 

@@ -80,7 +80,10 @@ class VlcjPlayer : VideoPlayer {
             override fun error(mediaPlayer: MediaPlayer) {
                 _state.value = PlayerState.Failed("The provider refused or dropped the stream.")
             }
-            override fun stopped(mediaPlayer: MediaPlayer) { if (_state.value !is PlayerState.Failed) _state.value = PlayerState.Idle }
+            override fun finished(mediaPlayer: MediaPlayer) { _state.value = PlayerState.Ended }
+            override fun stopped(mediaPlayer: MediaPlayer) {
+                if (_state.value !is PlayerState.Failed && _state.value != PlayerState.Ended) _state.value = PlayerState.Idle
+            }
         })
     }
 

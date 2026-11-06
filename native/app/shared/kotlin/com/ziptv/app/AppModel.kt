@@ -141,6 +141,54 @@ class AppModel(val platform: Platform, private val scope: CoroutineScope) {
     var zapList by mutableStateOf<List<Channel>>(emptyList()); private set
     private var progressJob: Job? = null
 
+    // ------------------------------------------------------------ auto-next (series)
+    /** The next episode, shown as "Up next" in the last ~20s of an episode; plays when this one ends. */
+    var upNext by mutableStateOf<Playable?>(null); private set
+    var upNextIn by mutableStateOf(0); private set
+    private var upNextJob: Job? = null
+    private var upNextCancelled = false
+
+    private fun watchForNext(item: Playable) {
+        upNextJob?.cancel(); upNext = null; upNextCancelled = false
+        if (item.kind != PlayKind.Episode || item.seriesId == null) return
+        upNextJob = scope.launch {
+            var next: Playable? = null
+            var looked = false
+            while (isActive && nowPlaying === item) {
+                delay(1000)
+                val dur = player.durationMs(); val left = dur - player.positionMs()
+                val ended = player.state.value == PlayerState.Ended
+                if (!looked && dur > 0 && (left <= 25_000 || ended)) {
+                    looked = true
+                    next = withContext(Dispatchers.IO) { runCatching { nextEpisode(item) }.getOrNull() }
+                }
+                val n = next ?: continue
+                if (upNextCancelled) continue
+                if (left > 26_000 && !ended) { upNext = null; continue } // seeked back: hide until the end again
+                upNext = n
+                upNextIn = (left / 1000).toInt().coerceAtLeast(0)
+                if (ended || left <= 800) { playUpNext(); break }
+            }
+        }
+    }
+
+    private fun nextEpisode(item: Playable): Playable? {
+        val lib = library ?: return null
+        val eps = lib.episodes(item.seriesId ?: return null).sortedWith(compareBy({ it.season }, { it.number }))
+        val e = eps.getOrNull(eps.indexOfFirst { it.id == item.streamId }.takeIf { it >= 0 }?.plus(1) ?: return null) ?: return null
+        val show = item.title.substringBefore(" · ")
+        return Playable("$show · S${e.season}E${e.number}", e.title.ifBlank { "Episode ${e.number}" },
+            lib.episodeUrl(e.id, e.extension), PlayKind.Episode, e.id, e.image ?: item.image, e.extension, item.seriesId)
+    }
+
+    fun playUpNext() {
+        val n = upNext ?: return
+        upNext = null
+        play(n, full = true)
+    }
+
+    fun cancelUpNext() { upNextCancelled = true; upNext = null }
+
     private val logoIndex by lazy { platform.logoIndexJson() }
 
     fun start() {
@@ -346,10 +394,12 @@ class AppModel(val platform: Platform, private val scope: CoroutineScope) {
         val resume = item.progressKey?.let { user?.progress(it) }?.positionMs ?: 0L
         player.play(item.url, resume)
         item.progressKey?.let { startProgressSaver() }
+        watchForNext(item)
     }
 
     fun stop() {
         pip = false
+        upNextJob?.cancel(); upNext = null
         progressJob?.cancel()
         saveProgress()
         player.stop()
