@@ -1,5 +1,7 @@
 package com.ziptv.app
 
+import androidx.compose.foundation.layout.widthIn
+
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -115,13 +117,14 @@ fun LiveScreen(model: AppModel) {
         Row(Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             // Narrow lists, wide player (v9 proportions).
             CategoryColumn(model, ContentKind.LIVE, categories, categoryId, Modifier.width(200.dp).fillMaxHeight()) { categoryId = it }
-            Column(Modifier.width(320.dp).fillMaxHeight()) {
+            // List and preview share the rest, so a big window doesn't make the video huge.
+            Column(Modifier.weight(1f).widthIn(min = 320.dp).fillMaxHeight()) {
                 if (categoryId != CAT_ALL) GuideButton(model) // the guide shows one category, so pick one first
                 ChannelList(model, channels, selected, Modifier.weight(1f), ::choose)
             }
             // Started elsewhere (Home, mini player)? Show the playing channel's info anyway.
             val shown = selected ?: model.nowPlaying?.takeIf { it.live }?.let { p -> model.zapList.firstOrNull { it.streamId == p.streamId } }
-            PreviewPane(model, shown, Modifier.weight(1f).fillMaxHeight())
+            PreviewPane(model, shown, Modifier.weight(1.25f).fillMaxHeight())
         }
     } else {
         // Phones: the page's player plus one panel (categories, then that category's channels):
