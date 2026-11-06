@@ -241,7 +241,11 @@ private fun PreviewPane(model: AppModel, channel: Channel?, modifier: Modifier) 
 fun GuideList(model: AppModel, channel: Channel, guide: List<Programme>, modifier: Modifier) {
     val nowSec = System.currentTimeMillis() / 1000
     val archiveFrom = nowSec - channel.archiveDays.toLong() * 86_400
-    val shown = guide.filter { it.end > (if (channel.archiveDays > 0u) archiveFrom else nowSec) }.take(40)
+    // Start at the show on now (plus one earlier show on catch-up channels); a whole
+    // morning of past shows on top made the guide look wrong. Older catch-up: full guide.
+    val nowIdx = guide.indexOfFirst { it.end > nowSec }.let { if (it < 0) guide.size else it }
+    val from = if (channel.archiveDays > 0u) (nowIdx - 1).coerceAtLeast(0) else nowIdx
+    val shown = guide.drop(from).filter { it.end > archiveFrom }.take(40)
     val dayFmt = SimpleDateFormat("EEEE, MMM d", Locale.getDefault())
     Column(modifier) {
         if (shown.isEmpty()) Text("No guide information", Modifier.padding(8.dp), color = Z.textMuted)
