@@ -101,8 +101,12 @@ fun BoxScope.PlayerChrome(model: AppModel, item: Playable, inFullscreen: Boolean
     }
 
     val popMod = Modifier.align(Alignment.BottomEnd).padding(end = if (inFullscreen) 24.dp else 10.dp, bottom = size + if (inFullscreen) 36.dp else 18.dp)
+    // Phone page player is too short for a popover: menus come up as a bottom sheet instead.
+    val sheet = !inFullscreen && !wide
+    @Composable fun Menu(content: @Composable () -> Unit) =
+        if (sheet) Sheet({ pop = Pop.None }, content) else Popover(popMod, content)
     when (pop) {
-        Pop.More -> Popover(popMod) {
+        Pop.More -> Menu {
             MenuItem(Icons.Rounded.Translate, "Audio track") { pop = Pop.Tracks }
             MenuItem(Icons.Rounded.Subtitles, "Subtitles") { pop = Pop.Tracks }
             if (item.live) {
@@ -117,7 +121,7 @@ fun BoxScope.PlayerChrome(model: AppModel, item: Playable, inFullscreen: Boolean
                 ?: "Sleep timer") { pop = Pop.Sleep }
             MenuItem(Icons.Rounded.Stop, "Stop") { pop = Pop.None; model.stop() }
         }
-        Pop.Tracks -> Popover(popMod) {
+        Pop.Tracks -> Menu {
             val audio = remember { model.player.audioTracks() }
             val subs = remember { model.player.subtitleTracks() }
             MenuItem(Icons.Rounded.ArrowBack, "Back") { pop = Pop.More }
@@ -128,12 +132,22 @@ fun BoxScope.PlayerChrome(model: AppModel, item: Playable, inFullscreen: Boolean
             MenuItem(null, "Off") { model.player.selectSubtitle(-1); pop = Pop.None }
             subs.filter { it.id >= 0 }.forEach { t -> MenuItem(null, t.name) { model.player.selectSubtitle(t.id); pop = Pop.None } }
         }
-        Pop.Sleep -> Popover(popMod) {
+        Pop.Sleep -> Menu {
             MenuItem(Icons.Rounded.ArrowBack, "Back") { pop = Pop.More }
             listOf(15, 30, 45, 60, 90, 120).forEach { m -> MenuItem(null, "$m minutes") { model.setSleepTimer(m); pop = Pop.None } }
             if (model.sleepAt != null) MenuItem(null, "Turn off") { model.setSleepTimer(null); pop = Pop.None }
         }
-        Pop.Volume -> {
+        Pop.Volume -> if (sheet) Sheet({ pop = Pop.None }) {
+            var v by remember { mutableFloatStateOf(model.player.volume / 100f) }
+            Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                ControlIcon(if (model.player.muted) Icons.Rounded.VolumeOff else Icons.Rounded.VolumeUp,
+                    if (model.player.muted) "Unmute" else "Mute", 40.dp) { model.player.muted = !model.player.muted }
+                Slider(value = v, onValueChange = { v = it; model.player.volume = (it * 100).toInt(); model.player.muted = false },
+                    colors = SliderDefaults.colors(thumbColor = Z.focus, activeTrackColor = Z.accent, inactiveTrackColor = Color.White.copy(alpha = 0.25f)),
+                    modifier = Modifier.weight(1f).padding(horizontal = 12.dp))
+                Text("${(v * 100).toInt()}", color = Z.textMuted, modifier = Modifier.width(32.dp))
+            }
+        } else {
             // v9: a narrow vertical slider directly above the speaker icon; drag up = louder.
             val sidePad = if (inFullscreen) 24.dp else 10.dp
             val endPad = sidePad + size * 3 + 30.dp + (size - 52.dp) / 2  // over the Volume button (FS, PiP, More to its right)
@@ -154,6 +168,14 @@ fun BoxScope.PlayerChrome(model: AppModel, item: Playable, inFullscreen: Boolean
             }
         }
         Pop.None -> {}
+    }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun Sheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    androidx.compose.material3.ModalBottomSheet(onDismiss, containerColor = Z.surface) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 8.dp, end = 8.dp, bottom = 28.dp)) { content() }
     }
 }
 
