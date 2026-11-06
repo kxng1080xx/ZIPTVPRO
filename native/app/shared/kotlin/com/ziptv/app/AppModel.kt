@@ -117,6 +117,8 @@ class AppModel(val platform: Platform, private val scope: CoroutineScope) {
     var openMovie by mutableStateOf<com.ziptv.core.Movie?>(null)
     var openSeries by mutableStateOf<com.ziptv.core.Series?>(null)
     var showGuide by mutableStateOf(false)
+    /** Live TV's selected category; the full guide opens on the same one. */
+    var liveCategory by mutableStateOf(CAT_ALL)
     /** "Picture in picture" on desktop: force the mini player even on the Live page. */
     var pip by mutableStateOf(false)
     /** The header search box (shared by every screen); typing opens the results. */

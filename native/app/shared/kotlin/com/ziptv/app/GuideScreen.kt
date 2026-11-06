@@ -54,7 +54,7 @@ private const val WINDOW = 3 * 3600L
  */
 @Composable
 fun GuideScreen(model: AppModel) {
-    var categoryId by remember { mutableStateOf(CAT_ALL) }
+    var categoryId by model::liveCategory // opens on the category you were browsing
     val categories = rememberCategories(model, ContentKind.LIVE)
     val channels by produceState(emptyList<Channel>(), model.library, model.catalogVersion, categoryId) {
         value = withContext(Dispatchers.IO) { loadChannels(model, categoryId) }

@@ -89,7 +89,7 @@ fun LiveScreen(model: AppModel) {
         return
     }
     val wide = LocalWide.current
-    var categoryId by rememberSaveable { mutableStateOf(CAT_ALL) }
+    var categoryId by model::liveCategory // shared with the full guide
     val categories = rememberCategories(model, ContentKind.LIVE)
     val channels by produceState(emptyList<Channel>(), model.library, model.catalogVersion, categoryId,
         if (categoryId.startsWith('\u0000')) model.userVersion else 0) {
