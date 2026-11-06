@@ -54,8 +54,7 @@ private const val WINDOW = 3 * 3600L
  */
 @Composable
 fun GuideScreen(model: AppModel) {
-    var categoryId by model::liveCategory // opens on the category you were browsing
-    val categories = rememberCategories(model, ContentKind.LIVE)
+    val categoryId = model.liveCategory // the category you were browsing; change it on the Live page
     val channels by produceState(emptyList<Channel>(), model.library, model.catalogVersion, categoryId) {
         value = withContext(Dispatchers.IO) { loadChannels(model, categoryId) }
     }
@@ -71,7 +70,6 @@ fun GuideScreen(model: AppModel) {
             Text(clock(from) + " – " + clock(to), color = Z.textMuted, style = MaterialTheme.typography.labelLarge)
             IconAction(Icons.Rounded.ChevronRight, "Later") { from += 3600 }
         }
-        CategoryChips(model, ContentKind.LIVE, categories, categoryId) { categoryId = it }
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             val labelW = if (LocalWide.current) 200.dp else 120.dp
             val gridW = maxWidth - labelW

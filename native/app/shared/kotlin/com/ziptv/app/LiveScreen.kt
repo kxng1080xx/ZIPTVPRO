@@ -109,7 +109,7 @@ fun LiveScreen(model: AppModel) {
             // Narrow lists, wide player (v9 proportions).
             CategoryColumn(model, ContentKind.LIVE, categories, categoryId, Modifier.width(200.dp).fillMaxHeight()) { categoryId = it }
             Column(Modifier.width(320.dp).fillMaxHeight()) {
-                GuideButton(model)
+                if (categoryId != CAT_ALL) GuideButton(model) // the guide shows one category, so pick one first
                 ChannelList(model, channels, selected, Modifier.weight(1f), ::choose)
             }
             // Started elsewhere (Home, mini player)? Show the playing channel's info anyway.
