@@ -13,6 +13,7 @@
  * The token needs `contents:write` (classic PAT: `repo` scope) on the target repo.
  */
 import { readFileSync, statSync, openSync, readSync, closeSync, existsSync } from 'fs';
+import { request } from 'https';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -139,27 +140,36 @@ async function uploadAsset(filePath, assetName) {
     if (process.stdout.isTTY) process.stdout.write(`\r${line}`);
     else if (pct >= lastLogged + 10 || sent === size) { lastLogged = pct; console.log(line); } // piped: one line per 10%
   };
-  const body = new ReadableStream({
-    pull(controller) {
-      if (sent >= size) { controller.close(); return; }
-      const chunk = buf.subarray(sent, Math.min(sent + CHUNK, size));
-      sent += chunk.length;
-      controller.enqueue(chunk);
-      progress();
-    },
+  // node:https, not fetch: fetch's 300s headersTimeout runs from request start,
+  // so a slow upload (151 MB at ~0.4 MB/s) died with UND_ERR_HEADERS_TIMEOUT.
+  const result = await new Promise((resolve, reject) => {
+    const req = request(
+      `${uploads}/repos/${OWNER}/${REPO}/releases/${release.id}/assets?name=${assetName}`,
+      // GitHub rejects requests without a User-Agent (fetch added one implicitly).
+      { method: 'POST', headers: { ...headers, 'User-Agent': 'ziptv-release', 'Content-Type': 'application/octet-stream', 'Content-Length': size } },
+      (res) => {
+        let text = '';
+        res.on('data', (d) => (text += d));
+        res.on('end', () => resolve({ status: res.statusCode, text }));
+      }
+    );
+    req.on('error', reject);
+    // Write 1 MB at a time, waiting for 'drain', so "sent" follows the socket.
+    const pump = () => {
+      while (sent < size) {
+        const chunk = buf.subarray(sent, Math.min(sent + CHUNK, size));
+        sent += chunk.length;
+        const more = req.write(chunk);
+        progress();
+        if (!more) return req.once('drain', pump);
+      }
+      req.end();
+    };
+    pump();
   });
-  const up = await fetch(
-    `${uploads}/repos/${OWNER}/${REPO}/releases/${release.id}/assets?name=${assetName}`,
-    {
-      method: 'POST',
-      headers: { ...headers, 'Content-Type': 'application/octet-stream', 'Content-Length': String(size) },
-      body,
-      duplex: 'half', // required by Node's fetch for a streamed request body
-    }
-  );
   if (process.stdout.isTTY) process.stdout.write('\n');
-  if (!up.ok) {
-    throw new Error(`Upload failed -> ${up.status} ${await up.text()}`);
+  if (result.status < 200 || result.status >= 300) {
+    throw new Error(`Upload failed -> ${result.status} ${result.text}`);
   }
   console.log(`Uploaded ${assetName} successfully.`);
 }
