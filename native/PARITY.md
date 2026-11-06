@@ -71,5 +71,5 @@ Legend: ✅ done · 🟡 partial · ⬜ not started
 | Companion device sync (continue watching hand-off) | ✅ | |
 | Watch Together | ⬜ | |
 | Built-in VPN (OpenVPN profile) | ⬜ | |
-| Update check / auto-update | ⬜ | |
+| Update check / auto-update | 🟡 | check + Download banner (v10+ GitHub releases, platform asset); no silent install | |
 | Share tunnel / TV link | ⬜ | |

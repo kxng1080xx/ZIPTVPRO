@@ -22,6 +22,7 @@ native/
                        add/remove/remove-all playlists, pair/unpair, history mirror.
                        Cloudflare Pages ONLY (user: "scratch Vercel completely")
     src/tmdb.rs        TMDB lookup (title cleaning, best_match by exact title + votes), disk cache
+    src/update.rs      check_update: newest v10+ GitHub release + platform asset
     src/recorder.rs    DVR: records live TS to file, reconnects, schedules (wired into the UI)
     build.sh           tests + desktop DLL + Kotlin bindings + Android .so (4 ABIs incl. x86)
     examples/smoke.rs  live test: cargo run --release --example smoke -- <server> <user> <pass> [--sync]
@@ -82,9 +83,9 @@ fullscreen (PC window / Android immersive); single instance (PC); remove-all pla
 1. ~~DVR UI~~ DONE: More → "Record this channel" (until the show ends), long-press a guide
    row to schedule, Home "Recordings" row (tap = play, long-press = stop/delete).
    Not yet verified end-to-end on a real channel.
-2. **Update check / auto-update** — compare app version with the latest GitHub release
-   (kxng1080xx/ZIPTVPRO); banner + download link. Release assets for v10 TBD (MSI/EXE from
-   `:desktopApp:packageMsi`, APK).
+2. ~~Update check~~ DONE (core `check_update`, banner with Download; only tags >= v10,
+   picks .msi/.exe for PC, .apk for Android). Left: silent install, and v10 releases must
+   attach those assets (MSI from `:desktopApp:packageMsi`, APK).
 3. **Bundle VLC with the PC installer** (vlcj currently needs VLC installed) — ship
    libvlc.dll/libvlccore.dll/plugins in the jpackage app and point vlcj NativeDiscovery at it.
 4. **M3U (non-Xtream) playlists** — parse #EXTINF (tvg-id, tvg-logo, group-title) in Rust.

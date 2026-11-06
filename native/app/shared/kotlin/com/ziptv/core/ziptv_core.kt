@@ -859,6 +859,8 @@ internal open class UniffiVTableCallbackInterfaceSyncListener(
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -874,7 +876,9 @@ internal open class UniffiVTableCallbackInterfaceSyncListener(
 // when the library is loaded.
 internal interface IntegrityCheckingUniffiLib : Library {
     // Integrity check functions only
-    fun uniffi_ziptv_core_checksum_method_cloud_add_playlist(
+    fun uniffi_ziptv_core_checksum_func_check_update(
+): Short
+fun uniffi_ziptv_core_checksum_method_cloud_add_playlist(
 ): Short
 fun uniffi_ziptv_core_checksum_method_cloud_companion_history(
 ): Short
@@ -1180,6 +1184,8 @@ fun uniffi_ziptv_core_fn_method_userstore_toggle_pin(`ptr`: Pointer,`kind`: Rust
 ): Byte
 fun uniffi_ziptv_core_fn_init_callback_vtable_synclistener(`vtable`: UniffiVTableCallbackInterfaceSyncListener,
 ): Unit
+fun uniffi_ziptv_core_fn_func_check_update(`current`: RustBuffer.ByValue,`platform`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun ffi_ziptv_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun ffi_ziptv_core_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1306,6 +1312,9 @@ private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
 }
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
+    if (lib.uniffi_ziptv_core_checksum_func_check_update() != 64264.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_ziptv_core_checksum_method_cloud_add_playlist() != 42687.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -4678,6 +4687,45 @@ public object FfiConverterTypeSyncSummary: FfiConverterRustBuffer<SyncSummary> {
 
 
 
+data class UpdateInfo (
+    var `version`: kotlin.String, 
+    /**
+     * Direct download for this platform's asset (falls back to the release page).
+     */
+    var `url`: kotlin.String, 
+    var `notes`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeUpdateInfo: FfiConverterRustBuffer<UpdateInfo> {
+    override fun read(buf: ByteBuffer): UpdateInfo {
+        return UpdateInfo(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: UpdateInfo) = (
+            FfiConverterString.allocationSize(value.`version`) +
+            FfiConverterString.allocationSize(value.`url`) +
+            FfiConverterString.allocationSize(value.`notes`)
+    )
+
+    override fun write(value: UpdateInfo, buf: ByteBuffer) {
+            FfiConverterString.write(value.`version`, buf)
+            FfiConverterString.write(value.`url`, buf)
+            FfiConverterString.write(value.`notes`, buf)
+    }
+}
+
+
+
 data class VpnConfig (
     var `enabled`: kotlin.Boolean, 
     var `version`: kotlin.Long, 
@@ -5100,6 +5148,38 @@ public object FfiConverterOptionalTypePairedDevice: FfiConverterRustBuffer<Paire
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeUpdateInfo: FfiConverterRustBuffer<UpdateInfo?> {
+    override fun read(buf: ByteBuffer): UpdateInfo? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeUpdateInfo.read(buf)
+    }
+
+    override fun allocationSize(value: UpdateInfo?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeUpdateInfo.allocationSize(value)
+        }
+    }
+
+    override fun write(value: UpdateInfo?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeUpdateInfo.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeVpnConfig: FfiConverterRustBuffer<VpnConfig?> {
     override fun read(buf: ByteBuffer): VpnConfig? {
         if (buf.get().toInt() == 0) {
@@ -5493,4 +5573,16 @@ public object FfiConverterSequenceTypeWatchProgress: FfiConverterRustBuffer<List
         }
     }
 }
+        /**
+         * `platform`: "pc" (wants .msi/.exe) or "apk" (wants .apk). None = up to date / offline.
+         */ fun `checkUpdate`(`current`: kotlin.String, `platform`: kotlin.String): UpdateInfo? {
+            return FfiConverterOptionalTypeUpdateInfo.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_func_check_update(
+        FfiConverterString.lower(`current`),FfiConverterString.lower(`platform`),_status)
+}
+    )
+    }
+    
+
 

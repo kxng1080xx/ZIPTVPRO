@@ -6,12 +6,14 @@ mod epg;
 mod names;
 mod recorder;
 mod tmdb;
+mod update;
 mod user;
 mod xtream;
 
 pub use cloud::{Cloud, CloudPlaylist, DeviceState, PairedDevice, VpnConfig};
 pub use recorder::{Recorder, Recording, RecordingStatus};
 pub use tmdb::{CastMember, Meta, Tmdb};
+pub use update::{check_update, UpdateInfo};
 pub use user::{Reminder, UserStore, WatchProgress};
 
 use epg::KeyIndex;

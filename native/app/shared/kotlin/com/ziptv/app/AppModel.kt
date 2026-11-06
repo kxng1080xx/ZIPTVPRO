@@ -123,6 +123,8 @@ class AppModel(val platform: Platform, private val scope: CoroutineScope) {
     var searchQuery by mutableStateOf("")
     var sleepAt by mutableStateOf<Long?>(null); private set
     var dueReminder by mutableStateOf<Reminder?>(null)
+    /** Set when GitHub has a newer v10 release for this platform. */
+    var update by mutableStateOf<com.ziptv.core.UpdateInfo?>(null)
     /** Channels the live player zaps through (the list it was started from). */
     var zapList by mutableStateOf<List<Channel>>(emptyList()); private set
     private var progressJob: Job? = null
@@ -133,6 +135,10 @@ class AppModel(val platform: Platform, private val scope: CoroutineScope) {
         playlists.firstOrNull()?.let { open(it) }
         scope.launch { while (isActive) { heartbeat(); delay(5 * 60_000) } }
         scope.launch { while (isActive) { tick(); delay(15_000) } }
+        scope.launch {
+            delay(20_000) // after startup work
+            update = withContext(Dispatchers.IO) { runCatching { com.ziptv.core.checkUpdate(platform.appVersion, platform.cloudPlatform) }.getOrNull() }
+        }
     }
 
     // ---------------------------------------------------------------- cloud

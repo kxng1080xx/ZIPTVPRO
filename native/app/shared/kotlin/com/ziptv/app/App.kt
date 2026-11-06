@@ -94,6 +94,7 @@ fun App(model: AppModel) {
                 val screenFull = model.fullscreen && model.nowPlaying != null
                 androidx.compose.runtime.LaunchedEffect(screenFull) { model.platform.setScreenFullscreen(screenFull) }
                 ReminderBanner(model, Modifier.align(Alignment.TopCenter))
+                UpdateBanner(model, Modifier.align(Alignment.BottomStart))
                 model.error?.let { msg ->
                     LaunchedEffect(msg) { delay(5000); model.error = null }
                     Snackbar(Modifier.align(Alignment.BottomCenter).padding(24.dp).widthIn(max = 560.dp)) { Text(msg) }
@@ -255,6 +256,24 @@ private fun TabContent(model: AppModel) {
         Tab.Series -> SeriesScreen(model)
         Tab.Search -> SearchScreen(model)
         Tab.Settings -> SettingsScreen(model)
+    }
+}
+
+@Composable
+private fun UpdateBanner(model: AppModel, modifier: Modifier) {
+    val u = model.update ?: return
+    Row(
+        modifier.padding(16.dp).widthIn(max = 520.dp).clip(RoundedCornerShape(14.dp)).background(Z.surfaceHigh).padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("ZIPTV Pro ${u.version} is available", fontWeight = FontWeight.Bold)
+            Text("You have ${model.platform.appVersion}", color = Z.textMuted, style = MaterialTheme.typography.bodyMedium)
+        }
+        TextButton(onClick = { if (!model.platform.openUrl(u.url)) model.error = "Couldn't open the download" }, modifier = Modifier.focusRing()) {
+            Text("Download", color = Z.focus)
+        }
+        TextButton(onClick = { model.update = null }, modifier = Modifier.focusRing()) { Text("Later", color = Z.textMuted) }
     }
 }
 
