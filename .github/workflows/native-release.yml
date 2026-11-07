@@ -1,0 +1,117 @@
+name: v10 Release (optimized APK + EXE, draft)
+
+# Manual trigger. Builds the Rust core with full release optimization (LTO, 1 codegen unit)
+# for all 4 Android ABIs and Windows on GitHub's runners, packages the APK and the Windows .exe installer, and
+# publishes release v<ziptv.version> (from native/app/gradle.properties).
+# Local builds use `FAST=1 native/core/build.sh` instead; this is the slow, optimized path.
+#
+# Secrets (optional but recommended):
+#   ANDROID_DEBUG_KEYSTORE  base64 of ~/.android/debug.keystore, so CI APKs install over
+#                           locally built ones (same signature)
+#   TMDB_TOKEN              TMDB read token (artwork, cast, trailers)
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+env:
+  NDK_VERSION: 27.2.12479018
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager --install "ndk;${NDK_VERSION}"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: native/core }
+      - run: cargo install cargo-ndk --locked
+      - name: Rust core (4 ABIs, optimized)
+        working-directory: native/core
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}
+        run: |
+          cargo test --release
+          cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -t x86 -o ../app/androidApp/src/main/jniLibs build --release
+      - name: Secrets -> keystore / TMDB token
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_DEBUG_KEYSTORE }}
+          TMDB_TOKEN: ${{ secrets.TMDB_TOKEN }}
+        run: |
+          mkdir -p ~/.android ~/.gradle
+          [ -n "$KEYSTORE" ] && echo "$KEYSTORE" | base64 -d > ~/.android/debug.keystore || true
+          [ -n "$TMDB_TOKEN" ] && echo "TMDB_TOKEN=$TMDB_TOKEN" > .env || true
+          # native/app/gradle.properties pins a Windows JDK path; the user-level file wins.
+          echo "org.gradle.java.home=$JAVA_HOME" >> ~/.gradle/gradle.properties
+      - name: APK
+        working-directory: native/app
+        run: |
+          chmod +x gradlew
+          ./gradlew :androidApp:assembleRelease --console=plain
+          v=$(grep '^ziptv.version=' gradle.properties | cut -d= -f2 | tr -d '[:space:]')
+          # app.apk: the name v9's updater and ziptvpro.pages.dev/app.apk redirect download.
+          cp androidApp/build/outputs/apk/release/androidApp-release.apk "$GITHUB_WORKSPACE/app.apk"
+      - uses: actions/upload-artifact@v4
+        with: { name: apk, path: 'app.apk', retention-days: 7 }
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run: { shell: bash }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: native/core }
+      - name: Rust core (optimized DLL)
+        working-directory: native/core
+        run: |
+          cargo build --release
+          mkdir -p ../app/desktopApp/src/main/resources/win32-x86-64
+          cp target/release/ziptv_core.dll ../app/desktopApp/src/main/resources/win32-x86-64/
+      - name: TMDB token + JDK override
+        env:
+          TMDB_TOKEN: ${{ secrets.TMDB_TOKEN }}
+        run: |
+          [ -n "$TMDB_TOKEN" ] && echo "TMDB_TOKEN=$TMDB_TOKEN" > .env || true
+          mkdir -p ~/.gradle
+          echo "org.gradle.java.home=$(cygpath -m "$JAVA_HOME")" >> ~/.gradle/gradle.properties
+      - name: VLC to bundle (a trimmed copy goes into the installer)
+        run: choco install vlc -y --no-progress
+      - name: EXE installer
+        working-directory: native/app
+        env:
+          VLC_DIR: C:/Program Files/VideoLAN/VLC
+        run: |
+          export JPACKAGE_JDK="$(cygpath -m "$JAVA_HOME")"  # Temurin 17 has jpackage
+          ./gradlew.bat :desktopApp:packageExe --console=plain
+          v=$(grep '^ziptv.version=' gradle.properties | cut -d= -f2 | tr -d '[:space:]')
+          # latest.exe: the name ziptvpro.pages.dev/latest.exe redirects to (v9's PC update link).
+          cp desktopApp/build/compose/binaries/main/exe/*.exe "$GITHUB_WORKSPACE/latest.exe"
+      - uses: actions/upload-artifact@v4
+        with: { name: exe, path: 'latest.exe', retention-days: 7 }
+
+  release:
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: out, merge-multiple: true }
+      - name: Draft release v<version> (publish it by hand after testing)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          v=$(grep '^ziptv.version=' native/app/gradle.properties | cut -d= -f2 | tr -d '[:space:]')
+          # Draft: nothing is downloadable until you press Publish (and tick "Set as latest" —
+          # v10 replaces v9, and pages.dev/app.apk + /latest.exe follow the latest release).
+          gh release create "v$v" out/* --draft --target "$GITHUB_SHA" --title "ZIPTV Pro $v"             --notes-file native/RELEASE_NOTES.md
