@@ -106,8 +106,13 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
     private var libraryState by mutableStateOf<Provider?>(null)
     var library: Provider?
         get() = libraryState
-        private set(v) { libraryState = v; lan.setProvider(v) }
-    var user by mutableStateOf<UserStore?>(null); private set
+        private set(v) { libraryState = v; syncLan() }
+    /** The TV page and cast receivers serve whatever playlist is open here. */
+    private fun syncLan() = lan.setProvider(library, user, active?.name ?: "")
+    private var userState by mutableStateOf<UserStore?>(null)
+    var user: UserStore?
+        get() = userState
+        private set(v) { userState = v; syncLan() }
     var screen by mutableStateOf<Screen>(Screen.Welcome); private set
     var device by mutableStateOf<DeviceState?>(null); private set
     var error by mutableStateOf<String?>(null)
@@ -200,6 +205,7 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
     private val logoIndex by lazy { platform.logoIndexJson() }
 
     fun start() {
+        lan.setRecorder(recorder) // "Record" on the TV page records here
         playlists.firstOrNull()?.let { open(it) }
         // Waiting on the activation screen: check every 3 s so a playlist added on /connect shows up
         // right away (5 min looked like "cloud sync doesn't work"). Set up: every 5 min.

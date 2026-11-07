@@ -7,6 +7,18 @@ device — TV and projector, phone and tablet, or Windows PC — with no switchi
 playlists and provider setup carry on. Favorites and local watch history from version 9
 start fresh.
 
+**10.0.2:**
+- **Cast to TV** from the player menu: Samsung/LG and other DLNA TVs, and Chromecast / Google TV.
+  Your phone or PC becomes the remote (pause, seek, stop).
+- **Smart TV access**: open the address shown in Settings > Network in your TV's web browser
+  (Samsung, LG...) for Live TV, Movies, Series, Search and Continue Watching on the big screen.
+  "Record on PC" in its player records on the PC running the app.
+- **Update inside the app** on Android and Fire TV: the new version downloads and installs from
+  the update banner, no browser needed.
+- Episodes: season picker, episode artwork with progress, runtime and time left.
+- Watch Together button back in the header; Settings gains stream format (TS/HLS), sleep timer,
+  and on Windows run at startup / start minimized.
+
 **10.0.1:** keeps your v9 activation code; movie and series pages show artwork behind the
 title; the play button no longer covers the loading spinner; paired PC and phone share one
 Continue Watching list; faster start-up on Windows.

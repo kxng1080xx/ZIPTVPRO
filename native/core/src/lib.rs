@@ -9,6 +9,7 @@ mod stream;
 mod lan;
 mod dlna;
 mod cast;
+mod chromecast;
 mod names;
 mod recorder;
 mod tmdb;

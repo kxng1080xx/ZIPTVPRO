@@ -1,0 +1,93 @@
+/* ZIPTV Pro TV page. Old TV browsers (Tizen/webOS Chromium 47+): no flex gap, no grid,
+   no aspect-ratio, no color-mix, no inset. Sized off the viewport so 1280 and 1920 TVs match. */
+:root { --bg: #090B11; --surface: #0F1218; --high: #181C25; --text: #F3F4F6; --muted: #9CA3AF; --focus: #38BDF8; --accent: #3B82F6; --live: #EF4444; }
+html { font-size: 1.0417vw; } /* 20px at 1920 */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #090B11; color: #F3F4F6; font-family: "Samsung One", "LG Smart", Roboto, "Segoe UI", Arial, sans-serif; overflow: hidden; height: 100vh; }
+.hidden { display: none !important; }
+
+#rail { position: fixed; left: 0; top: 0; bottom: 0; width: 13rem; padding: 2rem 1.2rem; background: #0B0E14; border-right: 1px solid rgba(255,255,255,0.05); }
+.brand { font-weight: 800; font-size: 1.3rem; margin: 0 0 2.4rem 0.6rem; letter-spacing: 0.02em; }
+.brand b { color: #38BDF8; }
+.nav { display: block; padding: 0.8rem 1rem; margin-bottom: 0.4rem; border-radius: 0.8rem; color: #9CA3AF; font-size: 1.05rem; font-weight: 600; }
+.nav.on { color: #F3F4F6; background: rgba(56,189,248,0.12); }
+.clock { position: absolute; bottom: 2rem; left: 1.8rem; color: #9CA3AF; font-size: 1.1rem; font-weight: 600; }
+
+#main { position: absolute; left: 13rem; right: 0; top: 0; bottom: 0; overflow: hidden; padding: 2rem 2.4rem; }
+h1 { font-size: 2rem; font-weight: 700; margin-bottom: 1.2rem; }
+h2 { font-size: 1.25rem; font-weight: 600; margin: 1.6rem 0 0.8rem; }
+.muted { color: #9CA3AF; }
+.scroll { height: 100%; overflow: hidden; }
+
+/* Focus: one ring style everywhere (the app's --rd-focus). */
+.f { outline: none; cursor: pointer; transition: transform 0.15s ease-out, box-shadow 0.15s ease-out; }
+.f:focus { box-shadow: 0 0 0 0.2rem #38BDF8; transform: scale(1.04); z-index: 2; position: relative; }
+.nav.f:focus, .row-item.f:focus, .btn.f:focus, .chip.f:focus { transform: none; }
+.card.f:focus { box-shadow: none; }
+.card.f:focus .art { box-shadow: 0 0 0 0.22rem #38BDF8; }
+
+.row { white-space: nowrap; overflow: hidden; padding: 0.4rem 0.3rem 0.8rem; }
+.card { display: inline-block; vertical-align: top; width: 11rem; margin-right: 1rem; white-space: normal; border-radius: 0.8rem; }
+.card .art { position: relative; width: 100%; padding-top: 150%; border-radius: 0.8rem; background: #181C25 center/cover no-repeat; overflow: hidden; }
+.card.wide { width: 18rem; }
+.card.wide .art { padding-top: 56.25%; }
+.card .t { font-size: 0.95rem; font-weight: 600; margin-top: 0.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .s { font-size: 0.8rem; color: #9CA3AF; margin-top: 0.15rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar { position: absolute; left: 0; right: 0; bottom: 0; height: 0.3rem; background: rgba(0,0,0,0.55); }
+.bar i { display: block; height: 100%; background: linear-gradient(90deg, #3B82F6, #06B6D4); }
+.chan-card { width: 13rem; }
+.chan-card .art { padding-top: 56.25%; background-size: 60% auto; background-color: #181C25; }
+
+.grid { overflow: hidden; height: calc(100% - 3.6rem); }
+.grid .card { margin: 0 1rem 1.4rem 0; }
+
+/* Live: categories | channels */
+.cols { height: calc(100% - 3.4rem); }
+.col { float: left; height: 100%; overflow: hidden; }
+.col.cats { width: 30%; padding-right: 1.2rem; }
+.col.chans { width: 70%; }
+.row-item { display: block; padding: 0.75rem 1rem; border-radius: 0.7rem; margin-bottom: 0.3rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.row-item.on { background: rgba(56,189,248,0.12); color: #F3F4F6; }
+.cat { color: #9CA3AF; font-weight: 600; }
+.cat .n { float: right; color: #6B7280; font-weight: 400; }
+.ch { background: #0F1218; height: 4.2rem; padding: 0.6rem 1rem; }
+.ch .logo { float: left; width: 5rem; height: 3rem; margin-right: 1rem; background: center/contain no-repeat; }
+.ch .nm { font-weight: 600; font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; }
+.ch .now { color: #9CA3AF; font-size: 0.85rem; margin-top: 0.2rem; overflow: hidden; text-overflow: ellipsis; }
+
+/* Details */
+.detail { padding-top: 1rem; }
+.detail .poster { float: left; width: 16rem; height: 24rem; border-radius: 1rem; background: #181C25 center/cover no-repeat; margin-right: 2.4rem; }
+.detail .meta { color: #9CA3AF; font-size: 1.05rem; margin: 0.4rem 0 1.4rem; }
+.btn { display: inline-block; padding: 0.8rem 1.6rem; border-radius: 2rem; background: #181C25; font-weight: 700; font-size: 1.05rem; margin: 0 0.8rem 0.8rem 0; }
+.btn.primary { background: linear-gradient(90deg, #3B82F6, #06B6D4); color: #fff; }
+.chip { display: inline-block; padding: 0.55rem 1.2rem; border-radius: 2rem; background: #181C25; color: #9CA3AF; font-weight: 600; margin: 0 0.6rem 0.6rem 0; }
+.chip.on { color: #F3F4F6; background: rgba(56,189,248,0.18); }
+.ep { background: #0F1218; border-radius: 0.9rem; padding: 0.7rem; margin-bottom: 0.7rem; overflow: hidden; }
+.ep .still { float: left; position: relative; width: 14rem; height: 7.875rem; border-radius: 0.6rem; background: #181C25 center/cover no-repeat; margin-right: 1.2rem; overflow: hidden; }
+.ep .et { font-weight: 700; font-size: 1.1rem; margin-top: 0.3rem; }
+.ep .em { color: #38BDF8; font-size: 0.85rem; margin: 0.2rem 0 0.4rem; }
+.ep .ed { color: #9CA3AF; font-size: 0.9rem; line-height: 1.35; max-height: 2.7em; overflow: hidden; }
+
+.search-box { width: 60%; font-size: 1.3rem; padding: 0.9rem 1.2rem; border-radius: 0.9rem; border: 1px solid #181C25; background: #0F1218; color: #F3F4F6; outline: none; }
+.search-box:focus { border-color: #38BDF8; }
+
+.rec { background: #0F1218; border-radius: 0.8rem; padding: 0.9rem 1.2rem; margin-bottom: 0.6rem; }
+.rec .st { float: right; color: #9CA3AF; }
+.rec .st.live { color: #EF4444; font-weight: 700; }
+
+/* Player */
+#player { position: fixed; left: 0; top: 0; right: 0; bottom: 0; background: #000; z-index: 10; }
+#video { width: 100%; height: 100%; background: #000; }
+.osd { position: absolute; left: 0; right: 0; bottom: 0; padding: 2.4rem 3rem 2rem; background: linear-gradient(transparent, rgba(0,0,0,0.92)); }
+.osd .ot { font-size: 1.7rem; font-weight: 700; }
+.osd .os { color: #9CA3AF; font-size: 1.05rem; margin: 0.3rem 0 1rem; }
+.osd .seek { height: 0.35rem; background: rgba(255,255,255,0.2); border-radius: 0.2rem; margin: 0.6rem 0 1.2rem; }
+.osd .seek i { display: block; height: 100%; background: linear-gradient(90deg, #3B82F6, #06B6D4); border-radius: 0.2rem; }
+.osd .time { float: right; color: #9CA3AF; }
+.badge { display: inline-block; background: #EF4444; color: #fff; font-size: 0.75rem; font-weight: 800; padding: 0.15rem 0.5rem; border-radius: 0.3rem; margin-right: 0.6rem; vertical-align: middle; }
+.spinner { position: absolute; left: 50%; top: 50%; width: 4rem; height: 4rem; margin: -2rem 0 0 -2rem; border: 0.35rem solid rgba(255,255,255,0.15); border-top-color: #38BDF8; border-radius: 50%; animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.toast { position: fixed; left: 50%; bottom: 3rem; transform: translateX(-50%); background: #181C25; padding: 0.9rem 1.6rem; border-radius: 0.9rem; font-weight: 600; z-index: 20; }
+.empty { color: #9CA3AF; font-size: 1.1rem; padding: 2rem 0; }
+@media (prefers-reduced-motion: reduce) { .f { transition: none; } .spinner { animation-duration: 3s; } }

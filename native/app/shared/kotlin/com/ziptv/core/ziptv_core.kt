@@ -903,6 +903,10 @@ internal open class UniffiVTableCallbackInterfaceSyncListener(
 
 
 
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -973,6 +977,10 @@ fun uniffi_ziptv_core_checksum_method_lanserver_base_url(
 fun uniffi_ziptv_core_checksum_method_lanserver_port(
 ): Short
 fun uniffi_ziptv_core_checksum_method_lanserver_set_provider(
+): Short
+fun uniffi_ziptv_core_checksum_method_lanserver_set_recorder(
+): Short
+fun uniffi_ziptv_core_checksum_method_lanserver_tv_url(
 ): Short
 fun uniffi_ziptv_core_checksum_method_provider_catchup_url(
 ): Short
@@ -1196,8 +1204,12 @@ fun uniffi_ziptv_core_fn_method_lanserver_base_url(`ptr`: Pointer,`peer`: RustBu
 ): RustBuffer.ByValue
 fun uniffi_ziptv_core_fn_method_lanserver_port(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Short
-fun uniffi_ziptv_core_fn_method_lanserver_set_provider(`ptr`: Pointer,`provider`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_ziptv_core_fn_method_lanserver_set_provider(`ptr`: Pointer,`provider`: RustBuffer.ByValue,`user`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+fun uniffi_ziptv_core_fn_method_lanserver_set_recorder(`ptr`: Pointer,`recorder`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_ziptv_core_fn_method_lanserver_tv_url(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_ziptv_core_fn_clone_provider(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Pointer
 fun uniffi_ziptv_core_fn_free_provider(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1444,7 +1456,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_ziptv_core_checksum_method_caster_active_name() != 825.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_ziptv_core_checksum_method_caster_discover() != 14076.toShort()) {
+    if (lib.uniffi_ziptv_core_checksum_method_caster_discover() != 63994.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ziptv_core_checksum_method_caster_pause() != 17768.toShort()) {
@@ -1513,13 +1525,19 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_ziptv_core_checksum_method_cloud_watch_update() != 8154.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_ziptv_core_checksum_method_lanserver_base_url() != 31770.toShort()) {
+    if (lib.uniffi_ziptv_core_checksum_method_lanserver_base_url() != 5752.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ziptv_core_checksum_method_lanserver_port() != 8267.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_ziptv_core_checksum_method_lanserver_set_provider() != 35187.toShort()) {
+    if (lib.uniffi_ziptv_core_checksum_method_lanserver_set_provider() != 63390.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_lanserver_set_recorder() != 58261.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_lanserver_tv_url() != 63219.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ziptv_core_checksum_method_provider_catchup_url() != 46353.toShort()) {
@@ -2174,7 +2192,7 @@ public interface CasterInterface {
     fun `activeName`(): kotlin.String?
     
     /**
-     * Blocks ~3 s (SSDP). Call off the UI thread.
+     * Blocks ~3 s (SSDP + mDNS in parallel). Call off the UI thread.
      */
     fun `discover`(): List<CastDevice>
     
@@ -2307,7 +2325,7 @@ open class Caster: Disposable, AutoCloseable, CasterInterface
 
     
     /**
-     * Blocks ~3 s (SSDP). Call off the UI thread.
+     * Blocks ~3 s (SSDP + mDNS in parallel). Call off the UI thread.
      */override fun `discover`(): List<CastDevice> {
             return FfiConverterSequenceTypeCastDevice.lift(
     callWithPointer {
@@ -3035,8 +3053,7 @@ public object FfiConverterTypeCloud: FfiConverter<Cloud, Pointer> {
 public interface LanServerInterface {
     
     /**
-     * `http://<our LAN IP>:<port>` as seen from `peer` (a TV's IP), or from the LAN in
-     * general when None.
+     * `http://<our LAN IP>:<port>` as seen from `peer` (a TV's IP), or from the LAN in general.
      */
     fun `baseUrl`(`peer`: kotlin.String?): kotlin.String
     
@@ -3046,9 +3063,19 @@ public interface LanServerInterface {
     fun `port`(): kotlin.UShort
     
     /**
-     * The playlist streams are served from (None = nothing to serve).
+     * The active playlist: its catalog, the user's progress/favorites, its display name.
      */
-    fun `setProvider`(`provider`: Provider?)
+    fun `setProvider`(`provider`: Provider?, `user`: UserStore?, `name`: kotlin.String)
+    
+    /**
+     * Recordings started from the TV page run on this recorder (the PC's).
+     */
+    fun `setRecorder`(`recorder`: Recorder?)
+    
+    /**
+     * The address to type into the TV's browser.
+     */
+    fun `tvUrl`(): kotlin.String?
     
     companion object
 }
@@ -3147,8 +3174,7 @@ open class LanServer: Disposable, AutoCloseable, LanServerInterface
 
     
     /**
-     * `http://<our LAN IP>:<port>` as seen from `peer` (a TV's IP), or from the LAN in
-     * general when None.
+     * `http://<our LAN IP>:<port>` as seen from `peer` (a TV's IP), or from the LAN in general.
      */override fun `baseUrl`(`peer`: kotlin.String?): kotlin.String {
             return FfiConverterString.lift(
     callWithPointer {
@@ -3178,16 +3204,45 @@ open class LanServer: Disposable, AutoCloseable, LanServerInterface
 
     
     /**
-     * The playlist streams are served from (None = nothing to serve).
-     */override fun `setProvider`(`provider`: Provider?)
+     * The active playlist: its catalog, the user's progress/favorites, its display name.
+     */override fun `setProvider`(`provider`: Provider?, `user`: UserStore?, `name`: kotlin.String)
         = 
     callWithPointer {
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_lanserver_set_provider(
-        it, FfiConverterOptionalTypeProvider.lower(`provider`),_status)
+        it, FfiConverterOptionalTypeProvider.lower(`provider`),FfiConverterOptionalTypeUserStore.lower(`user`),FfiConverterString.lower(`name`),_status)
 }
     }
     
+    
+
+    
+    /**
+     * Recordings started from the TV page run on this recorder (the PC's).
+     */override fun `setRecorder`(`recorder`: Recorder?)
+        = 
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_lanserver_set_recorder(
+        it, FfiConverterOptionalTypeRecorder.lower(`recorder`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * The address to type into the TV's browser.
+     */override fun `tvUrl`(): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_lanserver_tv_url(
+        it, _status)
+}
+    }
+    )
+    }
     
 
     
@@ -4927,7 +4982,7 @@ data class CastDevice (
     var `id`: kotlin.String, 
     var `name`: kotlin.String, 
     /**
-     * "dlna" (later "chromecast").
+     * "dlna" or "chromecast".
      */
     var `kind`: kotlin.String
 ) {
@@ -6294,6 +6349,70 @@ public object FfiConverterOptionalTypeProvider: FfiConverterRustBuffer<Provider?
         } else {
             buf.put(1)
             FfiConverterTypeProvider.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeRecorder: FfiConverterRustBuffer<Recorder?> {
+    override fun read(buf: ByteBuffer): Recorder? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeRecorder.read(buf)
+    }
+
+    override fun allocationSize(value: Recorder?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeRecorder.allocationSize(value)
+        }
+    }
+
+    override fun write(value: Recorder?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeRecorder.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeUserStore: FfiConverterRustBuffer<UserStore?> {
+    override fun read(buf: ByteBuffer): UserStore? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeUserStore.read(buf)
+    }
+
+    override fun allocationSize(value: UserStore?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeUserStore.allocationSize(value)
+        }
+    }
+
+    override fun write(value: UserStore?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeUserStore.write(value, buf)
         }
     }
 }

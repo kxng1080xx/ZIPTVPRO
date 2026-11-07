@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZIPTV Pro</title>
+<link rel="stylesheet" href="/tv/app.css">
+</head>
+<body>
+<nav id="rail">
+  <div class="brand">ZIPTV <b>PRO</b></div>
+  <a class="nav f" data-view="home" tabindex="0">Home</a>
+  <a class="nav f" data-view="live" tabindex="0">Live TV</a>
+  <a class="nav f" data-view="movies" tabindex="0">Movies</a>
+  <a class="nav f" data-view="series" tabindex="0">Series</a>
+  <a class="nav f" data-view="search" tabindex="0">Search</a>
+  <a class="nav f" data-view="recordings" tabindex="0">Recordings</a>
+  <div class="clock" id="clock"></div>
+</nav>
+<main id="main"></main>
+<div id="player" class="hidden">
+  <video id="video" playsinline></video>
+  <div id="spinner" class="spinner hidden"></div>
+  <div id="osd" class="osd hidden"></div>
+</div>
+<div id="toast" class="toast hidden"></div>
+<script src="/tv/app.js"></script>
+</body>
+</html>

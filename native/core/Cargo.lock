@@ -1381,6 +1381,7 @@ version = "10.0.0"
 dependencies = [
  "base64",
  "regex",
+ "rustls",
  "serde",
  "serde_json",
  "sha2",
