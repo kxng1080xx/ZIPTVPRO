@@ -1,7 +1,7 @@
-name: v10 Release (optimized APK + MSI)
+name: v10 Release (optimized APK + EXE, draft)
 
 # Manual trigger. Builds the Rust core with full release optimization (LTO, 1 codegen unit)
-# for all 4 Android ABIs and Windows on GitHub's runners, packages the APK and MSI, and
+# for all 4 Android ABIs and Windows on GitHub's runners, packages the APK and the Windows .exe installer, and
 # publishes release v<ziptv.version> (from native/app/gradle.properties).
 # Local builds use `FAST=1 native/core/build.sh` instead; this is the slow, optimized path.
 #
@@ -56,9 +56,10 @@ jobs:
           chmod +x gradlew
           ./gradlew :androidApp:assembleRelease --console=plain
           v=$(grep '^ziptv.version=' gradle.properties | cut -d= -f2 | tr -d '[:space:]')
-          cp androidApp/build/outputs/apk/release/androidApp-release.apk "$GITHUB_WORKSPACE/ZIPTV-Pro-$v.apk"
+          # app.apk: the name v9's updater and ziptvpro.pages.dev/app.apk redirect download.
+          cp androidApp/build/outputs/apk/release/androidApp-release.apk "$GITHUB_WORKSPACE/app.apk"
       - uses: actions/upload-artifact@v4
-        with: { name: apk, path: 'ZIPTV-Pro-*.apk', retention-days: 7 }
+        with: { name: apk, path: 'app.apk', retention-days: 7 }
 
   windows:
     runs-on: windows-latest
@@ -86,17 +87,18 @@ jobs:
           echo "org.gradle.java.home=$(cygpath -m "$JAVA_HOME")" >> ~/.gradle/gradle.properties
       - name: VLC to bundle (a trimmed copy goes into the installer)
         run: choco install vlc -y --no-progress
-      - name: MSI
+      - name: EXE installer
         working-directory: native/app
         env:
           VLC_DIR: C:/Program Files/VideoLAN/VLC
         run: |
           export JPACKAGE_JDK="$(cygpath -m "$JAVA_HOME")"  # Temurin 17 has jpackage
-          ./gradlew.bat :desktopApp:packageMsi --console=plain
+          ./gradlew.bat :desktopApp:packageExe --console=plain
           v=$(grep '^ziptv.version=' gradle.properties | cut -d= -f2 | tr -d '[:space:]')
-          cp desktopApp/build/compose/binaries/main/msi/*.msi "$GITHUB_WORKSPACE/ZIPTV-Pro-$v.msi"
+          # latest.exe: the name ziptvpro.pages.dev/latest.exe redirects to (v9's PC update link).
+          cp desktopApp/build/compose/binaries/main/exe/*.exe "$GITHUB_WORKSPACE/latest.exe"
       - uses: actions/upload-artifact@v4
-        with: { name: msi, path: 'ZIPTV-Pro-*.msi', retention-days: 7 }
+        with: { name: exe, path: 'latest.exe', retention-days: 7 }
 
   release:
     needs: [android, windows]
@@ -105,12 +107,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: { path: out, merge-multiple: true }
-      - name: Publish v<version>
+      - name: Draft release v<version> (publish it by hand after testing)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           v=$(grep '^ziptv.version=' native/app/gradle.properties | cut -d= -f2 | tr -d '[:space:]')
-          # --latest=false: GitHub's "latest" stays on v9 so v9 apps don't try to self-update into v10.
-          # v10's own updater lists releases and only looks at v10+ tags.
-          gh release create "v$v" out/* --target "$GITHUB_SHA" --title "ZIPTV Pro $v" \
-            --notes "Native v10 build ($GITHUB_SHA)." --latest=false
+          # Draft: nothing is downloadable until you press Publish (and tick "Set as latest" —
+          # v10 replaces v9, and pages.dev/app.apk + /latest.exe follow the latest release).
+          gh release create "v$v" out/* --draft --target "$GITHUB_SHA" --title "ZIPTV Pro $v"             --notes-file native/RELEASE_NOTES.md

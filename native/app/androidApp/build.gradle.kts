@@ -29,7 +29,7 @@ android {
     buildToolsVersion = "36.0.0"
 
     defaultConfig {
-        applicationId = "com.ziptv.app"
+        applicationId = "com.iptv.player.zero" // = v9: v10 installs over v9 (same debug signing key)
         minSdk = 24
         targetSdk = 36
         versionName = providers.gradleProperty("ziptv.version").get()

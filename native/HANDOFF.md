@@ -149,3 +149,21 @@ Android fixes: crash closing fullscreen (double attachViews) and black video aft
 between views (VlcPlayer.attach: video track off → swap views → on). Cozi guide (EPG lookup
 tries with/without a trailing "tv"). PC: preview no longer huge on big windows; black VOD fixed
 (CPU decode); VLC bundled. All on branch `v10-native` (last pushed commits listed by `git log`).
+
+## Release 10.0 (v10 REPLACES v9 — user decision 2026-11-06)
+- Android: applicationId = v9's `com.iptv.player.zero`, same debug signing key as v9
+  (SHA-256 f9e791a5…), versionCode 100000 > v9's 224 → installs over v9 as an update.
+- Windows: per-user EXE installer (`packageExe`, perUserInstall, fixed `upgradeUuid` — never
+  change it). First packaged v10 run silently runs v9's `Uninstall ZIPTV Pro.exe /currentuser /S`
+  (found via HKCU Uninstall "ZIPTV Pro 9."), once (`~/.ziptv10/v9-removed`).
+- Release assets are named `app.apk` and `latest.exe` because ziptvpro.pages.dev/app.apk and
+  /latest.exe 302 to `releases/latest/download/<name>` — v9's updaters follow those links.
+- Workflow `.github/workflows/native-release.yml` creates a DRAFT release (notes:
+  native/RELEASE_NOTES.md). After testing the draft: Publish + "Set as latest".
+- To move v9 Android users: v9 shows its update prompt when `ziptvpro.pages.dev/version.json`
+  has a higher version. That file is generated from the root package.json at Pages deploy, so
+  set root package.json version to 10.0.0 on main and redeploy Pages AFTER publishing.
+- Not migrated: v9 device codes (WebView localStorage) — every device re-activates with a
+  new code; favorites/history start fresh. Stated in the release notes.
+- Secrets needed (set by the user; agent writes to secret stores are blocked):
+  ANDROID_DEBUG_KEYSTORE, TMDB_TOKEN.

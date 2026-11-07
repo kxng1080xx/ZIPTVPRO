@@ -67,7 +67,13 @@ compose.desktop {
             packageName = "ZIPTV Pro"
             packageVersion = providers.gradleProperty("ziptv.version").get()
             appResourcesRootDir.set(layout.buildDirectory.dir("vlcResources")) // windows/vlc -> <app>/resources/vlc
-            windows { menuGroup = "ZIPTV Pro"; shortcut = true; iconFile.set(rootProject.file("../../build/icon.ico")) }
+            windows {
+                menuGroup = "ZIPTV Pro"; shortcut = true; iconFile.set(rootProject.file("../../build/icon.ico"))
+                // NEVER change: MSI upgrades find the old install by this id (without it every
+                // version installed side by side). Generated once for v10.
+                upgradeUuid = "f6c61db4-b087-4cab-ae16-a0857c04c599"
+                perUserInstall = true // like v9: %LOCALAPPDATA%, no admin prompt
+            }
         }
     }
 }

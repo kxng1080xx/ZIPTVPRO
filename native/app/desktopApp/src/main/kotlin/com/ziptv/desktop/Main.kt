@@ -76,7 +76,30 @@ private fun claimSingleInstance(): Boolean {
 
 fun main() {
     if (!claimSingleInstance()) return
+    Thread(::removeV9, "remove-v9").apply { isDaemon = true }.start()
     app()
+}
+
+/**
+ * v10 replaces v9 (Electron, per-user NSIS install). The MSI can't remove an NSIS app, so
+ * the first v10 run on this PC (or account) runs v9's own silent uninstaller, once — otherwise
+ * there are two "ZIPTV Pro"s in Start. Packaged runs only (dev runs have no resources dir).
+ */
+private fun removeV9() {
+    if (System.getProperty("compose.application.resources.dir") == null) return
+    val marker = java.io.File(System.getProperty("user.home"), ".ziptv10/v9-removed")
+    if (marker.exists()) return
+    runCatching {
+        val out = ProcessBuilder("reg", "query", """HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall""", "/s", "/f", "ZIPTV Pro 9.")
+            .redirectErrorStream(true).start().inputStream.bufferedReader().readText()
+        // "    QuietUninstallString    REG_SZ    "C:\...\Uninstall ZIPTV Pro.exe" /currentuser /S"
+        val cmd = Regex("""QuietUninstallString\s+REG_SZ\s+"([^"]+)"(.*)""").find(out) ?: return@runCatching
+        val exe = cmd.groupValues[1]
+        if (!exe.endsWith("Uninstall ZIPTV Pro.exe", ignoreCase = true)) return@runCatching // only v9's own uninstaller
+        val args = cmd.groupValues[2].trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+        ProcessBuilder(listOf(exe) + args).start().waitFor(120, java.util.concurrent.TimeUnit.SECONDS)
+    }
+    runCatching { marker.parentFile.mkdirs(); marker.writeText("done") }
 }
 
 private fun app() = application {

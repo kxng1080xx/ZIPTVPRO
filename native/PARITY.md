@@ -20,7 +20,7 @@ Legend: ✅ done · 🟡 partial · ⬜ not started
 | Search (accent/case-insensitive, prefix first) | ✅ | |
 | Series episodes | ✅ | |
 | Stalker portal playlists | ➖ skipped | v9 stalker-api.js |
-| M3U (non-Xtream) playlists | ⬜ | |
+| M3U (non-Xtream) playlists | ✅ | core m3u.rs; empty username = M3U |
 | Hidden categories / hidden tabs (admin pre-add visibility) | ✅ | |
 | Catch-up / timeshift (tv_archive) | ✅ | `archive_days` already parsed |
 
@@ -40,7 +40,7 @@ Legend: ✅ done · 🟡 partial · ⬜ not started
 | Recently viewed | ✅ | |
 | Continue watching + resume position | ✅ | |
 | Category sort | ✅ | |
-| TMDB metadata: about, cast, ratings, trailers on dwell | 🟡 | About/cast/trailer button done; no muted dwell preview |
+| TMDB metadata: about, cast, ratings, trailers on dwell | ✅ | About/cast/trailer button; muted dwell preview skipped (user) |
 | Dark-logo whitening | ✅ | v9 logo-contrast.js |
 | Quality badges (HD/FHD/4K) | ✅ | |
 | Reminders | ✅ | |
@@ -54,13 +54,13 @@ Legend: ✅ done · 🟡 partial · ⬜ not started
 | Channel up/down zapping | ✅ | |
 | VOD seek bar, ±10s, resume | ✅ | |
 | Audio track / subtitle selection | ✅ | |
-| Online subtitle search | ⬜ | |
+| Online subtitle search | ➖ skipped | user decision |
 | Deinterlace, upscaler | 🟡 | deinterlace (VLC yadif2x) done; upscaler not in VLC | |
 | Picture-in-picture | 🟡 | Android; desktop has no OS PiP |
-| Chromecast | ⬜ | v9 cast.js |
+| Chromecast | ⬜ 10.1 | wanted, moved to 10.1 so it doesn't hold the release |
 | Recording (DVR) + recordings list | ✅ | Rust Recorder; More menu, long-press guide rows, Home row | |
 | Short-cycle provider resilience (reconnect/resume) | 🟡 | VLC `--http-reconnect`; v9 had PTS splice |
-| Bundle VLC with the PC installer | ⬜ | currently uses installed VLC |
+| Bundle VLC with the PC installer | ✅ | trimmed VLC in app resources (prepareVlc) |
 
 ## Cloud & devices
 | Feature | Status | Notes |
@@ -69,7 +69,7 @@ Legend: ✅ done · 🟡 partial · ⬜ not started
 | Device expiry + notice | ✅ | |
 | Remove-all playlists (device + cloud) | ✅ | |
 | Companion device sync (continue watching hand-off) | ✅ | |
-| Watch Together | ⬜ | |
+| Watch Together | ✅ | v9 protocol; More → Watch together, Settings join |
 | Built-in VPN (OpenVPN profile) | ➖ skipped | |
 | Update check / auto-update | 🟡 | check + Download banner (v10+ GitHub releases, platform asset); no silent install | |
-| Share tunnel / TV link | ⬜ | |
+| Share tunnel / TV link | ➖ dropped | v10 has no local server |
