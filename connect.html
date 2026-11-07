@@ -3,12 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ZIPTV Pro — Admin</title>
+  <title>ZIPTV Pro Admin</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@500;600&display=swap" rel="stylesheet" />
   <script src="/lucide.min.js"></script>
   <link rel="stylesheet" href="/src/connect.css" />
+  <link rel="icon" href="/landing/logo.png" />
+  <meta name="theme-color" content="#090B11" />
 </head>
 <body>
 
@@ -16,11 +18,11 @@
   <div id="login-view" class="hidden">
     <div class="login-card">
       <div class="brand">ZIPTV <em>Pro</em></div>
-      <p class="login-sub">Admin panel — sign in to manage devices</p>
+      <p class="login-sub">Sign in to manage devices.</p>
       <form id="login-form">
         <label class="field-label" for="pw">Admin password</label>
         <input id="pw" type="password" autocomplete="current-password" required />
-        <button class="btn" id="login-btn" type="submit" style="width:100%; justify-content:center; margin-top:16px;">Sign in</button>
+        <button class="btn" id="login-btn" type="submit" style="width:100%; justify-content:center; margin-top:18px;">Sign in</button>
       </form>
       <div id="login-err" class="err hidden"></div>
     </div>
@@ -30,7 +32,7 @@
   <div id="dash-view" class="hidden">
     <div class="topbar">
       <div class="brand">ZIPTV <em>Pro</em></div>
-      <span class="topbar-note" id="refresh-note">—</span>
+      <span class="topbar-note" id="refresh-note"></span>
       <div class="topbar-spacer"></div>
       <button class="btn-ghost" id="btn-export"><i data-lucide="download"></i><span class="hide-sm">Export CSV</span></button>
       <button class="btn-icon" id="btn-refresh" title="Refresh now"><i data-lucide="refresh-cw"></i></button>
@@ -117,15 +119,15 @@
         <div id="d-pls"></div>
         <div class="addform">
           <select id="f-preset" style="display:none;"></select>
-          <input type="text" id="f-m3u" placeholder="Paste M3U URL — auto-fills the fields below" />
+          <input type="text" id="f-m3u" placeholder="Paste an M3U link to fill the fields below…" />
           <input type="text" id="f-name" placeholder="Playlist name (optional)" />
           <input type="text" id="f-server" placeholder="Server URL (http://host:port)" />
           <div class="split">
             <input type="text" id="f-user" placeholder="Username" />
             <input type="text" id="f-pass" placeholder="Password" />
           </div>
-          <button class="btn" id="f-save" style="justify-content:center;">Add playlist</button>
-          <div class="topbar-note" style="margin-top:6px; text-align:center;">Next: pick which tabs &amp; categories sync to the device</div>
+          <button class="btn" id="f-save">Add playlist</button>
+          <div class="hint">Next you pick which tabs and categories sync to the device.</div>
         </div>
       </div>
 
@@ -143,8 +145,8 @@
   <div class="drawer" id="cfg-drawer" role="dialog" aria-modal="true">
     <div class="drawer-head">
       <div style="flex:1;">
-        <div class="brand" style="font-size:1.15rem;">Settings</div>
-        <div class="topbar-note" style="margin-top:2px;">Shown to customers in the app</div>
+        <div class="drawer-title">Settings</div>
+        <div class="drawer-sub">Shown to customers in the app</div>
       </div>
       <button class="btn-icon" id="cfg-close" title="Close"><i data-lucide="x"></i></button>
     </div>
@@ -158,7 +160,7 @@
         <input id="cfg-contact" type="text" placeholder="WhatsApp / Telegram / email" />
       </div>
 
-      <div class="sec" style="border-top:1px solid rgba(255,255,255,0.08); padding-top:16px;">
+      <div class="sec hidden"><!-- v9 built-in VPN: not used by v10 -->
         <div class="sec-h" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
           <span>Built-in VPN (OpenVPN)</span>
           <label style="display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-size:0.82rem; font-weight:normal; text-transform:none; letter-spacing:0;">
@@ -203,19 +205,19 @@
       <div class="sec">
         <button class="btn" id="cfg-save" style="justify-content:center; width:100%;">Save settings</button>
       </div>
-      <div class="sec" style="border-top:1px solid rgba(255,255,255,0.08); padding-top:16px;">
+      <div class="sec">
         <div class="sec-h" id="cfg-pl-h">Saved playlists</div>
-        <div class="topbar-note" style="margin-bottom:10px;">Save credentials once — then pick them from the dropdown when setting up a new device.</div>
+        <div class="hint" style="margin-bottom:12px;">Save a login once, then pick it from the list when you set up a device.</div>
         <div id="cfg-pls"></div>
         <div class="addform">
-          <input type="text" id="s-m3u" placeholder="Paste M3U URL — auto-fills the fields below" />
+          <input type="text" id="s-m3u" placeholder="Paste an M3U link to fill the fields below…" />
           <input type="text" id="s-name" placeholder="Preset name (optional)" />
           <input type="text" id="s-server" placeholder="Server URL (http://host:port)" />
           <div class="split">
             <input type="text" id="s-user" placeholder="Username" />
             <input type="text" id="s-pass" placeholder="Password" />
           </div>
-          <button class="btn" id="s-save" style="justify-content:center;">Save playlist preset</button>
+          <button class="btn" id="s-save">Save playlist</button>
         </div>
       </div>
     </div>
@@ -225,60 +227,60 @@
   <div class="drawer" id="vis-drawer" role="dialog" aria-modal="true">
     <div class="drawer-head">
       <div style="flex:1; min-width:0;">
-        <div class="brand" style="font-size:1.15rem;">Playlist Visibility</div>
-        <div class="topbar-note" style="margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" id="vis-pl-name"></div>
+        <div class="drawer-title">What syncs to the device</div>
+        <div class="drawer-sub" id="vis-pl-name"></div>
       </div>
       <button class="btn-icon" id="vis-close" title="Close"><i data-lucide="x"></i></button>
     </div>
     <div class="drawer-body">
       <div class="sec">
-        <div class="sec-h">Tab Visibility</div>
-        <div class="vis-tabs-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 8px;">
-          <label style="display: flex; align-items: center; gap: 8px; font-size: 0.82rem; cursor: pointer;">
+        <div class="sec-h">Tabs</div>
+        <div class="vis-tabs-grid tab-grid">
+          <label class="check">
             <input type="checkbox" id="tab-live" checked /> Live TV
           </label>
-          <label style="display: flex; align-items: center; gap: 8px; font-size: 0.82rem; cursor: pointer;">
+          <label class="check">
             <input type="checkbox" id="tab-movies" checked /> Movies
           </label>
-          <label style="display: flex; align-items: center; gap: 8px; font-size: 0.82rem; cursor: pointer;">
+          <label class="check">
             <input type="checkbox" id="tab-series" checked /> Series
           </label>
         </div>
       </div>
 
-      <div class="sec" style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 15px; margin-top: 15px;">
-        <div class="sec-h" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <span>Category Visibility</span>
-          <button class="chip" id="vis-btn-load" style="margin: 0; font-size: 0.7rem; padding: 4px 10px;">Load Categories</button>
+      <div class="sec">
+        <div class="sec-row">
+          <span class="sec-h">Categories</span>
+          <button class="chip" id="vis-btn-load">Load categories</button>
         </div>
         
         <div id="vis-cats-container" style="display:none;">
-          <input type="text" id="vis-cats-search" placeholder="Search categories..." style="width: 100%; margin-bottom: 10px; font-size: 0.8rem; padding: 7px 10px; border-radius: 6px; background: var(--surface); box-sizing: border-box;" />
+          <input type="text" id="vis-cats-search" placeholder="Search categories…" autocomplete="off" />
           
-          <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-            <button class="chip" id="vis-btn-all" style="margin:0; flex:1; font-size: 0.72rem; padding: 4px 0;">Show All</button>
-            <button class="chip" id="vis-btn-none" style="margin:0; flex:1; font-size: 0.72rem; padding: 4px 0;">Hide All</button>
+          <div class="seg">
+            <button class="chip active" id="vis-tab-cat-live">Live</button>
+            <button class="chip" id="vis-tab-cat-movie">Movies</button>
+            <button class="chip" id="vis-tab-cat-series">Series</button>
+          </div>
+          <div class="row-2" style="margin-bottom:10px;">
+            <button class="chip" id="vis-btn-all">Show all</button>
+            <button class="chip" id="vis-btn-none">Hide all</button>
           </div>
           
-          <div style="display: flex; gap: 5px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 8px; margin-bottom: 10px;">
-            <button class="chip active" id="vis-tab-cat-live" style="margin:0; flex:1; font-size: 0.72rem; padding: 4px 0;">Live</button>
-            <button class="chip" id="vis-tab-cat-movie" style="margin:0; flex:1; font-size: 0.72rem; padding: 4px 0;">Movies</button>
-            <button class="chip" id="vis-tab-cat-series" style="margin:0; flex:1; font-size: 0.72rem; padding: 4px 0;">Series</button>
-          </div>
 
-          <div id="vis-cats-list" style="max-height: 250px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 4px;">
+          <div id="vis-cats-list">
             <!-- Category checkboxes dynamically rendered here -->
           </div>
         </div>
 
-        <div id="vis-cats-status" style="text-align: center; color: var(--text-3); font-size: 0.8rem; padding: 15px 0;">
-          Categories not loaded yet. Click "Load Categories".
+        <div id="vis-cats-status" class="vis-status">
+          Load the categories to choose which ones the device shows.
         </div>
       </div>
 
-      <div class="sec" style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 15px; margin-top: 20px; display: flex; gap: 10px;">
-        <button class="btn" id="vis-save" style="justify-content:center; flex:1;">Save Visibility</button>
-        <button class="btn btn-ghost" id="vis-cancel" style="justify-content:center; flex:1;">Cancel</button>
+      <div class="sec drawer-foot">
+        <button class="btn" id="vis-save">Save</button>
+        <button class="btn-ghost" id="vis-cancel">Cancel</button>
       </div>
     </div>
   </div>
@@ -318,7 +320,7 @@
       if (body) headers['Content-Type'] = 'application/json';
       if (auth && token) headers['Authorization'] = 'Bearer ' + token;
       const res = await fetch(`${API}?action=${action}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
-      if (res.status === 401 && auth) { logout(); throw new Error('Session expired — sign in again.'); }
+      if (res.status === 401 && auth) { logout(); throw new Error('Session expired. Sign in again.'); }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Request failed');
       return data;
@@ -504,14 +506,14 @@
         <tr data-id="${esc(d.device_id)}" class="${selected.has(d.device_id) ? 'sel' : ''}">
           <td class="cb-cell"><input type="checkbox" class="cb row-cb" ${selected.has(d.device_id) ? 'checked' : ''} /></td>
           <td>
-            <div class="dev-name ${d.label ? '' : 'unnamed'}">${d.label ? esc(d.label) : 'Unnamed device'}${d.last_error ? ` <span title="App error: ${esc(d.last_error)}" style="cursor:help;">⚠️</span>` : ''}</div>
+            <div class="dev-name ${d.label ? '' : 'unnamed'}">${d.label ? esc(d.label) : 'Unnamed device'}${d.last_error ? ` <i data-lucide="triangle-alert" style="width:15px;height:15px;color:#FBBF24;vertical-align:-2px;cursor:help;" title="App error: ${esc(d.last_error)}"></i>` : ''}</div>
             <div class="dev-code">${esc(d.device_id)}</div>
           </td>
           <td><span class="pill ${st.cls}"><span class="d"></span>${st.label}</span></td>
-          <td class="hide-md col-dim">${d.platform && d.platform !== 'unknown' ? esc(d.platform.toUpperCase()) + (d.app_version ? ' · v' + esc(d.app_version) : '') : '—'}</td>
+          <td class="hide-md col-dim">${d.platform && d.platform !== 'unknown' ? esc(d.platform.toUpperCase()) + (d.app_version ? ' · v' + esc(d.app_version) : '') : 'Unknown'}</td>
           <td class="hide-md"><span class="pl-count ${nPl ? '' : 'zero'}"><i data-lucide="list-video"></i>${nPl}</span></td>
           <td class="hide-sm col-dim">${relTime(d.last_seen)}</td>
-          <td class="${exp.cls}" style="font-weight:600; font-size:0.84rem; white-space:nowrap;">${exp.text}</td>
+          <td class="${exp.cls}" style="font-weight:600; font-size:13.5px; white-space:nowrap; font-variant-numeric:tabular-nums;">${exp.text}</td>
         </tr>`;
       }).join('');
       icons();
@@ -670,10 +672,10 @@
       $('d-pill').innerHTML = `<span class="pill ${st.cls}"><span class="d"></span>${st.label}</span>`;
       $('d-meta').innerHTML = `
         <div class="meta-cell"><div class="k">Platform</div><div class="v">${d.platform && d.platform !== 'unknown' ? esc(d.platform.toUpperCase()) : 'Unknown'}</div></div>
-        <div class="meta-cell"><div class="k">App version</div><div class="v">${d.app_version ? 'v' + esc(d.app_version) : '—'}</div></div>
+        <div class="meta-cell"><div class="k">App version</div><div class="v">${d.app_version ? 'v' + esc(d.app_version) : 'Unknown'}</div></div>
         <div class="meta-cell"><div class="k">Last seen</div><div class="v">${relTime(d.last_seen)}</div></div>
-        <div class="meta-cell"><div class="k">First seen</div><div class="v">${d.created_at ? new Date(d.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</div></div>${d.last_error ? `
-        <div class="meta-cell" style="grid-column:1 / -1;"><div class="k">⚠️ Last app error (${relTime(d.last_error_at)})</div><div class="v" style="font-size:0.78rem; word-break:break-word; color:#f87171;">${esc(d.last_error)}</div></div>` : ''}`;
+        <div class="meta-cell"><div class="k">First seen</div><div class="v">${d.created_at ? new Date(d.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown'}</div></div>${d.last_error ? `
+        <div class="meta-cell wide"><div class="k">Last app error (${relTime(d.last_error_at)})</div><div class="v">${esc(d.last_error)}</div></div>` : ''}`;
       $('d-exp').innerHTML = `<span class="${exp.cls}">${exp.text}</span>`;
       $('d-clearexp').style.display = d.expires_at ? '' : 'none';
 
@@ -687,7 +689,7 @@
           </div>
           <button class="btn-icon" data-editvis="${esc(p.id)}" title="Manage visibility"><i data-lucide="eye-off"></i></button>
           <button class="btn-icon btn-danger" data-rmpl="${esc(p.id)}" title="Remove playlist"><i data-lucide="trash-2"></i></button>
-        </div>`).join('') || '<div class="topbar-note" style="padding:4px 0 2px;">No playlists yet — add one below.</div>';
+        </div>`).join('') || '<div class="hint" style="padding:2px 0 4px;">No playlists yet. Add one below.</div>';
 
       $('d-archive').innerHTML = `<i data-lucide="${d.archived ? 'archive-restore' : 'archive'}"></i>${d.archived ? 'Unarchive' : 'Archive'}`;
       icons();
@@ -763,7 +765,7 @@
     function fillPresetSelect() {
       const sel = $('f-preset');
       sel.innerHTML = '<option value="">Use a saved playlist…</option>' +
-        savedPlaylists.map((p, i) => `<option value="${i}">${esc(p.name)} — ${esc(p.username)}</option>`).join('');
+        savedPlaylists.map((p, i) => `<option value="${i}">${esc(p.name)} · ${esc(p.username)}</option>`).join('');
       sel.style.display = savedPlaylists.length ? '' : 'none';
     }
 
@@ -793,7 +795,7 @@
             <div class="pm">${esc(p.username)}${p.server_url ? ' · ' + esc(hostName(p.server_url)) : ''}</div>
           </div>
           <button class="btn-icon btn-danger" data-rmsaved="${i}" title="Remove preset"><i data-lucide="trash-2"></i></button>
-        </div>`).join('') || '<div class="topbar-note" style="padding:4px 0 2px;">No saved playlists yet — add one below.</div>';
+        </div>`).join('') || '<div class="hint" style="padding:2px 0 4px;">No saved playlists yet. Add one below.</div>';
       icons();
       $('cfg-pls').querySelectorAll('[data-rmsaved]').forEach(b => b.addEventListener('click', () => {
         armConfirm(b, 'Sure?', async () => {
@@ -857,7 +859,7 @@
         }});
         btn.textContent = 'Add playlist';
         if (!(cats.live || []).length && !(cats.movie || []).length && !(cats.series || []).length) {
-          throw new Error('No categories returned — check the credentials.');
+          throw new Error('No categories came back. Check the login details.');
         }
         openVisDrawerForAdd(cats);
       } catch (e) {
@@ -938,7 +940,7 @@
       visAddMode = true;
       $('vis-save').textContent = 'Add playlist';
       $('vis-btn-load').style.display = 'none';
-      $('vis-pl-name').textContent = `New: ${pendingAdd.name} (${pendingAdd.username}) — choose what to sync`;
+      $('vis-pl-name').textContent = `New: ${pendingAdd.name} (${pendingAdd.username})`;
 
       $('tab-live').checked = true;
       $('tab-movies').checked = true;
@@ -984,7 +986,7 @@
       const filtered = currentCats.filter(c => (c.category_name || '').toLowerCase().includes(query));
       
       if (filtered.length === 0) {
-        listEl.innerHTML = '<div style="color: var(--text-3); text-align: center; padding: 15px; font-size: 0.8rem;">No categories found</div>';
+        listEl.innerHTML = '<div class="vis-status">No categories found</div>';
         return;
       }
       
