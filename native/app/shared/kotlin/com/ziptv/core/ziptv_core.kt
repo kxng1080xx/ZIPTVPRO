@@ -5250,7 +5250,11 @@ data class Episode (
     var `title`: kotlin.String, 
     var `plot`: kotlin.String, 
     var `image`: kotlin.String?, 
-    var `extension`: kotlin.String?
+    var `extension`: kotlin.String?, 
+    /**
+     * Runtime in seconds (0 = unknown).
+     */
+    var `durationSecs`: kotlin.UInt
 ) {
     
     companion object
@@ -5269,6 +5273,7 @@ public object FfiConverterTypeEpisode: FfiConverterRustBuffer<Episode> {
             FfiConverterString.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterOptionalString.read(buf),
+            FfiConverterUInt.read(buf),
         )
     }
 
@@ -5279,7 +5284,8 @@ public object FfiConverterTypeEpisode: FfiConverterRustBuffer<Episode> {
             FfiConverterString.allocationSize(value.`title`) +
             FfiConverterString.allocationSize(value.`plot`) +
             FfiConverterOptionalString.allocationSize(value.`image`) +
-            FfiConverterOptionalString.allocationSize(value.`extension`)
+            FfiConverterOptionalString.allocationSize(value.`extension`) +
+            FfiConverterUInt.allocationSize(value.`durationSecs`)
     )
 
     override fun write(value: Episode, buf: ByteBuffer) {
@@ -5290,6 +5296,7 @@ public object FfiConverterTypeEpisode: FfiConverterRustBuffer<Episode> {
             FfiConverterString.write(value.`plot`, buf)
             FfiConverterOptionalString.write(value.`image`, buf)
             FfiConverterOptionalString.write(value.`extension`, buf)
+            FfiConverterUInt.write(value.`durationSecs`, buf)
     }
 }
 

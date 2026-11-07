@@ -48,6 +48,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -284,7 +288,13 @@ private fun EpisodesScreen(model: AppModel, series: Series, onBack: () -> Unit) 
         value = withContext(Dispatchers.IO) { runCatching { lib.episodes(series.seriesId) }.getOrDefault(emptyList()) }
     }
     val fav = model.userVersion.let { model.isFavorite(ContentKind.SERIES, series.seriesId) }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    var season by rememberSaveable(series.seriesId) { mutableStateOf<Int?>(null) }
+    LaunchedEffect(episodes) {
+        val eps = episodes ?: return@LaunchedEffect
+        if (season == null) season = eps.filter { model.user?.progress("episode:${it.id}") != null }
+            .maxByOrNull { model.user?.progress("episode:${it.id}")?.updatedAt ?: 0 }?.season?.toInt() ?: eps.minOfOrNull { it.season.toInt() }
+    }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
           Box {
             // Bleed past the list's 20dp padding so the artwork reaches the screen edges.
@@ -309,14 +319,53 @@ private fun EpisodesScreen(model: AppModel, series: Series, onBack: () -> Unit) 
         when {
             eps == null -> items(6) { EpisodeSkeleton() }
             eps.isEmpty() -> item { Text("No episodes found", color = Z.textMuted) }
-            else -> eps.groupBy { it.season }.forEach { (season, list) ->
-                item(key = "s$season") {
-                    Text("Season $season", Modifier.padding(top = 12.dp, bottom = 4.dp), style = MaterialTheme.typography.titleLarge)
+            else -> {
+                val seasons = eps.groupBy { it.season.toInt() }.toSortedMap()
+                val shown = seasons[season] ?: seasons.values.first()
+                item(key = "seasons") {
+                    SeasonPicker(seasons.keys.toList(), season ?: seasons.firstKey(), shown.size) { season = it }
                 }
-                items(list, key = { it.id }) { e -> EpisodeRow(model, series, e) }
+                items(shown, key = { it.id }) { e -> EpisodeRow(model, series, e, Modifier.animateItem()) }
             }
         }
     }
+}
+
+/** "Season 2 ▾  ·  10 episodes": one season at a time instead of every season stacked. */
+@Composable
+private fun SeasonPicker(seasons: List<Int>, current: Int, count: Int, onPick: (Int) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Row(Modifier.padding(top = 16.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box {
+            Row(
+                Modifier.focusRing(RoundedCornerShape(50)).clip(RoundedCornerShape(50)).background(Z.surfaceHigh)
+                    .clickable(enabled = seasons.size > 1) { open = true }.padding(start = 18.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Season $current", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                if (seasons.size > 1) Icon(Icons.Rounded.ExpandMore, null, tint = Z.textMuted, modifier = Modifier.padding(start = 6.dp).size(20.dp))
+            }
+            DropdownMenu(open, { open = false }, containerColor = Z.surfaceHigh, shape = RoundedCornerShape(14.dp)) {
+                seasons.forEach { n ->
+                    DropdownMenuItem(
+                        text = { Text("Season $n", fontWeight = if (n == current) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (n == current) Z.focus else Z.text) },
+                        onClick = { open = false; onPick(n) },
+                        modifier = Modifier.focusRing(RoundedCornerShape(10.dp)),
+                    )
+                }
+            }
+        }
+        Text("$count episodes", color = Z.textMuted, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 14.dp))
+    }
+}
+
+/** Providers repeat the show and code in every title ("Insecure - S01E03 - Racist as F**k"). Keep the episode's own name. */
+private fun episodeTitle(raw: String, show: String, number: Int): String {
+    var t = raw.trim()
+    if (t.startsWith(show, ignoreCase = true)) t = t.substring(show.length)
+    t = t.replace(Regex("""^[\s\-:|.]*S\d{1,3}\s*E\d{1,4}[\s\-:|.]*""", RegexOption.IGNORE_CASE), "").trim(' ', '-', ':', '|', '.')
+    return t.ifBlank { "Episode $number" }
 }
 
 @Composable
@@ -334,29 +383,50 @@ private fun EpisodeSkeleton() {
 }
 
 @Composable
-private fun EpisodeRow(model: AppModel, series: Series, e: Episode) {
+private fun EpisodeRow(model: AppModel, series: Series, e: Episode, modifier: Modifier = Modifier) {
     val lib = model.library ?: return
     val prog = model.userVersion.let { model.user?.progress("episode:${e.id}") }
+    val title = episodeTitle(e.title, series.name, e.number.toInt())
+    val wide = LocalWide.current
+    val done = prog != null && prog.durationMs > 0 && prog.positionMs > prog.durationMs * 0.92
     Row(
-        Modifier.fillMaxWidth().focusRing(RoundedCornerShape(12.dp), lift = 1.01f)
-            .clip(RoundedCornerShape(12.dp)).background(Z.surface)
+        modifier.fillMaxWidth().focusRing(RoundedCornerShape(14.dp), lift = 1.01f)
+            .clip(RoundedCornerShape(14.dp)).background(Z.surface)
             .clickable {
-                model.play(Playable("${series.name} · S${e.season}E${e.number}", e.title.ifBlank { "Episode ${e.number}" },
+                model.play(Playable("${series.name} · S${e.season}E${e.number}", title,
                     lib.episodeUrl(e.id, e.extension), PlayKind.Episode, e.id, e.image ?: series.cover, e.extension, series.seriesId), full = true)
             }
-            .padding(14.dp),
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("${e.number}", Modifier.width(36.dp), color = Z.focus, style = MaterialTheme.typography.titleMedium)
-        Column(Modifier.weight(1f)) {
-            Text(e.title.ifBlank { "Episode ${e.number}" }, style = MaterialTheme.typography.titleMedium, maxLines = 1,
-                overflow = TextOverflow.Ellipsis)
-            if (e.plot.isNotBlank()) Text(e.plot, color = Z.textMuted, style = MaterialTheme.typography.bodyMedium, maxLines = 2)
-            if (prog != null && prog.durationMs > 0) {
-                Spacer(Modifier.height(6.dp))
-                Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)).background(Z.surfaceHigh)) {
-                    Box(Modifier.fillMaxWidth((prog.positionMs.toFloat() / prog.durationMs).coerceIn(0f, 1f)).fillMaxHeight().background(Z.accentGradient))
-                }
+        // 16:9 still with the watched bar along its bottom edge.
+        Box(Modifier.width(if (wide) 220.dp else 132.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(10.dp)).background(Z.surfaceHigh)) {
+            (e.image ?: series.cover)?.let {
+                AsyncImage(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             }
+            Box(Modifier.align(Alignment.Center).size(if (wide) 40.dp else 32.dp).clip(RoundedCornerShape(50))
+                .background(Color.Black.copy(alpha = 0.55f)), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.PlayArrow, null, tint = Color.White, modifier = Modifier.size(if (wide) 24.dp else 20.dp))
+            }
+            if (prog != null && prog.durationMs > 0) Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(Color.Black.copy(alpha = 0.5f))) {
+                Box(Modifier.fillMaxWidth((prog.positionMs.toFloat() / prog.durationMs).coerceIn(0.03f, 1f)).fillMaxHeight().background(Z.accentGradient))
+            }
+        }
+        Column(Modifier.weight(1f).padding(start = 16.dp, end = 6.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val meta = listOfNotNull(
+                "E${e.number}",
+                e.durationSecs.toInt().takeIf { it > 0 }?.let { "${(it + 30) / 60} min" },
+                when {
+                    done -> "Watched"
+                    prog != null && prog.durationMs > 0 -> "${((prog.durationMs - prog.positionMs) / 60_000).coerceAtLeast(1)} min left"
+                    else -> null
+                },
+            ).joinToString("  ·  ")
+            Text(meta, color = if (prog != null && !done) Z.focus else Z.textMuted, style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(top = 2.dp))
+            if (e.plot.isNotBlank()) Text(e.plot, color = Z.textMuted, style = MaterialTheme.typography.bodyMedium,
+                maxLines = if (wide) 2 else 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
         }
     }
 }

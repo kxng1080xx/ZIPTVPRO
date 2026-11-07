@@ -127,6 +127,8 @@ pub struct Episode {
     pub plot: String,
     pub image: Option<String>,
     pub extension: Option<String>,
+    /// Runtime in seconds (0 = unknown).
+    pub duration_secs: u32,
 }
 
 #[derive(uniffi::Record, Clone, Debug)]
@@ -601,6 +603,10 @@ fn parse_episodes(v: &Value) -> Vec<Episode> {
                 plot: field(&info, "plot"),
                 image: opt_field(&info, "movie_image"),
                 extension: opt_field(e, "container_extension"),
+                // duration_secs, else "HH:MM:SS"
+                duration_secs: info.get("duration_secs").map(as_i64).filter(|&d| d > 0).unwrap_or_else(|| {
+                    field(&info, "duration").split(':').try_fold(0i64, |acc, p| p.trim().parse::<i64>().ok().map(|n| acc * 60 + n)).unwrap_or(0)
+                }).max(0) as u32,
             });
         }
     };
