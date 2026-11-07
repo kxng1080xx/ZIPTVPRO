@@ -3,9 +3,12 @@
 ZIPTV Pro 10 is a complete rebuild for speed and reliability. One app now adapts to your
 device — TV and projector, phone and tablet, or Windows PC — with no switching between modes.
 
-**Before you update:** your device gets a **new activation code**. Open the app, note the
-code on the welcome screen, and give it to your provider (or add your playlist again yourself).
-Favorites and watch history from version 9 don't carry over.
+**Your activation code stays the same** when you update from version 9, so your
+playlists and provider setup carry on. Favorites and local watch history from version 9
+start fresh.
+
+**10.0.1:** keeps your v9 activation code; movie and series pages show artwork behind the
+title; the play button no longer covers the loading spinner.
 
 ### What's new
 - Much faster start-up, channel switching and catalog sync, with a real progress bar
