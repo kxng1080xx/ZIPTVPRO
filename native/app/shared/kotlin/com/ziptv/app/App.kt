@@ -70,6 +70,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -131,6 +132,7 @@ fun App(model: AppModel) {
                 androidx.compose.runtime.LaunchedEffect(screenFull) { model.platform.setScreenFullscreen(screenFull) }
                 ReminderBanner(model, Modifier.align(Alignment.TopCenter))
                 WatchBanner(model, Modifier.align(Alignment.TopCenter)) // over the player too
+                CastBanner(model, Modifier.align(Alignment.BottomCenter).padding(bottom = if (LocalWide.current) 0.dp else 80.dp))
                 UpdateBanner(model, Modifier.align(Alignment.BottomStart))
                 model.error?.let { msg ->
                     LaunchedEffect(msg) { delay(5000); model.error = null }
@@ -353,12 +355,31 @@ private fun UpdateBanner(model: AppModel, modifier: Modifier) {
         modifier.padding(16.dp).widthIn(max = 520.dp).clip(RoundedCornerShape(14.dp)).background(Z.surfaceHigh).padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        var progress by remember { mutableStateOf<Float?>(null) }
         Column(Modifier.weight(1f)) {
             Text("ZIPTV Pro ${u.version} is available", fontWeight = FontWeight.Bold)
-            Text("You have ${model.platform.appVersion}", color = Z.textMuted, style = MaterialTheme.typography.bodyMedium)
+            val p = progress
+            if (p == null) Text("You have ${model.platform.appVersion}", color = Z.textMuted, style = MaterialTheme.typography.bodyMedium)
+            else {
+                Text("Downloading… ${(p * 100).toInt()}%", color = Z.textMuted, style = MaterialTheme.typography.bodyMedium)
+                androidx.compose.material3.LinearProgressIndicator(progress = { p }, color = Z.focus, trackColor = Z.surface,
+                    modifier = Modifier.padding(top = 6.dp).fillMaxWidth())
+            }
         }
-        TextButton(onClick = { if (!model.platform.openUrl(u.url)) model.error = "Couldn't open the download" }, modifier = Modifier.focusRing()) {
-            Text("Download", color = Z.focus)
+        TextButton(onClick = {
+            if (progress != null) return@TextButton
+            if (!model.platform.inAppUpdate) { if (!model.platform.openUrl(u.url)) model.error = "Couldn't open the download"; return@TextButton }
+            // v9's built-in downloader: no browser needed (Fire TV has none that installs APKs).
+            progress = 0f
+            model.scope.launch {
+                val err = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    model.platform.downloadAndInstall(u.url) { f -> progress = f }
+                }
+                progress = null
+                err?.let { model.error = it }
+            }
+        }, modifier = Modifier.focusRing()) {
+            Text(if (progress == null) "Update" else "…", color = Z.focus)
         }
         TextButton(onClick = { model.update = null }, modifier = Modifier.focusRing()) { Text("Later", color = Z.textMuted) }
     }

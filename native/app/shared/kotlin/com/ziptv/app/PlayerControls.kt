@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Cast
 import androidx.compose.material.icons.rounded.FiberManualRecord
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
@@ -60,7 +61,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.dp
 
-private enum class Pop { None, More, Tracks, Sleep, Volume }
+private enum class Pop { None, More, Tracks, Sleep, Volume, Cast }
 
 /**
  * v9's player control row + its popovers, shared by fullscreen and the Live
@@ -121,6 +122,7 @@ fun BoxScope.PlayerChrome(model: AppModel, item: Playable, inFullscreen: Boolean
             if ((item.kind == PlayKind.Movie || item.kind == PlayKind.Episode) && !model.watch.active) {
                 MenuItem(Icons.Rounded.Groups, "Watch together") { model.watch.host(); pop = Pop.None }
             }
+            MenuItem(Icons.Rounded.Cast, "Cast to TV") { pop = Pop.Cast }
             MenuItem(Icons.Rounded.Bolt, if (model.player.deinterlace) "Deinterlace (60fps) · On" else "Deinterlace (60fps)") {
                 model.toggleDeinterlace(); pop = Pop.None
             }
@@ -139,6 +141,7 @@ fun BoxScope.PlayerChrome(model: AppModel, item: Playable, inFullscreen: Boolean
             MenuItem(null, "Off") { model.player.selectSubtitle(-1); pop = Pop.None }
             subs.filter { it.id >= 0 }.forEach { t -> MenuItem(null, t.name) { model.player.selectSubtitle(t.id); pop = Pop.None } }
         }
+        Pop.Cast -> Menu { CastPicker(model, item) { pop = Pop.None } }
         Pop.Sleep -> Menu {
             MenuItem(Icons.Rounded.ArrowBack, "Back") { pop = Pop.More }
             listOf(15, 30, 45, 60, 90, 120).forEach { m -> MenuItem(null, "$m minutes") { model.setSleepTimer(m); pop = Pop.None } }

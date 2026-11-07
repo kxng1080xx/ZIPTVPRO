@@ -24,6 +24,7 @@ regex = "1"
 thiserror = "2"
 sha2 = "0.10"
 snap = "1"
+tiny_http = "0.12"
 
 [profile.release]
 opt-level = 3

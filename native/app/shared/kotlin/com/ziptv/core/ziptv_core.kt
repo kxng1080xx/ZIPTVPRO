@@ -871,6 +871,38 @@ internal open class UniffiVTableCallbackInterfaceSyncListener(
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -887,6 +919,24 @@ internal open class UniffiVTableCallbackInterfaceSyncListener(
 internal interface IntegrityCheckingUniffiLib : Library {
     // Integrity check functions only
     fun uniffi_ziptv_core_checksum_func_check_update(
+): Short
+fun uniffi_ziptv_core_checksum_method_caster_active_name(
+): Short
+fun uniffi_ziptv_core_checksum_method_caster_discover(
+): Short
+fun uniffi_ziptv_core_checksum_method_caster_pause(
+): Short
+fun uniffi_ziptv_core_checksum_method_caster_play(
+): Short
+fun uniffi_ziptv_core_checksum_method_caster_resume(
+): Short
+fun uniffi_ziptv_core_checksum_method_caster_seek(
+): Short
+fun uniffi_ziptv_core_checksum_method_caster_status(
+): Short
+fun uniffi_ziptv_core_checksum_method_caster_stop(
+): Short
+fun uniffi_ziptv_core_checksum_method_caster_volume(
 ): Short
 fun uniffi_ziptv_core_checksum_method_cloud_add_playlist(
 ): Short
@@ -917,6 +967,12 @@ fun uniffi_ziptv_core_checksum_method_cloud_watch_join(
 fun uniffi_ziptv_core_checksum_method_cloud_watch_poll(
 ): Short
 fun uniffi_ziptv_core_checksum_method_cloud_watch_update(
+): Short
+fun uniffi_ziptv_core_checksum_method_lanserver_base_url(
+): Short
+fun uniffi_ziptv_core_checksum_method_lanserver_port(
+): Short
+fun uniffi_ziptv_core_checksum_method_lanserver_set_provider(
 ): Short
 fun uniffi_ziptv_core_checksum_method_provider_catchup_url(
 ): Short
@@ -1004,7 +1060,11 @@ fun uniffi_ziptv_core_checksum_method_userstore_toggle_favorite(
 ): Short
 fun uniffi_ziptv_core_checksum_method_userstore_toggle_pin(
 ): Short
+fun uniffi_ziptv_core_checksum_constructor_caster_new(
+): Short
 fun uniffi_ziptv_core_checksum_constructor_cloud_new(
+): Short
+fun uniffi_ziptv_core_checksum_constructor_lanserver_new(
 ): Short
 fun uniffi_ziptv_core_checksum_constructor_provider_new(
 ): Short
@@ -1066,7 +1126,31 @@ internal interface UniffiLib : Library {
     }
 
     // FFI functions
-    fun uniffi_ziptv_core_fn_clone_cloud(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_ziptv_core_fn_clone_caster(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): Pointer
+fun uniffi_ziptv_core_fn_free_caster(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_ziptv_core_fn_constructor_caster_new(`server`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): Pointer
+fun uniffi_ziptv_core_fn_method_caster_active_name(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_ziptv_core_fn_method_caster_discover(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_ziptv_core_fn_method_caster_pause(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_ziptv_core_fn_method_caster_play(`ptr`: Pointer,`deviceId`: RustBuffer.ByValue,`kind`: RustBuffer.ByValue,`streamId`: RustBuffer.ByValue,`ext`: RustBuffer.ByValue,`title`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_ziptv_core_fn_method_caster_resume(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_ziptv_core_fn_method_caster_seek(`ptr`: Pointer,`secs`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_ziptv_core_fn_method_caster_status(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_ziptv_core_fn_method_caster_stop(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_ziptv_core_fn_method_caster_volume(`ptr`: Pointer,`level`: Int,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_ziptv_core_fn_clone_cloud(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Pointer
 fun uniffi_ziptv_core_fn_free_cloud(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
@@ -1101,6 +1185,18 @@ fun uniffi_ziptv_core_fn_method_cloud_watch_join(`ptr`: Pointer,`server`: RustBu
 fun uniffi_ziptv_core_fn_method_cloud_watch_poll(`ptr`: Pointer,`code`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_ziptv_core_fn_method_cloud_watch_update(`ptr`: Pointer,`code`: RustBuffer.ByValue,`position`: Double,`paused`: Byte,`state`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_ziptv_core_fn_clone_lanserver(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): Pointer
+fun uniffi_ziptv_core_fn_free_lanserver(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_ziptv_core_fn_constructor_lanserver_new(`port`: Short,uniffi_out_err: UniffiRustCallStatus, 
+): Pointer
+fun uniffi_ziptv_core_fn_method_lanserver_base_url(`ptr`: Pointer,`peer`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_ziptv_core_fn_method_lanserver_port(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): Short
+fun uniffi_ziptv_core_fn_method_lanserver_set_provider(`ptr`: Pointer,`provider`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_ziptv_core_fn_clone_provider(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Pointer
@@ -1345,6 +1441,33 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_ziptv_core_checksum_func_check_update() != 64264.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_ziptv_core_checksum_method_caster_active_name() != 825.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_caster_discover() != 14076.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_caster_pause() != 17768.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_caster_play() != 15657.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_caster_resume() != 26776.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_caster_seek() != 17666.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_caster_status() != 61281.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_caster_stop() != 48960.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_caster_volume() != 45191.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_ziptv_core_checksum_method_cloud_add_playlist() != 42687.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1388,6 +1511,15 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ziptv_core_checksum_method_cloud_watch_update() != 8154.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_lanserver_base_url() != 31770.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_lanserver_port() != 8267.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_lanserver_set_provider() != 35187.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ziptv_core_checksum_method_provider_catchup_url() != 46353.toShort()) {
@@ -1519,7 +1651,13 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_ziptv_core_checksum_method_userstore_toggle_pin() != 62678.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_ziptv_core_checksum_constructor_caster_new() != 30913.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_ziptv_core_checksum_constructor_cloud_new() != 27095.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_constructor_lanserver_new() != 10141.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ziptv_core_checksum_constructor_provider_new() != 31916.toShort()) {
@@ -1714,6 +1852,29 @@ private class JavaLangRefCleanable(
 /**
  * @suppress
  */
+public object FfiConverterUShort: FfiConverter<UShort, Short> {
+    override fun lift(value: Short): UShort {
+        return value.toUShort()
+    }
+
+    override fun read(buf: ByteBuffer): UShort {
+        return lift(buf.getShort())
+    }
+
+    override fun lower(value: UShort): Short {
+        return value.toShort()
+    }
+
+    override fun allocationSize(value: UShort) = 2UL
+
+    override fun write(value: UShort, buf: ByteBuffer) {
+        buf.putShort(value.toShort())
+    }
+}
+
+/**
+ * @suppress
+ */
 public object FfiConverterUInt: FfiConverter<UInt, Int> {
     override fun lift(value: Int): UInt {
         return value.toUInt()
@@ -1903,6 +2064,384 @@ public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
         val byteBuf = toUtf8(value)
         buf.putInt(byteBuf.limit())
         buf.put(byteBuf)
+    }
+}
+
+
+// This template implements a class for working with a Rust struct via a Pointer/Arc<T>
+// to the live Rust struct on the other side of the FFI.
+//
+// Each instance implements core operations for working with the Rust `Arc<T>` and the
+// Kotlin Pointer to work with the live Rust struct on the other side of the FFI.
+//
+// There's some subtlety here, because we have to be careful not to operate on a Rust
+// struct after it has been dropped, and because we must expose a public API for freeing
+// theq Kotlin wrapper object in lieu of reliable finalizers. The core requirements are:
+//
+//   * Each instance holds an opaque pointer to the underlying Rust struct.
+//     Method calls need to read this pointer from the object's state and pass it in to
+//     the Rust FFI.
+//
+//   * When an instance is no longer needed, its pointer should be passed to a
+//     special destructor function provided by the Rust FFI, which will drop the
+//     underlying Rust struct.
+//
+//   * Given an instance, calling code is expected to call the special
+//     `destroy` method in order to free it after use, either by calling it explicitly
+//     or by using a higher-level helper like the `use` method. Failing to do so risks
+//     leaking the underlying Rust struct.
+//
+//   * We can't assume that calling code will do the right thing, and must be prepared
+//     to handle Kotlin method calls executing concurrently with or even after a call to
+//     `destroy`, and to handle multiple (possibly concurrent!) calls to `destroy`.
+//
+//   * We must never allow Rust code to operate on the underlying Rust struct after
+//     the destructor has been called, and must never call the destructor more than once.
+//     Doing so may trigger memory unsafety.
+//
+//   * To mitigate many of the risks of leaking memory and use-after-free unsafety, a `Cleaner`
+//     is implemented to call the destructor when the Kotlin object becomes unreachable.
+//     This is done in a background thread. This is not a panacea, and client code should be aware that
+//      1. the thread may starve if some there are objects that have poorly performing
+//     `drop` methods or do significant work in their `drop` methods.
+//      2. the thread is shared across the whole library. This can be tuned by using `android_cleaner = true`,
+//         or `android = true` in the [`kotlin` section of the `uniffi.toml` file](https://mozilla.github.io/uniffi-rs/kotlin/configuration.html).
+//
+// If we try to implement this with mutual exclusion on access to the pointer, there is the
+// possibility of a race between a method call and a concurrent call to `destroy`:
+//
+//    * Thread A starts a method call, reads the value of the pointer, but is interrupted
+//      before it can pass the pointer over the FFI to Rust.
+//    * Thread B calls `destroy` and frees the underlying Rust struct.
+//    * Thread A resumes, passing the already-read pointer value to Rust and triggering
+//      a use-after-free.
+//
+// One possible solution would be to use a `ReadWriteLock`, with each method call taking
+// a read lock (and thus allowed to run concurrently) and the special `destroy` method
+// taking a write lock (and thus blocking on live method calls). However, we aim not to
+// generate methods with any hidden blocking semantics, and a `destroy` method that might
+// block if called incorrectly seems to meet that bar.
+//
+// So, we achieve our goals by giving each instance an associated `AtomicLong` counter to track
+// the number of in-flight method calls, and an `AtomicBoolean` flag to indicate whether `destroy`
+// has been called. These are updated according to the following rules:
+//
+//    * The initial value of the counter is 1, indicating a live object with no in-flight calls.
+//      The initial value for the flag is false.
+//
+//    * At the start of each method call, we atomically check the counter.
+//      If it is 0 then the underlying Rust struct has already been destroyed and the call is aborted.
+//      If it is nonzero them we atomically increment it by 1 and proceed with the method call.
+//
+//    * At the end of each method call, we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+//    * When `destroy` is called, we atomically flip the flag from false to true.
+//      If the flag was already true we silently fail.
+//      Otherwise we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+// Astute readers may observe that this all sounds very similar to the way that Rust's `Arc<T>` works,
+// and indeed it is, with the addition of a flag to guard against multiple calls to `destroy`.
+//
+// The overall effect is that the underlying Rust struct is destroyed only when `destroy` has been
+// called *and* all in-flight method calls have completed, avoiding violating any of the expectations
+// of the underlying Rust code.
+//
+// This makes a cleaner a better alternative to _not_ calling `destroy()` as
+// and when the object is finished with, but the abstraction is not perfect: if the Rust object's `drop`
+// method is slow, and/or there are many objects to cleanup, and it's on a low end Android device, then the cleaner
+// thread may be starved, and the app will leak memory.
+//
+// In this case, `destroy`ing manually may be a better solution.
+//
+// The cleaner can live side by side with the manual calling of `destroy`. In the order of responsiveness, uniffi objects
+// with Rust peers are reclaimed:
+//
+// 1. By calling the `destroy` method of the object, which calls `rustObject.free()`. If that doesn't happen:
+// 2. When the object becomes unreachable, AND the Cleaner thread gets to call `rustObject.free()`. If the thread is starved then:
+// 3. The memory is reclaimed when the process terminates.
+//
+// [1] https://stackoverflow.com/questions/24376768/can-java-finalize-an-object-when-it-is-still-in-scope/24380219
+//
+
+
+public interface CasterInterface {
+    
+    /**
+     * Name of the receiver being cast to, if any.
+     */
+    fun `activeName`(): kotlin.String?
+    
+    /**
+     * Blocks ~3 s (SSDP). Call off the UI thread.
+     */
+    fun `discover`(): List<CastDevice>
+    
+    fun `pause`()
+    
+    /**
+     * `kind`: "live" | "movie" | "series"; `ext`: ts / m3u8 / mp4 / mkv …
+     */
+    fun `play`(`deviceId`: kotlin.String, `kind`: kotlin.String, `streamId`: kotlin.String, `ext`: kotlin.String, `title`: kotlin.String)
+    
+    fun `resume`()
+    
+    fun `seek`(`secs`: kotlin.ULong)
+    
+    fun `status`(): CastStatus?
+    
+    fun `stop`()
+    
+    /**
+     * 0..=100
+     */
+    fun `volume`(`level`: kotlin.UInt)
+    
+    companion object
+}
+
+open class Caster: Disposable, AutoCloseable, CasterInterface
+{
+
+    constructor(pointer: Pointer) {
+        this.pointer = pointer
+        this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(pointer))
+    }
+
+    /**
+     * This constructor can be used to instantiate a fake object. Only used for tests. Any
+     * attempt to actually use an object constructed this way will fail as there is no
+     * connected Rust object.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    constructor(noPointer: NoPointer) {
+        this.pointer = null
+        this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(pointer))
+    }
+    constructor(`server`: LanServer) :
+        this(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_constructor_caster_new(
+        FfiConverterTypeLanServer.lower(`server`),_status)
+}
+    )
+
+    protected val pointer: Pointer?
+    protected val cleanable: UniffiCleaner.Cleanable
+
+    private val wasDestroyed = AtomicBoolean(false)
+    private val callCounter = AtomicLong(1)
+
+    override fun destroy() {
+        // Only allow a single call to this method.
+        // TODO: maybe we should log a warning if called more than once?
+        if (this.wasDestroyed.compareAndSet(false, true)) {
+            // This decrement always matches the initial count of 1 given at creation time.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable.clean()
+            }
+        }
+    }
+
+    @Synchronized
+    override fun close() {
+        this.destroy()
+    }
+
+    internal inline fun <R> callWithPointer(block: (ptr: Pointer) -> R): R {
+        // Check and increment the call counter, to keep the object alive.
+        // This needs a compare-and-set retry loop in case of concurrent updates.
+        do {
+            val c = this.callCounter.get()
+            if (c == 0L) {
+                throw IllegalStateException("${this.javaClass.simpleName} object has already been destroyed")
+            }
+            if (c == Long.MAX_VALUE) {
+                throw IllegalStateException("${this.javaClass.simpleName} call counter would overflow")
+            }
+        } while (! this.callCounter.compareAndSet(c, c + 1L))
+        // Now we can safely do the method call without the pointer being freed concurrently.
+        try {
+            return block(this.uniffiClonePointer())
+        } finally {
+            // This decrement always matches the increment we performed above.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable.clean()
+            }
+        }
+    }
+
+    // Use a static inner class instead of a closure so as not to accidentally
+    // capture `this` as part of the cleanable's action.
+    private class UniffiCleanAction(private val pointer: Pointer?) : Runnable {
+        override fun run() {
+            pointer?.let { ptr ->
+                uniffiRustCall { status ->
+                    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_free_caster(ptr, status)
+                }
+            }
+        }
+    }
+
+    fun uniffiClonePointer(): Pointer {
+        return uniffiRustCall() { status ->
+            UniffiLib.INSTANCE.uniffi_ziptv_core_fn_clone_caster(pointer!!, status)
+        }
+    }
+
+    
+    /**
+     * Name of the receiver being cast to, if any.
+     */override fun `activeName`(): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_caster_active_name(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Blocks ~3 s (SSDP). Call off the UI thread.
+     */override fun `discover`(): List<CastDevice> {
+            return FfiConverterSequenceTypeCastDevice.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_caster_discover(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(CoreException::class)override fun `pause`()
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(CoreException) { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_caster_pause(
+        it, _status)
+}
+    }
+    
+    
+
+    
+    /**
+     * `kind`: "live" | "movie" | "series"; `ext`: ts / m3u8 / mp4 / mkv …
+     */
+    @Throws(CoreException::class)override fun `play`(`deviceId`: kotlin.String, `kind`: kotlin.String, `streamId`: kotlin.String, `ext`: kotlin.String, `title`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(CoreException) { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_caster_play(
+        it, FfiConverterString.lower(`deviceId`),FfiConverterString.lower(`kind`),FfiConverterString.lower(`streamId`),FfiConverterString.lower(`ext`),FfiConverterString.lower(`title`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(CoreException::class)override fun `resume`()
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(CoreException) { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_caster_resume(
+        it, _status)
+}
+    }
+    
+    
+
+    
+    @Throws(CoreException::class)override fun `seek`(`secs`: kotlin.ULong)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(CoreException) { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_caster_seek(
+        it, FfiConverterULong.lower(`secs`),_status)
+}
+    }
+    
+    
+
+    override fun `status`(): CastStatus? {
+            return FfiConverterOptionalTypeCastStatus.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_caster_status(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    override fun `stop`()
+        = 
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_caster_stop(
+        it, _status)
+}
+    }
+    
+    
+
+    
+    /**
+     * 0..=100
+     */
+    @Throws(CoreException::class)override fun `volume`(`level`: kotlin.UInt)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(CoreException) { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_caster_volume(
+        it, FfiConverterUInt.lower(`level`),_status)
+}
+    }
+    
+    
+
+    
+
+    
+    
+    companion object
+    
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeCaster: FfiConverter<Caster, Pointer> {
+
+    override fun lower(value: Caster): Pointer {
+        return value.uniffiClonePointer()
+    }
+
+    override fun lift(value: Pointer): Caster {
+        return Caster(value)
+    }
+
+    override fun read(buf: ByteBuffer): Caster {
+        // The Rust code always writes pointers as 8 bytes, and will
+        // fail to compile if they don't fit.
+        return lift(Pointer(buf.getLong()))
+    }
+
+    override fun allocationSize(value: Caster) = 8UL
+
+    override fun write(value: Caster, buf: ByteBuffer) {
+        // The Rust code always expects pointers written as 8 bytes,
+        // and will fail to compile if they don't fit.
+        buf.putLong(Pointer.nativeValue(lower(value)))
     }
 }
 
@@ -2388,6 +2927,299 @@ public object FfiConverterTypeCloud: FfiConverter<Cloud, Pointer> {
     override fun allocationSize(value: Cloud) = 8UL
 
     override fun write(value: Cloud, buf: ByteBuffer) {
+        // The Rust code always expects pointers written as 8 bytes,
+        // and will fail to compile if they don't fit.
+        buf.putLong(Pointer.nativeValue(lower(value)))
+    }
+}
+
+
+// This template implements a class for working with a Rust struct via a Pointer/Arc<T>
+// to the live Rust struct on the other side of the FFI.
+//
+// Each instance implements core operations for working with the Rust `Arc<T>` and the
+// Kotlin Pointer to work with the live Rust struct on the other side of the FFI.
+//
+// There's some subtlety here, because we have to be careful not to operate on a Rust
+// struct after it has been dropped, and because we must expose a public API for freeing
+// theq Kotlin wrapper object in lieu of reliable finalizers. The core requirements are:
+//
+//   * Each instance holds an opaque pointer to the underlying Rust struct.
+//     Method calls need to read this pointer from the object's state and pass it in to
+//     the Rust FFI.
+//
+//   * When an instance is no longer needed, its pointer should be passed to a
+//     special destructor function provided by the Rust FFI, which will drop the
+//     underlying Rust struct.
+//
+//   * Given an instance, calling code is expected to call the special
+//     `destroy` method in order to free it after use, either by calling it explicitly
+//     or by using a higher-level helper like the `use` method. Failing to do so risks
+//     leaking the underlying Rust struct.
+//
+//   * We can't assume that calling code will do the right thing, and must be prepared
+//     to handle Kotlin method calls executing concurrently with or even after a call to
+//     `destroy`, and to handle multiple (possibly concurrent!) calls to `destroy`.
+//
+//   * We must never allow Rust code to operate on the underlying Rust struct after
+//     the destructor has been called, and must never call the destructor more than once.
+//     Doing so may trigger memory unsafety.
+//
+//   * To mitigate many of the risks of leaking memory and use-after-free unsafety, a `Cleaner`
+//     is implemented to call the destructor when the Kotlin object becomes unreachable.
+//     This is done in a background thread. This is not a panacea, and client code should be aware that
+//      1. the thread may starve if some there are objects that have poorly performing
+//     `drop` methods or do significant work in their `drop` methods.
+//      2. the thread is shared across the whole library. This can be tuned by using `android_cleaner = true`,
+//         or `android = true` in the [`kotlin` section of the `uniffi.toml` file](https://mozilla.github.io/uniffi-rs/kotlin/configuration.html).
+//
+// If we try to implement this with mutual exclusion on access to the pointer, there is the
+// possibility of a race between a method call and a concurrent call to `destroy`:
+//
+//    * Thread A starts a method call, reads the value of the pointer, but is interrupted
+//      before it can pass the pointer over the FFI to Rust.
+//    * Thread B calls `destroy` and frees the underlying Rust struct.
+//    * Thread A resumes, passing the already-read pointer value to Rust and triggering
+//      a use-after-free.
+//
+// One possible solution would be to use a `ReadWriteLock`, with each method call taking
+// a read lock (and thus allowed to run concurrently) and the special `destroy` method
+// taking a write lock (and thus blocking on live method calls). However, we aim not to
+// generate methods with any hidden blocking semantics, and a `destroy` method that might
+// block if called incorrectly seems to meet that bar.
+//
+// So, we achieve our goals by giving each instance an associated `AtomicLong` counter to track
+// the number of in-flight method calls, and an `AtomicBoolean` flag to indicate whether `destroy`
+// has been called. These are updated according to the following rules:
+//
+//    * The initial value of the counter is 1, indicating a live object with no in-flight calls.
+//      The initial value for the flag is false.
+//
+//    * At the start of each method call, we atomically check the counter.
+//      If it is 0 then the underlying Rust struct has already been destroyed and the call is aborted.
+//      If it is nonzero them we atomically increment it by 1 and proceed with the method call.
+//
+//    * At the end of each method call, we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+//    * When `destroy` is called, we atomically flip the flag from false to true.
+//      If the flag was already true we silently fail.
+//      Otherwise we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+// Astute readers may observe that this all sounds very similar to the way that Rust's `Arc<T>` works,
+// and indeed it is, with the addition of a flag to guard against multiple calls to `destroy`.
+//
+// The overall effect is that the underlying Rust struct is destroyed only when `destroy` has been
+// called *and* all in-flight method calls have completed, avoiding violating any of the expectations
+// of the underlying Rust code.
+//
+// This makes a cleaner a better alternative to _not_ calling `destroy()` as
+// and when the object is finished with, but the abstraction is not perfect: if the Rust object's `drop`
+// method is slow, and/or there are many objects to cleanup, and it's on a low end Android device, then the cleaner
+// thread may be starved, and the app will leak memory.
+//
+// In this case, `destroy`ing manually may be a better solution.
+//
+// The cleaner can live side by side with the manual calling of `destroy`. In the order of responsiveness, uniffi objects
+// with Rust peers are reclaimed:
+//
+// 1. By calling the `destroy` method of the object, which calls `rustObject.free()`. If that doesn't happen:
+// 2. When the object becomes unreachable, AND the Cleaner thread gets to call `rustObject.free()`. If the thread is starved then:
+// 3. The memory is reclaimed when the process terminates.
+//
+// [1] https://stackoverflow.com/questions/24376768/can-java-finalize-an-object-when-it-is-still-in-scope/24380219
+//
+
+
+public interface LanServerInterface {
+    
+    /**
+     * `http://<our LAN IP>:<port>` as seen from `peer` (a TV's IP), or from the LAN in
+     * general when None.
+     */
+    fun `baseUrl`(`peer`: kotlin.String?): kotlin.String
+    
+    /**
+     * 0 = could not listen.
+     */
+    fun `port`(): kotlin.UShort
+    
+    /**
+     * The playlist streams are served from (None = nothing to serve).
+     */
+    fun `setProvider`(`provider`: Provider?)
+    
+    companion object
+}
+
+open class LanServer: Disposable, AutoCloseable, LanServerInterface
+{
+
+    constructor(pointer: Pointer) {
+        this.pointer = pointer
+        this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(pointer))
+    }
+
+    /**
+     * This constructor can be used to instantiate a fake object. Only used for tests. Any
+     * attempt to actually use an object constructed this way will fail as there is no
+     * connected Rust object.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    constructor(noPointer: NoPointer) {
+        this.pointer = null
+        this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(pointer))
+    }
+    /**
+     * Listens on `port` (or the next free one up to +20) on all interfaces.
+     */
+    constructor(`port`: kotlin.UShort) :
+        this(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_constructor_lanserver_new(
+        FfiConverterUShort.lower(`port`),_status)
+}
+    )
+
+    protected val pointer: Pointer?
+    protected val cleanable: UniffiCleaner.Cleanable
+
+    private val wasDestroyed = AtomicBoolean(false)
+    private val callCounter = AtomicLong(1)
+
+    override fun destroy() {
+        // Only allow a single call to this method.
+        // TODO: maybe we should log a warning if called more than once?
+        if (this.wasDestroyed.compareAndSet(false, true)) {
+            // This decrement always matches the initial count of 1 given at creation time.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable.clean()
+            }
+        }
+    }
+
+    @Synchronized
+    override fun close() {
+        this.destroy()
+    }
+
+    internal inline fun <R> callWithPointer(block: (ptr: Pointer) -> R): R {
+        // Check and increment the call counter, to keep the object alive.
+        // This needs a compare-and-set retry loop in case of concurrent updates.
+        do {
+            val c = this.callCounter.get()
+            if (c == 0L) {
+                throw IllegalStateException("${this.javaClass.simpleName} object has already been destroyed")
+            }
+            if (c == Long.MAX_VALUE) {
+                throw IllegalStateException("${this.javaClass.simpleName} call counter would overflow")
+            }
+        } while (! this.callCounter.compareAndSet(c, c + 1L))
+        // Now we can safely do the method call without the pointer being freed concurrently.
+        try {
+            return block(this.uniffiClonePointer())
+        } finally {
+            // This decrement always matches the increment we performed above.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable.clean()
+            }
+        }
+    }
+
+    // Use a static inner class instead of a closure so as not to accidentally
+    // capture `this` as part of the cleanable's action.
+    private class UniffiCleanAction(private val pointer: Pointer?) : Runnable {
+        override fun run() {
+            pointer?.let { ptr ->
+                uniffiRustCall { status ->
+                    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_free_lanserver(ptr, status)
+                }
+            }
+        }
+    }
+
+    fun uniffiClonePointer(): Pointer {
+        return uniffiRustCall() { status ->
+            UniffiLib.INSTANCE.uniffi_ziptv_core_fn_clone_lanserver(pointer!!, status)
+        }
+    }
+
+    
+    /**
+     * `http://<our LAN IP>:<port>` as seen from `peer` (a TV's IP), or from the LAN in
+     * general when None.
+     */override fun `baseUrl`(`peer`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_lanserver_base_url(
+        it, FfiConverterOptionalString.lower(`peer`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * 0 = could not listen.
+     */override fun `port`(): kotlin.UShort {
+            return FfiConverterUShort.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_lanserver_port(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * The playlist streams are served from (None = nothing to serve).
+     */override fun `setProvider`(`provider`: Provider?)
+        = 
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_lanserver_set_provider(
+        it, FfiConverterOptionalTypeProvider.lower(`provider`),_status)
+}
+    }
+    
+    
+
+    
+
+    
+    
+    companion object
+    
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeLanServer: FfiConverter<LanServer, Pointer> {
+
+    override fun lower(value: LanServer): Pointer {
+        return value.uniffiClonePointer()
+    }
+
+    override fun lift(value: Pointer): LanServer {
+        return LanServer(value)
+    }
+
+    override fun read(buf: ByteBuffer): LanServer {
+        // The Rust code always writes pointers as 8 bytes, and will
+        // fail to compile if they don't fit.
+        return lift(Pointer(buf.getLong()))
+    }
+
+    override fun allocationSize(value: LanServer) = 8UL
+
+    override fun write(value: LanServer, buf: ByteBuffer) {
         // The Rust code always expects pointers written as 8 bytes,
         // and will fail to compile if they don't fit.
         buf.putLong(Pointer.nativeValue(lower(value)))
@@ -4091,6 +4923,45 @@ public object FfiConverterTypeAccountInfo: FfiConverterRustBuffer<AccountInfo> {
 
 
 
+data class CastDevice (
+    var `id`: kotlin.String, 
+    var `name`: kotlin.String, 
+    /**
+     * "dlna" (later "chromecast").
+     */
+    var `kind`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeCastDevice: FfiConverterRustBuffer<CastDevice> {
+    override fun read(buf: ByteBuffer): CastDevice {
+        return CastDevice(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: CastDevice) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterString.allocationSize(value.`kind`)
+    )
+
+    override fun write(value: CastDevice, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterString.write(value.`kind`, buf)
+    }
+}
+
+
+
 data class CastMember (
     var `name`: kotlin.String, 
     var `character`: kotlin.String, 
@@ -4122,6 +4993,38 @@ public object FfiConverterTypeCastMember: FfiConverterRustBuffer<CastMember> {
             FfiConverterString.write(value.`name`, buf)
             FfiConverterString.write(value.`character`, buf)
             FfiConverterOptionalString.write(value.`profile`, buf)
+    }
+}
+
+
+
+data class CastStatus (
+    var `positionSecs`: kotlin.Double, 
+    var `durationSecs`: kotlin.Double
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeCastStatus: FfiConverterRustBuffer<CastStatus> {
+    override fun read(buf: ByteBuffer): CastStatus {
+        return CastStatus(
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: CastStatus) = (
+            FfiConverterDouble.allocationSize(value.`positionSecs`) +
+            FfiConverterDouble.allocationSize(value.`durationSecs`)
+    )
+
+    override fun write(value: CastStatus, buf: ByteBuffer) {
+            FfiConverterDouble.write(value.`positionSecs`, buf)
+            FfiConverterDouble.write(value.`durationSecs`, buf)
     }
 }
 
@@ -5362,6 +6265,70 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeProvider: FfiConverterRustBuffer<Provider?> {
+    override fun read(buf: ByteBuffer): Provider? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeProvider.read(buf)
+    }
+
+    override fun allocationSize(value: Provider?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeProvider.allocationSize(value)
+        }
+    }
+
+    override fun write(value: Provider?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeProvider.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeCastStatus: FfiConverterRustBuffer<CastStatus?> {
+    override fun read(buf: ByteBuffer): CastStatus? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeCastStatus.read(buf)
+    }
+
+    override fun allocationSize(value: CastStatus?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeCastStatus.allocationSize(value)
+        }
+    }
+
+    override fun write(value: CastStatus?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeCastStatus.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeMeta: FfiConverterRustBuffer<Meta?> {
     override fun read(buf: ByteBuffer): Meta? {
         if (buf.get().toInt() == 0) {
@@ -5572,6 +6539,34 @@ public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.Str
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterString.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeCastDevice: FfiConverterRustBuffer<List<CastDevice>> {
+    override fun read(buf: ByteBuffer): List<CastDevice> {
+        val len = buf.getInt()
+        return List<CastDevice>(len) {
+            FfiConverterTypeCastDevice.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<CastDevice>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeCastDevice.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<CastDevice>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeCastDevice.write(it, buf)
         }
     }
 }

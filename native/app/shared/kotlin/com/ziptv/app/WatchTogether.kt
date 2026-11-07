@@ -227,7 +227,7 @@ fun WatchBanner(model: AppModel, modifier: Modifier) {
 }
 
 @Composable
-private fun BannerButton(label: String, primary: Boolean, onClick: () -> Unit) {
+internal fun BannerButton(label: String, primary: Boolean, onClick: () -> Unit) {
     Text(label, color = Color.White, fontWeight = FontWeight.SemiBold,
         modifier = Modifier.focusRing(RoundedCornerShape(50)).clip(RoundedCornerShape(50))
             .background(if (primary) Z.accentGradient else androidx.compose.ui.graphics.SolidColor(Z.surfaceHigh))

@@ -99,7 +99,14 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
 
     var playlists by mutableStateOf(store.load()); private set
     var active by mutableStateOf<Playlist?>(null); private set
-    var library by mutableStateOf<Provider?>(null); private set
+    /** LAN server: what cast receivers (and the TV page) fetch streams from. */
+    val lan = com.ziptv.core.LanServer(8790.toUShort())
+    val caster = com.ziptv.core.Caster(lan)
+    val cast = CastController(this)
+    private var libraryState by mutableStateOf<Provider?>(null)
+    var library: Provider?
+        get() = libraryState
+        private set(v) { libraryState = v; lan.setProvider(v) }
     var user by mutableStateOf<UserStore?>(null); private set
     var screen by mutableStateOf<Screen>(Screen.Welcome); private set
     var device by mutableStateOf<DeviceState?>(null); private set

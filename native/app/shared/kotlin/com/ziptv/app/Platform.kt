@@ -69,6 +69,10 @@ interface Platform {
     fun logoTransformation(): coil3.transform.Transformation? = null
     /** Whole-screen mode while the player is fullscreen (desktop: borderless fullscreen window; Android: immersive). */
     fun setScreenFullscreen(on: Boolean) {}
+    /** In-app updater (Android): download [url] reporting 0..1, then open the system installer.
+     *  Blocking; null = installer opened, else an error to show. Unsupported -> open the link instead. */
+    val inAppUpdate: Boolean get() = false
+    fun downloadAndInstall(url: String, progress: (Float) -> Unit): String? = "unsupported"
     /** Launch with the OS (desktop). null = not supported here; else (on, minimized). */
     fun autostart(): Pair<Boolean, Boolean>? = null
     fun setAutostart(on: Boolean, minimized: Boolean) {}

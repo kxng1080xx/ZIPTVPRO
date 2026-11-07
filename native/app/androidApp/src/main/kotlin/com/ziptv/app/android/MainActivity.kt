@@ -29,6 +29,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // Cast discovery (SSDP) needs multicast replies; held while the app runs.
+        (applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager)
+            .createMulticastLock("ziptv-cast").apply { setReferenceCounted(false); runCatching { acquire() } }
         // Full-screen app: draw edge to edge (incl. the camera cut-out area; the UI pads for it)
         // and keep the system bars hidden. Swiping from an edge shows them briefly.
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -116,6 +119,49 @@ class AndroidPlatform(private val activity: ComponentActivity) : Platform {
     }
     override fun tmdbToken(): String =
         runCatching { activity.assets.open("tmdb.token").bufferedReader().use { it.readText().trim() } }.getOrDefault("")
+
+    override val inAppUpdate = true
+    override fun downloadAndInstall(url: String, progress: (Float) -> Unit): String? = runCatching {
+        // Android 8+: the user must allow "install unknown apps" for us once.
+        if (android.os.Build.VERSION.SDK_INT >= 26 && !activity.packageManager.canRequestPackageInstalls()) {
+            activity.startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                android.net.Uri.parse("package:${activity.packageName}")))
+            return "Allow ZIPTV Pro to install apps, then press Update again"
+        }
+        val dir = java.io.File(activity.cacheDir, "updates").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
+        val apk = java.io.File(dir, "update.apk")
+        // pages.dev -> GitHub -> CDN redirects cross hosts/protocols: follow them by hand.
+        var target = java.net.URL(url)
+        var conn: java.net.HttpURLConnection
+        var hops = 0
+        while (true) {
+            conn = target.openConnection() as java.net.HttpURLConnection
+            conn.instanceFollowRedirects = false
+            conn.connectTimeout = 15_000; conn.readTimeout = 30_000
+            val code = conn.responseCode
+            if (code !in 300..399 || hops++ > 6) break
+            target = java.net.URL(target, conn.getHeaderField("Location"))
+            conn.disconnect()
+        }
+        if (conn.responseCode != 200) return "Download failed (HTTP ${conn.responseCode})"
+        val total = conn.contentLengthLong
+        conn.inputStream.use { inp ->
+            apk.outputStream().use { out ->
+                val buf = ByteArray(64 * 1024); var done = 0L; var last = 0L
+                while (true) {
+                    val n = inp.read(buf); if (n < 0) break
+                    out.write(buf, 0, n); done += n
+                    if (total > 0 && done - last > 512 * 1024) { last = done; progress(done.toFloat() / total) }
+                }
+            }
+        }
+        progress(1f)
+        val uri = androidx.core.content.FileProvider.getUriForFile(activity, "${activity.packageName}.files", apk)
+        activity.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW)
+            .setDataAndType(uri, "application/vnd.android.package-archive")
+            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        null
+    }.getOrElse { "Download failed: ${it.message}" }
 
     override fun openUrl(url: String): Boolean = runCatching {
         activity.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
