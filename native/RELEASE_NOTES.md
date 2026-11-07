@@ -7,6 +7,12 @@ device — TV and projector, phone and tablet, or Windows PC — with no switchi
 playlists and provider setup carry on. Favorites and local watch history from version 9
 start fresh.
 
+**10.0.3:**
+- Smart TV page: much faster to start playing, smoother scrolling, a backdrop home screen and
+  movie/series pages with artwork, plot and cast.
+- Player: NOW, NEXT and LATER with the time above each show, scrollable on phones; a smaller
+  channel panel that carries the LIVE badge.
+
 **10.0.2:**
 - **Cast to TV** from the player menu: Samsung/LG and other DLNA TVs, and Chromecast / Google TV.
   Your phone or PC becomes the remote (pause, seek, stop).
