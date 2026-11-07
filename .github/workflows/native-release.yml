@@ -26,6 +26,7 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '17' }
       - uses: android-actions/setup-android@v3
+        with: { packages: platform-tools }  # default "tools" no longer exists in sdkmanager
       - run: sdkmanager --install "ndk;${NDK_VERSION}"
       - uses: dtolnay/rust-toolchain@stable
         with:
