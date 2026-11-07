@@ -72,7 +72,9 @@ impl Cloud {
             .map(|s| s.trim().to_string())
             .filter(|s| s.len() >= 4)
             .unwrap_or_else(|| {
-                let c = new_code();
+                // First run: a device updating from v9 keeps its code (activation, playlists, history).
+                let c = crate::v9::device_code(&crate::v9::candidate_dirs(std::path::Path::new(&code_file)))
+                    .unwrap_or_else(new_code);
                 let _ = std::fs::write(&code_file, &c);
                 c
             });

@@ -49,10 +49,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -230,7 +232,9 @@ private fun MovieDetail(model: AppModel, m: Movie, onBack: () -> Unit) {
         if (fromStart) model.user?.removeProgress("movie:${m.streamId}")
         model.play(Playable(m.name, m.year ?: "Movie", lib.movieUrl(m.streamId, m.extension), PlayKind.Movie, m.streamId, m.poster, m.extension), true)
     }
-    Row(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+    Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+    DetailBackdrop(model, ContentKind.MOVIE, m.name, m.year, m.poster)
+    Row(Modifier.fillMaxWidth().padding(24.dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
         if (LocalWide.current) PosterImage(m.poster, m.name, m.rating, Modifier.width(260.dp))
         Column(Modifier.weight(1f).widthIn(max = 720.dp)) {
             IconAction(Icons.Rounded.ArrowBack, "Back", onClick = onBack)
@@ -251,6 +255,26 @@ private fun MovieDetail(model: AppModel, m: Movie, onBack: () -> Unit) {
             MetaSection(model, ContentKind.MOVIE, m.name, m.year)
         }
     }
+    }
+}
+
+/**
+ * Full-bleed artwork behind the title: TMDB backdrop, else a poster, fading into the page.
+ * Same TMDB lookup as MetaSection (cached in the core, so no second request once loaded).
+ */
+@Composable
+private fun DetailBackdrop(model: AppModel, kind: ContentKind, title: String, year: String?, fallback: String?, modifier: Modifier = Modifier) {
+    val meta by produceState<com.ziptv.core.Meta?>(null, kind, title) {
+        value = withContext(Dispatchers.IO) { runCatching { model.tmdb.lookup(kind, title, year) }.getOrNull() }
+    }
+    val image = meta?.backdrop ?: meta?.poster ?: fallback
+    if (image.isNullOrBlank()) return
+    Box(modifier.fillMaxWidth().height(if (LocalWide.current) 420.dp else 340.dp)) {
+        AsyncImage(image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
+            alignment = Alignment.TopCenter, alpha = 0.5f)
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
+            0f to Z.bg.copy(alpha = 0.55f), 0.45f to Z.bg.copy(alpha = 0.35f), 1f to Z.bg)))
+    }
 }
 
 @Composable
@@ -262,6 +286,15 @@ private fun EpisodesScreen(model: AppModel, series: Series, onBack: () -> Unit) 
     val fav = model.userVersion.let { model.isFavorite(ContentKind.SERIES, series.seriesId) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
+          Box {
+            // Bleed past the list's 20dp padding so the artwork reaches the screen edges.
+            DetailBackdrop(model, ContentKind.SERIES, series.name, series.year, series.cover,
+                Modifier.layout { m, c ->
+                    val e = 20.dp.roundToPx()
+                    val p = m.measure(c.copy(minWidth = c.maxWidth + 2 * e, maxWidth = c.maxWidth + 2 * e))
+                    layout(c.maxWidth, p.height - e) { p.place(-e, -e) }
+                })
+          Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconAction(Icons.Rounded.ArrowBack, "Back", onClick = onBack)
                 Text(series.name, Modifier.weight(1f), style = MaterialTheme.typography.headlineMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -269,6 +302,8 @@ private fun EpisodesScreen(model: AppModel, series: Series, onBack: () -> Unit) 
                     if (fav) Z.gold else Z.textMuted) { model.toggleFavorite(ContentKind.SERIES, series.seriesId) }
             }
             MetaSection(model, ContentKind.SERIES, series.name, series.year)
+          }
+          }
         }
         val eps = episodes
         when {

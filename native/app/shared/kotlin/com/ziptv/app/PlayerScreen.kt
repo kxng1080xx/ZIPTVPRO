@@ -260,7 +260,9 @@ private fun CenterControls(model: AppModel, item: Playable, state: PlayerState, 
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.CenterVertically) {
         if (item.live) RoundButton(Icons.Rounded.KeyboardArrowUp, "Previous channel") { model.zap(-1); poke() }
         if (item.seekable) RoundButton(Icons.Rounded.Replay10, "Back 10 seconds") { model.player.seekTo(model.player.positionMs() - 10_000); poke() }
-        RoundButton(
+        // While loading, the spinner sits where this button is: leave the slot empty (side buttons stay put).
+        if (state is PlayerState.Buffering || state == PlayerState.Idle) Spacer(Modifier.size(76.dp))
+        else RoundButton(
             if (state == PlayerState.Paused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
             if (state == PlayerState.Paused) "Play" else "Pause", big = true,
         ) { model.player.togglePause(); poke() }
