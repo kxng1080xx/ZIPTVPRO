@@ -907,6 +907,8 @@ internal open class UniffiVTableCallbackInterfaceSyncListener(
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -979,6 +981,8 @@ fun uniffi_ziptv_core_checksum_method_lanserver_port(
 fun uniffi_ziptv_core_checksum_method_lanserver_set_provider(
 ): Short
 fun uniffi_ziptv_core_checksum_method_lanserver_set_recorder(
+): Short
+fun uniffi_ziptv_core_checksum_method_lanserver_set_tmdb(
 ): Short
 fun uniffi_ziptv_core_checksum_method_lanserver_tv_url(
 ): Short
@@ -1207,6 +1211,8 @@ fun uniffi_ziptv_core_fn_method_lanserver_port(`ptr`: Pointer,uniffi_out_err: Un
 fun uniffi_ziptv_core_fn_method_lanserver_set_provider(`ptr`: Pointer,`provider`: RustBuffer.ByValue,`user`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_ziptv_core_fn_method_lanserver_set_recorder(`ptr`: Pointer,`recorder`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_ziptv_core_fn_method_lanserver_set_tmdb(`ptr`: Pointer,`tmdb`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_ziptv_core_fn_method_lanserver_tv_url(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1535,6 +1541,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ziptv_core_checksum_method_lanserver_set_recorder() != 58261.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_lanserver_set_tmdb() != 34337.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ziptv_core_checksum_method_lanserver_tv_url() != 63219.toShort()) {
@@ -3073,6 +3082,11 @@ public interface LanServerInterface {
     fun `setRecorder`(`recorder`: Recorder?)
     
     /**
+     * TMDB for the TV page's details (backdrop, plot, cast). Same cache as the app.
+     */
+    fun `setTmdb`(`tmdb`: Tmdb?)
+    
+    /**
      * The address to type into the TV's browser.
      */
     fun `tvUrl`(): kotlin.String?
@@ -3225,6 +3239,20 @@ open class LanServer: Disposable, AutoCloseable, LanServerInterface
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_lanserver_set_recorder(
         it, FfiConverterOptionalTypeRecorder.lower(`recorder`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * TMDB for the TV page's details (backdrop, plot, cast). Same cache as the app.
+     */override fun `setTmdb`(`tmdb`: Tmdb?)
+        = 
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_lanserver_set_tmdb(
+        it, FfiConverterOptionalTypeTmdb.lower(`tmdb`),_status)
 }
     }
     
@@ -6381,6 +6409,38 @@ public object FfiConverterOptionalTypeRecorder: FfiConverterRustBuffer<Recorder?
         } else {
             buf.put(1)
             FfiConverterTypeRecorder.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeTmdb: FfiConverterRustBuffer<Tmdb?> {
+    override fun read(buf: ByteBuffer): Tmdb? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeTmdb.read(buf)
+    }
+
+    override fun allocationSize(value: Tmdb?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeTmdb.allocationSize(value)
+        }
+    }
+
+    override fun write(value: Tmdb?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeTmdb.write(value, buf)
         }
     }
 }

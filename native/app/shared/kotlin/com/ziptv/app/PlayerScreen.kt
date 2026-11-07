@@ -54,6 +54,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -150,8 +151,13 @@ private fun TopBar(model: AppModel, item: Playable, exit: () -> Unit, modifier: 
         modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.75f), Color.Transparent))).padding(24.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Live: the channel panel (top left) carries name + clock, so the bar only shows the rest.
-        Column(Modifier.weight(1f).padding(start = if (item.live && model.zapList.size > 1 && LocalWide.current) 340.dp else 0.dp)) {
+        // Live with the channel panel: it carries LIVE, name and clock, so the bar shows only REC/sleep/close.
+        val panel = item.live && model.zapList.size > 1 && LocalWide.current
+        Column(Modifier.weight(1f).padding(start = if (panel) 280.dp else 0.dp)) {
+            if (panel) {
+                if (model.liveRecordings.let { model.recordingOf(item.streamId) } != null)
+                    Text("● REC", color = Z.live, style = MaterialTheme.typography.labelLarge, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+            } else {
             if (item.live) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("LIVE", color = Color.White, style = MaterialTheme.typography.labelMedium,
@@ -165,6 +171,7 @@ private fun TopBar(model: AppModel, item: Playable, exit: () -> Unit, modifier: 
             }
             Text(item.title, style = MaterialTheme.typography.headlineMedium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(item.subtitle, color = Z.textMuted, maxLines = 1)
+            }
         }
         model.sleepAt?.let {
             Text("Sleep in ${((it - System.currentTimeMillis()) / 60_000).coerceAtLeast(0)} min", color = Z.textMuted,
@@ -185,16 +192,21 @@ private fun ChannelPanel(model: AppModel, item: Playable, modifier: Modifier, po
     val now = remember(item.streamId) { java.text.SimpleDateFormat("h:mm a · EEE, MMM d", java.util.Locale.getDefault()).format(java.util.Date()) }
     val phone = LocalDevice.current == DeviceClass.Touch // landscape phone: ~400dp tall, keep it small
     Column(
-        modifier.padding(if (phone) 10.dp else 16.dp).width(if (phone) 240.dp else 320.dp).clip(RoundedCornerShape(16.dp))
-            .background(Brush.verticalGradient(listOf(Z.bg.copy(alpha = 0.92f), Z.bg.copy(alpha = 0.75f)))).padding(12.dp),
+        modifier.padding(if (phone) 8.dp else 16.dp).width(if (phone) 200.dp else 300.dp).clip(RoundedCornerShape(14.dp))
+            .background(Brush.verticalGradient(listOf(Z.bg.copy(alpha = 0.9f), Z.bg.copy(alpha = 0.7f)))).padding(if (phone) 8.dp else 12.dp),
     ) {
-        Text(item.title, style = if (phone) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleLarge,
-            color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("LIVE", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(Z.live).padding(horizontal = 6.dp, vertical = 1.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(item.title, style = if (phone) MaterialTheme.typography.labelLarge else MaterialTheme.typography.titleMedium,
+                color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
         Text(now, color = Z.textMuted, style = if (phone) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelLarge)
         Spacer(Modifier.size(if (phone) 6.dp else 10.dp))
         // The playing channel + the next 3 (wrapping), like v9 — no scrolling list.
         Column {
-            (0 until minOf(4, list.size)).forEach { k ->
+            (0 until minOf(if (phone) 3 else 4, list.size)).forEach { k ->
                 val ch = list[(cur + k) % list.size]
                 val playing = ch.streamId == item.streamId
                 val prog = rememberNow(model, ch)
@@ -202,10 +214,10 @@ private fun ChannelPanel(model: AppModel, item: Playable, modifier: Modifier, po
                     Modifier.fillMaxWidth().padding(vertical = 2.dp).focusRing(RoundedCornerShape(10.dp), lift = 1.01f)
                         .clip(RoundedCornerShape(10.dp))
                         .background(if (playing) Z.accentGradient else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent)))
-                        .clickable { model.playChannel(ch, list, full = true); poke() }.padding(if (phone) 5.dp else 8.dp),
+                        .clickable { model.playChannel(ch, list, full = true); poke() }.padding(if (phone) 4.dp else 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    ChannelLogo(ch.logo, Modifier.size(if (phone) 26.dp else 36.dp), ch.altLogo)
+                    ChannelLogo(ch.logo, Modifier.size(if (phone) 22.dp else 32.dp), ch.altLogo)
                     Spacer(Modifier.width(if (phone) 8.dp else 10.dp))
                     Column(Modifier.weight(1f)) {
                         Text(ch.name, color = Color.White, style = if (phone) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
@@ -232,26 +244,30 @@ fun NowNext(model: AppModel, item: Playable, modifier: Modifier, compact: Boolea
     val t = System.currentTimeMillis() / 1000
     val i = guide.indexOfFirst { it.start <= t && it.end > t }
     val now = guide.getOrNull(i)
-    val next = if (i >= 0) guide.getOrNull(i + 1) else guide.firstOrNull { it.start > t }
+    val ni = if (i >= 0) i + 1 else guide.indexOfFirst { it.start > t }
+    val next = guide.getOrNull(ni)
+    val later = if (ni >= 0) guide.getOrNull(ni + 1) else null
     if (now == null && next == null) { Spacer(modifier); return }
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        now?.let { GuideCell("NOW", it, Z.focus, Modifier.weight(1f), compact) }
-        next?.let { GuideCell("NEXT", it, Z.textMuted, Modifier.weight(1f), compact) }
+    Row(modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+        now?.let { GuideCell("NOW", it, Z.focus, Modifier, compact) }
+        next?.let { GuideCell("NEXT", it, Z.textMuted, Modifier, compact) }
+        later?.let { GuideCell("LATER", it, Z.textMuted, Modifier, compact) }
     }
 }
 
 @Composable
 private fun GuideCell(tag: String, p: com.ziptv.core.Programme, accent: Color, modifier: Modifier, compact: Boolean = false) {
-    Row(modifier.padding(end = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.padding(end = if (compact) 18.dp else 28.dp).widthIn(max = if (compact) 260.dp else 420.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(tag, color = Color.White, style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(if (tag == "NOW") Z.accentGradient
                 else Brush.linearGradient(listOf(Z.surfaceHigh, Z.surfaceHigh))).padding(horizontal = 8.dp, vertical = 3.dp))
         Spacer(Modifier.width(10.dp))
-        if (!compact) {
-            Text("${clock(p.start)} – ${clock(p.end)}", color = accent, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-            Spacer(Modifier.width(10.dp))
+        // Time on top, the show underneath.
+        Column {
+            Text("${clock(p.start)} – ${clock(p.end)}", color = accent, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+            Text(p.title, color = Color.White, style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        Text(p.title, color = Color.White, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

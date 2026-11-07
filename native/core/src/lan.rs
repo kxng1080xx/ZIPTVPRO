@@ -21,6 +21,7 @@ pub struct LanServer {
     provider: RwLock<Option<Arc<Provider>>>,
     user: RwLock<Option<Arc<UserStore>>>,
     recorder: RwLock<Option<Arc<Recorder>>>,
+    tmdb: RwLock<Option<Arc<crate::tmdb::Tmdb>>>,
     name: RwLock<String>,
 }
 
@@ -34,7 +35,7 @@ impl LanServer {
             .map(|(s, p)| (Some(s), p))
             .unwrap_or((None, 0));
         let me = Arc::new(Self {
-            port, provider: RwLock::new(None), user: RwLock::new(None), recorder: RwLock::new(None), name: RwLock::new(String::new()),
+            port, provider: RwLock::new(None), user: RwLock::new(None), recorder: RwLock::new(None), tmdb: RwLock::new(None), name: RwLock::new(String::new()),
         });
         if let Some(server) = server {
             let me2 = me.clone();
@@ -58,6 +59,11 @@ impl LanServer {
     /// Recordings started from the TV page run on this recorder (the PC's).
     pub fn set_recorder(&self, recorder: Option<Arc<Recorder>>) {
         *self.recorder.write().unwrap() = recorder;
+    }
+
+    /// TMDB for the TV page's details (backdrop, plot, cast). Same cache as the app.
+    pub fn set_tmdb(&self, tmdb: Option<Arc<crate::tmdb::Tmdb>>) {
+        *self.tmdb.write().unwrap() = tmdb;
     }
 
     /// 0 = could not listen.
@@ -147,6 +153,9 @@ fn rewrite_m3u8(text: &str, base: &str) -> String {
 const TV_HTML: &str = include_str!("tv/index.html");
 const TV_JS: &str = include_str!("tv/app.js");
 const TV_CSS: &str = include_str!("tv/app.css");
+// Player engines ship with the app: no CDN round trip from the TV before the first frame.
+const HLS_JS: &str = include_str!("tv/vendor/hls.light.min.js");
+const MPEGTS_JS: &str = include_str!("tv/vendor/mpegts.js");
 
 impl LanServer {
     fn handle(&self, req: Request) {
@@ -159,6 +168,8 @@ impl LanServer {
             [""] | ["tv"] | ["tv", ""] => text(req, TV_HTML, "text/html; charset=utf-8"),
             ["tv", "app.js"] => text(req, TV_JS, "application/javascript; charset=utf-8"),
             ["tv", "app.css"] => text(req, TV_CSS, "text/css; charset=utf-8"),
+            ["tv", "hls.js"] => cached(req, HLS_JS),
+            ["tv", "mpegts.js"] => cached(req, MPEGTS_JS),
             ["api", "tv", rest @ ..] => self.api(req, &rest.join("/"), &url),
             ["rec", id] => self.recording(req, &pct_decode(id)),
             _ => { let _ = req.respond(Response::empty(404)); }
@@ -295,6 +306,11 @@ impl LanServer {
                     "series": p.recently_added_series(24).iter().map(series).collect::<Vec<_>>(),
                 })
             }
+            "meta" => {
+                let kind = if arg("kind") == "series" { ContentKind::Series } else { ContentKind::Movie };
+                let year = Some(arg("year")).filter(|y| !y.is_empty());
+                json!(self.tmdb.read().unwrap().clone().and_then(|t| t.lookup(kind, arg("title"), year)))
+            }
             "categories" => json!(p.categories(ContentKind::Live).iter().map(|c| json!({ "id": c.id, "name": c.name, "count": c.count })).collect::<Vec<_>>()),
             "channels" => {
                 let cat = arg("cat");
@@ -369,6 +385,11 @@ fn series(s: &crate::Series) -> Value { json!({ "id": s.series_id, "name": s.nam
 
 fn text(req: Request, body: &'static str, ct: &str) {
     let _ = req.respond(Response::from_string(body).with_header(header("Content-Type", ct)).with_header(header("Cache-Control", "no-cache")));
+}
+
+fn cached(req: Request, body: &'static str) {
+    let _ = req.respond(Response::from_string(body).with_header(header("Content-Type", "application/javascript; charset=utf-8"))
+        .with_header(header("Cache-Control", "public, max-age=604800")));
 }
 
 fn json_out(req: Request, code: u16, v: Value) {

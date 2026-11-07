@@ -206,6 +206,7 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
 
     fun start() {
         lan.setRecorder(recorder) // "Record" on the TV page records here
+        lan.setTmdb(tmdb)         // TV page details: backdrop, plot, cast
         playlists.firstOrNull()?.let { open(it) }
         // Waiting on the activation screen: check every 3 s so a playlist added on /connect shows up
         // right away (5 min looked like "cloud sync doesn't work"). Set up: every 5 min.

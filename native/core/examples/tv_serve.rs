@@ -17,6 +17,10 @@ fn main() {
     let s = ziptv_core::LanServer::new(8795);
     s.set_provider(Some(p), Some(user), f[0].into());
     s.set_recorder(Some(ziptv_core::Recorder::new(tmp.join("rec").to_string_lossy().into())));
+    // TMDB token from the repo's .env (same one the build packages); details work without it too.
+    if let Some(tok) = std::fs::read_to_string("../../.env").ok().and_then(|e| e.lines().find_map(|l| l.strip_prefix("TMDB_TOKEN=").map(|t| t.trim().trim_matches('"').to_string()))) {
+        s.set_tmdb(Some(ziptv_core::Tmdb::new(tok, tmp.join("tmdb.json").to_string_lossy().into())));
+    }
     println!("TV page: {:?}", s.tv_url());
     loop { std::thread::sleep(std::time::Duration::from_secs(3600)); }
 }
