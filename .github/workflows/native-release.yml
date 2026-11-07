@@ -46,8 +46,9 @@ jobs:
           KEYSTORE: ${{ secrets.ANDROID_DEBUG_KEYSTORE }}
           TMDB_TOKEN: ${{ secrets.TMDB_TOKEN }}
         run: |
-          mkdir -p ~/.android ~/.gradle
-          [ -n "$KEYSTORE" ] && echo "$KEYSTORE" | base64 -d > ~/.android/debug.keystore || true
+          mkdir -p ~/.gradle
+          [ -n "$KEYSTORE" ] || { echo "ANDROID_DEBUG_KEYSTORE secret missing"; exit 1; }
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/v9.keystore"
           [ -n "$TMDB_TOKEN" ] && echo "TMDB_TOKEN=$TMDB_TOKEN" > .env || true
           # native/app/gradle.properties pins a Windows JDK path; the user-level file wins.
           echo "org.gradle.java.home=$JAVA_HOME" >> ~/.gradle/gradle.properties
@@ -55,10 +56,18 @@ jobs:
         working-directory: native/app
         run: |
           chmod +x gradlew
-          ./gradlew :androidApp:assembleRelease --console=plain
-          v=$(grep '^ziptv.version=' gradle.properties | cut -d= -f2 | tr -d '[:space:]')
+          # Injected signing overrides the build's own config: ~/.android/debug.keystore was ignored on CI.
+          ./gradlew :androidApp:assembleRelease --console=plain \
+            -Pandroid.injected.signing.store.file="$RUNNER_TEMP/v9.keystore" \
+            -Pandroid.injected.signing.store.password=android \
+            -Pandroid.injected.signing.key.alias=androiddebugkey \
+            -Pandroid.injected.signing.key.password=android
           # app.apk: the name v9's updater and ziptvpro.pages.dev/app.apk redirect download.
           cp androidApp/build/outputs/apk/release/androidApp-release.apk "$GITHUB_WORKSPACE/app.apk"
+          # Must be v9's key or it won't install over v9.
+          "$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)/apksigner" verify --print-certs "$GITHUB_WORKSPACE/app.apk" \
+            | grep -q f9e791a5105213af584377046665414fa8b35870eba8aff503c1bfb4b1cf3aa2 \
+            || { echo "APK not signed with the v9 key"; exit 1; }
       - uses: actions/upload-artifact@v4
         with: { name: apk, path: 'app.apk', retention-days: 7 }
 
