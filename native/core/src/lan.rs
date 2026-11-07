@@ -11,7 +11,7 @@ use crate::user::{UserStore, WatchProgress};
 use crate::{ContentKind, Provider};
 use serde_json::{json, Value};
 use std::io::Read;
-use std::net::{IpAddr, UdpSocket};
+use std::net::{IpAddr, Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::sync::{Arc, RwLock};
 use tiny_http::{Header, Method, Request, Response, Server};
 
@@ -30,14 +30,22 @@ impl LanServer {
     /// Listens on `port` (or the next free one up to +20) on all interfaces.
     #[uniffi::constructor]
     pub fn new(port: u16) -> Arc<Self> {
-        let (server, port) = (port..port.saturating_add(20))
-            .find_map(|p| Server::http(("0.0.0.0", p)).ok().map(|s| (s, p)))
-            .map(|(s, p)| (Some(s), p))
-            .unwrap_or((None, 0));
+        // The public port is a tiny front that hangs up on TLS hellos: Chrome's "Always use
+        // secure connections" tries https:// first and, against a plain HTTP server, waits
+        // forever. A fast close makes it fall back (or show "Continue to site") at once.
+        let server = Server::http("127.0.0.1:0").ok();
+        let inner = server.as_ref().and_then(|s| s.server_addr().to_ip());
+        let front = inner.and_then(|_| (port..port.saturating_add(20)).find_map(|p| TcpListener::bind(("0.0.0.0", p)).ok().map(|l| (l, p))));
+        let port = front.as_ref().map_or(0, |f| f.1);
         let me = Arc::new(Self {
             port, provider: RwLock::new(None), user: RwLock::new(None), recorder: RwLock::new(None), tmdb: RwLock::new(None), name: RwLock::new(String::new()),
         });
-        if let Some(server) = server {
+        if let (Some(server), Some((front, _)), Some(inner)) = (server, front, inner) {
+            std::thread::Builder::new().name("lan-front".into()).spawn(move || {
+                for c in front.incoming().flatten() {
+                    std::thread::spawn(move || splice(c, inner));
+                }
+            }).ok();
             let me2 = me.clone();
             std::thread::Builder::new().name("lan-server".into()).spawn(move || {
                 for req in server.incoming_requests() {
@@ -90,6 +98,20 @@ pub fn lan_ip_for(peer: Option<&str>) -> Option<IpAddr> {
     s.connect((peer.unwrap_or("192.168.0.1"), 9)).or_else(|_| s.connect(("8.8.8.8", 9))).ok()?;
     let ip = s.local_addr().ok()?.ip();
     (!ip.is_unspecified()).then_some(ip)
+}
+
+/// Pipes one LAN connection to the loopback HTTP server, unless it opens with a TLS hello.
+fn splice(mut c: TcpStream, inner: SocketAddr) {
+    let mut b = [0u8; 1];
+    let _ = c.set_read_timeout(Some(std::time::Duration::from_secs(30)));
+    if c.peek(&mut b).ok() != Some(1) || b[0] == 0x16 { return; }
+    let _ = c.set_read_timeout(None);
+    let Ok(mut u) = TcpStream::connect(inner) else { return };
+    let _ = (c.set_nodelay(true), u.set_nodelay(true));
+    let (Ok(mut c2), Ok(mut u2)) = (c.try_clone(), u.try_clone()) else { return };
+    std::thread::spawn(move || { let _ = std::io::copy(&mut c2, &mut u2); let _ = u2.shutdown(Shutdown::Write); });
+    let _ = std::io::copy(&mut u, &mut c);
+    let _ = c.shutdown(Shutdown::Both);
 }
 
 fn header(k: &str, v: &str) -> Header {

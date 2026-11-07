@@ -31,7 +31,7 @@ private val backHandlers = mutableStateListOf<Pair<() -> Boolean, () -> Unit>>()
 class DesktopPlatform : Platform {
     override val device = DeviceClass.Desktop
     override val cloudPlatform = "pc"
-    override val appVersion = "10.0.3"
+    override val appVersion = "10.0.4"
     override val dataDir: String = File(System.getProperty("user.home"), ".ziptv10").apply { mkdirs() }.path
     override fun logoIndexJson(): String? =
         DesktopPlatform::class.java.getResourceAsStream("/channel-logos.json")?.bufferedReader()?.use { it.readText() }

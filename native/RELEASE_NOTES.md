@@ -7,6 +7,10 @@ device — TV and projector, phone and tablet, or Windows PC — with no switchi
 playlists and provider setup carry on. Favorites and local watch history from version 9
 start fresh.
 
+**10.0.4:**
+- Smart TV page: opens instantly in Chrome with "Always use secure connections" turned on
+  (it used to keep loading forever).
+
 **10.0.3:**
 - Smart TV page: much faster to start playing, smoother scrolling, a backdrop home screen and
   movie/series pages with artwork, plot and cast.
