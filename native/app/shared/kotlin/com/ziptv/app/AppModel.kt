@@ -370,7 +370,7 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
         val lib = library ?: return
         zapList = list
         user?.addRecent(ch.streamId); userVersion++
-        play(Playable(ch.name, "Live", lib.liveUrl(ch.streamId), PlayKind.Live, ch.streamId, ch.logo), full)
+        play(Playable(ch.name, "Live", liveUrl(lib, ch.streamId), PlayKind.Live, ch.streamId, ch.logo), full)
     }
 
     /** Catch-up -> back to the live channel; live -> reconnect at the live edge (v9 "Go Live"). */
@@ -468,6 +468,11 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
 
     fun setSetting(key: String, value: String?) { user?.setSetting(key, value); userVersion++ }
 
+    /** v9's Stream Format: some providers only serve live channels as HLS (.m3u8). */
+    fun liveUrl(lib: Provider, id: String): String = lib.liveUrl(id).let {
+        if (user?.setting("stream_format") == "m3u8" && it.endsWith(".ts")) it.dropLast(3) + ".m3u8" else it
+    }
+
     /** Remembered per playlist; restarts the current stream so it takes effect now. */
     fun toggleDeinterlace() {
         val on = !player.deinterlace
@@ -522,7 +527,7 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
     /** Schedules a future (or current) programme; the app must stay open (same as v9). */
     fun recordProgramme(ch: Channel, title: String, start: Long, end: Long) {
         val lib = library ?: return
-        recorder.record(lib.liveUrl(ch.streamId), title, ch.name, start, end)
+        recorder.record(liveUrl(lib, ch.streamId), title, ch.name, start, end)
         recordingsVersion++
         error = "Recording scheduled: $title"
     }

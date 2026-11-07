@@ -35,6 +35,7 @@ import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.CircularProgressIndicator
@@ -55,6 +56,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -261,6 +263,19 @@ private fun Header(model: AppModel, wide: Boolean) {
         if (!wide) { Wordmark(17); Spacer(Modifier.width(12.dp)) }
         Text(model.active?.name ?: "", Modifier.weight(1f), color = Z.textMuted, maxLines = 1,
             overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge)
+        // v9's header icon: the guest's way into a friend's Watch Together room.
+        var joining by remember { mutableStateOf(false) }
+        Icon(Icons.Rounded.Groups, "Watch Together", Modifier.focusRing(RoundedCornerShape(50)).clip(RoundedCornerShape(50))
+            .clickable { joining = true }.padding(8.dp))
+        Spacer(Modifier.width(8.dp))
+        if (joining) androidx.compose.ui.window.Dialog(onDismissRequest = { joining = false }) {
+            Column(Modifier.widthIn(max = 420.dp).clip(RoundedCornerShape(16.dp)).background(Z.surface)) {
+                Text("Watch Together", Modifier.padding(start = 16.dp, top = 16.dp), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text("Enter your friend's room code. To start a room, open ⋯ while watching a movie.", color = Z.textMuted,
+                    style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))
+                WatchJoinField(model) { joining = false }
+            }
+        }
         if (wide) {
             HeaderSearch(model, Modifier.width(380.dp))
             Spacer(Modifier.width(20.dp))

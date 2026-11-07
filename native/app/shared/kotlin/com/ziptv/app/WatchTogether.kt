@@ -236,7 +236,7 @@ private fun BannerButton(label: String, primary: Boolean, onClick: () -> Unit) {
 
 /** Settings row content: type a friend's code to join their room. */
 @Composable
-fun WatchJoinField(model: AppModel) {
+fun WatchJoinField(model: AppModel, onJoined: () -> Unit = {}) {
     var input by androidx.compose.runtime.remember { mutableStateOf("") }
     var busy by androidx.compose.runtime.remember { mutableStateOf(false) }
     Row(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -247,7 +247,7 @@ fun WatchJoinField(model: AppModel) {
         BannerButton(if (busy) "Joining…" else "Join", primary = input.length == 4) {
             if (input.length == 4 && !busy) {
                 busy = true
-                model.watch.join(input) { err -> busy = false; model.error = err ?: "Joined room $input" }
+                model.watch.join(input) { err -> busy = false; model.error = err ?: "Joined room $input"; if (err == null) onJoined() }
             }
         }
     }

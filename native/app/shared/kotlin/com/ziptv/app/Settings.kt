@@ -62,6 +62,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.rounded.Stream
+import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.PowerSettingsNew
+import androidx.compose.material.icons.rounded.Minimize
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -242,6 +247,25 @@ private fun CompanionGroup(model: AppModel) {
 
 @Composable
 private fun PlaybackSection(model: AppModel) {
+    Group("Live channels") {
+        val hls = model.userVersion.let { model.user?.setting("stream_format") == "m3u8" }
+        SettingRow(Icons.Rounded.Stream, "Stream format", if (hls) "HLS (.m3u8)" else "MPEG-TS (.ts) · recommended") {
+            Chip("TS", !hls) { model.setSetting("stream_format", null) }
+            Spacer(Modifier.width(6.dp))
+            Chip("HLS", hls) { model.setSetting("stream_format", "m3u8") }
+        }
+    }
+    Text("Switch to HLS if channels won't start on your provider. Applies to the next channel you open.",
+        color = Z.textMuted, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp, vertical = 10.dp))
+    Group("Sleep timer") {
+        val left = model.sleepAt?.let { ((it - System.currentTimeMillis()) / 60_000).coerceAtLeast(0) }
+        SettingRow(Icons.Rounded.Bedtime, "Stop playback after", left?.let { "$it min left" } ?: "Off")
+        Row(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp).horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Chip("Off", left == null) { model.setSleepTimer(null) }
+            listOf(15, 30, 60, 90, 120).forEach { m -> Chip("$m min", false) { model.setSleepTimer(m) } }
+        }
+    }
     Group(null) {
         val deint = model.userVersion.let { model.user?.setting("deinterlace") == "1" }
         SettingRow(Icons.Rounded.Bolt, "Deinterlace (60fps)", "Smoother sports and news on interlaced channels",
@@ -288,6 +312,23 @@ private fun ApplicationSection(model: AppModel) {
     }
     Text("Long-press a category to pin it, a channel to favorite it, a show in the guide to record it.",
         color = Z.textMuted, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp, vertical = 10.dp))
+    model.platform.autostart()?.let { initial ->
+        var auto by remember { mutableStateOf(initial) }
+        fun set(on: Boolean, min: Boolean) { model.platform.setAutostart(on, min); auto = model.platform.autostart() ?: auto }
+        Group("Startup") {
+            SettingRow(Icons.Rounded.PowerSettingsNew, "Run at startup", "Open ZIPTV Pro when Windows starts",
+                onClick = { set(!auto.first, auto.second) }) {
+                Switch(checked = auto.first, onCheckedChange = { set(it, auto.second) },
+                    colors = SwitchDefaults.colors(checkedTrackColor = Z.accent, checkedThumbColor = Color.White))
+            }
+            Divider()
+            SettingRow(Icons.Rounded.Minimize, "Start minimized", "When opened at startup",
+                onClick = { if (auto.first) set(true, !auto.second) }) {
+                Switch(checked = auto.second, enabled = auto.first, onCheckedChange = { set(true, it) },
+                    colors = SwitchDefaults.colors(checkedTrackColor = Z.accent, checkedThumbColor = Color.White))
+            }
+        }
+    }
     Group("About") {
         SettingRow(Icons.Rounded.SystemUpdate, if (checking) "Checking…" else "Check for updates",
             model.update?.let { "Version ${it.version} is available" } ?: "You're on ${model.platform.appVersion}",

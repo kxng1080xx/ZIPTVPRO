@@ -69,6 +69,9 @@ interface Platform {
     fun logoTransformation(): coil3.transform.Transformation? = null
     /** Whole-screen mode while the player is fullscreen (desktop: borderless fullscreen window; Android: immersive). */
     fun setScreenFullscreen(on: Boolean) {}
+    /** Launch with the OS (desktop). null = not supported here; else (on, minimized). */
+    fun autostart(): Pair<Boolean, Boolean>? = null
+    fun setAutostart(on: Boolean, minimized: Boolean) {}
     /** Picture-in-picture where the OS supports it; false = not available. */
     fun enterPip(): Boolean = false
 

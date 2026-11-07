@@ -40,6 +40,24 @@ class DesktopPlatform : Platform {
     override fun logoTransformation() = LogoContrast()
     override fun tmdbToken(): String =
         DesktopPlatform::class.java.getResourceAsStream("/tmdb.token")?.bufferedReader()?.use { it.readText().trim() } ?: ""
+    // Run at startup: HKCU Run entry; "--minimized" = Start minimized. Installed app only.
+    private val runKey = """Software\Microsoft\Windows\CurrentVersion\Run"""
+    override fun autostart(): Pair<Boolean, Boolean>? {
+        System.getProperty("jpackage.app-path") ?: return null
+        val v = runCatching {
+            com.sun.jna.platform.win32.Advapi32Util.registryGetStringValue(com.sun.jna.platform.win32.WinReg.HKEY_CURRENT_USER, runKey, "ZIPTV Pro")
+        }.getOrNull() ?: return false to false
+        return true to v.contains("--minimized")
+    }
+    override fun setAutostart(on: Boolean, minimized: Boolean) {
+        val exe = System.getProperty("jpackage.app-path") ?: return
+        val hk = com.sun.jna.platform.win32.WinReg.HKEY_CURRENT_USER
+        runCatching {
+            if (on) com.sun.jna.platform.win32.Advapi32Util.registrySetStringValue(hk, runKey, "ZIPTV Pro",
+                "\"$exe\"" + if (minimized) " --minimized" else "")
+            else com.sun.jna.platform.win32.Advapi32Util.registryDeleteValue(hk, runKey, "ZIPTV Pro")
+        }
+    }
     override fun openUrl(url: String): Boolean =
         runCatching { java.awt.Desktop.getDesktop().browse(java.net.URI(url)) }.isSuccess
 
@@ -74,10 +92,10 @@ private fun claimSingleInstance(): Boolean {
     return true
 }
 
-fun main() {
+fun main(args: Array<String>) {
     if (!claimSingleInstance()) return
     Thread(::removeV9, "remove-v9").apply { isDaemon = true }.start()
-    app()
+    app(minimized = "--minimized" in args)
 }
 
 /**
@@ -102,9 +120,10 @@ private fun removeV9() {
     runCatching { marker.parentFile.mkdirs(); marker.writeText("done") }
 }
 
-private fun app() = application {
+private fun app(minimized: Boolean) = application {
     val model = remember { AppModel(DesktopPlatform(), MainScope()).also { it.start() } }
     val windowState = rememberWindowState(width = 1440.dp, height = 900.dp)
+    androidx.compose.runtime.LaunchedEffect(Unit) { if (minimized) windowState.isMinimized = true }
     Window(
         onCloseRequest = { model.player.release(); exitApplication() },
         title = "ZIPTV Pro",
