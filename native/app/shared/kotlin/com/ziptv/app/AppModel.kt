@@ -206,6 +206,9 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
 
     // ---------------------------------------------------------------- cloud
 
+    /** Check in now (Settings opened): pairing done on the other device shows without waiting 5 min. */
+    fun refreshCloud() { scope.launch { heartbeat() } }
+
     /** Activation, admin playlists, expiry. Offline = keep working with what we have. */
     private suspend fun heartbeat() {
         val s = withContext(Dispatchers.IO) { runCatching { cloud.heartbeat() }.getOrNull() } ?: return
@@ -439,6 +442,19 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
 
     fun resume(p: WatchProgress) {
         val lib = library ?: return
+        // From the other device: the cloud keeps no file type, so find it in this catalog first.
+        if (p.extension == null) {
+            scope.launch {
+                val ext = withContext(Dispatchers.IO) {
+                    runCatching {
+                        if (p.kind == ContentKind.MOVIE) lib.moviesByIds(listOf(p.streamId)).firstOrNull()?.extension
+                        else p.seriesId?.let { sid -> lib.episodes(sid).firstOrNull { it.id == p.streamId }?.extension }
+                    }.getOrNull()
+                }
+                resume(p.copy(extension = ext ?: "mp4"))
+            }
+            return
+        }
         val url = if (p.kind == ContentKind.MOVIE) lib.movieUrl(p.streamId, p.extension) else lib.episodeUrl(p.streamId, p.extension)
         play(Playable(p.title, p.subtitle, url, if (p.kind == ContentKind.MOVIE) PlayKind.Movie else PlayKind.Episode,
             p.streamId, p.image, p.extension, p.seriesId), full = true)

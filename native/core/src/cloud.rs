@@ -132,6 +132,8 @@ impl Cloud {
             "id": p.key, "type": kind_name(p.kind), "name": p.title, "subtitle": p.subtitle, "logo": p.image,
             "streamId": p.stream_id, "ext": p.extension, "seriesId": p.series_id,
             "position": p.position_ms / 1000, "duration": p.duration_ms / 1000, "updatedAt": p.updated_at,
+            // What the server actually stores (v9 columns): stream/ext/subtitle are dropped there.
+            "seriesName": p.subtitle, "lastWatched": p.updated_at * 1000,
         });
         let _ = self.post("/api/history", json!({
             "action": "record", "device_id": self.code, "playlist_id": playlist_id, "entries": [entry]
@@ -264,24 +266,44 @@ fn parse_entry(e: &Value) -> Option<WatchProgress> {
         "series" | "episode" => ContentKind::Series,
         _ => return None,
     };
+    // The server returns its own column names (item_id, series_name, last_watched ISO).
+    let key = opt_field(e, "id").or_else(|| opt_field(e, "item_id"))?;
+    let stream_id = opt_field(e, "streamId").or_else(|| opt_field(e, "stream_id"))
+        .or_else(|| key.split_once(':').map(|(_, id)| id.to_string())) // "movie:123" / "episode:456"
+        .unwrap_or_default();
+    let updated_at = e.get("updatedAt").map(as_i64).filter(|&t| t > 0)
+        .or_else(|| e.get("last_watched").and_then(|v| v.as_str()).map(|s| iso_ms(s) / 1000))
+        .unwrap_or(0);
     Some(WatchProgress {
-        key: opt_field(e, "id")?,
+        key,
         kind,
         title: opt_field(e, "name").unwrap_or_default(),
-        subtitle: field(e, "subtitle"),
+        subtitle: opt_field(e, "subtitle").or_else(|| opt_field(e, "series_name")).unwrap_or_default(),
         image: opt_field(e, "logo"),
-        stream_id: opt_field(e, "streamId").or_else(|| opt_field(e, "stream_id")).unwrap_or_default(),
-        extension: opt_field(e, "ext"),
-        series_id: opt_field(e, "seriesId"),
+        stream_id,
+        extension: opt_field(e, "ext"), // ponytail: not stored server-side; the app looks it up in the catalog
+        series_id: opt_field(e, "seriesId").or_else(|| opt_field(e, "series_id")),
         position_ms: e.get("position").map(as_i64).unwrap_or(0) * 1000,
         duration_ms: e.get("duration").map(as_i64).unwrap_or(0) * 1000,
-        updated_at: e.get("updatedAt").map(as_i64).unwrap_or(0),
+        updated_at,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn companion_entry_parses_server_columns() {
+        let v: Value = serde_json::from_str(r#"{"item_id":"episode:77","type":"series","name":"Avatar","logo":null,
+            "series_id":"12","series_name":"S1E1","position":33,"duration":9934.5,
+            "last_watched":"2026-11-07T17:05:02.767+00:00"}"#).unwrap();
+        let p = parse_entry(&v).unwrap();
+        assert_eq!((p.key.as_str(), p.stream_id.as_str(), p.subtitle.as_str()), ("episode:77", "77", "S1E1"));
+        assert_eq!(p.series_id.as_deref(), Some("12"));
+        assert_eq!(p.position_ms, 33_000);
+        assert_eq!(p.updated_at, 1_794_071_102);
+    }
 
     #[test]
     fn device_state_parses_admin_playlists_and_expiry() {

@@ -55,6 +55,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -207,6 +208,7 @@ private fun AccountSection(model: AppModel) {
 private fun CompanionGroup(model: AppModel) {
     var pairCode by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) { model.refreshCloud() } // paired from the other device? show it now
     Group("Companion device") {
         val companion = model.device?.companion
         if (companion != null) {

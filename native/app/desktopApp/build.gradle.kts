@@ -41,6 +41,13 @@ val prepareVlc by tasks.registering(Sync::class) {
     }
     into(layout.buildDirectory.dir("vlcResources/windows/vlc"))
     doFirst { require(file("$vlcDir/libvlc.dll").exists()) { "VLC not found at $vlcDir (set VLC_DIR)" } }
+    // Fresh plugin cache for the trimmed set. Without it libVLC loads all ~340 plugin DLLs on
+    // every start (18 s cold with Defender scanning them); the installer keeps file times, so it stays valid.
+    doLast {
+        val gen = file("$vlcDir/vlc-cache-gen.exe")
+        if (gen.exists()) providers.exec { commandLine(gen.path, destinationDir.resolve("plugins").path) }.result.get()
+        else logger.warn("vlc-cache-gen.exe not found: no plugins.dat, slow first VLC start")
+    }
 }
 
 sourceSets["main"].resources.srcDir(layout.buildDirectory.dir("generated/ziptvResources"))

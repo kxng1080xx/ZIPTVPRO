@@ -8,7 +8,8 @@ playlists and provider setup carry on. Favorites and local watch history from ve
 start fresh.
 
 **10.0.1:** keeps your v9 activation code; movie and series pages show artwork behind the
-title; the play button no longer covers the loading spinner.
+title; the play button no longer covers the loading spinner; paired PC and phone share one
+Continue Watching list; faster start-up on Windows.
 
 ### What's new
 - Much faster start-up, channel switching and catalog sync, with a real progress bar

@@ -58,7 +58,6 @@ import kotlinx.coroutines.withContext
 
 private data class HomeData(
     val cont: List<WatchProgress> = emptyList(),
-    val companion: List<WatchProgress> = emptyList(),
     val recent: List<Channel> = emptyList(),
     val favChannels: List<Channel> = emptyList(),
     val newMovies: List<Movie> = emptyList(),
@@ -86,8 +85,16 @@ fun HomeScreen(model: AppModel) {
             )
         }
         // The paired device's history (PC <-> phone hand-off) arrives later; never blocks the page.
-        val companion = withContext(Dispatchers.IO) { runCatching { model.cloud.companionHistory(20u) }.getOrDefault(emptyList()) }
-        value = value.copy(companion = companion.filter { c -> value.cont.none { it.key == c.key } })
+        // Paired: one Continue Watching for both devices; the same title keeps whichever was watched last.
+        // Re-checked every minute while Home is open, so the other device's viewing shows up.
+        val local = value.cont
+        while (true) {
+            val companion = withContext(Dispatchers.IO) { runCatching { model.cloud.companionHistory(20u) }.getOrDefault(emptyList()) }
+            if (companion.isNotEmpty()) value = value.copy(cont = (local + companion)
+                .groupBy { it.key }.values.map { same -> same.maxBy { it.updatedAt } }
+                .sortedByDescending { it.updatedAt })
+            kotlinx.coroutines.delay(60_000)
+        }
     }
     val empty = d.cont.isEmpty() && d.recent.isEmpty() && d.favChannels.isEmpty() && d.newMovies.isEmpty() && d.newSeries.isEmpty()
     if (empty) {
@@ -99,7 +106,6 @@ fun HomeScreen(model: AppModel) {
     LazyColumn(contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
         item { Hero(model, d) }
         if (d.cont.isNotEmpty()) item { ProgressRow("Continue watching", d.cont, model) }
-        if (d.companion.isNotEmpty()) item { ProgressRow("From your other device", d.companion, model) }
         item { RecordingsRow(model) }
         if (d.recent.isNotEmpty()) item { ChannelRow("Recently watched channels", d.recent, model) }
         if (d.favChannels.isNotEmpty()) item { ChannelRow("Favorite channels", d.favChannels, model) }
