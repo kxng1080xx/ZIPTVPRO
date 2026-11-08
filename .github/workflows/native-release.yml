@@ -1,4 +1,4 @@
-name: v10 Release (optimized APK + EXE, draft)
+name: v10 Release (optimized APK + EXE, published)
 
 # Manual trigger. Builds the Rust core with full release optimization (LTO, 1 codegen unit)
 # for all 4 Android ABIs and Windows on GitHub's runners, packages the APK and the Windows .exe installer, and
@@ -26,6 +26,7 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '17' }
       - uses: android-actions/setup-android@v3
+        with: { packages: platform-tools }  # default "tools" no longer exists in sdkmanager
       - run: sdkmanager --install "ndk;${NDK_VERSION}"
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -45,8 +46,9 @@ jobs:
           KEYSTORE: ${{ secrets.ANDROID_DEBUG_KEYSTORE }}
           TMDB_TOKEN: ${{ secrets.TMDB_TOKEN }}
         run: |
-          mkdir -p ~/.android ~/.gradle
-          [ -n "$KEYSTORE" ] && echo "$KEYSTORE" | base64 -d > ~/.android/debug.keystore || true
+          mkdir -p ~/.gradle
+          [ -n "$KEYSTORE" ] || { echo "ANDROID_DEBUG_KEYSTORE secret missing"; exit 1; }
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/v9.keystore"
           [ -n "$TMDB_TOKEN" ] && echo "TMDB_TOKEN=$TMDB_TOKEN" > .env || true
           # native/app/gradle.properties pins a Windows JDK path; the user-level file wins.
           echo "org.gradle.java.home=$JAVA_HOME" >> ~/.gradle/gradle.properties
@@ -54,10 +56,18 @@ jobs:
         working-directory: native/app
         run: |
           chmod +x gradlew
-          ./gradlew :androidApp:assembleRelease --console=plain
-          v=$(grep '^ziptv.version=' gradle.properties | cut -d= -f2 | tr -d '[:space:]')
+          # Injected signing overrides the build's own config: ~/.android/debug.keystore was ignored on CI.
+          ./gradlew :androidApp:assembleRelease --console=plain \
+            -Pandroid.injected.signing.store.file="$RUNNER_TEMP/v9.keystore" \
+            -Pandroid.injected.signing.store.password=android \
+            -Pandroid.injected.signing.key.alias=androiddebugkey \
+            -Pandroid.injected.signing.key.password=android
           # app.apk: the name v9's updater and ziptvpro.pages.dev/app.apk redirect download.
           cp androidApp/build/outputs/apk/release/androidApp-release.apk "$GITHUB_WORKSPACE/app.apk"
+          # Must be v9's key or it won't install over v9.
+          "$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)/apksigner" verify --print-certs "$GITHUB_WORKSPACE/app.apk" \
+            | grep -q f9e791a5105213af584377046665414fa8b35870eba8aff503c1bfb4b1cf3aa2 \
+            || { echo "APK not signed with the v9 key"; exit 1; }
       - uses: actions/upload-artifact@v4
         with: { name: apk, path: 'app.apk', retention-days: 7 }
 
@@ -94,6 +104,9 @@ jobs:
         run: |
           export JPACKAGE_JDK="$(cygpath -m "$JAVA_HOME")"  # Temurin 17 has jpackage
           ./gradlew.bat :desktopApp:packageExe --console=plain
+          # The bundled JRE must carry jdk.unsupported (vlcj's frame buffers); without it video is black.
+          rel=$(find desktopApp/build/compose -path '*runtime/release' | head -1)
+          grep -q 'jdk.unsupported' "$rel" || { echo "::error::bundled runtime lacks jdk.unsupported ($rel): $(cat "$rel")"; exit 1; }
           v=$(grep '^ziptv.version=' gradle.properties | cut -d= -f2 | tr -d '[:space:]')
           # latest.exe: the name ziptvpro.pages.dev/latest.exe redirects to (v9's PC update link).
           cp desktopApp/build/compose/binaries/main/exe/*.exe "$GITHUB_WORKSPACE/latest.exe"
@@ -105,13 +118,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        # RELEASE_TOKEN (fine-grained PAT: contents + workflows write): GITHUB_TOKEN gets HTTP 403 on releases here.
+        with: { token: '${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}' }
       - uses: actions/download-artifact@v4
         with: { path: out, merge-multiple: true }
-      - name: Draft release v<version> (publish it by hand after testing)
+      - name: Publish release v<version> as latest
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           v=$(grep '^ziptv.version=' native/app/gradle.properties | cut -d= -f2 | tr -d '[:space:]')
-          # Draft: nothing is downloadable until you press Publish (and tick "Set as latest" —
-          # v10 replaces v9, and pages.dev/app.apk + /latest.exe follow the latest release).
-          gh release create "v$v" out/* --draft --target "$GITHUB_SHA" --title "ZIPTV Pro $v"             --notes-file native/RELEASE_NOTES.md
+          # Latest: pages.dev/app.apk + /latest.exe follow the latest release.
+          gh release create "v$v" out/* --latest --target "$GITHUB_SHA" --title "ZIPTV Pro $v" --notes-file native/RELEASE_NOTES.md
+      - name: Bump version.json (root package.json on main) so installed apps offer the update
+        run: |
+          v=$(grep '^ziptv.version=' native/app/gradle.properties | cut -d= -f2 | tr -d '[:space:]')
+          git fetch -q origin main && git checkout -q -B main origin/main
+          sed -i -E "0,/\"version\": *\"[^\"]+\"/s//\"version\": \"$v\"/" package.json
+          git diff --quiet && { echo "already $v"; exit 0; }
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qam "chore: version $v"
+          git push -q origin main
