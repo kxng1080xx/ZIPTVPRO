@@ -44,7 +44,13 @@ class VlcjPlayer : VideoPlayer {
             java.io.File(System.getProperty("user.home"), ".ziptv10").apply { mkdirs() }
                 .resolve("vlc.log").writeText("found=$found path=${discovery.discoveredPath()}")
         }
-        MediaPlayerFactory(discovery, "--network-caching=1500", "--http-reconnect", "--no-video-title-show")
+        // Without plugins.dat libVLC loads all ~300 plugin DLLs on every start (18 s cold with Defender).
+        // A shipped cache is always stale (the installer gives files new dates), so VLC writes its own,
+        // once per installed version, like vlc-cache-gen does.
+        val marker = java.io.File(System.getProperty("user.home"), ".ziptv10/vlc-cache-" + (System.getProperty("jpackage.app-version") ?: "dev"))
+        val args = listOfNotNull("--network-caching=1500", "--http-reconnect", "--no-video-title-show",
+            "--reset-plugins-cache".takeIf { !marker.exists() })
+        MediaPlayerFactory(discovery, *args.toTypedArray()).also { runCatching { marker.writeText("") } }
     }
     private val mp = factory.mediaPlayers().newEmbeddedMediaPlayer()
     private val worker = Executors.newSingleThreadExecutor()

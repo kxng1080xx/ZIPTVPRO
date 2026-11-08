@@ -7,6 +7,10 @@ device — TV and projector, phone and tablet, or Windows PC — with no switchi
 playlists and provider setup carry on. Favorites and local watch history from version 9
 start fresh.
 
+**10.0.5:**
+- PC: video shows again (since 10.0.0 the installed app played sound over a black screen).
+- PC: starts faster after installing or updating.
+
 **10.0.4:**
 - Smart TV page: opens instantly in Chrome with "Always use secure connections" turned on
   (it used to keep loading forever).

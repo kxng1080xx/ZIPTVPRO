@@ -35,19 +35,12 @@ val prepareVlc by tasks.registering(Sync::class) {
     val vlcDir = System.getenv("VLC_DIR") ?: "C:/Program Files/VideoLAN/VLC"
     from(vlcDir) {
         include("libvlc.dll", "libvlccore.dll", "plugins/**")
-        exclude("plugins/plugins.dat") // stale cache once plugins are removed; VLC rescans
+        exclude("plugins/plugins.dat") // the app writes its own (VlcjPlayer): install-time file dates make any shipped one stale
         listOf("gui", "visualization", "lua", "control", "services_discovery", "meta_engine",
             "stream_out", "access_output", "mux", "video_splitter").forEach { exclude("plugins/$it/**") }
     }
     into(layout.buildDirectory.dir("vlcResources/windows/vlc"))
     doFirst { require(file("$vlcDir/libvlc.dll").exists()) { "VLC not found at $vlcDir (set VLC_DIR)" } }
-    // Fresh plugin cache for the trimmed set. Without it libVLC loads all ~340 plugin DLLs on
-    // every start (18 s cold with Defender scanning them); the installer keeps file times, so it stays valid.
-    doLast {
-        val gen = file("$vlcDir/vlc-cache-gen.exe")
-        if (gen.exists()) providers.exec { commandLine(gen.path, destinationDir.resolve("plugins").path) }.result.get()
-        else logger.warn("vlc-cache-gen.exe not found: no plugins.dat, slow first VLC start")
-    }
 }
 
 sourceSets["main"].resources.srcDir(layout.buildDirectory.dir("generated/ziptvResources"))
@@ -71,6 +64,10 @@ compose.desktop {
         (System.getenv("JPACKAGE_JDK") ?: "C:/Program Files/Java/jdk-26.0.2.1").let { if (file(it).exists()) javaHome = it }
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)
+            // jdk.unsupported: vlcj allocates frame buffers via sun.misc.Unsafe. Without it the bundled
+            // runtime (CI's JDK 17 jlink) drops every frame: audio plays, picture stays black (10.0.0-10.0.4).
+            // From `gradlew :desktopApp:suggestRuntimeModules`; re-run it after adding libraries.
+            modules("java.instrument", "jdk.unsupported")
             packageName = "ZIPTV Pro"
             packageVersion = providers.gradleProperty("ziptv.version").get()
             appResourcesRootDir.set(layout.buildDirectory.dir("vlcResources")) // windows/vlc -> <app>/resources/vlc

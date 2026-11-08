@@ -104,6 +104,9 @@ jobs:
         run: |
           export JPACKAGE_JDK="$(cygpath -m "$JAVA_HOME")"  # Temurin 17 has jpackage
           ./gradlew.bat :desktopApp:packageExe --console=plain
+          # The bundled JRE must carry jdk.unsupported (vlcj's frame buffers); without it video is black.
+          rel=$(find desktopApp/build/compose -path '*runtime/release' | head -1)
+          grep -q 'jdk.unsupported' "$rel" || { echo "::error::bundled runtime lacks jdk.unsupported ($rel): $(cat "$rel")"; exit 1; }
           v=$(grep '^ziptv.version=' gradle.properties | cut -d= -f2 | tr -d '[:space:]')
           # latest.exe: the name ziptvpro.pages.dev/latest.exe redirects to (v9's PC update link).
           cp desktopApp/build/compose/binaries/main/exe/*.exe "$GITHUB_WORKSPACE/latest.exe"
