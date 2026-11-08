@@ -126,6 +126,8 @@ jobs:
         run: |
           v=$(grep '^ziptv.version=' native/app/gradle.properties | cut -d= -f2 | tr -d '[:space:]')
           # Latest: pages.dev/app.apk + /latest.exe follow the latest release.
+          # A release commit that edits .github/workflows/ gets HTTP 403 here (GITHUB_TOKEN can't tag it without
+          # the `workflows` permission): push the tag by hand (git tag vX <sha> && git push origin vX), rerun this job.
           gh release create "v$v" out/* --latest --target "$GITHUB_SHA" --title "ZIPTV Pro $v" --notes-file native/RELEASE_NOTES.md
       - name: Bump version.json (root package.json on main) so installed apps offer the update
         run: |
