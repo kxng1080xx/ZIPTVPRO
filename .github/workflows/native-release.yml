@@ -1,4 +1,4 @@
-name: v10 Release (optimized APK + EXE, draft)
+name: v10 Release (optimized APK + EXE, published)
 
 # Manual trigger. Builds the Rust core with full release optimization (LTO, 1 codegen unit)
 # for all 4 Android ABIs and Windows on GitHub's runners, packages the APK and the Windows .exe installer, and
@@ -120,11 +120,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: { path: out, merge-multiple: true }
-      - name: Draft release v<version> (publish it by hand after testing)
+      - name: Publish release v<version> as latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           v=$(grep '^ziptv.version=' native/app/gradle.properties | cut -d= -f2 | tr -d '[:space:]')
-          # Draft: nothing is downloadable until you press Publish (and tick "Set as latest" —
-          # v10 replaces v9, and pages.dev/app.apk + /latest.exe follow the latest release).
-          gh release create "v$v" out/* --draft --target "$GITHUB_SHA" --title "ZIPTV Pro $v"             --notes-file native/RELEASE_NOTES.md
+          # Latest: pages.dev/app.apk + /latest.exe follow the latest release.
+          gh release create "v$v" out/* --latest --target "$GITHUB_SHA" --title "ZIPTV Pro $v" --notes-file native/RELEASE_NOTES.md
+      - name: Bump version.json (root package.json on main) so installed apps offer the update
+        run: |
+          v=$(grep '^ziptv.version=' native/app/gradle.properties | cut -d= -f2 | tr -d '[:space:]')
+          git fetch -q origin main && git checkout -q -B main origin/main
+          sed -i -E "0,/\"version\": *\"[^\"]+\"/s//\"version\": \"$v\"/" package.json
+          git diff --quiet && { echo "already $v"; exit 0; }
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qam "chore: version $v"
+          git push -q origin main
