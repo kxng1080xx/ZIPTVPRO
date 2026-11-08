@@ -264,7 +264,7 @@ private fun RecordingsRow(model: AppModel) {
                     com.ziptv.core.RecordingStatus.RECORDING -> "● REC · ${r.bytes.toLong() / (1 shl 20)} MB"
                     com.ziptv.core.RecordingStatus.SCHEDULED -> "Scheduled · ${clock(r.start)}"
                     com.ziptv.core.RecordingStatus.DONE -> "${r.bytes.toLong() / (1 shl 20)} MB"
-                    com.ziptv.core.RecordingStatus.FAILED -> "Failed"
+                    com.ziptv.core.RecordingStatus.FAILED -> r.error?.let { "Failed · $it" } ?: "Failed"
                 }
                 Column(
                     Modifier.animateItem().width(240.dp).focusRing(RoundedCornerShape(12.dp)).clip(RoundedCornerShape(12.dp)).background(Z.surface)
@@ -276,7 +276,7 @@ private fun RecordingsRow(model: AppModel) {
                     Text(r.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(r.channel, color = Z.textMuted, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(status, color = if (r.status == com.ziptv.core.RecordingStatus.RECORDING) Z.live else Z.textMuted,
-                        style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
+                        style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
                 }
             }
         }

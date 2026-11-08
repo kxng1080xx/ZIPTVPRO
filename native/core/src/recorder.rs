@@ -31,6 +31,9 @@ pub struct Recording {
     pub end: i64,
     pub bytes: u64,
     pub status: RecordingStatus,
+    /// Why it failed (or stopped early), for the Recordings row. Never contains the stream URL.
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 #[derive(uniffi::Object)]
@@ -58,6 +61,9 @@ impl Recorder {
         for r in list.iter_mut() {
             if matches!(r.status, RecordingStatus::Recording | RecordingStatus::Scheduled) {
                 r.status = if r.bytes > 0 { RecordingStatus::Done } else { RecordingStatus::Failed };
+                if r.bytes == 0 {
+                    r.error = Some("The app was closed before it started".into());
+                }
             }
         }
         Arc::new(Self { dir, list: Arc::new(Mutex::new(list)), stops: Mutex::new(HashMap::new()) })
@@ -69,7 +75,7 @@ impl Recorder {
         let safe: String = title.chars().map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' { c } else { '_' }).collect();
         let path = format!("{}/{} - {}.ts", self.dir, safe.trim(), id);
         let rec = Recording {
-            id: id.clone(), title, channel, path: path.clone(), start, end, bytes: 0,
+            id: id.clone(), title, channel, path: path.clone(), start, end, bytes: 0, error: None,
             status: if start > now() { RecordingStatus::Scheduled } else { RecordingStatus::Recording },
         };
         self.list.lock().unwrap().insert(0, rec);
@@ -84,7 +90,10 @@ impl Recorder {
                 std::thread::sleep(Duration::from_secs(1));
             }
             set_status(&list, &dir, &rid, RecordingStatus::Recording, None);
-            let bytes = capture(&url, &path, end, &stop, |b| set_status(&list, &dir, &rid, RecordingStatus::Recording, Some(b)));
+            let (bytes, err) = capture(&url, &path, end, &stop, |b| set_status(&list, &dir, &rid, RecordingStatus::Recording, Some(b)));
+            if let Some(r) = list.lock().unwrap().iter_mut().find(|r| r.id == rid) {
+                r.error = err;
+            }
             set_status(&list, &dir, &rid, if bytes > 0 { RecordingStatus::Done } else { RecordingStatus::Failed }, Some(bytes));
         });
         id
@@ -144,23 +153,31 @@ fn set_status(list: &Mutex<Vec<Recording>>, dir: &str, id: &str, status: Recordi
 }
 
 /// Copies the stream into `path` until `end` or `stop`; reconnects (appending) when the
-/// provider drops the connection. Returns bytes written.
-fn capture(url: &str, path: &str, end: i64, stop: &AtomicBool, progress: impl Fn(u64)) -> u64 {
+/// provider drops the connection. Returns bytes written and, when it ended early, why.
+fn capture(url: &str, path: &str, end: i64, stop: &AtomicBool, progress: impl Fn(u64)) -> (u64, Option<String>) {
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(15))
         .timeout_read(Duration::from_secs(20))
         .user_agent("VLC/3.0.20")
         .build();
-    let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) else { return 0 };
+    let mut file = match std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        Ok(f) => f,
+        Err(e) => return (0, Some(format!("Couldn't create the file: {e}"))),
+    };
+    let mut last_err: Option<String> = None;
     let mut total = 0u64;
     let mut last_report = 0u64;
     let mut failures = 0;
     let mut buf = vec![0u8; 64 * 1024];
     while now() < end && !stop.load(Ordering::Relaxed) && failures < 30 {
-        let Ok(resp) = agent.get(url).call() else {
-            failures += 1;
-            std::thread::sleep(Duration::from_secs(2));
-            continue;
+        let resp = match agent.get(url).call() {
+            Ok(r) => r,
+            Err(e) => {
+                last_err = Some(describe(&e));
+                failures += 1;
+                std::thread::sleep(Duration::from_secs(2));
+                continue;
+            }
         };
         let mut reader = resp.into_reader();
         loop {
@@ -169,12 +186,13 @@ fn capture(url: &str, path: &str, end: i64, stop: &AtomicBool, progress: impl Fn
             }
             match reader.read(&mut buf) {
                 Ok(0) | Err(_) => {
+                    last_err = Some("The provider kept dropping the stream".into());
                     failures += 1;
                     break; // reconnect
                 }
                 Ok(n) => {
-                    if file.write_all(&buf[..n]).is_err() {
-                        return total;
+                    if let Err(e) = file.write_all(&buf[..n]) {
+                        return (total, Some(format!("Couldn't write the file (disk full?): {e}")));
                     }
                     total += n as u64;
                     failures = 0;
@@ -187,7 +205,26 @@ fn capture(url: &str, path: &str, end: i64, stop: &AtomicBool, progress: impl Fn
         }
     }
     let _ = file.flush();
-    total
+    let stopped = stop.load(Ordering::Relaxed);
+    let why = if stopped {
+        Some("Stopped".into())
+    } else if total > 0 && failures < 30 {
+        None // ran to the end
+    } else {
+        last_err.or_else(|| Some("No data from the provider".into()))
+    };
+    (total, why)
+}
+
+/// ureq errors carry the full URL (with the login in it), so only the cause is kept.
+fn describe(e: &ureq::Error) -> String {
+    match e {
+        ureq::Error::Status(401 | 403, _) => {
+            "The provider refused the connection (your plan may allow only one stream at a time)".into()
+        }
+        ureq::Error::Status(code, _) => format!("The provider answered HTTP {code}"),
+        ureq::Error::Transport(t) => format!("Couldn't reach the provider ({})", t.kind()),
+    }
 }
 
 #[cfg(test)]
@@ -219,6 +256,30 @@ mod tests {
         assert!(std::fs::metadata(&rec.path).unwrap().len() >= 188 * 3);
         r.delete(id);
         assert!(r.list().is_empty());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn refused_stream_fails_with_a_reason_but_no_login() {
+        // One-stream plan: the provider refuses the second connection with 403.
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for mut s in listener.incoming().flatten() {
+                let mut req = [0u8; 1024];
+                let _ = s.read(&mut req);
+                let _ = s.write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n");
+            }
+        });
+        let dir = std::env::temp_dir().join(format!("ziptv-rec-fail-{}", std::process::id())).to_string_lossy().to_string();
+        let r = Recorder::new(dir.clone());
+        let id = r.record(format!("http://127.0.0.1:{port}/live/secretuser/secretpass/1.ts"), "News".into(), "CNN".into(), 0, now() + 3);
+        std::thread::sleep(Duration::from_secs(6));
+        let rec = r.list().into_iter().find(|x| x.id == id).unwrap();
+        assert_eq!(rec.status, RecordingStatus::Failed);
+        let why = rec.error.unwrap();
+        assert!(why.contains("refused"), "{why}");
+        assert!(!why.contains("secret"), "{why}");
         let _ = std::fs::remove_dir_all(dir);
     }
 }
