@@ -79,6 +79,9 @@ native/
   activity-compose 1.10.1 (newer need AGP 9.1 / compileSdk 37). Desktop uses newest CMP.
 - uniffi names must not clash with Kotlin: no `Library`, no `Companion`, no error field `message`
   (errors are `flat_error`).
+- Generating bindings on Linux: the release profile strips the `.so`, and uniffi-bindgen then
+  silently writes nothing. Build an unstripped copy (`CARGO_PROFILE_RELEASE_STRIP=false cargo
+  build --release --lib --target-dir target/unstripped`) and point `--library` at it.
 - User's TV emulator is 32-bit **x86** Android 36 → core builds `-t x86` too.
 - TV density 0.9x; rail scrolls. Text outside a Surface needs LocalContentColor (set in theme).
 
@@ -112,12 +115,13 @@ fullscreen (PC window / Android immersive); single instance (PC); remove-all pla
    provider M3U on a device.
 5. ~~Stalker portal playlists~~ SKIPPED (user decision, 2026-11-06: not needed in v10).
 6. ~~Built-in VPN~~ SKIPPED (user decision, 2026-11-06).
-7. **Watch Together** (v9 watch-together.js + its cloud endpoints).
-8. **Chromecast** (Android Cast SDK; v9 cast.js).
+7. ~~Watch Together~~ DONE (user, 2026-11-08).
+8. ~~Chromecast~~ DONE in 10.0.2 (e1f1939: mDNS + CASTV2, live via proxied HLS).
 9. ~~Online subtitle search~~ SKIPPED (user, 2026-11-06).
 10. ~~Muted trailer preview on poster dwell~~ SKIPPED (user, 2026-11-06).
 11. **Share tunnel / TV link** — v9-desktop-only (cloudflared exposing the local server);
-    v10 has no local server — confirm with the user whether it's still needed.
+    NEEDED (user, 2026-11-08): it's for watching when you're NOT on the same network as the PC.
+    v10 now has a LAN server (core/src/lan.rs, the Smart TV page) — the tunnel should expose that.
 12. Short-cycle provider resilience beyond VLC `--http-reconnect` (v9 PTS splice) — only if
     hostengine-style providers still drop.
 13. Release plumbing: version 10.0.0 lives in `native/app/gradle.properties`; signing,
@@ -128,9 +132,12 @@ fullscreen (PC window / Android immersive); single instance (PC); remove-all pla
   VlcjPlayer now plays with `:avcodec-hw=none` (ZIPTV_HW_DECODE=1 to re-enable).
 - DVR "Failed" recordings: cause = one-stream plans (player held the only connection; recorder
   got refused → 0-byte files). FIXED for "Record this channel" (checks login max_connections,
-  stops playback first). Scheduled recordings that start while you watch can still fail —
-  needs the same check when the schedule fires (or record from the player's stream).
-  Recordings row doesn't show *why* a recording failed (no error field yet).
+  stops playback first). FIXED for scheduled recordings too (2026-11-08): AppModel's 15 s tick
+  stops playback ~20 s before a schedule starts on one-stream plans (also schedules made on the
+  TV web page, and guide schedules of a show already on air). The recorder retries ~1 min, so
+  the tick is early enough. `Recording.error` now says why one failed ("provider refused…",
+  "app was closed…"; never the URL) and the Home row shows it. Not device-tested yet.
+  Still open: "Record" pressed on the TV web page while the PC plays on a one-stream plan.
 - Verify every screen with the D-pad on the TV emulator (only Home/rail checked so far).
 - Phone layout not yet tested on an emulator (phone AVD `ZIPTV_Phone` exists but booted black).
 - Nothing of v10 is committed to `main`; work is on branch `v10-native`.

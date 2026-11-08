@@ -5626,7 +5626,11 @@ data class Recording (
     var `start`: kotlin.Long, 
     var `end`: kotlin.Long, 
     var `bytes`: kotlin.ULong, 
-    var `status`: RecordingStatus
+    var `status`: RecordingStatus, 
+    /**
+     * Why it failed (or stopped early), for the Recordings row. Never contains the stream URL.
+     */
+    var `error`: kotlin.String?
 ) {
     
     companion object
@@ -5646,6 +5650,7 @@ public object FfiConverterTypeRecording: FfiConverterRustBuffer<Recording> {
             FfiConverterLong.read(buf),
             FfiConverterULong.read(buf),
             FfiConverterTypeRecordingStatus.read(buf),
+            FfiConverterOptionalString.read(buf),
         )
     }
 
@@ -5657,7 +5662,8 @@ public object FfiConverterTypeRecording: FfiConverterRustBuffer<Recording> {
             FfiConverterLong.allocationSize(value.`start`) +
             FfiConverterLong.allocationSize(value.`end`) +
             FfiConverterULong.allocationSize(value.`bytes`) +
-            FfiConverterTypeRecordingStatus.allocationSize(value.`status`)
+            FfiConverterTypeRecordingStatus.allocationSize(value.`status`) +
+            FfiConverterOptionalString.allocationSize(value.`error`)
     )
 
     override fun write(value: Recording, buf: ByteBuffer) {
@@ -5669,6 +5675,7 @@ public object FfiConverterTypeRecording: FfiConverterRustBuffer<Recording> {
             FfiConverterLong.write(value.`end`, buf)
             FfiConverterULong.write(value.`bytes`, buf)
             FfiConverterTypeRecordingStatus.write(value.`status`, buf)
+            FfiConverterOptionalString.write(value.`error`, buf)
     }
 }
 

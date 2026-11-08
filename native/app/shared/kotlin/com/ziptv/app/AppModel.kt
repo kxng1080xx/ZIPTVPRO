@@ -515,7 +515,7 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
             val id = recorder.record(item.url, title, item.title, t, end?.end ?: (t + 3600))
             liveRecordings = liveRecordings + (item.streamId to id)
             recordingsVersion++
-            error = if (single) "Recording $title. Your plan allows one stream at a time, so playback stopped — it'll be in Recordings."
+            error = if (single) "Recording $title. Your plan allows one stream at a time, so playback stopped. It will be in Recordings."
                 else "Recording $title"
         }
     }
@@ -541,9 +541,43 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
     /** Schedules a future (or current) programme; the app must stay open (same as v9). */
     fun recordProgramme(ch: Channel, title: String, start: Long, end: Long) {
         val lib = library ?: return
-        recorder.record(liveUrl(lib, ch.streamId), title, ch.name, start, end)
+        val id = recorder.record(liveUrl(lib, ch.streamId), title, ch.name, start, end)
         recordingsVersion++
         error = "Recording scheduled: $title"
+        // Already on air: it starts now, so free the connection now instead of on the next tick.
+        if (start <= System.currentTimeMillis() / 1000) {
+            freedFor += id
+            scope.launch { freePlayerFor(title) }
+        }
+    }
+
+    /** Recordings whose start already stopped playback (once each, so the user can resume watching). */
+    private val freedFor = mutableSetOf<String>()
+
+    /**
+     * One-stream plans: a scheduled recording that starts while something plays gets refused by the
+     * provider (0-byte "Failed"). Just before it starts, stop playback so the recorder gets the
+     * connection — the same trade "Record this channel" makes. The recorder retries for about a
+     * minute, so the 15 s tick is early enough. Also covers schedules made on the TV web page.
+     */
+    private suspend fun freeConnectionForSchedule() {
+        if (nowPlaying == null) return
+        val t = System.currentTimeMillis() / 1000
+        val due = recorder.list().firstOrNull {
+            it.status == com.ziptv.core.RecordingStatus.SCHEDULED && it.start - t <= 20 && it.id !in freedFor
+        } ?: return
+        freedFor += due.id
+        freePlayerFor(due.title)
+    }
+
+    /** Stops playback when the plan allows a single stream. Local recordings don't use the provider. */
+    private suspend fun freePlayerFor(title: String) {
+        if (nowPlaying == null || nowPlaying?.kind == PlayKind.Recording) return
+        val lib = library ?: return
+        val maxCons = withContext(Dispatchers.IO) { runCatching { lib.login().maxConnections }.getOrNull() } ?: 0u
+        if (maxCons != 1u) return
+        stop()
+        error = "Recording $title. Your plan allows one stream at a time, so playback stopped. It will be in Recordings."
     }
 
     fun playRecording(r: com.ziptv.core.Recording) {
@@ -561,8 +595,9 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
     }
 
     /** Sleep timer + reminders. */
-    private fun tick() {
+    private suspend fun tick() {
         sleepAt?.let { if (System.currentTimeMillis() >= it) { sleepAt = null; stop() } }
+        freeConnectionForSchedule()
         val due = user?.dueReminders(System.currentTimeMillis() / 1000, 60) ?: emptyList()
         if (due.isNotEmpty()) { dueReminder = due.first(); userVersion++ }
     }
