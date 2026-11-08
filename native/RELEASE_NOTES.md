@@ -7,6 +7,12 @@ device — TV and projector, phone and tablet, or Windows PC — with no switchi
 playlists and provider setup carry on. Favorites and local watch history from version 9
 start fresh.
 
+**10.1.0:**
+- PC: watch away from home. Settings > Network > "Watch away from home" gives a private link to your
+  library that opens in any browser, on any network, while ZIPTV Pro is open on the PC.
+- PC: the Home screen is no longer empty when your last watch was a live channel.
+- Scheduled recordings work on one-stream plans, and a failed recording now says why.
+
 **10.0.5:**
 - PC: video shows again (since 10.0.0 the installed app played sound over a black screen).
 - PC: starts faster after installing or updating.

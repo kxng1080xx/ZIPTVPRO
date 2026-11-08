@@ -909,6 +909,8 @@ internal open class UniffiVTableCallbackInterfaceSyncListener(
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -983,6 +985,8 @@ fun uniffi_ziptv_core_checksum_method_lanserver_set_provider(
 fun uniffi_ziptv_core_checksum_method_lanserver_set_recorder(
 ): Short
 fun uniffi_ziptv_core_checksum_method_lanserver_set_tmdb(
+): Short
+fun uniffi_ziptv_core_checksum_method_lanserver_share_link(
 ): Short
 fun uniffi_ziptv_core_checksum_method_lanserver_tv_url(
 ): Short
@@ -1214,6 +1218,8 @@ fun uniffi_ziptv_core_fn_method_lanserver_set_recorder(`ptr`: Pointer,`recorder`
 ): Unit
 fun uniffi_ziptv_core_fn_method_lanserver_set_tmdb(`ptr`: Pointer,`tmdb`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+fun uniffi_ziptv_core_fn_method_lanserver_share_link(`ptr`: Pointer,`tunnelUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_ziptv_core_fn_method_lanserver_tv_url(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_ziptv_core_fn_clone_provider(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1544,6 +1550,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ziptv_core_checksum_method_lanserver_set_tmdb() != 34337.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_lanserver_share_link() != 36472.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ziptv_core_checksum_method_lanserver_tv_url() != 63219.toShort()) {
@@ -3087,6 +3096,11 @@ public interface LanServerInterface {
     fun `setTmdb`(`tmdb`: Tmdb?)
     
     /**
+     * The link to open away from home: the tunnel's public URL plus this launch's share token.
+     */
+    fun `shareLink`(`tunnelUrl`: kotlin.String): kotlin.String
+    
+    /**
      * The address to type into the TV's browser.
      */
     fun `tvUrl`(): kotlin.String?
@@ -3256,6 +3270,21 @@ open class LanServer: Disposable, AutoCloseable, LanServerInterface
 }
     }
     
+    
+
+    
+    /**
+     * The link to open away from home: the tunnel's public URL plus this launch's share token.
+     */override fun `shareLink`(`tunnelUrl`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_lanserver_share_link(
+        it, FfiConverterString.lower(`tunnelUrl`),_status)
+}
+    }
+    )
+    }
     
 
     

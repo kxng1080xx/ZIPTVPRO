@@ -23,6 +23,8 @@ pub struct LanServer {
     recorder: RwLock<Option<Arc<Recorder>>>,
     tmdb: RwLock<Option<Arc<crate::tmdb::Tmdb>>>,
     name: RwLock<String>,
+    /// Per-launch secret for visitors arriving through the internet tunnel (see `guard`).
+    share: String,
 }
 
 #[uniffi::export]
@@ -39,6 +41,7 @@ impl LanServer {
         let port = front.as_ref().map_or(0, |f| f.1);
         let me = Arc::new(Self {
             port, provider: RwLock::new(None), user: RwLock::new(None), recorder: RwLock::new(None), tmdb: RwLock::new(None), name: RwLock::new(String::new()),
+            share: share_token(),
         });
         if let (Some(server), Some((front, _)), Some(inner)) = (server, front, inner) {
             std::thread::Builder::new().name("lan-front".into()).spawn(move || {
@@ -84,6 +87,11 @@ impl LanServer {
         format!("http://{}:{}", lan_ip_for(peer.as_deref()).unwrap_or(IpAddr::from([127, 0, 0, 1])), self.port)
     }
 
+    /// The link to open away from home: the tunnel's public URL plus this launch's share token.
+    pub fn share_link(&self, tunnel_url: String) -> String {
+        format!("{}/tv?{SHARE_PARAM}={}", tunnel_url.trim_end_matches('/'), self.share)
+    }
+
     /// The address to type into the TV's browser.
     pub fn tv_url(&self) -> Option<String> {
         (self.port != 0).then(|| format!("{}/tv", self.base_url(None)))
@@ -112,6 +120,20 @@ fn splice(mut c: TcpStream, inner: SocketAddr) {
     std::thread::spawn(move || { let _ = std::io::copy(&mut c2, &mut u2); let _ = u2.shutdown(Shutdown::Write); });
     let _ = std::io::copy(&mut u, &mut c);
     let _ = c.shutdown(Shutdown::Both);
+}
+
+const SHARE_PARAM: &str = "stk";
+const SHARE_COOKIE: &str = "ziptv_share";
+
+/// 128 random bits as hex. RandomState is seeded from the OS RNG (no extra crate for one token).
+fn share_token() -> String {
+    use std::hash::{BuildHasher, Hasher};
+    (0..2).map(|_| { let mut h = std::collections::hash_map::RandomState::new().build_hasher(); h.write_u8(0); format!("{:016x}", h.finish()) }).collect()
+}
+
+/// Constant-time string compare (the token is a secret).
+fn same(a: &str, b: &str) -> bool {
+    a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
 fn header(k: &str, v: &str) -> Header {
@@ -181,6 +203,7 @@ const MPEGTS_JS: &str = include_str!("tv/vendor/mpegts.js");
 
 impl LanServer {
     fn handle(&self, req: Request) {
+        let Some(req) = self.guard(req) else { return };
         let url = req.url().to_string();
         let path = url.split('?').next().unwrap_or("").to_string();
         let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
@@ -196,6 +219,29 @@ impl LanServer {
             ["rec", id] => self.recording(req, &pct_decode(id)),
             _ => { let _ = req.respond(Response::empty(404)); }
         }
+    }
+
+    /// Internet visitors (via the Cloudflare tunnel) need the share token; home/LAN traffic doesn't.
+    /// Cloudflare stamps every tunnelled request with cf-ray / cf-connecting-ip and visitors can't
+    /// strip them; local browsers and DLNA renderers never send them (v9's share guard).
+    /// First visit: `?stk=<token>` is swapped for a cookie and redirected to the clean URL.
+    fn guard(&self, req: Request) -> Option<Request> {
+        let has = |name: &'static str| req.headers().iter().any(|h| h.field.equiv(name));
+        if !has("cf-ray") && !has("cf-connecting-ip") { return Some(req); }
+        let cookie_ok = req.headers().iter().filter(|h| h.field.equiv("Cookie"))
+            .flat_map(|h| h.value.as_str().split(';').map(|c| c.trim().to_string()).collect::<Vec<_>>())
+            .any(|c| c.strip_prefix(SHARE_COOKIE).and_then(|v| v.strip_prefix('=')).is_some_and(|v| same(v, &self.share)));
+        if cookie_ok { return Some(req); }
+        let url = req.url().to_string();
+        if query(&url).iter().any(|(k, v)| k == SHARE_PARAM && same(v, &self.share)) {
+            let path = url.split('?').next().unwrap_or("/").to_string();
+            let cookie = format!("{SHARE_COOKIE}={}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000", self.share);
+            let _ = req.respond(Response::empty(302).with_header(header("Location", &path)).with_header(header("Set-Cookie", &cookie)));
+            return None;
+        }
+        let _ = req.respond(Response::from_string("This ZIPTV Pro link is invalid or expired. Open the current link from the app's Settings.")
+            .with_status_code(403).with_header(header("Content-Type", "text/plain; charset=utf-8")));
+        None
     }
 
     /// `/cast/<live|movie|series>/<id>.<ext>`: the provider URL is rebuilt here, so the TV gets
@@ -422,6 +468,30 @@ fn json_out(req: Request, code: u16, v: Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tunnel_visitors_need_the_share_token() {
+        let lan = LanServer::new(18790);
+        assert_ne!(lan.port(), 0);
+        let base = format!("http://127.0.0.1:{}", lan.port());
+        let token = lan.share_link("https://x.trycloudflare.com".into()).rsplit('=').next().unwrap().to_string();
+        assert_eq!(token.len(), 32);
+        let agent = ureq::AgentBuilder::new().redirects(0).build();
+        let code = |r: Result<ureq::Response, ureq::Error>| match r { Ok(r) => r.status(), Err(ureq::Error::Status(c, _)) => c, Err(e) => panic!("{e}") };
+        // Home / LAN: no Cloudflare headers, no token needed.
+        assert_eq!(code(agent.get(&format!("{base}/tv")).call()), 200);
+        // Through the tunnel without the token: refused.
+        assert_eq!(code(agent.get(&format!("{base}/tv")).set("cf-ray", "1").call()), 403);
+        assert_eq!(code(agent.get(&format!("{base}/tv?stk=wrong")).set("cf-ray", "1").call()), 403);
+        assert_eq!(code(agent.get(&format!("{base}/api/tv/info")).set("cf-connecting-ip", "1.2.3.4").call()), 403);
+        // Right token: cookie + redirect to the clean URL; the cookie then opens everything.
+        let r = agent.get(&format!("{base}/tv?stk={token}")).set("cf-ray", "1").call().unwrap();
+        assert_eq!(r.status(), 302);
+        assert_eq!(r.header("Location"), Some("/tv"));
+        let cookie = r.header("Set-Cookie").unwrap().split(';').next().unwrap().to_string();
+        assert_eq!(code(agent.get(&format!("{base}/tv")).set("cf-ray", "1").set("Cookie", &cookie).call()), 200);
+        assert_eq!(code(agent.get(&format!("{base}/tv")).set("cf-ray", "1").set("Cookie", "ziptv_share=nope").call()), 403);
+    }
 
     #[test]
     fn m3u8_rewrite_and_query() {

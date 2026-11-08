@@ -31,8 +31,9 @@ private val backHandlers = mutableStateListOf<Pair<() -> Boolean, () -> Unit>>()
 class DesktopPlatform : Platform {
     override val device = DeviceClass.Desktop
     override val cloudPlatform = "pc"
-    override val appVersion = "10.0.5"
+    override val appVersion = "10.1.0"
     override val dataDir: String = File(System.getProperty("user.home"), ".ziptv10").apply { mkdirs() }.path
+    override val tunnel = CloudflaredTunnel(File(dataDir, "bin"))
     override fun logoIndexJson(): String? =
         DesktopPlatform::class.java.getResourceAsStream("/channel-logos.json")?.bufferedReader()?.use { it.readText() }
     override fun createPlayer(): VideoPlayer = VlcjPlayer()

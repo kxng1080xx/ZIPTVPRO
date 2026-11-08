@@ -76,6 +76,8 @@ interface Platform {
     /** Launch with the OS (desktop). null = not supported here; else (on, minimized). */
     fun autostart(): Pair<Boolean, Boolean>? = null
     fun setAutostart(on: Boolean, minimized: Boolean) {}
+    /** Internet tunnel to this device's LAN server (desktop: Cloudflare quick tunnel). null = not here. */
+    val tunnel: ShareTunnel? get() = null
     /** Picture-in-picture where the OS supports it; false = not available. */
     fun enterPip(): Boolean = false
 
@@ -86,4 +88,14 @@ interface Platform {
     /** Android: system back / remote BACK. Desktop: Escape. */
     @Composable
     fun BackHandler(enabled: Boolean, onBack: () -> Unit)
+}
+
+/** "Watch away from home": exposes the LAN server (Smart TV page) on a public HTTPS URL. */
+interface ShareTunnel {
+    /** null = off, "" = starting, else the public base URL (https://….trycloudflare.com). */
+    val url: kotlinx.coroutines.flow.StateFlow<String?>
+    /** What it's doing or why it stopped ("Downloading…", an error); null = nothing to say. */
+    val note: kotlinx.coroutines.flow.StateFlow<String?>
+    fun start(port: Int)
+    fun stop()
 }

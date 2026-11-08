@@ -119,13 +119,14 @@ fullscreen (PC window / Android immersive); single instance (PC); remove-all pla
 8. ~~Chromecast~~ DONE in 10.0.2 (e1f1939: mDNS + CASTV2, live via proxied HLS).
 9. ~~Online subtitle search~~ SKIPPED (user, 2026-11-06).
 10. ~~Muted trailer preview on poster dwell~~ SKIPPED (user, 2026-11-06).
-11. **Share tunnel / TV link** — v9-desktop-only (cloudflared exposing the local server);
-    NEEDED (user, 2026-11-08): it's for watching when you're NOT on the same network as the PC.
-    v10 now has a LAN server (core/src/lan.rs, the Smart TV page) — the tunnel should expose that.
-12. Short-cycle provider resilience beyond VLC `--http-reconnect` (v9 PTS splice) — only if
-    hostengine-style providers still drop.
-13. Release plumbing: version 10.0.0 lives in `native/app/gradle.properties`; signing,
-    installers, publishing.
+11. ~~Share tunnel~~ DONE in 10.1.0 (PC): Settings > Network > "Watch away from home" runs a
+    cloudflared quick tunnel (desktopApp CloudflaredTunnel, binary downloaded to ~/.ziptv10/bin on
+    first use) to the LAN server. Tunnel visitors (cf-ray / cf-connecting-ip headers) need the
+    per-launch share token: `?stk=` -> cookie + redirect (LanServer.guard, test in lan.rs).
+    Not yet tried through Cloudflare for real. The /tv page is TV-first; phones get it as-is.
+12. Short-cycle provider resilience in the in-app player: the LAN server already has v9's PTS
+    splice / byte-resume (core/src/stream.rs); playing through it would give the app the same.
+13. ~~Release plumbing~~ DONE (see "Release" below).
 
 ## Open bugs / to verify
 - ~~Black movies/episodes on PC~~ FIXED: GPU decoding never reached the frame callback;
@@ -140,7 +141,7 @@ fullscreen (PC window / Android immersive); single instance (PC); remove-all pla
   Still open: "Record" pressed on the TV web page while the PC plays on a one-stream plan.
 - Verify every screen with the D-pad on the TV emulator (only Home/rail checked so far).
 - Phone layout not yet tested on an emulator (phone AVD `ZIPTV_Phone` exists but booted black).
-- Nothing of v10 is committed to `main`; work is on branch `v10-native`.
+- v10 was merged into `main` on 2026-11-08 (b123db2); `main` and `v10-native` are kept in sync.
 
 ## Session 2 (2026-11-06) — what changed, for context
 Settings redone as v9 sections (Account & Playlists / Playback / Network / Application; phones:
@@ -165,12 +166,14 @@ tries with/without a trailing "tv"). PC: preview no longer huge on big windows; 
   (found via HKCU Uninstall "ZIPTV Pro 9."), once (`~/.ziptv10/v9-removed`).
 - Release assets are named `app.apk` and `latest.exe` because ziptvpro.pages.dev/app.apk and
   /latest.exe 302 to `releases/latest/download/<name>` — v9's updaters follow those links.
-- Workflow `.github/workflows/native-release.yml` creates a DRAFT release (notes:
-  native/RELEASE_NOTES.md). After testing the draft: Publish + "Set as latest".
+- Workflow `.github/workflows/native-release.yml` PUBLISHES the release as latest (notes:
+  native/RELEASE_NOTES.md) and pushes the root package.json version to `main` itself (so
+  version.json updates). It uses the RELEASE_TOKEN secret (fine-grained PAT, contents +
+  workflows write): GITHUB_TOKEN started getting HTTP 403 on release creation (Nov 2026).
 - To move v9 Android users: v9 shows its update prompt when `ziptvpro.pages.dev/version.json`
   has a higher version. That file is generated from the root package.json at Pages deploy, so
   set root package.json version to 10.0.0 on main and redeploy Pages AFTER publishing.
-- Not migrated: v9 device codes (WebView localStorage) — every device re-activates with a
-  new code; favorites/history start fresh. Stated in the release notes.
+- v9 device codes ARE kept (core/src/v9.rs reads v9's localStorage leveldb on first run);
+  favorites/history start fresh.
 - Secrets needed (set by the user; agent writes to secret stores are blocked):
   ANDROID_DEBUG_KEYSTORE, TMDB_TOKEN.

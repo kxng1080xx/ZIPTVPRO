@@ -57,9 +57,9 @@ Legend: ✅ done · 🟡 partial · ⬜ not started
 | Online subtitle search | ➖ skipped | user decision |
 | Deinterlace, upscaler | 🟡 | deinterlace (VLC yadif2x) done; upscaler not in VLC | |
 | Picture-in-picture | 🟡 | Android; desktop has no OS PiP |
-| Chromecast | ⬜ 10.1 | wanted, moved to 10.1 so it doesn't hold the release |
+| Chromecast + DLNA casting | ✅ | 10.0.2: mDNS + CASTV2 (live via proxied HLS); DLNA with v9's Samsung fixes. Not device-tested |
 | Recording (DVR) + recordings list | ✅ | Rust Recorder; More menu, long-press guide rows, Home row | |
-| Short-cycle provider resilience (reconnect/resume) | 🟡 | VLC `--http-reconnect`; v9 had PTS splice |
+| Short-cycle provider resilience (reconnect/resume) | 🟡 | LAN server (cast + TV page) has v9's PTS splice / byte-resume (stream.rs); the in-app player only has VLC `--http-reconnect` |
 | Bundle VLC with the PC installer | ✅ | trimmed VLC in app resources (prepareVlc) |
 
 ## Cloud & devices
@@ -71,5 +71,6 @@ Legend: ✅ done · 🟡 partial · ⬜ not started
 | Companion device sync (continue watching hand-off) | ✅ | |
 | Watch Together | ✅ | v9 protocol; More → Watch together, Settings join |
 | Built-in VPN (OpenVPN profile) | ➖ skipped | |
-| Update check / auto-update | 🟡 | check + Download banner (v10+ GitHub releases, platform asset); no silent install | |
-| Share tunnel / TV link | ➖ dropped | v10 has no local server |
+| Update check / auto-update | 🟡 | Android: in-app download + installer. PC: banner opens the download (no silent install) |
+| Smart TV page (LAN) | ✅ | 10.0.2: core/src/lan.rs serves /tv to any TV browser on the Wi-Fi; records on the PC |
+| Share tunnel (watch away from home) | ✅ | 10.1.0, PC: cloudflared quick tunnel (downloaded on first use) to the LAN server; per-launch share token (LanServer.guard). Not tested through Cloudflare yet |

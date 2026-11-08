@@ -29,6 +29,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.runtime.collectAsState
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.ArrowBack
@@ -68,6 +69,8 @@ import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Minimize
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.rounded.Tv
+import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -304,6 +307,35 @@ private fun NetworkSection(model: AppModel) {
     }
     Text("Works while ZIPTV Pro is open on this device. Recordings started on the TV are saved here.", color = Z.textMuted,
         style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp, vertical = 10.dp))
+    model.platform.tunnel?.let { AwayFromHome(model, it) }
+}
+
+/** v9's share tunnel: the Smart TV page on a private internet link, for watching off this Wi-Fi. */
+@Composable
+private fun AwayFromHome(model: AppModel, t: ShareTunnel) {
+    val url by t.url.collectAsState()
+    val note by t.note.collectAsState()
+    val on = url != null
+    val link = url?.takeIf { it.isNotEmpty() }?.let { model.lan.shareLink(it) }
+    Group("Watch away from home") {
+        SettingRow(Icons.Rounded.Public, "Private internet link",
+            note ?: when { link != null -> "On"; on -> "Connecting…"; else -> "Watch this library from anywhere, in any browser" },
+            onClick = { if (on) t.stop() else t.start(model.lan.port().toInt()) }) {
+            Switch(checked = on, onCheckedChange = { if (it) t.start(model.lan.port().toInt()) else t.stop() },
+                colors = SwitchDefaults.colors(checkedTrackColor = Z.accent, checkedThumbColor = Color.White))
+        }
+        if (link != null) {
+            Divider()
+            val clip = androidx.compose.ui.platform.LocalClipboardManager.current
+            var copied by remember(link) { mutableStateOf(false) }
+            SettingRow(Icons.Rounded.Link, link, "Open it on your phone or any browser. A new link each time the app starts",
+                onClick = { clip.setText(androidx.compose.ui.text.AnnotatedString(link)); copied = true }) {
+                Text(if (copied) "Copied" else "Copy", color = Z.focus, style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    }
+    Text("Streams use this PC's internet upload and work while ZIPTV Pro is open here. Anyone with the link can watch, so only share it with people you trust.",
+        color = Z.textMuted, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp, vertical = 10.dp))
 }
 
 @Composable
