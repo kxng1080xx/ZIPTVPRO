@@ -118,16 +118,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        # RELEASE_TOKEN (fine-grained PAT: contents + workflows write): GITHUB_TOKEN gets HTTP 403 on releases here.
+        with: { token: '${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}' }
       - uses: actions/download-artifact@v4
         with: { path: out, merge-multiple: true }
       - name: Publish release v<version> as latest
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           v=$(grep '^ziptv.version=' native/app/gradle.properties | cut -d= -f2 | tr -d '[:space:]')
           # Latest: pages.dev/app.apk + /latest.exe follow the latest release.
-          # A release commit that edits .github/workflows/ gets HTTP 403 here (GITHUB_TOKEN can't tag it without
-          # the `workflows` permission): push the tag by hand (git tag vX <sha> && git push origin vX), rerun this job.
           gh release create "v$v" out/* --latest --target "$GITHUB_SHA" --title "ZIPTV Pro $v" --notes-file native/RELEASE_NOTES.md
       - name: Bump version.json (root package.json on main) so installed apps offer the update
         run: |
