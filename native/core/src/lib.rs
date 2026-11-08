@@ -21,7 +21,7 @@ pub use cast::{CastDevice, CastStatus, Caster};
 pub use lan::LanServer;
 pub use cloud::{Cloud, CloudPlaylist, DeviceState, PairedDevice, VpnConfig, WatchContent, WatchState};
 pub use recorder::{Recorder, Recording, RecordingStatus};
-pub use tmdb::{CastMember, Meta, Tmdb};
+pub use tmdb::{CastMember, Meta, RelatedTitle, Tmdb};
 pub use update::{check_update, UpdateInfo};
 pub use user::{Reminder, UserStore, WatchProgress};
 
@@ -399,6 +399,33 @@ impl Provider {
         ids.iter().filter_map(|id| by.get(id.as_str()).map(|m| (*m).clone())).collect()
     }
 
+    /// TMDB's related titles (collection + recommendations, Meta.related) that this playlist has, in that
+    /// order. Matched on the cleaned title (letters/digits only) and, when both sides have one, the year.
+    pub fn similar_movies(&self, related: Vec<tmdb::RelatedTitle>, exclude_id: String) -> Vec<Movie> {
+        let cat = self.catalog.read().unwrap();
+        let mut by: HashMap<String, Vec<(&Movie, Option<String>)>> = HashMap::new();
+        for m in &cat.movies {
+            let (t, y) = tmdb::clean_title(&m.name);
+            by.entry(match_key(&t)).or_default().push((m, m.year.clone().filter(|y| !y.is_empty()).or(y)));
+        }
+        let mut seen = std::collections::HashSet::new();
+        seen.insert(exclude_id);
+        let mut out = vec![];
+        for r in related {
+            let Some(cands) = by.get(&match_key(&r.title)) else { continue };
+            let hit = cands.iter().find(|(_, y)| match (y, &r.year) {
+                (Some(a), Some(b)) => a.get(..4) == b.get(..4),
+                _ => true,
+            });
+            if let Some((m, _)) = hit {
+                if seen.insert(m.stream_id.clone()) {
+                    out.push((*m).clone());
+                }
+            }
+        }
+        out
+    }
+
     pub fn series_by_ids(&self, ids: Vec<String>) -> Vec<Series> {
         let cat = self.catalog.read().unwrap();
         let by: HashMap<&str, &Series> = cat.series.iter().map(|s| (s.series_id.as_str(), s)).collect();
@@ -707,6 +734,33 @@ mod tests {
     }
 
     #[test]
+    fn similar_movies_match_title_and_year_in_related_order() {
+        let mv = |id: &str, name: &str, year: Option<&str>| Movie { stream_id: id.into(), name: name.into(), category_id: "1".into(),
+            poster: None, rating: 0.0, year: year.map(Into::into), extension: None, added: 0 };
+        let p = Provider::new("http://x/list.m3u".into(), String::new(), String::new());
+        p.catalog.write().unwrap().movies = vec![
+            mv("1", "X2 (2003)", None),
+            mv("2", "EN - X-Men: Days of Future Past 4K", Some("2014")),
+            mv("3", "X-Men (2000)", None),
+            mv("4", "X-Men (1992)", None), // same title, other year: not it
+            mv("5", "Logan", Some("2017")),
+        ];
+        let r = |t: &str, y: Option<&str>| RelatedTitle { title: t.into(), year: y.map(Into::into) };
+        let got: Vec<String> = p.similar_movies(vec![
+            r("X-Men", Some("2000")), r("X2", Some("2003")), r("X-Men: Days of Future Past", Some("2014")),
+            r("Not On This Playlist", None), r("Logan", None),
+        ], "1".into()).into_iter().map(|m| m.stream_id).collect();
+        assert_eq!(got, ["3", "2", "5"]); // X2 excluded (the movie being viewed)
+    }
+
+    #[test]
+    fn qr_code_is_square_with_finder_corner() {
+        let q = qr_code("https://a-b.trycloudflare.com/tv?stk=0123456789abcdef0123456789abcdef".into()).unwrap();
+        assert_eq!(q.modules.len() as u32, q.size * q.size);
+        assert!(q.modules[0] && q.modules[6] && !q.modules[7]); // top-left finder pattern: 7 dark, then light
+    }
+
+    #[test]
     fn catchup_start_is_utc_xtream_format() {
         assert_eq!(catchup_start(0), "1970-01-01:00-00");
         assert_eq!(catchup_start(1_762_437_600), "2025-11-06:14-00");
@@ -734,4 +788,23 @@ mod tests {
         let r = ranked(&items, &fold("cafe"), 10, |s| s);
         assert_eq!(r, vec!["Café TV".to_string(), "My Café".to_string()]);
     }
+}
+
+/// "X-Men: Days of Future Past" and "X Men - Days Of Future Past" -> "xmendaysoffuturepast".
+fn match_key(title: &str) -> String {
+    title.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect()
+}
+
+/// QR code for `text` (the share link): `size` x `size` modules, row by row, true = dark.
+#[derive(uniffi::Record)]
+pub struct QrCode {
+    pub size: u32,
+    pub modules: Vec<bool>,
+}
+
+#[uniffi::export]
+pub fn qr_code(text: String) -> Option<QrCode> {
+    let q = qrcode::QrCode::with_error_correction_level(text.as_bytes(), qrcode::EcLevel::M).ok()?;
+    let size = q.width() as u32;
+    Some(QrCode { size, modules: q.to_colors().into_iter().map(|c| c == qrcode::Color::Dark).collect() })
 }

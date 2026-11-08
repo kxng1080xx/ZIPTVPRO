@@ -18,6 +18,9 @@ const TTL_MISS: i64 = 86_400;
 
 #[derive(uniffi::Record, Clone, Debug, Serialize, Deserialize)]
 pub struct CastMember {
+    /// TMDB person id (0 = unknown): Tmdb::person_movies.
+    #[serde(default)]
+    pub id: i64,
     pub name: String,
     pub character: String,
     pub profile: Option<String>,
@@ -43,6 +46,16 @@ pub struct Meta {
     pub cast: Vec<CastMember>,
     /// YouTube video key of the best trailer.
     pub trailer_key: Option<String>,
+    /// Movies only: the rest of its collection (release order), then TMDB recommendations.
+    /// Library::similar_movies keeps the ones this playlist has.
+    #[serde(default)]
+    pub related: Vec<RelatedTitle>,
+}
+
+#[derive(uniffi::Record, Clone, Debug, Serialize, Deserialize)]
+pub struct RelatedTitle {
+    pub title: String,
+    pub year: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -57,6 +70,8 @@ pub struct Tmdb {
     path: String,
     agent: ureq::Agent,
     cache: Mutex<HashMap<String, Entry>>,
+    // ponytail: memory only, one call per actor per run; persist like `cache` if it shows up as slow.
+    people: Mutex<HashMap<i64, Vec<RelatedTitle>>>,
 }
 
 #[uniffi::export]
@@ -66,7 +81,7 @@ impl Tmdb {
     pub fn new(token: String, cache_path: String) -> Arc<Self> {
         let cache = std::fs::read(&cache_path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
         let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(8)).build();
-        Arc::new(Self { token, path: cache_path, agent, cache: Mutex::new(cache) })
+        Arc::new(Self { token, path: cache_path, agent, cache: Mutex::new(cache), people: Mutex::default() })
     }
 
     /// None = not found / no token / offline. Never throws: About is optional.
@@ -75,7 +90,7 @@ impl Tmdb {
             return None;
         }
         let tv = kind == ContentKind::Series;
-        let key = format!("{}:{}:{}", if tv { "tv" } else { "movie" }, title.to_lowercase().trim(), year.as_deref().unwrap_or(""));
+        let key = format!("v3:{}:{}:{}", if tv { "tv" } else { "movie" }, title.to_lowercase().trim(), year.as_deref().unwrap_or(""));
         let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
         if let Some(e) = self.cache.lock().unwrap().get(&key) {
             if now - e.at < if e.meta.is_some() { TTL_HIT } else { TTL_MISS } {
@@ -93,8 +108,22 @@ impl Tmdb {
         let search = self.call(&format!("/search/{seg}?query={}&{ykey}={}&include_adult=false", urlencode(&query), urlencode(&year)))?;
         let meta = match best_match(&search, &query, tv) {
             Some(id) if id > 0 => {
-                let append = if tv { "credits,aggregate_credits,videos,external_ids" } else { "credits,videos,external_ids" };
-                Some(normalize(tv, &self.call(&format!("/{seg}/{id}?append_to_response={append}"))?))
+                let append = if tv { "credits,aggregate_credits,videos,external_ids" } else { "credits,videos,external_ids,recommendations" };
+                let d = self.call(&format!("/{seg}/{id}?append_to_response={append}"))?;
+                let mut m = normalize(tv, &d);
+                if !tv {
+                    // Collection first ("X-Men Collection" = every X-Men film), oldest first; best effort.
+                    let parts = d.pointer("/belongs_to_collection/id").map(as_i64).filter(|c| *c > 0)
+                        .and_then(|c| self.call(&format!("/collection/{c}")))
+                        .and_then(|c| c.get("parts").and_then(|p| p.as_array()).cloned())
+                        .unwrap_or_default();
+                    let mut parts: Vec<RelatedTitle> = parts.iter().filter(|p| as_i64(p.get("id").unwrap_or(&Value::Null)) != id)
+                        .map(related).collect();
+                    parts.sort_by(|a, b| a.year.cmp(&b.year));
+                    let recs = d.pointer("/recommendations/results").and_then(|r| r.as_array()).cloned().unwrap_or_default();
+                    m.related = parts.into_iter().chain(recs.iter().take(20).map(related)).collect();
+                }
+                Some(m)
             }
             _ => None,
         };
@@ -104,6 +133,22 @@ impl Tmdb {
             let _ = std::fs::write(&self.path, bytes);
         }
         meta
+    }
+
+    /// Every film the person acted in, newest first (Library::similar_movies keeps what the playlist has).
+    /// Empty when offline / no token; failures aren't remembered.
+    pub fn person_movies(&self, person_id: i64) -> Vec<RelatedTitle> {
+        if self.token.is_empty() || person_id <= 0 {
+            return vec![];
+        }
+        if let Some(v) = self.people.lock().unwrap().get(&person_id) {
+            return v.clone();
+        }
+        let Some(d) = self.call(&format!("/person/{person_id}/movie_credits")) else { return vec![] };
+        let mut v: Vec<RelatedTitle> = d.get("cast").and_then(|c| c.as_array()).map(|a| a.iter().map(related).collect()).unwrap_or_default();
+        v.sort_by(|a, b| b.year.cmp(&a.year));
+        self.people.lock().unwrap().insert(person_id, v.clone());
+        v
     }
 }
 
@@ -140,6 +185,11 @@ fn best_match(search: &Value, query: &str, tv: bool) -> Option<i64> {
         .filter(|&id| id > 0)
 }
 
+fn related(v: &Value) -> RelatedTitle {
+    let date = field(v, "release_date");
+    RelatedTitle { title: field(v, "title"), year: date.get(..4).filter(|y| !y.is_empty()).map(str::to_string) }
+}
+
 fn img(path: Option<&Value>, size: &str) -> Option<String> {
     path.map(as_str).filter(|p| !p.is_empty()).map(|p| format!("{IMG}/{size}{p}"))
 }
@@ -159,6 +209,7 @@ fn normalize(tv: bool, d: &Value) -> Meta {
             a.iter()
                 .take(20)
                 .map(|c| CastMember {
+                    id: c.get("id").map(as_i64).unwrap_or(0),
                     name: field(c, "name"),
                     character: c
                         .get("character")
@@ -204,6 +255,7 @@ fn normalize(tv: bool, d: &Value) -> Meta {
         backdrop: img(d.get("backdrop_path"), "w1280"),
         cast,
         trailer_key,
+        related: vec![],
     }
 }
 

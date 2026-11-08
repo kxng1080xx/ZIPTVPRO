@@ -911,6 +911,12 @@ internal open class UniffiVTableCallbackInterfaceSyncListener(
 
 
 
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -927,6 +933,8 @@ internal open class UniffiVTableCallbackInterfaceSyncListener(
 internal interface IntegrityCheckingUniffiLib : Library {
     // Integrity check functions only
     fun uniffi_ziptv_core_checksum_func_check_update(
+): Short
+fun uniffi_ziptv_core_checksum_func_qr_code(
 ): Short
 fun uniffi_ziptv_core_checksum_method_caster_active_name(
 ): Short
@@ -1030,6 +1038,8 @@ fun uniffi_ziptv_core_checksum_method_provider_series_by_ids(
 ): Short
 fun uniffi_ziptv_core_checksum_method_provider_set_logo_index(
 ): Short
+fun uniffi_ziptv_core_checksum_method_provider_similar_movies(
+): Short
 fun uniffi_ziptv_core_checksum_method_provider_sync(
 ): Short
 fun uniffi_ziptv_core_checksum_method_recorder_delete(
@@ -1041,6 +1051,8 @@ fun uniffi_ziptv_core_checksum_method_recorder_record(
 fun uniffi_ziptv_core_checksum_method_recorder_stop(
 ): Short
 fun uniffi_ziptv_core_checksum_method_tmdb_lookup(
+): Short
+fun uniffi_ziptv_core_checksum_method_tmdb_person_movies(
 ): Short
 fun uniffi_ziptv_core_checksum_method_userstore_add_recent(
 ): Short
@@ -1268,6 +1280,8 @@ fun uniffi_ziptv_core_fn_method_provider_series_by_ids(`ptr`: Pointer,`ids`: Rus
 ): RustBuffer.ByValue
 fun uniffi_ziptv_core_fn_method_provider_set_logo_index(`ptr`: Pointer,`json`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+fun uniffi_ziptv_core_fn_method_provider_similar_movies(`ptr`: Pointer,`related`: RustBuffer.ByValue,`excludeId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_ziptv_core_fn_method_provider_sync(`ptr`: Pointer,`listener`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_ziptv_core_fn_clone_recorder(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1291,6 +1305,8 @@ fun uniffi_ziptv_core_fn_free_tmdb(`ptr`: Pointer,uniffi_out_err: UniffiRustCall
 fun uniffi_ziptv_core_fn_constructor_tmdb_new(`token`: RustBuffer.ByValue,`cachePath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Pointer
 fun uniffi_ziptv_core_fn_method_tmdb_lookup(`ptr`: Pointer,`kind`: RustBuffer.ByValue,`title`: RustBuffer.ByValue,`year`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_ziptv_core_fn_method_tmdb_person_movies(`ptr`: Pointer,`personId`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_ziptv_core_fn_clone_userstore(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Pointer
@@ -1335,6 +1351,8 @@ fun uniffi_ziptv_core_fn_method_userstore_toggle_pin(`ptr`: Pointer,`kind`: Rust
 fun uniffi_ziptv_core_fn_init_callback_vtable_synclistener(`vtable`: UniffiVTableCallbackInterfaceSyncListener,
 ): Unit
 fun uniffi_ziptv_core_fn_func_check_update(`current`: RustBuffer.ByValue,`platform`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_ziptv_core_fn_func_qr_code(`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun ffi_ziptv_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1463,6 +1481,9 @@ private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_ziptv_core_checksum_func_check_update() != 64264.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_func_qr_code() != 21886.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ziptv_core_checksum_method_caster_active_name() != 825.toShort()) {
@@ -1618,6 +1639,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_ziptv_core_checksum_method_provider_set_logo_index() != 63076.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_ziptv_core_checksum_method_provider_similar_movies() != 25287.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_ziptv_core_checksum_method_provider_sync() != 33470.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1634,6 +1658,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ziptv_core_checksum_method_tmdb_lookup() != 31593.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_tmdb_person_movies() != 48415.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ziptv_core_checksum_method_userstore_add_recent() != 27222.toShort()) {
@@ -3513,6 +3540,12 @@ public interface ProviderInterface {
     fun `setLogoIndex`(`json`: kotlin.String)
     
     /**
+     * TMDB's related titles (collection + recommendations, Meta.related) that this playlist has, in that
+     * order. Matched on the cleaned title (letters/digits only) and, when both sides have one, the year.
+     */
+    fun `similarMovies`(`related`: List<RelatedTitle>, `excludeId`: kotlin.String): List<Movie>
+    
+    /**
      * Downloads the whole catalog, one big list at a time, each retried 3x.
      * A list that still fails keeps its previous copy (same playlist only).
      */
@@ -3883,6 +3916,22 @@ open class Provider: Disposable, AutoCloseable, ProviderInterface
 }
     }
     
+    
+
+    
+    /**
+     * TMDB's related titles (collection + recommendations, Meta.related) that this playlist has, in that
+     * order. Matched on the cleaned title (letters/digits only) and, when both sides have one, the year.
+     */override fun `similarMovies`(`related`: List<RelatedTitle>, `excludeId`: kotlin.String): List<Movie> {
+            return FfiConverterSequenceTypeMovie.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_provider_similar_movies(
+        it, FfiConverterSequenceTypeRelatedTitle.lower(`related`),FfiConverterString.lower(`excludeId`),_status)
+}
+    }
+    )
+    }
     
 
     
@@ -4342,6 +4391,12 @@ public interface TmdbInterface {
      */
     fun `lookup`(`kind`: ContentKind, `title`: kotlin.String, `year`: kotlin.String?): Meta?
     
+    /**
+     * Every film the person acted in, newest first (Library::similar_movies keeps what the playlist has).
+     * Empty when offline / no token; failures aren't remembered.
+     */
+    fun `personMovies`(`personId`: kotlin.Long): List<RelatedTitle>
+    
     companion object
 }
 
@@ -4446,6 +4501,22 @@ open class Tmdb: Disposable, AutoCloseable, TmdbInterface
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_tmdb_lookup(
         it, FfiConverterTypeContentKind.lower(`kind`),FfiConverterString.lower(`title`),FfiConverterOptionalString.lower(`year`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Every film the person acted in, newest first (Library::similar_movies keeps what the playlist has).
+     * Empty when offline / no token; failures aren't remembered.
+     */override fun `personMovies`(`personId`: kotlin.Long): List<RelatedTitle> {
+            return FfiConverterSequenceTypeRelatedTitle.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_tmdb_person_movies(
+        it, FfiConverterLong.lower(`personId`),_status)
 }
     }
     )
@@ -5075,6 +5146,10 @@ public object FfiConverterTypeCastDevice: FfiConverterRustBuffer<CastDevice> {
 
 
 data class CastMember (
+    /**
+     * TMDB person id (0 = unknown): Tmdb::person_movies.
+     */
+    var `id`: kotlin.Long, 
     var `name`: kotlin.String, 
     var `character`: kotlin.String, 
     var `profile`: kotlin.String?
@@ -5089,6 +5164,7 @@ data class CastMember (
 public object FfiConverterTypeCastMember: FfiConverterRustBuffer<CastMember> {
     override fun read(buf: ByteBuffer): CastMember {
         return CastMember(
+            FfiConverterLong.read(buf),
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
             FfiConverterOptionalString.read(buf),
@@ -5096,12 +5172,14 @@ public object FfiConverterTypeCastMember: FfiConverterRustBuffer<CastMember> {
     }
 
     override fun allocationSize(value: CastMember) = (
+            FfiConverterLong.allocationSize(value.`id`) +
             FfiConverterString.allocationSize(value.`name`) +
             FfiConverterString.allocationSize(value.`character`) +
             FfiConverterOptionalString.allocationSize(value.`profile`)
     )
 
     override fun write(value: CastMember, buf: ByteBuffer) {
+            FfiConverterLong.write(value.`id`, buf)
             FfiConverterString.write(value.`name`, buf)
             FfiConverterString.write(value.`character`, buf)
             FfiConverterOptionalString.write(value.`profile`, buf)
@@ -5434,7 +5512,12 @@ data class Meta (
     /**
      * YouTube video key of the best trailer.
      */
-    var `trailerKey`: kotlin.String?
+    var `trailerKey`: kotlin.String?, 
+    /**
+     * Movies only: the rest of its collection (release order), then TMDB recommendations.
+     * Library::similar_movies keeps the ones this playlist has.
+     */
+    var `related`: List<RelatedTitle>
 ) {
     
     companion object
@@ -5463,6 +5546,7 @@ public object FfiConverterTypeMeta: FfiConverterRustBuffer<Meta> {
             FfiConverterOptionalString.read(buf),
             FfiConverterSequenceTypeCastMember.read(buf),
             FfiConverterOptionalString.read(buf),
+            FfiConverterSequenceTypeRelatedTitle.read(buf),
         )
     }
 
@@ -5483,7 +5567,8 @@ public object FfiConverterTypeMeta: FfiConverterRustBuffer<Meta> {
             FfiConverterOptionalString.allocationSize(value.`poster`) +
             FfiConverterOptionalString.allocationSize(value.`backdrop`) +
             FfiConverterSequenceTypeCastMember.allocationSize(value.`cast`) +
-            FfiConverterOptionalString.allocationSize(value.`trailerKey`)
+            FfiConverterOptionalString.allocationSize(value.`trailerKey`) +
+            FfiConverterSequenceTypeRelatedTitle.allocationSize(value.`related`)
     )
 
     override fun write(value: Meta, buf: ByteBuffer) {
@@ -5504,6 +5589,7 @@ public object FfiConverterTypeMeta: FfiConverterRustBuffer<Meta> {
             FfiConverterOptionalString.write(value.`backdrop`, buf)
             FfiConverterSequenceTypeCastMember.write(value.`cast`, buf)
             FfiConverterOptionalString.write(value.`trailerKey`, buf)
+            FfiConverterSequenceTypeRelatedTitle.write(value.`related`, buf)
     }
 }
 
@@ -5644,6 +5730,41 @@ public object FfiConverterTypeProgramme: FfiConverterRustBuffer<Programme> {
 
 
 
+/**
+ * QR code for `text` (the share link): `size` x `size` modules, row by row, true = dark.
+ */
+data class QrCode (
+    var `size`: kotlin.UInt, 
+    var `modules`: List<kotlin.Boolean>
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeQrCode: FfiConverterRustBuffer<QrCode> {
+    override fun read(buf: ByteBuffer): QrCode {
+        return QrCode(
+            FfiConverterUInt.read(buf),
+            FfiConverterSequenceBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: QrCode) = (
+            FfiConverterUInt.allocationSize(value.`size`) +
+            FfiConverterSequenceBoolean.allocationSize(value.`modules`)
+    )
+
+    override fun write(value: QrCode, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`size`, buf)
+            FfiConverterSequenceBoolean.write(value.`modules`, buf)
+    }
+}
+
+
+
 data class Recording (
     var `id`: kotlin.String, 
     var `title`: kotlin.String, 
@@ -5705,6 +5826,38 @@ public object FfiConverterTypeRecording: FfiConverterRustBuffer<Recording> {
             FfiConverterULong.write(value.`bytes`, buf)
             FfiConverterTypeRecordingStatus.write(value.`status`, buf)
             FfiConverterOptionalString.write(value.`error`, buf)
+    }
+}
+
+
+
+data class RelatedTitle (
+    var `title`: kotlin.String, 
+    var `year`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeRelatedTitle: FfiConverterRustBuffer<RelatedTitle> {
+    override fun read(buf: ByteBuffer): RelatedTitle {
+        return RelatedTitle(
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: RelatedTitle) = (
+            FfiConverterString.allocationSize(value.`title`) +
+            FfiConverterOptionalString.allocationSize(value.`year`)
+    )
+
+    override fun write(value: RelatedTitle, buf: ByteBuffer) {
+            FfiConverterString.write(value.`title`, buf)
+            FfiConverterOptionalString.write(value.`year`, buf)
     }
 }
 
@@ -6615,6 +6768,38 @@ public object FfiConverterOptionalTypePairedDevice: FfiConverterRustBuffer<Paire
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeQrCode: FfiConverterRustBuffer<QrCode?> {
+    override fun read(buf: ByteBuffer): QrCode? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeQrCode.read(buf)
+    }
+
+    override fun allocationSize(value: QrCode?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeQrCode.allocationSize(value)
+        }
+    }
+
+    override fun write(value: QrCode?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeQrCode.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeUpdateInfo: FfiConverterRustBuffer<UpdateInfo?> {
     override fun read(buf: ByteBuffer): UpdateInfo? {
         if (buf.get().toInt() == 0) {
@@ -6733,6 +6918,34 @@ public object FfiConverterOptionalTypeWatchProgress: FfiConverterRustBuffer<Watc
         } else {
             buf.put(1)
             FfiConverterTypeWatchProgress.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceBoolean: FfiConverterRustBuffer<List<kotlin.Boolean>> {
+    override fun read(buf: ByteBuffer): List<kotlin.Boolean> {
+        val len = buf.getInt()
+        return List<kotlin.Boolean>(len) {
+            FfiConverterBoolean.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.Boolean>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterBoolean.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.Boolean>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterBoolean.write(it, buf)
         }
     }
 }
@@ -7023,6 +7236,34 @@ public object FfiConverterSequenceTypeRecording: FfiConverterRustBuffer<List<Rec
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeRelatedTitle: FfiConverterRustBuffer<List<RelatedTitle>> {
+    override fun read(buf: ByteBuffer): List<RelatedTitle> {
+        val len = buf.getInt()
+        return List<RelatedTitle>(len) {
+            FfiConverterTypeRelatedTitle.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<RelatedTitle>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeRelatedTitle.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<RelatedTitle>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeRelatedTitle.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeReminder: FfiConverterRustBuffer<List<Reminder>> {
     override fun read(buf: ByteBuffer): List<Reminder> {
         val len = buf.getInt()
@@ -7107,6 +7348,15 @@ public object FfiConverterSequenceTypeWatchProgress: FfiConverterRustBuffer<List
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_ziptv_core_fn_func_check_update(
         FfiConverterString.lower(`current`),FfiConverterString.lower(`platform`),_status)
+}
+    )
+    }
+    
+ fun `qrCode`(`text`: kotlin.String): QrCode? {
+            return FfiConverterOptionalTypeQrCode.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_func_qr_code(
+        FfiConverterString.lower(`text`),_status)
 }
     )
     }

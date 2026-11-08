@@ -37,6 +37,9 @@ import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Tv
+import androidx.compose.material.icons.rounded.Public
+import androidx.compose.runtime.collectAsState
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -44,9 +47,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
-import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -62,6 +62,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -114,6 +119,7 @@ fun App(model: AppModel) {
                     transitionSpec = { fadeIn(tween(260)) togetherWith fadeOut(tween(160)) }) { s ->
                     when (s) {
                         Screen.Welcome -> WelcomeScreen(model)
+                        Screen.Loading -> LoadingScreen()
                         is Screen.Syncing -> SyncingScreen(s.message)
                         Screen.Main -> MainScaffold(model, wide)
                     }
@@ -152,6 +158,19 @@ fun Wordmark(size: Int = 22) {
         },
         fontSize = size.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.5.sp,
     )
+}
+
+@Composable
+private fun LoadingScreen() {
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+        Wordmark(30)
+        Spacer(Modifier.height(36.dp))
+        androidx.compose.material3.LinearProgressIndicator(
+            Modifier.widthIn(max = 420.dp).fillMaxWidth(0.8f).height(6.dp).clip(RoundedCornerShape(3.dp)),
+            color = Z.focus, trackColor = Z.surfaceHigh)
+        Spacer(Modifier.height(12.dp))
+        Text("Loading your playlist…", color = Z.textMuted, style = MaterialTheme.typography.bodyMedium)
+    }
 }
 
 @Composable
@@ -214,33 +233,14 @@ private fun MainScaffold(model: AppModel, wide: Boolean) {
         if (!wide && model.tab != Tab.Live && !model.fullscreen && model.nowPlaying != null) model.stop()
     }
     if (wide) {
-        Row(Modifier.fillMaxSize()) {
-            NavigationRail(
-                containerColor = Z.surface,
-                header = { Box(Modifier.padding(vertical = 20.dp)) { Wordmark(15) } },
-                modifier = Modifier.fillMaxHeight().width(108.dp),
-            ) {
-                // Scrolls when the screen is too short for every tab (TV, landscape tablets).
-                Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())) {
-                tabs.forEach { t ->
-                    NavigationRailItem(
-                        selected = model.tab == t.tab,
-                        onClick = { model.tab = t.tab },
-                        icon = { Icon(t.icon, contentDescription = null) },
-                        label = { Text(t.label) },
-                        colors = NavigationRailItemDefaults.colors(
-                            selectedIconColor = Z.text, selectedTextColor = Z.text,
-                            indicatorColor = Z.accent, unselectedIconColor = Z.textMuted, unselectedTextColor = Z.textMuted,
-                        ),
-                        modifier = Modifier.padding(vertical = 4.dp).focusRing(lift = 1f),
-                    )
-                }
-                }
-            }
-            Column(Modifier.weight(1f).fillMaxHeight()) {
+        // Rail: icons only, widens with labels on mouse hover / D-pad focus. It floats over the page
+        // (content keeps the narrow width as padding), so opening it never reflows the screen.
+        Box(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().padding(start = RAIL_NARROW)) {
                 Header(model, wide = true)
                 Box(Modifier.weight(1f)) { TabContent(model) }
             }
+            SideRail(model, tabs)
         }
     } else {
         Column(Modifier.fillMaxSize()) {
@@ -249,6 +249,63 @@ private fun MainScaffold(model: AppModel, wide: Boolean) {
             NavigationBar(containerColor = Z.surface) {
                 tabs.forEach { BottomItem(model, it) }
             }
+        }
+    }
+}
+
+private val RAIL_NARROW = 84.dp
+private val RAIL_WIDE = 220.dp
+
+@Composable
+private fun SideRail(model: AppModel, tabs: List<TabItem>) {
+    var hover by remember { mutableStateOf(false) }
+    var focused by remember { mutableStateOf(false) }
+    // Focus opens it only on TV (D-pad). On PC a click leaves focus on the item, which kept it stuck open.
+    val open = hover || (focused && LocalDevice.current == DeviceClass.Tv)
+    val w by androidx.compose.animation.core.animateDpAsState(if (open) RAIL_WIDE else RAIL_NARROW,
+        tween(220, easing = androidx.compose.animation.core.FastOutSlowInEasing), label = "rail")
+    Column(
+        Modifier.fillMaxHeight().width(w)
+            .shadow(if (open) 24.dp else 0.dp)
+            .background(Z.surface)
+            .onFocusChanged { focused = it.hasFocus }
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val e = awaitPointerEvent()
+                        if (e.type == PointerEventType.Enter) hover = true else if (e.type == PointerEventType.Exit) hover = false
+                    }
+                }
+            }
+            .padding(horizontal = 14.dp, vertical = 18.dp),
+    ) {
+        Box(Modifier.height(36.dp).padding(start = 6.dp), contentAlignment = Alignment.CenterStart) {
+            if (open) Wordmark(15)
+            else Text("Z", color = Z.focus, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(start = 10.dp))
+        }
+        Spacer(Modifier.height(16.dp))
+        // Scrolls when the screen is too short for every tab (TV, landscape tablets).
+        Column(Modifier.weight(1f).verticalScroll(androidx.compose.foundation.rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            tabs.filter { it.tab != Tab.Settings }.forEach { RailItem(model, it, open) }
+        }
+        tabs.firstOrNull { it.tab == Tab.Settings }?.let { RailItem(model, it, open) } // pinned to the bottom
+    }
+}
+
+@Composable
+private fun RailItem(model: AppModel, t: TabItem, open: Boolean) {
+    val selected = model.tab == t.tab
+    Row(
+        Modifier.fillMaxWidth().height(48.dp).focusRing(RoundedCornerShape(50), lift = 1f).clip(RoundedCornerShape(50))
+            .background(if (selected) Z.accent else Color.Transparent)
+            .clickable { model.tab = t.tab }.padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(t.icon, t.label, tint = if (selected) Z.text else Z.textMuted)
+        AnimatedVisibility(open, enter = fadeIn(tween(180, delayMillis = 60)), exit = fadeOut(tween(80))) {
+            Text(t.label, Modifier.padding(start = 16.dp), color = if (selected) Z.text else Z.textMuted,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1, softWrap = false)
         }
     }
 }
@@ -265,6 +322,18 @@ private fun Header(model: AppModel, wide: Boolean) {
         if (!wide) { Wordmark(17); Spacer(Modifier.width(12.dp)) }
         Text(model.active?.name ?: "", Modifier.weight(1f), color = Z.textMuted, maxLines = 1,
             overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge)
+        // v9's header TV link: the address to type into a Smart TV's browser (re-read each minute: Wi-Fi can change).
+        if (wide) remember(now / 60_000) { model.lan.tvUrl() }?.let { TvLink(it) }
+        // One click to "Watch away from home": starts the link and shows its QR.
+        model.platform.tunnel?.let { t ->
+            val tunnelUrl by t.url.collectAsState()
+            var sharing by remember { mutableStateOf(false) }
+            Icon(Icons.Rounded.Public, "Watch away from home", tint = if (tunnelUrl.isNullOrEmpty()) Z.text else Z.focus,
+                modifier = Modifier.focusRing(RoundedCornerShape(50)).clip(RoundedCornerShape(50))
+                    .clickable { if (tunnelUrl == null) t.start(model.lan.port().toInt()); sharing = true }.padding(8.dp))
+            Spacer(Modifier.width(4.dp))
+            if (sharing) ShareDialog(model, t) { sharing = false }
+        }
         // v9's header icon: the guest's way into a friend's Watch Together room.
         var joining by remember { mutableStateOf(false) }
         Icon(Icons.Rounded.Groups, "Watch Together", Modifier.focusRing(RoundedCornerShape(50)).clip(RoundedCornerShape(50))
@@ -291,6 +360,24 @@ private fun Header(model: AppModel, wide: Boolean) {
             if (wide) Text(SimpleDateFormat("MMMM d, yyyy", Locale.getDefault()).format(Date(now)),
                 color = Z.textMuted, style = MaterialTheme.typography.labelMedium)
         }
+    }
+}
+
+/** "TV  10.0.0.5:8790/tv" pill; click copies the full link. */
+@Composable
+private fun TvLink(url: String) {
+    val clip = androidx.compose.ui.platform.LocalClipboardManager.current
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) { if (copied) { delay(1500); copied = false } }
+    Row(
+        Modifier.padding(end = 12.dp).focusRing(RoundedCornerShape(50)).clip(RoundedCornerShape(50)).background(Z.surface)
+            .clickable { clip.setText(androidx.compose.ui.text.AnnotatedString(url)); copied = true }
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Rounded.Tv, null, tint = Z.focus,
+            modifier = Modifier.padding(end = 8.dp).height(18.dp).width(18.dp))
+        Text(if (copied) "Copied" else url.removePrefix("http://"), style = MaterialTheme.typography.labelLarge, maxLines = 1)
     }
 }
 

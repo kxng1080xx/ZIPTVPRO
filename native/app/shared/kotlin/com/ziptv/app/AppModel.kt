@@ -8,6 +8,7 @@ import com.ziptv.core.Cloud
 import com.ziptv.core.ContentKind
 import com.ziptv.core.CoreException
 import com.ziptv.core.DeviceState
+import com.ziptv.core.Movie
 import com.ziptv.core.Provider
 import com.ziptv.core.Reminder
 import com.ziptv.core.SyncListener
@@ -63,6 +64,8 @@ enum class Tab { Home, Live, Movies, Series, Search, Settings }
 
 sealed interface Screen {
     data object Welcome : Screen
+    /** Launch with a saved playlist: logo while the cached catalog loads (was a flash of the activation code). */
+    data object Loading : Screen
     data class Syncing(val message: String) : Screen
     data object Main : Screen
 }
@@ -113,7 +116,7 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
     var user: UserStore?
         get() = userState
         private set(v) { userState = v; syncLan() }
-    var screen by mutableStateOf<Screen>(Screen.Welcome); private set
+    var screen by mutableStateOf<Screen>(if (playlists.isEmpty()) Screen.Welcome else Screen.Loading); private set
     var device by mutableStateOf<DeviceState?>(null); private set
     var error by mutableStateOf<String?>(null)
     var tab by mutableStateOf(Tab.Home)
@@ -128,6 +131,10 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
     var fullscreen by mutableStateOf(false)
     /** Detail pages opened from elsewhere (Home, Search). */
     var openMovie by mutableStateOf<com.ziptv.core.Movie?>(null)
+    /** Movie playlist page (Movies tab). */
+    var openList by mutableStateOf<String?>(null)
+    /** Actor page (Movies tab): their movies on this playlist. */
+    var openPerson by mutableStateOf<com.ziptv.core.CastMember?>(null)
     var openSeries by mutableStateOf<com.ziptv.core.Series?>(null)
     var showGuide by mutableStateOf(false)
     /** Live TV's selected category; the full guide opens on the same one. */
@@ -163,7 +170,7 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
 
     private fun watchForNext(item: Playable) {
         upNextJob?.cancel(); upNext = null; upNextCancelled = false
-        if (item.kind != PlayKind.Episode || item.seriesId == null) return
+        if (!(item.kind == PlayKind.Episode && item.seriesId != null) && !(item.kind == PlayKind.Movie && queue.isNotEmpty())) return
         upNextJob = scope.launch {
             var next: Playable? = null
             var looked = false
@@ -187,6 +194,7 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
 
     private fun nextEpisode(item: Playable): Playable? {
         val lib = library ?: return null
+        if (item.kind == PlayKind.Movie) return queue.firstOrNull()?.let { moviePlayable(lib, it) }
         val eps = lib.episodes(item.seriesId ?: return null).sortedWith(compareBy({ it.season }, { it.number }))
         val e = eps.getOrNull(eps.indexOfFirst { it.id == item.streamId }.takeIf { it >= 0 }?.plus(1) ?: return null) ?: return null
         val show = item.title.substringBefore(" · ")
@@ -197,6 +205,7 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
     fun playUpNext() {
         val n = upNext ?: return
         upNext = null
+        if (n.kind == PlayKind.Movie) { queue = queue.drop(1); keepQueue = true }
         play(n, full = true)
     }
 
@@ -406,6 +415,8 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
     }
 
     fun play(item: Playable, full: Boolean) {
+        if (!keepQueue) queue = emptyList() // anything picked by hand ends a playlist run
+        keepQueue = false
         // Same stream already running (preview -> fullscreen): just resize, never reconnect —
         // a restart costs a provider connection and is often refused on busy accounts.
         if (nowPlaying?.url == item.url && player.state.value !is PlayerState.Failed) { fullscreen = full; return }
@@ -479,6 +490,55 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
         val minutes = ((end - start) / 60).toUInt().coerceAtLeast(1u)
         play(Playable(title, "Catch-up · ${ch.name}", lib.catchupUrl(ch.streamId, start, minutes), PlayKind.Catchup, ch.streamId, ch.logo), true)
     }
+
+    // ------------------------------------------------------- movie playlists
+    // "Transformers marathon": movies played back to back. Kept per playlist in the user store as
+    // "name<TAB>id,id,..." lines (ponytail: plain text, no core change; move to the core if the TV page needs them).
+
+    /** Movies still to come in the playlist that's playing (the current one excluded). */
+    private var queue: List<Movie> = emptyList()
+    private var keepQueue = false
+
+    fun movieLists(): List<Pair<String, List<String>>> = userVersion.let {
+        user?.setting("movie_lists").orEmpty().lines().filter { it.contains('\t') }.map { l ->
+            l.substringBefore('\t') to l.substringAfter('\t').split(',').filter { it.isNotBlank() }
+        }
+    }
+
+    private fun saveLists(lists: List<Pair<String, List<String>>>) =
+        setSetting("movie_lists", lists.filter { it.second.isNotEmpty() }.joinToString("\n") { "${it.first}\t${it.second.joinToString(",")}" }.ifEmpty { null })
+
+    /** Adds the movie to the list (creating it), or takes it out if it's already there. */
+    fun toggleInList(name: String, movieId: String) {
+        val n = name.replace(Regex("[\t\n\r]"), " ").trim().ifEmpty { return }
+        val lists = movieLists().toMutableList()
+        val i = lists.indexOfFirst { it.first.equals(n, ignoreCase = true) }
+        if (i < 0) lists += n to listOf(movieId)
+        else lists[i] = lists[i].first to lists[i].second.let { if (movieId in it) it - movieId else it + movieId }
+        saveLists(lists)
+    }
+
+    fun deleteList(name: String) { if (openList == name) openList = null; saveLists(movieLists().filterNot { it.first == name }) }
+
+    /** Moves the movie at [from] one place up (-1) or down (+1): play order. */
+    fun moveInList(name: String, from: Int, by: Int) = saveLists(movieLists().map { (n, ids) ->
+        if (n != name || from + by !in ids.indices) n to ids
+        else n to ids.toMutableList().apply { add(from + by, removeAt(from)) }
+    })
+
+    /** Plays the list from [startAt]; each movie resumes where it was left, the next starts when it ends. */
+    fun playList(name: String, startAt: Int = 0) {
+        val lib = library ?: return
+        val ids = movieLists().firstOrNull { it.first == name }?.second ?: return
+        val movies = lib.moviesByIds(ids).associateBy { it.streamId }.let { by -> ids.mapNotNull { by[it] } }
+        val first = movies.getOrNull(startAt) ?: return
+        keepQueue = true
+        queue = movies.drop(startAt + 1)
+        play(moviePlayable(lib, first), full = true)
+    }
+
+    fun moviePlayable(lib: Provider, m: Movie) =
+        Playable(m.name, m.year ?: "Movie", lib.movieUrl(m.streamId, m.extension), PlayKind.Movie, m.streamId, m.poster, m.extension)
 
     fun setSetting(key: String, value: String?) { user?.setSetting(key, value); userVersion++ }
 

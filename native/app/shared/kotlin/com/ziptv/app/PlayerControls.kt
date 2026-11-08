@@ -58,6 +58,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.dp
 
@@ -80,6 +81,14 @@ fun BoxScope.PlayerChrome(model: AppModel, item: Playable, inFullscreen: Boolean
     Row(
         Modifier.align(Alignment.BottomCenter).fillMaxWidth()
             .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))))
+            // NNL box (live): flush with the left and bottom edges, solid behind the programmes,
+            // fading out to clear before the buttons on the right.
+            .drawBehind {
+                if (!item.live) return@drawBehind
+                val end = (this.size.width - (if (inFullscreen) 340.dp else 250.dp).toPx()).coerceAtLeast(this.size.width * 0.4f)
+                drawRect(Brush.horizontalGradient(0f to Color.Black.copy(alpha = 0.6f), 0.7f to Color.Black.copy(alpha = 0.6f),
+                    1f to Color.Transparent, startX = 0f, endX = end))
+            }
             .padding(horizontal = if (inFullscreen) 24.dp else 10.dp, vertical = if (inFullscreen) 14.dp else 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),

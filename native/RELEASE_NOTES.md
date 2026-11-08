@@ -7,6 +7,20 @@ device — TV and projector, phone and tablet, or Windows PC — with no switchi
 playlists and provider setup carry on. Favorites and local watch history from version 9
 start fresh.
 
+**10.2.0:**
+- Movie playlists: put movies in your own playlist (e.g. every Transformers film) from a movie's page
+  and they play back to back. Find them at the top of Movies and on Home; reorder or remove movies anytime.
+- Similar movies on every movie page: the rest of its series first (all the X-Men films), then films like it,
+  only ones your provider has.
+- Tap an actor to see all their movies your provider has.
+- New Home: a rotating spotlight of what you were watching with its artwork, a livelier live-channel card,
+  and Top rated rows.
+- Sidebar shows icons and opens with labels when you point at it; Settings sits at the bottom.
+- PC: the Smart TV address is back at the top, and a new button turns on "Watch away from home" with a QR
+  code to scan on your phone (also in Settings).
+- No more flash of the activation code when the app starts; you see the logo while it loads.
+- Player: the NOW / NEXT / LATER bar sits on a dark backing so it is easy to read.
+
 **10.1.0:**
 - PC: watch away from home. Settings > Network > "Watch away from home" gives a private link to your
   library that opens in any browser, on any network, while ZIPTV Pro is open on the PC.

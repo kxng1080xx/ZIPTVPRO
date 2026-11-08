@@ -332,6 +332,12 @@ private fun AwayFromHome(model: AppModel, t: ShareTunnel) {
                 onClick = { clip.setText(androidx.compose.ui.text.AnnotatedString(link)); copied = true }) {
                 Text(if (copied) "Copied" else "Copy", color = Z.focus, style = MaterialTheme.typography.labelLarge)
             }
+            Divider()
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                QrImage(link, Modifier.size(168.dp))
+                Text("Or scan this with your phone's camera", Modifier.padding(start = 20.dp), color = Z.textMuted,
+                    style = MaterialTheme.typography.bodyMedium)
+            }
         }
     }
     Text("Streams use this PC's internet upload and work while ZIPTV Pro is open here. Anyone with the link can watch, so only share it with people you trust.",
@@ -429,5 +435,54 @@ private fun SettingRow(
             subtitle?.let { Text(it, color = Z.textMuted, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis) }
         }
         Row(verticalAlignment = Alignment.CenterVertically) { trailing() }
+    }
+}
+
+/** QR code of [text], dark on a white card with the quiet zone scanners need. */
+@Composable
+fun QrImage(text: String, modifier: Modifier) {
+    val qr = remember(text) { runCatching { com.ziptv.core.qrCode(text) }.getOrNull() } ?: return
+    androidx.compose.foundation.Canvas(modifier.clip(RoundedCornerShape(12.dp)).background(Color.White)) {
+        val n = qr.size.toInt()
+        val cell = size.minDimension / (n + 4) // 2-module quiet zone each side
+        for (y in 0 until n) for (x in 0 until n) if (qr.modules[y * n + x])
+            drawRect(Color.Black, androidx.compose.ui.geometry.Offset((x + 2) * cell, (y + 2) * cell),
+                androidx.compose.ui.geometry.Size(cell + 0.5f, cell + 0.5f)) // +0.5: no hairline gaps
+    }
+}
+
+/** Header shortcut for "Watch away from home": turns the link on and shows it with its QR. */
+@Composable
+fun ShareDialog(model: AppModel, t: ShareTunnel, onDismiss: () -> Unit) {
+    val url by t.url.collectAsState()
+    val note by t.note.collectAsState()
+    val link = url?.takeIf { it.isNotEmpty() }?.let { model.lan.shareLink(it) }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(Modifier.widthIn(max = 440.dp).clip(RoundedCornerShape(16.dp)).background(Z.surface).padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Watch away from home", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text("Scan on your phone, or open the link in any browser.", Modifier.padding(top = 4.dp, bottom = 16.dp),
+                color = Z.textMuted, style = MaterialTheme.typography.bodyMedium)
+            if (link != null) {
+                QrImage(link, Modifier.size(220.dp))
+                val clip = androidx.compose.ui.platform.LocalClipboardManager.current
+                var copied by remember(link) { mutableStateOf(false) }
+                Text(link, Modifier.padding(top = 14.dp), style = MaterialTheme.typography.bodySmall, color = Z.textMuted,
+                    maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    androidx.compose.material3.TextButton(onClick = { clip.setText(androidx.compose.ui.text.AnnotatedString(link)); copied = true }) {
+                        Text(if (copied) "Copied" else "Copy link")
+                    }
+                    androidx.compose.material3.TextButton(onClick = { t.stop(); onDismiss() }) { Text("Turn off", color = Z.live) }
+                    androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Done") }
+                }
+            } else {
+                Box(Modifier.size(220.dp).clip(RoundedCornerShape(12.dp)).background(Z.surfaceHigh), contentAlignment = Alignment.Center) {
+                    Text(note ?: "Connecting…", Modifier.padding(16.dp), color = Z.textMuted,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                }
+                androidx.compose.material3.TextButton(onClick = onDismiss, modifier = Modifier.padding(top = 10.dp)) { Text("Close") }
+            }
+        }
     }
 }

@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -83,7 +84,10 @@ fun MetaSection(model: AppModel, kind: ContentKind, title: String, year: String?
             Label("CAST")
             LazyRow(contentPadding = PaddingValues(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 items(m.cast) { c ->
-                    Column(Modifier.width(84.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    // Tap an actor: their movies on this playlist (Movies tab; a series page stays open in Series).
+                    Column(Modifier.width(84.dp).focusRing(RoundedCornerShape(12.dp)).clip(RoundedCornerShape(12.dp))
+                        .clickable(enabled = c.id > 0) { model.openMovie = null; model.openPerson = c; model.tab = Tab.Movies }
+                        .padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Box(Modifier.size(64.dp).clip(CircleShape).background(Z.surfaceHigh), contentAlignment = Alignment.Center) {
                             Icon(Icons.Rounded.Person, null, tint = Z.textMuted)
                             c.profile?.let { AsyncImage(it, c.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
@@ -95,6 +99,48 @@ fun MetaSection(model: AppModel, kind: ContentKind, title: String, year: String?
                     }
                 }
             }
+        }
+    }
+}
+
+/** An actor's films that this playlist has, newest first (TMDB filmography matched to the catalog). */
+@Composable
+fun ActorScreen(model: AppModel, c: com.ziptv.core.CastMember, onBack: () -> Unit) {
+    val lib = model.library ?: return
+    val movies by produceState<List<com.ziptv.core.Movie>?>(null, c.id, model.catalogVersion) {
+        value = withContext(Dispatchers.IO) {
+            runCatching { lib.similarMovies(model.tmdb.personMovies(c.id), "") }.getOrDefault(emptyList())
+        }
+    }
+    val wide = LocalWide.current
+    androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+        androidx.compose.foundation.lazy.grid.GridCells.Adaptive(if (wide) 150.dp else 110.dp), Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = if (wide) 24.dp else 12.dp, vertical = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+            Column {
+                IconAction(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)) {
+                    Box(Modifier.size(if (wide) 120.dp else 88.dp).clip(CircleShape).background(Z.surfaceHigh), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Person, null, tint = Z.textMuted, modifier = Modifier.size(40.dp))
+                        c.profile?.let { AsyncImage(it, c.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+                    }
+                    Column(Modifier.padding(start = 20.dp)) {
+                        Text(c.name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+                        val m = movies
+                        Text(when {
+                            m == null -> "Finding their movies on your playlist…"
+                            m.isEmpty() -> "None of their movies are on this playlist"
+                            else -> "${m.size} ${if (m.size == 1) "movie" else "movies"} on your playlist"
+                        }, color = Z.textMuted)
+                    }
+                }
+            }
+        }
+        items(movies.orEmpty().size) { i ->
+            val m = movies!![i]
+            PosterCard(m.name, m.poster, m.rating, m.year) { model.openMovie = m }
         }
     }
 }

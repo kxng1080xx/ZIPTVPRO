@@ -33,12 +33,16 @@ import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Replay
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.RadioButtonUnchecked
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -79,7 +83,17 @@ private data class Poster(val id: String, val title: String, val image: String?,
 fun MoviesScreen(model: AppModel) {
     model.openMovie?.let { m ->
         model.platform.BackHandler(enabled = !model.fullscreen) { model.openMovie = null }
-        MovieDetail(model, m) { model.openMovie = null }
+        androidx.compose.runtime.key(m.streamId) { MovieDetail(model, m) { model.openMovie = null } } // new movie = back to the top
+        return
+    }
+    model.openPerson?.let { c ->
+        model.platform.BackHandler(enabled = !model.fullscreen) { model.openPerson = null }
+        ActorScreen(model, c) { model.openPerson = null }
+        return
+    }
+    model.openList?.let { name ->
+        model.platform.BackHandler(enabled = !model.fullscreen) { model.openList = null }
+        MovieListScreen(model, name) { model.openList = null }
         return
     }
     CatalogScreen(model, ContentKind.MOVIE,
@@ -92,7 +106,8 @@ fun MoviesScreen(model: AppModel) {
             }
             list.map { Poster(it.streamId, it.name, it.poster, it.rating, it.year, it) }
         },
-        onOpen = { model.openMovie = it.item as Movie })
+        onOpen = { model.openMovie = it.item as Movie },
+        header = { MovieListsShelf(model) })
 }
 
 @Composable
@@ -116,19 +131,20 @@ fun SeriesScreen(model: AppModel) {
 }
 
 @Composable
-private fun CatalogScreen(model: AppModel, kind: ContentKind, load: (String) -> List<Poster>, onOpen: (Poster) -> Unit) {
+private fun CatalogScreen(model: AppModel, kind: ContentKind, load: (String) -> List<Poster>, onOpen: (Poster) -> Unit,
+                          header: (@Composable () -> Unit)? = null) {
     // ponytail: no category browsing for movies/series — everything in one grid, search finds the rest.
     val posters by produceState<List<Poster>?>(null, model.library, kind, model.catalogVersion) {
         value = withContext(Dispatchers.IO) { load(CAT_ALL) }
     }
-    PosterGrid(posters, Modifier.fillMaxSize().padding(horizontal = if (LocalWide.current) 16.dp else 6.dp), onOpen)
+    PosterGrid(posters, Modifier.fillMaxSize().padding(horizontal = if (LocalWide.current) 16.dp else 6.dp), onOpen, header)
 }
 
 @Composable
-private fun PosterGrid(items: List<Poster>?, modifier: Modifier, onOpen: (Poster) -> Unit) {
+private fun PosterGrid(items: List<Poster>?, modifier: Modifier, onOpen: (Poster) -> Unit, header: (@Composable () -> Unit)? = null) {
     val min = if (LocalDevice.current == DeviceClass.Touch && !LocalWide.current) 110.dp else 150.dp
     androidx.compose.animation.Crossfade(items == null, modifier, label = "posters") { loading ->
-        if (loading) PosterSkeleton(min) else PosterGridLoaded(items.orEmpty(), min, onOpen)
+        if (loading) PosterSkeleton(min) else PosterGridLoaded(items.orEmpty(), min, onOpen, header)
     }
 }
 
@@ -161,7 +177,7 @@ fun shimmerBrush(): androidx.compose.ui.graphics.Brush {
 }
 
 @Composable
-private fun PosterGridLoaded(items: List<Poster>, min: androidx.compose.ui.unit.Dp, onOpen: (Poster) -> Unit) {
+private fun PosterGridLoaded(items: List<Poster>, min: androidx.compose.ui.unit.Dp, onOpen: (Poster) -> Unit, header: (@Composable () -> Unit)? = null) {
     if (items.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Nothing here yet", color = Z.textMuted) }
         return
@@ -171,6 +187,8 @@ private fun PosterGridLoaded(items: List<Poster>, min: androidx.compose.ui.unit.
         contentPadding = PaddingValues(8.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
+        // Full-width block above the posters that scrolls away with them (Movies: your playlists).
+        if (header != null) item(key = "header", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) { header() }
         items(items, key = { it.id }) { p -> PosterCard(p.title, p.image, p.rating, p.year) { onOpen(p) } }
     }
 }
@@ -255,10 +273,65 @@ private fun MovieDetail(model: AppModel, m: Movie, onBack: () -> Unit) {
                 }
                 IconAction(if (fav) Icons.Rounded.Star else Icons.Rounded.StarBorder, if (fav) "Remove favorite" else "Add favorite",
                     if (fav) Z.gold else Z.textMuted) { model.toggleFavorite(ContentKind.MOVIE, m.streamId) }
+                var picking by remember { mutableStateOf(false) }
+                IconAction(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to a playlist") { picking = true }
+                if (picking) AddToListDialog(model, m) { picking = false }
             }
             MetaSection(model, ContentKind.MOVIE, m.name, m.year)
+            SimilarMovies(model, m)
         }
     }
+    }
+}
+
+/** Same collection first (every X-Men film), then TMDB's recommendations; only what this playlist has. */
+@Composable
+private fun SimilarMovies(model: AppModel, m: Movie) {
+    val lib = model.library ?: return
+    val similar by produceState(emptyList<Movie>(), m.streamId, model.catalogVersion) {
+        value = withContext(Dispatchers.IO) {
+            runCatching { model.tmdb.lookup(ContentKind.MOVIE, m.name, m.year) }.getOrNull()
+                ?.let { lib.similarMovies(it.related, m.streamId) }.orEmpty()
+        }
+    }
+    if (similar.isEmpty()) return
+    Text("SIMILAR MOVIES", Modifier.padding(top = 24.dp, bottom = 10.dp), color = Z.textMuted, style = MaterialTheme.typography.labelLarge)
+    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        items(similar.size) { i ->
+            val s = similar[i]
+            Box(Modifier.width(150.dp)) { PosterCard(s.name, s.poster, s.rating, s.year) { model.openMovie = s } }
+        }
+    }
+}
+
+/** Pick which of your movie playlists this movie is in, or start a new one with it. */
+@Composable
+private fun AddToListDialog(model: AppModel, m: Movie, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf("") }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(Modifier.widthIn(max = 420.dp).clip(RoundedCornerShape(16.dp)).background(Z.surface).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Add to a playlist", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text("Movies in a playlist play back to back, in the order you add them.", color = Z.textMuted,
+                style = MaterialTheme.typography.bodyMedium)
+            model.movieLists().forEach { (list, ids) ->
+                val inIt = m.streamId in ids
+                Row(Modifier.fillMaxWidth().focusRing(RoundedCornerShape(10.dp)).clip(RoundedCornerShape(10.dp))
+                    .clickable { model.toggleInList(list, m.streamId) }.padding(horizontal = 10.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Icon(if (inIt) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked, null,
+                        tint = if (inIt) Z.focus else Z.textMuted)
+                    Text(list, Modifier.weight(1f).padding(start = 12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("${ids.size}", color = Z.textMuted, style = MaterialTheme.typography.labelLarge)
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(name, { name = it }, Modifier.weight(1f), singleLine = true,
+                    placeholder = { Text("New playlist, e.g. Transformers") })
+                TextButton(onClick = { model.toggleInList(name, m.streamId); name = "" }, enabled = name.isNotBlank()) { Text("Create") }
+            }
+            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text("Done") }
+        }
     }
 }
 
