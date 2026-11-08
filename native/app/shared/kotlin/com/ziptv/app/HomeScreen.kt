@@ -152,8 +152,12 @@ private fun Hero(model: AppModel, d: HomeData) {
     val preferVod = cont != null && (ch == null || System.currentTimeMillis() / 1000 - cont.updatedAt < 6 * 3600)
     val wide = LocalWide.current
     val backdrop = if (preferVod) rememberBackdrop(model, cont!!) else null
-    Box(Modifier.fillMaxWidth().height(if (wide) 430.dp else 340.dp)) {
+    val now = if (!preferVod) rememberNow(model, ch!!) else null
+    // No art (live channel): size to the content instead of a tall empty black box (PC looked blank).
+    val size = if (backdrop != null) Modifier.height(if (wide) 430.dp else 340.dp) else Modifier.padding(top = if (wide) 40.dp else 24.dp)
+    Box(Modifier.fillMaxWidth().then(size)) {
         if (backdrop != null) AsyncImage(backdrop, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        if (!preferVod && wide) ChannelLogo(ch!!.logo, Modifier.align(Alignment.CenterEnd).padding(end = 48.dp).size(150.dp), ch.altLogo)
         // Fade the art into the page: left for the text, bottom into the rows.
         Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Z.bg.copy(alpha = 0.95f), Z.bg.copy(alpha = 0.55f), Color.Transparent))))
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.55f to Color.Transparent, 1f to Z.bg)))
@@ -195,10 +199,16 @@ private fun Hero(model: AppModel, d: HomeData) {
                 Spacer(Modifier.height(10.dp))
                 val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
                 val greeting = when (hour) { in 5..11 -> "GOOD MORNING"; in 12..16 -> "GOOD AFTERNOON"; else -> "GOOD EVENING" }
-                Text("$greeting — PICK UP WHERE YOU LEFT OFF", color = Z.focus, style = MaterialTheme.typography.labelLarge)
+                Text("$greeting · PICK UP WHERE YOU LEFT OFF", color = Z.focus, style = MaterialTheme.typography.labelLarge)
                 Spacer(Modifier.height(8.dp))
                 Text(ch!!.name, style = MaterialTheme.typography.headlineMedium.copy(fontSize = if (wide) 44.sp else 30.sp),
                     fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                now?.let { p ->
+                    Spacer(Modifier.height(6.dp))
+                    Text(p.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("${clock(p.start)} – ${clock(p.end)} · ${((p.end - System.currentTimeMillis() / 1000) / 60).coerceAtLeast(1)} min left",
+                        color = Z.textMuted, style = MaterialTheme.typography.bodyMedium)
+                }
                 Spacer(Modifier.height(18.dp))
                 HeroButton(Icons.Rounded.PlayArrow, "Watch Live", primary = true) { model.playChannel(ch, d.recent, full = true) }
             }
