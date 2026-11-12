@@ -7,6 +7,10 @@ device — TV and projector, phone and tablet, or Windows PC — with no switchi
 playlists and provider setup carry on. Favorites and local watch history from version 9
 start fresh.
 
+**10.2.1:**
+- Series pages no longer crash the app when the episodes load.
+- Fixed a crash on series whose provider lists the same episode twice.
+
 **10.2.0:**
 - Movie playlists: put movies in your own playlist (e.g. every Transformers film) from a movie's page
   and they play back to back. Find them at the top of Movies and on Home; reorder or remove movies anytime.
