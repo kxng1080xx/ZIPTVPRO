@@ -643,6 +643,10 @@ fn parse_episodes(v: &Value) -> Vec<Episode> {
         Some(Value::Array(seasons)) => seasons.iter().enumerate().for_each(|(i, list)| push(&(i + 1).to_string(), list)),
         _ => {}
     }
+    // Some providers list an episode twice (or under two season keys) or leave out its id. The
+    // episode list is keyed by id, so a repeat crashes the series page; an id-less one can't play.
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|e| !e.id.is_empty() && seen.insert(e.id.clone()));
     out.sort_by_key(|e| (e.season, e.number));
     out
 }
@@ -780,6 +784,12 @@ mod tests {
         assert_eq!(eps[1].extension.as_deref(), Some("mkv"));
         let arr: Value = serde_json::from_str(r#"{"episodes":[[{"id":"1","episode_num":1}]]}"#).unwrap();
         assert_eq!(parse_episodes(&arr)[0].season, 1);
+        // Same episode under two season keys, plus one with no id: one copy, id-less dropped.
+        let dup: Value = serde_json::from_str(
+            r#"{"episodes":{"1":[{"id":"5","season":1,"episode_num":1},{"episode_num":2}],"01":[{"id":"5","season":1,"episode_num":1}]}}"#,
+        )
+        .unwrap();
+        assert_eq!(parse_episodes(&dup).iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), ["5"]);
     }
 
     #[test]
