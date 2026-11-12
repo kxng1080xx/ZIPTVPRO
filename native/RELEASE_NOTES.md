@@ -7,6 +7,10 @@ device — TV and projector, phone and tablet, or Windows PC — with no switchi
 playlists and provider setup carry on. Favorites and local watch history from version 9
 start fresh.
 
+**10.2.2:**
+- Fire TV / Android TV: the remote works in the player again. Arrows bring up the controls and move
+  between them (OK selects); they no longer switch channels. Use the on-screen channel buttons, or CH+/CH-.
+
 **10.2.1:**
 - Series pages no longer crash the app when the episodes load.
 - Fixed a crash on series whose provider lists the same episode twice.
