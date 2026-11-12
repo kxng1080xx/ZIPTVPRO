@@ -394,9 +394,12 @@ private fun EpisodesScreen(model: AppModel, series: Series, onBack: () -> Unit) 
             eps.isEmpty() -> item { Text("No episodes found", color = Z.textMuted) }
             else -> {
                 val seasons = eps.groupBy { it.season.toInt() }.toSortedMap()
-                val shown = seasons[season] ?: seasons.values.first()
+                // Never look up null: a TreeMap throws on it, and season is null on the first frame
+                // (the LaunchedEffect above picks it after this composes) — that crashed every series.
+                val current = season ?: seasons.firstKey()
+                val shown = seasons[current] ?: seasons.values.first()
                 item(key = "seasons") {
-                    SeasonPicker(seasons.keys.toList(), season ?: seasons.firstKey(), shown.size) { season = it }
+                    SeasonPicker(seasons.keys.toList(), current, shown.size) { season = it }
                 }
                 items(shown, key = { it.id }) { e -> EpisodeRow(model, series, e, Modifier.animateItem()) }
             }
