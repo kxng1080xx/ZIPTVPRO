@@ -58,6 +58,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -90,6 +91,19 @@ fun PlayerScreen(model: AppModel) {
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
 
+    // TV remote (Fire TV): the D-pad can't move from this full-screen box into the controls inside
+    // it (nothing lies left/right/up/down of a full-screen box), and a focused button that fades out
+    // with the controls takes focus with it, leaving every key dead. So on TV focus follows the
+    // controls: shown -> Play/Pause (first button while loading), hidden -> this box (shortcuts).
+    val tv = LocalDevice.current == DeviceClass.Tv
+    val primary = remember { FocusRequester() }
+    var focusAt by remember { mutableStateOf(0) } // 0 = elsewhere, 1 = this box, 2 = a control inside it
+    LaunchedEffect(tv, controls, focusAt, popOpen, state) {
+        if (!tv || popOpen) return@LaunchedEffect // menus/sheets manage their own focus
+        if (controls && focusAt != 2) runCatching { primary.requestFocus() }
+        else if (!controls && focusAt != 1) runCatching { focus.requestFocus() }
+    }
+
     // Wide layouts keep playing in the preview pane; compact has no preview, so leaving stops playback.
     val wide = LocalWide.current
     val exit = { if (wide) model.fullscreen = false else model.stop() }
@@ -97,6 +111,7 @@ fun PlayerScreen(model: AppModel) {
 
     Box(
         Modifier.fillMaxSize().background(Color.Black)
+            .onFocusChanged { focusAt = when { it.isFocused -> 1; it.hasFocus -> 2; else -> 0 } }
             .focusRequester(focus).focusable()
             .onPreviewKeyEvent { e ->
                 poke++
@@ -138,7 +153,7 @@ fun PlayerScreen(model: AppModel) {
                 TopBar(model, item, exit, Modifier.align(Alignment.TopCenter))
                 // Panel needs room: wide layouts (PC/TV/tablet, phone in landscape) only.
                 if (item.live && model.zapList.size > 1 && LocalWide.current) ChannelPanel(model, item, Modifier.align(Alignment.TopStart)) { poke++ }
-                CenterControls(model, item, state, Modifier.align(Alignment.Center)) { poke++ }
+                CenterControls(model, item, state, primary, Modifier.align(Alignment.Center)) { poke++ }
                 PlayerChrome(model, item, inFullscreen = true, onActive = { popOpen = it }, onInteract = { poke++ })
             }
         }
@@ -272,15 +287,19 @@ private fun GuideCell(tag: String, p: com.ziptv.core.Programme, accent: Color, m
 }
 
 @Composable
-private fun CenterControls(model: AppModel, item: Playable, state: PlayerState, modifier: Modifier, poke: () -> Unit) {
+private fun CenterControls(model: AppModel, item: Playable, state: PlayerState, primary: FocusRequester, modifier: Modifier, poke: () -> Unit) {
+    // [primary] = where the TV remote lands: Play/Pause, or the first button while it's hidden for loading.
+    val loading = state is PlayerState.Buffering || state == PlayerState.Idle
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (item.live) RoundButton(Icons.Rounded.KeyboardArrowUp, "Previous channel") { model.zap(-1); poke() }
-        if (item.seekable) RoundButton(Icons.Rounded.Replay10, "Back 10 seconds") { model.player.seekTo(model.player.positionMs() - 10_000); poke() }
+        if (item.live) RoundButton(Icons.Rounded.KeyboardArrowUp, "Previous channel",
+            modifier = if (loading) Modifier.focusRequester(primary) else Modifier) { model.zap(-1); poke() }
+        if (item.seekable) RoundButton(Icons.Rounded.Replay10, "Back 10 seconds",
+            modifier = if (loading && !item.live) Modifier.focusRequester(primary) else Modifier) { model.player.seekTo(model.player.positionMs() - 10_000); poke() }
         // While loading, the spinner sits where this button is: leave the slot empty (side buttons stay put).
-        if (state is PlayerState.Buffering || state == PlayerState.Idle) Spacer(Modifier.size(76.dp))
+        if (loading) Spacer(Modifier.size(76.dp))
         else RoundButton(
             if (state == PlayerState.Paused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
-            if (state == PlayerState.Paused) "Play" else "Pause", big = true,
+            if (state == PlayerState.Paused) "Play" else "Pause", big = true, modifier = Modifier.focusRequester(primary),
         ) { model.player.togglePause(); poke() }
         if (item.seekable) RoundButton(Icons.Rounded.Forward10, "Forward 10 seconds") { model.player.seekTo(model.player.positionMs() + 10_000); poke() }
         if (item.live) RoundButton(Icons.Rounded.KeyboardArrowDown, "Next channel") { model.zap(1); poke() }
@@ -288,10 +307,10 @@ private fun CenterControls(model: AppModel, item: Playable, state: PlayerState, 
 }
 
 @Composable
-private fun RoundButton(icon: ImageVector, label: String, big: Boolean = false, onClick: () -> Unit) {
+private fun RoundButton(icon: ImageVector, label: String, big: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val size = if (big) 76.dp else 52.dp
     Box(
-        Modifier.size(size).focusRing(RoundedCornerShape(50), lift = 1.08f).clip(RoundedCornerShape(50))
+        modifier.size(size).focusRing(RoundedCornerShape(50), lift = 1.08f).clip(RoundedCornerShape(50))
             .background(if (big) Z.accentGradient else Brush.linearGradient(listOf(Color.Black.copy(alpha = 0.55f), Color.Black.copy(alpha = 0.55f))))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
