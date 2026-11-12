@@ -116,6 +116,10 @@ fun PlayerScreen(model: AppModel) {
             .onPreviewKeyEvent { e ->
                 poke++
                 if (e.type != KeyEventType.KeyDown || controls) return@onPreviewKeyEvent false
+                // TV: the arrows are how you reach the on-screen controls, so with the controls hidden an
+                // arrow only brings them up (poke above; focus lands on Play/Pause) and changes nothing.
+                // The remote's own CH+/CH-/play-pause buttons stay shortcuts.
+                if (tv && e.key in setOf(Key.DirectionUp, Key.DirectionDown, Key.DirectionLeft, Key.DirectionRight)) return@onPreviewKeyEvent true
                 // Controls hidden: remote/keyboard shortcuts (v9 parity).
                 when (e.key) {
                     Key.DirectionUp, Key.ChannelUp, Key.PageUp -> { model.zap(-1); true }
