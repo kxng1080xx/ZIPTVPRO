@@ -70,6 +70,9 @@ sealed interface Screen {
     data object Main : Screen
 }
 
+private const val MAX_RETRIES = 4
+private const val LOAD_TIMEOUT_MS = 20_000L // loading this long with no picture counts as a failed attempt
+
 enum class PlayKind { Live, Catchup, Movie, Episode, Recording }
 
 /** Everything the player and Continue Watching need about what's playing. */
@@ -157,6 +160,8 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
     var dueReminder by mutableStateOf<Reminder?>(null)
     /** Set when GitHub has a newer v10 release for this platform. */
     var update by mutableStateOf<com.ziptv.core.UpdateInfo?>(null)
+    private var dismissedUpdate: String? = null
+    fun dismissUpdate() { dismissedUpdate = update?.version; update = null }
     /** Channels the live player zaps through (the list it was started from). */
     var zapList by mutableStateOf<List<Channel>>(emptyList()); private set
     private var progressJob: Job? = null
@@ -217,13 +222,26 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
         lan.setRecorder(recorder) // "Record" on the TV page records here
         lan.setTmdb(tmdb)         // TV page details: backdrop, plot, cast
         playlists.firstOrNull()?.let { open(it) }
-        // Waiting on the activation screen: check every 3 s so a playlist added on /connect shows up
-        // right away (5 min looked like "cloud sync doesn't work"). Set up: every 5 min.
-        scope.launch { while (isActive) { heartbeat(); delay(if (playlists.isEmpty()) 3_000 else 5 * 60_000) } }
+        // Cloud check-in. Every 3 s while there is no playlist yet or Settings is open (someone is adding one
+        // on /connect and expects it now), else once a minute. ponytail: polling; a push channel if the
+        // check-in volume ever matters (Pages free tier: 100k requests/day across all devices).
+        scope.launch {
+            var since = 60_000L
+            while (isActive) {
+                if (playlists.isEmpty() || tab == Tab.Settings || since >= 60_000L) { heartbeat(); since = 0 }
+                delay(3_000); since += 3_000
+            }
+        }
         scope.launch { while (isActive) { tick(); delay(15_000) } }
+        // Update check: 20 s after start, then every 30 min, so an app left open (PC, TV) still hears about
+        // a release. "Later" silences that version until the next launch. 2 calls/hour: GitHub allows 60.
         scope.launch {
             delay(20_000) // after startup work
-            update = withContext(Dispatchers.IO) { runCatching { com.ziptv.core.checkUpdate(platform.appVersion, platform.cloudPlatform) }.getOrNull() }
+            while (isActive) {
+                val u = withContext(Dispatchers.IO) { runCatching { com.ziptv.core.checkUpdate(platform.appVersion, platform.cloudPlatform) }.getOrNull() }
+                if (u != null && u.version != dismissedUpdate) update = u
+                delay(30 * 60_000L)
+            }
         }
     }
 
@@ -253,10 +271,13 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
             .distinctBy { Triple(it.server.trim().trimEnd('/').lowercase(), it.username.trim(), it.password) }
         if (merged != playlists) {
             val wasEmpty = playlists.isEmpty()
+            // Just sent from /connect (not on this device a moment ago): switch to it, like v9.
+            val added = merged.firstOrNull { m -> m.remoteId != null && playlists.none { it.id == m.id } }
             playlists = merged
             store.save(merged)
             val act = active
             when {
+                added != null && !wasEmpty && added.id != act?.id -> { open(added); error = "Switched to ${added.name}" }
                 act == null || merged.none { it.id == act.id } -> merged.firstOrNull()?.let { open(it) } ?: run {
                     player.stop(); library = null; user = null; active = null; screen = Screen.Welcome
                 }
@@ -419,21 +440,78 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
         keepQueue = false
         // Same stream already running (preview -> fullscreen): just resize, never reconnect —
         // a restart costs a provider connection and is often refused on busy accounts.
-        if (nowPlaying?.url == item.url && player.state.value !is PlayerState.Failed) { fullscreen = full; return }
+        if (nowPlaying?.url == item.url && player.state.value !is PlayerState.Failed && playError == null) { fullscreen = full; return }
         progressJob?.cancel()
         saveProgress() // the item being replaced
         nowPlaying = item
         fullscreen = full
-        val resume = item.progressKey?.let { user?.progress(it) }?.positionMs ?: 0L
-        player.play(item.url, resume)
+        retry = 0; playError = null
+        startStream(item)
         item.progressKey?.let { startProgressSaver() }
         watchForNext(item)
+        watchPlayback(item)
+    }
+
+    // ------------------------------------------------------ loading / retry
+    // Every kind of playback (live, catch-up, movies, episodes, recordings): loading, then up to
+    // MAX_RETRIES automatic retries, then a message with "Try again" (PlayerStatus draws it).
+
+    /** 0 = first attempt; 1..MAX_RETRIES = which retry is loading now. */
+    var retry by mutableStateOf(0); private set
+    /** Set once every retry failed. */
+    var playError by mutableStateOf<String?>(null); private set
+    private var watchJob: Job? = null
+
+    private fun startStream(item: Playable) =
+        player.play(item.url, item.progressKey?.let { user?.progress(it) }?.positionMs ?: 0L) // VOD: back where it was
+
+    private fun watchPlayback(item: Playable) {
+        watchJob?.cancel()
+        watchJob = scope.launch {
+            var loadingSince = System.currentTimeMillis()
+            var playingSince = 0L
+            while (isActive && nowPlaying === item) {
+                delay(500)
+                val s = player.state.value
+                val t = System.currentTimeMillis()
+                if (s == PlayerState.Playing || s == PlayerState.Paused) {
+                    if (playingSince == 0L) playingSince = t
+                    if (t - playingSince > 10_000) retry = 0 // it really plays: a later drop gets its own 4 retries
+                    loadingSince = t
+                    continue
+                }
+                playingSince = 0
+                val stuck = (s is PlayerState.Buffering || s == PlayerState.Idle) && t - loadingSince > LOAD_TIMEOUT_MS
+                // A live stream never "ends": Ended there is the provider dropping the connection.
+                if (s !is PlayerState.Failed && !(item.live && s == PlayerState.Ended) && !stuck) continue
+                if (retry >= MAX_RETRIES) {
+                    playError = (s as? PlayerState.Failed)?.message ?: "The stream did not start."
+                    player.stop()
+                    break
+                }
+                retry++
+                delay(1_000L * retry) // 1, 2, 3, 4 s: gives a busy provider room
+                if (nowPlaying !== item) break
+                saveProgress()
+                startStream(item)
+                loadingSince = System.currentTimeMillis()
+            }
+        }
+    }
+
+    /** "Try again" on the failure message: a fresh round of attempts. */
+    fun retryNow() {
+        val item = nowPlaying ?: return
+        retry = 0; playError = null
+        startStream(item)
+        watchPlayback(item)
     }
 
     fun stop() {
         pip = false
         upNextJob?.cancel(); upNext = null
         progressJob?.cancel()
+        watchJob?.cancel(); retry = 0; playError = null
         saveProgress()
         player.stop()
         nowPlaying = null

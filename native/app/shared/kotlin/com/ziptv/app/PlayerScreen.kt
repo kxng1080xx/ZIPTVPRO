@@ -10,6 +10,7 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -142,13 +143,7 @@ fun PlayerScreen(model: AppModel) {
     ) {
         model.player.Surface(Modifier.fillMaxSize())
 
-        when (val s = state) {
-            is PlayerState.Buffering, PlayerState.Idle ->
-                CircularProgressIndicator(Modifier.align(Alignment.Center), color = Z.focus)
-            is PlayerState.Failed ->
-                Text("Couldn't play this stream. ${s.message}", Modifier.align(Alignment.Center).padding(24.dp), color = Z.text)
-            else -> {}
-        }
+        PlayerStatus(model)
 
         model.upNext?.let { UpNextCard(model, it, Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 140.dp)) }
 
@@ -247,6 +242,36 @@ private fun ChannelPanel(model: AppModel, item: Playable, modifier: Modifier, po
                     qualityBadge(ch.rawName)?.let { Badge(it) }
                 }
             }
+        }
+    }
+}
+
+/**
+ * What the player is doing when there is no picture: "Loading…", "Retrying (2 of 4)…", or, once every
+ * retry failed, the reason with Try again. Drawn over every player (fullscreen, Live preview, mini).
+ */
+@Composable
+fun BoxScope.PlayerStatus(model: AppModel, compact: Boolean = false) {
+    val state by model.player.state.collectAsState()
+    val err = model.playError
+    val waiting = state is PlayerState.Buffering || state == PlayerState.Idle || state is PlayerState.Failed ||
+        (state == PlayerState.Ended && model.nowPlaying?.live == true)
+    if (err == null && !waiting) return
+    Column(Modifier.align(Alignment.Center).padding(12.dp).clip(RoundedCornerShape(16.dp)).background(Color.Black.copy(alpha = 0.6f))
+        .padding(horizontal = if (compact) 12.dp else 22.dp, vertical = if (compact) 10.dp else 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally) {
+        if (err != null) {
+            Text("Couldn't play this stream", fontWeight = FontWeight.SemiBold, color = Color.White,
+                style = if (compact) MaterialTheme.typography.labelLarge else MaterialTheme.typography.titleMedium)
+            if (!compact) Text("Tried 5 times. $err", Modifier.padding(top = 4.dp), color = Z.textMuted,
+                style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Text("Try again", color = Color.White, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(top = if (compact) 6.dp else 12.dp).focusRing(RoundedCornerShape(50)).clip(RoundedCornerShape(50))
+                    .background(Z.accentGradient).clickable { model.retryNow() }.padding(horizontal = 18.dp, vertical = 8.dp))
+        } else {
+            CircularProgressIndicator(Modifier.size(if (compact) 22.dp else 34.dp), color = Z.focus, strokeWidth = 3.dp)
+            Text(if (model.retry == 0) "Loading…" else "Retrying (${model.retry} of 4)…", Modifier.padding(top = if (compact) 6.dp else 10.dp),
+                color = Color.White, style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.bodyMedium)
         }
     }
 }

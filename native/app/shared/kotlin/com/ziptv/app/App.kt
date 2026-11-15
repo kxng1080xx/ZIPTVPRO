@@ -468,7 +468,7 @@ private fun UpdateBanner(model: AppModel, modifier: Modifier) {
         }, modifier = Modifier.focusRing()) {
             Text(if (progress == null) "Update" else "…", color = Z.focus)
         }
-        TextButton(onClick = { model.update = null }, modifier = Modifier.focusRing()) { Text("Later", color = Z.textMuted) }
+        TextButton(onClick = { model.dismissUpdate() }, modifier = Modifier.focusRing()) { Text("Later", color = Z.textMuted) }
     }
 }
 

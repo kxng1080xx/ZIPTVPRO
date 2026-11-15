@@ -47,6 +47,7 @@ fun MiniPlayer(model: AppModel, modifier: Modifier) {
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black).clickable { model.pip = false; model.fullscreen = true }) {
             model.player.Surface(Modifier.fillMaxSize())
+            PlayerStatus(model, compact = true)
             if (item.live) Box(Modifier.align(Alignment.TopStart).padding(8.dp)) { LiveBadge() }
         }
         if (phone) Row(Modifier.padding(start = 10.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {

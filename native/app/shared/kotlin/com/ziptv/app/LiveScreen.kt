@@ -268,6 +268,7 @@ private fun InlinePlayer(model: AppModel, modifier: Modifier) {
         val playing = model.nowPlaying
         if (playing != null && !model.fullscreen && !model.pip) {
             model.player.Surface(Modifier.fillMaxSize())
+            PlayerStatus(model)
             PlayerChrome(model, playing, inFullscreen = false)
         } else if (playing == null) {
             Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -292,7 +293,7 @@ private fun PreviewPane(model: AppModel, channel: Channel?, modifier: Modifier) 
             else Text("Pick a channel", Modifier.align(Alignment.Center), color = Z.textMuted)
             val playing = model.nowPlaying
             // Same controls as fullscreen (v9): NOW/NEXT, Go Live, Volume, More (⋯), Fullscreen.
-            if (playing != null && !model.fullscreen && !model.pip) PlayerChrome(model, playing, inFullscreen = false)
+            if (playing != null && !model.fullscreen && !model.pip) { PlayerStatus(model); PlayerChrome(model, playing, inFullscreen = false) }
         }
         if (channel == null) return@Column
         Row(Modifier.padding(start = 18.dp, end = 8.dp, top = 14.dp), verticalAlignment = Alignment.CenterVertically) {

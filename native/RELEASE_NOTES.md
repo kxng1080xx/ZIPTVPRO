@@ -7,6 +7,13 @@ device — TV and projector, phone and tablet, or Windows PC — with no switchi
 playlists and provider setup carry on. Favorites and local watch history from version 9
 start fresh.
 
+**10.2.3:**
+- When a stream won't play you now see what's happening: "Loading…", then up to 4 automatic retries
+  ("Retrying 2 of 4…"), then a clear message with Try again. Works for live TV, movies, series and recordings.
+- A playlist added on the ZIPTV Pro website (/connect) shows up within seconds and the app switches to it.
+- The app checks for updates every 30 minutes while it's open, not only when it starts.
+- PC: no longer offers an update you already installed.
+
 **10.2.2:**
 - Fire TV / Android TV: the remote works in the player again. Arrows bring up the controls and move
   between them (OK selects); they no longer switch channels. Use the on-screen channel buttons, or CH+/CH-.
