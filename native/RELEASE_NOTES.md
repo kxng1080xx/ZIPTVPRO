@@ -7,6 +7,11 @@ device — TV and projector, phone and tablet, or Windows PC — with no switchi
 playlists and provider setup carry on. Favorites and local watch history from version 9
 start fresh.
 
+**10.3.2:**
+- Live TV on a phone held sideways is laid out for the short screen: no header bar (the phone already shows
+  the time), a slimmer side bar with Search and Watch Together, channels on the left and the player on the
+  right with what's on now and next underneath it, instead of empty space.
+
 **10.3.1:**
 - Recordings play again (they failed with "Couldn't play this stream").
 - When a stream fails, the player buttons no longer cover the message and its Try again button.

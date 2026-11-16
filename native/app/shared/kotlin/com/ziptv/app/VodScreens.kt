@@ -517,7 +517,7 @@ fun SearchScreen(model: AppModel) {
     }
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
         // Wide layouts type in the header pill; compact gets the field at the top of this page.
-        if (!LocalWide.current) {
+        if (!LocalWide.current || LocalShort.current) {
             OutlinedTextField(
                 query, { model.searchQuery = it }, singleLine = true, placeholder = { Text("Search live, movies & series…") },
                 colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Z.focus, unfocusedBorderColor = Z.surfaceHigh),

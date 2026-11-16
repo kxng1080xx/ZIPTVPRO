@@ -135,11 +135,11 @@ fun LiveScreen(model: AppModel) {
             LivePanel(model, categories, categoryId, channels, selected ?: channels.firstOrNull { it.streamId == playingId },
                 showChannels, { showChannels = it }, { categoryId = it }, ::choose, m)
         }
-        if (wide) Row(Modifier.fillMaxSize().padding(end = 8.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column(Modifier.weight(1f).fillMaxHeight()) {
-                InlinePlayer(model, Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)))
-            }
-            panel(Modifier.width(340.dp).fillMaxHeight())
+        // Landscape: same order as desktop (rail, channels, player); video on the right edge with its schedule under it.
+        if (wide) Row(Modifier.fillMaxSize().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            panel(Modifier.width(300.dp).fillMaxHeight().clip(RoundedCornerShape(16.dp)).background(Z.surface.copy(alpha = 0.5f)))
+            val shown = selected ?: model.nowPlaying?.takeIf { it.live }?.let { p -> model.zapList.firstOrNull { it.streamId == p.streamId } }
+            PreviewPane(model, shown, Modifier.weight(1f).fillMaxHeight())
         } else Column(Modifier.fillMaxSize()) {
             InlinePlayer(model, Modifier.fillMaxWidth())
             panel(Modifier.weight(1f).fillMaxWidth())
@@ -289,13 +289,15 @@ private fun PreviewPane(model: AppModel, channel: Channel?, modifier: Modifier) 
             if (playing != null && !model.fullscreen && !model.pip) { PlayerStatus(model); PlayerChrome(model, playing, inFullscreen = false) }
         }
         if (channel == null) return@Column
-        Row(Modifier.padding(start = 18.dp, end = 8.dp, top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(channel.name, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        val short = LocalShort.current // landscape phone: every dp under the video counts
+        Row(Modifier.padding(start = if (short) 12.dp else 18.dp, end = 4.dp, top = if (short) 2.dp else 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(channel.name, Modifier.weight(1f), style = if (short) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val fav = model.userVersion.let { model.isFavorite(ContentKind.LIVE, channel.streamId) }
             IconAction(if (fav) Icons.Rounded.Star else Icons.Rounded.StarBorder, if (fav) "Remove favorite" else "Add favorite",
                 if (fav) Z.gold else Z.textMuted) { model.toggleFavorite(ContentKind.LIVE, channel.streamId) }
         }
-        GuideList(model, channel, guide, Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 8.dp))
+        GuideList(model, channel, guide, Modifier.verticalScroll(rememberScrollState()).padding(horizontal = if (short) 6.dp else 10.dp, vertical = if (short) 2.dp else 8.dp))
     }
 }
 

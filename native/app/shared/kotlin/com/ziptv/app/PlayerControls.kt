@@ -97,7 +97,8 @@ fun BoxScope.PlayerChrome(model: AppModel, item: Playable, inFullscreen: Boolean
         // Phone page player: no room for NOW/NEXT next to the buttons (the guide is a tap away).
         when {
             item.seekable -> SeekInline(model, item, Modifier.weight(1f), onInteract) // VOD/catch-up: slim seek in the bar
-            item.live && (inFullscreen || LocalWide.current) -> NowNext(model, item, Modifier.weight(1f), compact = !inFullscreen)
+            // Landscape phone: the NOW card sits right under the video, and the bar is too narrow for both.
+            item.live && (inFullscreen || (LocalWide.current && !LocalShort.current)) -> NowNext(model, item, Modifier.weight(1f), compact = !inFullscreen)
             else -> Spacer(Modifier.weight(1f))
         }
         if (item.live || item.kind == PlayKind.Catchup) {

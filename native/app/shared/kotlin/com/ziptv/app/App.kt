@@ -84,6 +84,9 @@ import java.util.Locale
 /** Wide = side rail + multi-pane screens. Compact = bottom bar + single pane. */
 val LocalWide = compositionLocalOf { true }
 
+/** Landscape phone: wide but too short for the header, so the rail carries search and Watch Together. */
+val LocalShort = compositionLocalOf { false }
+
 private data class TabItem(val tab: Tab, val label: String, val icon: ImageVector)
 
 private val allTabs = listOf(
@@ -113,8 +116,9 @@ fun App(model: AppModel) {
         BoxWithConstraints(Modifier.fillMaxSize().background(Z.bg).padding(model.platform.cutoutPadding())) {
             // TV and desktop always get the wide layout; touch decides by width (tablets/landscape).
             val wide = model.platform.device != DeviceClass.Touch || maxWidth >= 720.dp
+            val short = wide && model.platform.device == DeviceClass.Touch && maxHeight < 480.dp
             val logoTransform = androidx.compose.runtime.remember { model.platform.logoTransformation() }
-            CompositionLocalProvider(LocalWide provides wide, LocalLogoTransform provides logoTransform) {
+            CompositionLocalProvider(LocalWide provides wide, LocalShort provides short, LocalLogoTransform provides logoTransform) {
                 AnimatedContent(model.screen, contentKey = { it::class }, // sync progress text doesn't re-animate
                     transitionSpec = { fadeIn(tween(260)) togetherWith fadeOut(tween(160)) }) { s ->
                     when (s) {
@@ -227,7 +231,9 @@ private val SYNC_STEPS = listOf(
 private fun MainScaffold(model: AppModel, wide: Boolean) {
     model.platform.BackHandler(enabled = model.tab != Tab.Home && !model.fullscreen) { model.tab = Tab.Home }
     // Admin can hide whole tabs for a playlist (v9 "pre-add visibility").
-    val tabs = allTabs.filter { !model.isHiddenTab(it.tab) && it.tab != Tab.Search } // search lives in the header
+    val short = LocalShort.current
+    // Search lives in the header; landscape phones have no header, so it goes in the rail.
+    val tabs = allTabs.filter { !model.isHiddenTab(it.tab) && (short || it.tab != Tab.Search) }
     // Leaving Live TV keeps playing: wide layouts show the mini player; compact (phones) stop.
     androidx.compose.runtime.LaunchedEffect(model.tab) {
         if (!wide && model.tab != Tab.Live && !model.fullscreen && model.nowPlaying != null) model.stop()
@@ -236,11 +242,11 @@ private fun MainScaffold(model: AppModel, wide: Boolean) {
         // Rail: icons only, widens with labels on mouse hover / D-pad focus. It floats over the page
         // (content keeps the narrow width as padding), so opening it never reflows the screen.
         Box(Modifier.fillMaxSize()) {
-            Column(Modifier.fillMaxSize().padding(start = RAIL_NARROW)) {
-                Header(model, wide = true)
+            Column(Modifier.fillMaxSize().padding(start = if (short) RAIL_SHORT else RAIL_NARROW)) {
+                if (!short) Header(model, wide = true) // landscape phone: the status bar already has the time
                 Box(Modifier.weight(1f)) { TabContent(model) }
             }
-            SideRail(model, tabs)
+            SideRail(model, tabs, short)
         }
     } else {
         Column(Modifier.fillMaxSize()) {
@@ -255,9 +261,11 @@ private fun MainScaffold(model: AppModel, wide: Boolean) {
 
 private val RAIL_NARROW = 84.dp
 private val RAIL_WIDE = 220.dp
+private val RAIL_SHORT = 64.dp
 
 @Composable
-private fun SideRail(model: AppModel, tabs: List<TabItem>) {
+private fun SideRail(model: AppModel, tabs: List<TabItem>, short: Boolean) {
+    if (short) return ShortRail(model, tabs)
     var hover by remember { mutableStateOf(false) }
     var focused by remember { mutableStateOf(false) }
     // Focus opens it only on TV (D-pad). On PC a click leaves focus on the item, which kept it stuck open.
@@ -293,13 +301,44 @@ private fun SideRail(model: AppModel, tabs: List<TabItem>) {
     }
 }
 
+/** Landscape phone rail: icons only (no hover on touch), no logo, Watch Together above Settings. */
+@Composable
+private fun ShortRail(model: AppModel, tabs: List<TabItem>) {
+    var joining by remember { mutableStateOf(false) }
+    Column(
+        Modifier.fillMaxHeight().width(RAIL_SHORT).background(Z.surface).padding(horizontal = 8.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Column(Modifier.weight(1f).verticalScroll(androidx.compose.foundation.rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            tabs.filter { it.tab != Tab.Settings }.forEach { RailItem(model, it, open = false) }
+        }
+        Icon(Icons.Rounded.Groups, "Watch Together", tint = Z.textMuted,
+            modifier = Modifier.focusRing(RoundedCornerShape(50)).clip(RoundedCornerShape(50)).clickable { joining = true }.padding(12.dp))
+        tabs.firstOrNull { it.tab == Tab.Settings }?.let { RailItem(model, it, open = false) }
+    }
+    if (joining) WatchJoinDialog(model) { joining = false }
+}
+
+@Composable
+private fun WatchJoinDialog(model: AppModel, onDismiss: () -> Unit) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(Modifier.widthIn(max = 420.dp).clip(RoundedCornerShape(16.dp)).background(Z.surface)) {
+            Text("Watch Together", Modifier.padding(start = 16.dp, top = 16.dp), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text("Enter your friend's room code. To start a room, open ⋯ while watching a movie.", color = Z.textMuted,
+                style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))
+            WatchJoinField(model, onDismiss)
+        }
+    }
+}
+
 @Composable
 private fun RailItem(model: AppModel, t: TabItem, open: Boolean) {
     val selected = model.tab == t.tab
     Row(
         Modifier.fillMaxWidth().height(48.dp).focusRing(RoundedCornerShape(50), lift = 1f).clip(RoundedCornerShape(50))
             .background(if (selected) Z.accent else Color.Transparent)
-            .clickable { model.tab = t.tab }.padding(horizontal = 16.dp),
+            .clickable { model.tab = t.tab }.padding(horizontal = if (LocalShort.current) 12.dp else 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(t.icon, t.label, tint = if (selected) Z.text else Z.textMuted)
@@ -339,14 +378,7 @@ private fun Header(model: AppModel, wide: Boolean) {
         Icon(Icons.Rounded.Groups, "Watch Together", Modifier.focusRing(RoundedCornerShape(50)).clip(RoundedCornerShape(50))
             .clickable { joining = true }.padding(8.dp))
         Spacer(Modifier.width(8.dp))
-        if (joining) androidx.compose.ui.window.Dialog(onDismissRequest = { joining = false }) {
-            Column(Modifier.widthIn(max = 420.dp).clip(RoundedCornerShape(16.dp)).background(Z.surface)) {
-                Text("Watch Together", Modifier.padding(start = 16.dp, top = 16.dp), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                Text("Enter your friend's room code. To start a room, open ⋯ while watching a movie.", color = Z.textMuted,
-                    style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))
-                WatchJoinField(model) { joining = false }
-            }
-        }
+        if (joining) WatchJoinDialog(model) { joining = false }
         if (wide) {
             HeaderSearch(model, Modifier.width(380.dp))
             Spacer(Modifier.width(20.dp))
