@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Cloud
@@ -275,6 +276,13 @@ private fun PlaybackSection(model: AppModel) {
         SettingRow(Icons.Rounded.Bolt, "Deinterlace (60fps)", "Smoother sports and news on interlaced channels",
             onClick = { model.toggleDeinterlace() }) {
             Switch(checked = deint, onCheckedChange = { model.toggleDeinterlace() },
+                colors = SwitchDefaults.colors(checkedTrackColor = Z.accent, checkedThumbColor = Color.White))
+        }
+        Divider()
+        val up = model.userVersion.let { model.user?.setting("upscale") == "1" }
+        SettingRow(Icons.Rounded.HighQuality, "Upscaler", "Sharper picture on SD and 720p channels. Uses more processing power",
+            onClick = { model.toggleUpscale() }) {
+            Switch(checked = up, onCheckedChange = { model.toggleUpscale() },
                 colors = SwitchDefaults.colors(checkedTrackColor = Z.accent, checkedThumbColor = Color.White))
         }
     }

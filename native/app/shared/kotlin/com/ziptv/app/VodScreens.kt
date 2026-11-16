@@ -296,7 +296,7 @@ private fun SimilarMovies(model: AppModel, m: Movie) {
     }
     if (similar.isEmpty()) return
     Text("SIMILAR MOVIES", Modifier.padding(top = 24.dp, bottom = 10.dp), color = Z.textMuted, style = MaterialTheme.typography.labelLarge)
-    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+    ScrollRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         items(similar.size) { i ->
             val s = similar[i]
             Box(Modifier.width(150.dp)) { PosterCard(s.name, s.poster, s.rating, s.year) { model.openMovie = s } }

@@ -88,7 +88,7 @@ fun MovieListsShelf(model: AppModel) {
     }
     Column(Modifier.padding(top = 4.dp, bottom = 10.dp)) {
         Text("Your playlists", Modifier.padding(start = pad, bottom = 10.dp), style = MaterialTheme.typography.titleLarge)
-        LazyRow(contentPadding = PaddingValues(horizontal = pad), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        ScrollRow(contentPadding = PaddingValues(horizontal = pad), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             items(lists, key = { it.first }) { (name, movies) ->
                 Column(Modifier.width(if (LocalWide.current) 300.dp else 240.dp).focusRing(RoundedCornerShape(14.dp))
                     .clip(RoundedCornerShape(14.dp)).clickable { model.openList = name }) {

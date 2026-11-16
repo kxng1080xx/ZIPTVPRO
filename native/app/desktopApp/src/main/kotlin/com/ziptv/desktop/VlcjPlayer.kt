@@ -108,6 +108,7 @@ class VlcjPlayer : VideoPlayer {
     }
 
     override var deinterlace = false
+    override var upscale = false
     // Tracked here: VLC reports "muted"/volume -1 until audio output exists, which showed a false mute icon.
     override var volume: Int = 100
         set(v) { field = v.coerceIn(0, 100); mp.audio().setVolume(field) }
@@ -123,6 +124,7 @@ class VlcjPlayer : VideoPlayer {
             // ZIPTV_HW_DECODE=1 turns GPU decoding back on.
             if (System.getenv("ZIPTV_HW_DECODE") == null) add(":avcodec-hw=none")
             if (deinterlace) { add(":deinterlace=1"); add(":deinterlace-mode=yadif2x") }
+            if (upscale) { add(":video-filter=sharpen"); add(":sharpen-sigma=0.45") }
         }.toTypedArray()
         worker.execute { mp.media().play(url, *opts) }
     }
@@ -159,6 +161,8 @@ class VlcjPlayer : VideoPlayer {
                 img, srcOffset = IntOffset.Zero, srcSize = IntSize(img.width, img.height),
                 dstOffset = IntOffset(((size.width - w) / 2).toInt(), ((size.height - h) / 2).toInt()),
                 dstSize = IntSize(w, h),
+                // Upscaler: bicubic instead of bilinear when stretching SD/720p to the window.
+                filterQuality = if (upscale) androidx.compose.ui.graphics.FilterQuality.High else androidx.compose.ui.graphics.FilterQuality.Low,
             )
         }
     }

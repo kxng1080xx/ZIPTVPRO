@@ -4,6 +4,9 @@ import androidx.compose.foundation.layout.widthIn
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -112,19 +115,17 @@ fun LiveScreen(model: AppModel) {
     }
 
     val phone = model.platform.device == DeviceClass.Touch
-    if (phone) model.platform.BackHandler(enabled = showChannels && !model.fullscreen) { showChannels = false }
+    model.platform.BackHandler(enabled = showChannels && !model.fullscreen) { showChannels = false }
     if (wide && !phone) {
         Row(Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            // Narrow lists, wide player (v9 proportions).
-            CategoryColumn(model, ContentKind.LIVE, categories, categoryId, Modifier.width(200.dp).fillMaxHeight()) { categoryId = it }
-            // List and preview share the rest, so a big window doesn't make the video huge.
-            Column(Modifier.weight(1f).widthIn(min = 320.dp).fillMaxHeight()) {
-                if (categoryId != CAT_ALL) GuideButton(model) // the guide shows one category, so pick one first
-                ChannelList(model, channels, selected, Modifier.weight(1f), ::choose)
-            }
+            // One panel like phones: categories, then that category's channels with a back arrow.
+            val playingId = model.nowPlaying?.takeIf { it.live }?.streamId
+            LivePanel(model, categories, categoryId, channels, selected ?: channels.firstOrNull { it.streamId == playingId },
+                showChannels, { showChannels = it }, { categoryId = it }, ::choose,
+                Modifier.weight(1f).widthIn(min = 320.dp, max = 520.dp).fillMaxHeight().clip(RoundedCornerShape(16.dp)).background(Z.surface.copy(alpha = 0.5f)))
             // Started elsewhere (Home, mini player)? Show the playing channel's info anyway.
             val shown = selected ?: model.nowPlaying?.takeIf { it.live }?.let { p -> model.zapList.firstOrNull { it.streamId == p.streamId } }
-            PreviewPane(model, shown, Modifier.weight(1.25f).fillMaxHeight())
+            PreviewPane(model, shown, Modifier.weight(1.6f).fillMaxHeight())
         }
     } else {
         // Phones: the page's player plus one panel (categories, then that category's channels):
@@ -143,19 +144,6 @@ fun LiveScreen(model: AppModel) {
             InlinePlayer(model, Modifier.fillMaxWidth())
             panel(Modifier.weight(1f).fillMaxWidth())
         }
-    }
-}
-
-@Composable
-private fun GuideButton(model: AppModel) {
-    Row(
-        Modifier.padding(start = 8.dp, bottom = 8.dp).focusRing(RoundedCornerShape(50)).clip(RoundedCornerShape(50))
-            .background(Z.surfaceHigh).clickable { model.showGuide = true }.padding(horizontal = 16.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(Icons.Rounded.CalendarViewWeek, null, tint = Z.focus, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
-        Text("Show full guide", style = MaterialTheme.typography.labelLarge)
     }
 }
 
@@ -240,14 +228,19 @@ private fun LivePanel(
         (androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInHorizontally { dir * it / 3 }) togetherWith
             (androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutHorizontally { -dir * it / 3 })
     }, label = "livePanel") { channelsMode ->
-        Column(Modifier.fillMaxSize()) {
+        // TV remote: the focused row disappears with the swap, so hand focus to the new list.
+        val fr = remember { androidx.compose.ui.focus.FocusRequester() }
+        if (model.platform.device == DeviceClass.Tv) LaunchedEffect(Unit) { runCatching { fr.requestFocus() } }
+        Column(Modifier.fillMaxSize().focusRequester(fr).focusGroup()) {
             if (channelsMode) {
                 Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconAction(Icons.Rounded.ArrowBack, "Back to categories") { setShowChannels(false) }
                     Text(categories.firstOrNull { it.id == categoryId }?.name ?: "Channels", Modifier.weight(1f),
                         style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (categoryId != CAT_ALL) IconAction(Icons.Rounded.CalendarViewWeek, "Full guide") { model.showGuide = true }
+                    if (categoryId != CAT_ALL) Text("Guide", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.focusRing(RoundedCornerShape(50)).clip(RoundedCornerShape(50)).background(Z.surfaceHigh)
+                            .clickable { model.showGuide = true }.padding(horizontal = 16.dp, vertical = 8.dp))
                 }
                 ChannelList(model, channels, current, Modifier.weight(1f).padding(horizontal = 6.dp), choose)
             } else {

@@ -410,7 +410,7 @@ private fun RecordingsRow(model: AppModel) {
     if (list.isEmpty()) return
     Column {
         RowTitle("Recordings")
-        LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        ScrollRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             items(list, key = { it.id }) { r ->
                 val status = when (r.status) {
                     com.ziptv.core.RecordingStatus.RECORDING -> "● REC · ${r.bytes.toLong() / (1 shl 20)} MB"
@@ -442,7 +442,7 @@ private fun RowTitle(title: String) =
 @Composable
 private fun ProgressRow(title: String, items: List<WatchProgress>, model: AppModel) {
     RowTitle(title)
-    LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+    ScrollRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         items(items, key = { it.key }) { p ->
             val art = rememberBackdrop(model, p)
             Column(Modifier.animateItem().width(270.dp).focusRing(RoundedCornerShape(12.dp)).clip(RoundedCornerShape(12.dp)).clickable { model.resume(p) }) {
@@ -468,7 +468,7 @@ private fun ProgressRow(title: String, items: List<WatchProgress>, model: AppMod
 @Composable
 private fun ChannelRow(title: String, channels: List<Channel>, model: AppModel) {
     RowTitle(title)
-    LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+    ScrollRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         items(channels, key = { it.streamId }) { ch ->
             Column(Modifier.width(210.dp).focusRing(RoundedCornerShape(12.dp)).clip(RoundedCornerShape(12.dp))
                 .clickable { model.playChannel(ch, channels, full = true) }) {
@@ -491,7 +491,7 @@ private fun PosterRow(title: String, items: List<Triple<String, String?, Any>>, 
         Box(Modifier.weight(1f, fill = false)) { RowTitle(title) }
         actions()
     }
-    LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+    ScrollRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         items(items.size) { i ->
             val (name, image, item) = items[i]
             Column(Modifier.width(width).focusRing(RoundedCornerShape(12.dp)).clip(RoundedCornerShape(12.dp)).clickable { onOpen(item) }) {

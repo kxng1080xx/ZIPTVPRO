@@ -20,6 +20,7 @@ import androidx.lifecycle.lifecycleScope
 import com.ziptv.app.App
 import com.ziptv.app.AppModel
 import com.ziptv.app.DeviceClass
+import kotlinx.coroutines.launch
 import com.ziptv.app.Platform
 import com.ziptv.app.VideoPlayer
 
@@ -44,6 +45,16 @@ class MainActivity : ComponentActivity() {
         model = AppModel(AndroidPlatform(this), lifecycleScope)
         model.start()
         setContent { App(model) }
+        // Android 12+: leaving the app while anything plays (Home, swipe up, app switch) goes straight
+        // into the PiP window, from fullscreen, the Live preview or the mini player alike.
+        if (android.os.Build.VERSION.SDK_INT >= 31 && model.platform.device != DeviceClass.Tv) lifecycleScope.launch {
+            androidx.compose.runtime.snapshotFlow { model.nowPlaying != null }.collect { playing ->
+                runCatching {
+                    setPictureInPictureParams(android.app.PictureInPictureParams.Builder()
+                        .setAspectRatio(android.util.Rational(16, 9)).setAutoEnterEnabled(playing).setSeamlessResizeEnabled(true).build())
+                }
+            }
+        }
     }
 
     private fun hideSystemBars() {
@@ -58,10 +69,10 @@ class MainActivity : ComponentActivity() {
         if (hasFocus) hideSystemBars()
     }
 
-    // Home while watching fullscreen -> PiP (like YouTube) instead of stopping.
+    // Android 8-11: Home while anything plays -> PiP (like YouTube) instead of stopping (12+ auto-enters, above).
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (model.nowPlaying != null && model.fullscreen) model.platform.enterPip()
+        if (android.os.Build.VERSION.SDK_INT < 31 && model.nowPlaying != null) model.platform.enterPip()
     }
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
@@ -113,9 +124,11 @@ class AndroidPlatform(private val activity: ComponentActivity) : Platform {
         // TVs/projectors/sticks: no system PiP worth using (Fire TV has none) -> the app's own mini player.
         if (device == DeviceClass.Tv || android.os.Build.VERSION.SDK_INT < 26 ||
             !activity.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) return false
-        return activity.enterPictureInPictureMode(
-            android.app.PictureInPictureParams.Builder().setAspectRatio(android.util.Rational(16, 9)).build()
-        )
+        return runCatching {
+            activity.enterPictureInPictureMode(
+                android.app.PictureInPictureParams.Builder().setAspectRatio(android.util.Rational(16, 9)).build()
+            )
+        }.getOrDefault(false) // e.g. PiP turned off for this app in system settings -> in-app mini player
     }
     override fun tmdbToken(): String =
         runCatching { activity.assets.open("tmdb.token").bufferedReader().use { it.readText().trim() } }.getOrDefault("")

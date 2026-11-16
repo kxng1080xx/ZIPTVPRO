@@ -7,6 +7,15 @@ device — TV and projector, phone and tablet, or Windows PC — with no switchi
 playlists and provider setup carry on. Favorites and local watch history from version 9
 start fresh.
 
+**10.3.0:**
+- Picture in picture that works outside the app. PC: a small always-on-top video window you can drag
+  anywhere (from the player's More menu, or just minimize ZIPTV Pro while watching). Android: press Home
+  or switch apps while anything plays and it keeps going in a floating window.
+- Upscaler (player More menu or Settings): a sharper picture on SD and 720p channels.
+- PC: updates install themselves. The update downloads, ZIPTV Pro closes, installs and reopens.
+- PC and TV: Live TV uses one panel like phones. Pick a category, then its channels slide in; Back returns.
+- PC: rows on Home and movie pages get arrow buttons to scroll through them.
+
 **10.2.3:**
 - When a stream won't play you now see what's happening: "Loading…", then up to 4 automatic retries
   ("Retrying 2 of 4…"), then a clear message with Try again. Works for live TV, movies, series and recordings.

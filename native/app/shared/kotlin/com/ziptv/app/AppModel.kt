@@ -300,6 +300,7 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
         library = lib
         user = UserStore(fileFor(p, "user"))
         player.deinterlace = user?.setting("deinterlace") == "1"
+        player.upscale = user?.setting("upscale") == "1"
         liveCategoryState.value = user?.setting("live_cat") ?: CAT_ALL
         userVersion++
         scope.launch {
@@ -633,6 +634,16 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
         userVersion++
         nowPlaying?.let { item -> val full = fullscreen; nowPlaying = null; play(item, full) }
         error = if (on) "Deinterlace on (smooth 60fps)" else "Deinterlace off"
+    }
+
+    /** Upscaler, remembered per playlist; restarts the current stream so it takes effect now. */
+    fun toggleUpscale() {
+        val on = !player.upscale
+        player.upscale = on
+        user?.setSetting("upscale", if (on) "1" else null)
+        userVersion++
+        nowPlaying?.let { item -> val full = fullscreen; nowPlaying = null; play(item, full) }
+        error = if (on) "Upscaler on (sharper picture)" else "Upscaler off"
     }
 
     /** Records the live channel until the current show ends (1h when there's no guide). */

@@ -60,6 +60,36 @@ class DesktopPlatform : Platform {
             else com.sun.jna.platform.win32.Advapi32Util.registryDeleteValue(hk, runKey, "ZIPTV Pro")
         }
     }
+    override val ownPipWindow = true
+
+    // Auto-update: download the installer here, then close, install with just a progress bar
+    // (per-user MSI: no admin prompt) and reopen. Installed app only.
+    override val inAppUpdate = System.getProperty("jpackage.app-path") != null
+    override fun downloadAndInstall(url: String, progress: (Float) -> Unit): String? = runCatching {
+        val app = System.getProperty("jpackage.app-path") ?: return "Updates install from the installed app"
+        val dir = File(System.getProperty("java.io.tmpdir"), "ziptv-update").apply { mkdirs() }
+        val exe = File(dir, "ZIPTV-Pro-setup.exe")
+        val c = java.net.URI(url).toURL().openConnection().apply { connectTimeout = 15_000; readTimeout = 30_000 }
+        val total = c.contentLengthLong
+        c.getInputStream().use { inp ->
+            exe.outputStream().use { out ->
+                val buf = ByteArray(1 shl 16); var n = 0L
+                while (true) {
+                    val r = inp.read(buf); if (r < 0) break
+                    out.write(buf, 0, r); n += r
+                    if (total > 0) progress(n.toFloat() / total)
+                }
+            }
+        }
+        if (total > 0 && exe.length() != total) return "The download was cut off. Try again"
+        // Waits for us to exit (files in use), installs (/passive: progress bar, no clicks), reopens the app.
+        val script = File(dir, "update.cmd")
+        script.writeText("@echo off\r\nping -n 4 127.0.0.1 >nul\r\nstart \"\" /wait \"${exe.path}\" /passive\r\nstart \"\" \"$app\"\r\n")
+        ProcessBuilder("cmd", "/c", "start", "", "/min", script.path).start()
+        quitApp.value = true
+        null
+    }.getOrElse { "Couldn't download the update: ${it.message}" }
+
     override fun openUrl(url: String): Boolean =
         runCatching { java.awt.Desktop.getDesktop().browse(java.net.URI(url)) }.isSuccess
 
@@ -93,6 +123,9 @@ private fun claimSingleInstance(): Boolean {
     }, "single-instance").apply { isDaemon = true; start() }
     return true
 }
+
+/** Set by the updater: close so the installer can replace the app's files. */
+private val quitApp = MutableStateFlow(false)
 
 fun main(args: Array<String>) {
     if (!claimSingleInstance()) return
@@ -141,11 +174,23 @@ private fun app(minimized: Boolean) = application {
         // cover the whole monitor (taskbar included), restore both on exit. Compose's
         // WindowPlacement.Fullscreen and AWT exclusive mode both left the title bar.
         androidx.compose.runtime.LaunchedEffect(full) { WindowsFullscreen.set(window, full) }
+        val quit by quitApp.collectAsState()
+        androidx.compose.runtime.LaunchedEffect(quit) { if (quit) { model.player.release(); exitApplication() } }
+        // PiP: the button minimizes this window and opens the floating one; minimizing while something
+        // plays does the same (like leaving a video app on a phone); bringing this window back ends it.
+        androidx.compose.runtime.LaunchedEffect(model.pip) { if (model.pip) windowState.isMinimized = true }
+        androidx.compose.runtime.LaunchedEffect(windowState.isMinimized) {
+            if (windowState.isMinimized && model.nowPlaying != null && !model.pip) { model.fullscreen = false; model.pip = true }
+            else if (!windowState.isMinimized && model.pip) model.pip = false
+        }
         val poke by bringToFront.collectAsState()
         androidx.compose.runtime.LaunchedEffect(poke) {
             if (poke > 0) { windowState.isMinimized = false; window.toFront(); window.requestFocus() }
         }
         App(model)
+    }
+    if (model.pip && model.nowPlaying != null) PipWindow(model) {
+        model.pip = false; model.fullscreen = true; windowState.isMinimized = false; bringToFront.value++
     }
 }
 

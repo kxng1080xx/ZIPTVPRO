@@ -44,6 +44,7 @@ class VlcPlayer(context: Context) : VideoPlayer {
     }
 
     override var deinterlace = false
+    override var upscale = false
     private var lastVolume = 100
     override var volume: Int
         get() = mp.volume.coerceIn(0, 100)
@@ -59,6 +60,7 @@ class VlcPlayer(context: Context) : VideoPlayer {
                 setHWDecoderEnabled(true, false)
                 if (startMs > 0) addOption(":start-time=${startMs / 1000}")
                 if (deinterlace) { addOption(":deinterlace=1"); addOption(":deinterlace-mode=yadif2x") }
+                if (upscale) { addOption(":video-filter=sharpen"); addOption(":sharpen-sigma=0.45") }
             }
             mp.media = media
             media.release()

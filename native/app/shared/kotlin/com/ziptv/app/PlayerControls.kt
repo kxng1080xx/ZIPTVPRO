@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.PictureInPictureAlt
+import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.Sensors
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Subtitles
@@ -134,6 +135,9 @@ fun BoxScope.PlayerChrome(model: AppModel, item: Playable, inFullscreen: Boolean
             MenuItem(Icons.Rounded.Cast, "Cast to TV") { pop = Pop.Cast }
             MenuItem(Icons.Rounded.Bolt, if (model.player.deinterlace) "Deinterlace (60fps) · On" else "Deinterlace (60fps)") {
                 model.toggleDeinterlace(); pop = Pop.None
+            }
+            MenuItem(Icons.Rounded.HighQuality, if (model.player.upscale) "Upscaler · On" else "Upscaler") {
+                model.toggleUpscale(); pop = Pop.None
             }
             MenuItem(Icons.Rounded.Bedtime, model.sleepAt?.let { "Sleep timer · ${((it - System.currentTimeMillis()) / 60_000).coerceAtLeast(0)} min" }
                 ?: "Sleep timer") { pop = Pop.Sleep }

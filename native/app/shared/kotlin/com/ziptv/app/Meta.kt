@@ -82,7 +82,7 @@ fun MetaSection(model: AppModel, kind: ContentKind, title: String, year: String?
         if (m.cast.isNotEmpty()) {
             Spacer(Modifier.height(16.dp))
             Label("CAST")
-            LazyRow(contentPadding = PaddingValues(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ScrollRow(contentPadding = PaddingValues(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 items(m.cast) { c ->
                     // Tap an actor: their movies on this playlist (Movies tab; a series page stays open in Series).
                     Column(Modifier.width(84.dp).focusRing(RoundedCornerShape(12.dp)).clip(RoundedCornerShape(12.dp))

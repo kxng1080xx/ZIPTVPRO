@@ -31,6 +31,8 @@ interface VideoPlayer {
     val state: StateFlow<PlayerState>
     /** Deinterlace (yadif2x = smooth 50/60 fps on interlaced sports/news). Applies on the next play(). */
     var deinterlace: Boolean
+    /** Upscaler: sharpen filter (+ high-quality scaling on PC). Applies on the next play(). */
+    var upscale: Boolean
     /** startMs > 0 resumes a movie/episode where the user left off. */
     fun play(url: String, startMs: Long = 0)
     fun togglePause()
@@ -80,6 +82,8 @@ interface Platform {
     val tunnel: ShareTunnel? get() = null
     /** Picture-in-picture where the OS supports it; false = not available. */
     fun enterPip(): Boolean = false
+    /** PC: model.pip opens a floating always-on-top window instead of the in-app mini player. */
+    val ownPipWindow: Boolean get() = false
 
     /** Space to keep clear of a camera cut-out (Android full-screen); zero elsewhere. */
     @Composable
