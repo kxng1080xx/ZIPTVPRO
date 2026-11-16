@@ -7,6 +7,10 @@ device — TV and projector, phone and tablet, or Windows PC — with no switchi
 playlists and provider setup carry on. Favorites and local watch history from version 9
 start fresh.
 
+**10.3.1:**
+- Recordings play again (they failed with "Couldn't play this stream").
+- When a stream fails, the player buttons no longer cover the message and its Try again button.
+
 **10.3.0:**
 - Picture in picture that works outside the app. PC: a small always-on-top video window you can drag
   anywhere (from the player's More menu, or just minimize ZIPTV Pro while watching). Android: press Home

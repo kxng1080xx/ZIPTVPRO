@@ -152,7 +152,8 @@ fun PlayerScreen(model: AppModel) {
                 TopBar(model, item, exit, Modifier.align(Alignment.TopCenter))
                 // Panel needs room: wide layouts (PC/TV/tablet, phone in landscape) only.
                 if (item.live && model.zapList.size > 1 && LocalWide.current) ChannelPanel(model, item, Modifier.align(Alignment.TopStart)) { poke++ }
-                CenterControls(model, item, state, primary, Modifier.align(Alignment.Center)) { poke++ }
+                // The failure message and its Try again sit in the centre; don't cover them.
+                if (model.playError == null) CenterControls(model, item, state, primary, Modifier.align(Alignment.Center)) { poke++ }
                 PlayerChrome(model, item, inFullscreen = true, onActive = { popOpen = it }, onInteract = { poke++ })
             }
         }

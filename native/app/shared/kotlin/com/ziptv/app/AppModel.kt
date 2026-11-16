@@ -730,7 +730,8 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
     }
 
     fun playRecording(r: com.ziptv.core.Recording) {
-        val url = java.io.File(r.path).toURI().toString()
+        // file:///C:/… (VLC rejects File.toURI's single-slash "file:/C:/…").
+        val url = java.io.File(r.path).toPath().toUri().toString()
         play(Playable(r.title, "Recording · ${r.channel}", url, PlayKind.Recording, r.id), full = true)
     }
 
