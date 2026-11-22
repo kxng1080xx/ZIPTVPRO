@@ -132,6 +132,22 @@
       </div>
 
       <div class="sec">
+        <div class="sec-h" id="d-wt-h">Web tabs</div>
+        <div id="d-wts"></div>
+        <div class="addform">
+          <input type="url" id="w-url" placeholder="Website (https://…)" />
+          <div class="split">
+            <input type="text" id="w-name" placeholder="Tab name (optional)" />
+            <select id="w-nav" title="TV remote">
+              <option value="cursor">Remote: cursor</option>
+              <option value="focus">Remote: jump between links</option>
+            </select>
+          </div>
+          <button class="btn" id="w-save">Add tab</button>
+        </div>
+      </div>
+
+      <div class="sec">
         <div class="sec-h">Danger zone</div>
         <div class="danger-zone">
           <button class="btn-ghost" id="d-archive"></button>
@@ -691,6 +707,18 @@
           <button class="btn-icon btn-danger" data-rmpl="${esc(p.id)}" title="Remove playlist"><i data-lucide="trash-2"></i></button>
         </div>`).join('') || '<div class="hint" style="padding:2px 0 4px;">No playlists yet. Add one below.</div>';
 
+      const wts = d.web_tabs || [];
+      $('d-wt-h').textContent = `Web tabs (${wts.length})`;
+      $('d-wts').innerHTML = wts.map((t, i) => `
+        <div class="pl-row">
+          <div class="pi">
+            <div class="pn">${esc(t.name)}</div>
+            <div class="pm">${esc(hostName(t.url))} · ${t.nav === 'focus' ? 'jump between links' : 'cursor'}</div>
+          </div>
+          <button class="btn-icon" data-wtnav="${i}" title="Switch remote mode"><i data-lucide="${t.nav === 'focus' ? 'mouse-pointer-2' : 'move'}"></i></button>
+          <button class="btn-icon btn-danger" data-rmwt="${i}" title="Remove tab"><i data-lucide="trash-2"></i></button>
+        </div>`).join('');
+
       $('d-archive').innerHTML = `<i data-lucide="${d.archived ? 'archive-restore' : 'archive'}"></i>${d.archived ? 'Unarchive' : 'Archive'}`;
       icons();
 
@@ -698,6 +726,14 @@
         const plId = b.getAttribute('data-editvis');
         const playlist = pls.find(p => String(p.id) === plId);
         if (playlist) openVisDrawer(playlist);
+      }));
+
+      $('d-wts').querySelectorAll('[data-wtnav]').forEach(b => b.addEventListener('click', () => {
+        const next = wts.map((t, i) => i === +b.getAttribute('data-wtnav') ? { ...t, nav: t.nav === 'focus' ? 'cursor' : 'focus' } : t);
+        saveWebTabs(d, next, 'Remote mode changed');
+      }));
+      $('d-wts').querySelectorAll('[data-rmwt]').forEach(b => b.addEventListener('click', () => {
+        armConfirm(b, 'Sure?', () => saveWebTabs(d, wts.filter((_, i) => i !== +b.getAttribute('data-rmwt')), 'Tab removed'));
       }));
 
       $('d-pls').querySelectorAll('[data-rmpl]').forEach(b => b.addEventListener('click', () => {
@@ -720,6 +756,23 @@
       if (v === (d.label || '')) return;
       try { await api('update-device', { method: 'POST', body: { device_id: d.device_id, label: v } }); d.label = v; toast('Name saved'); render(); }
       catch (e) { toast(e.message, true); }
+    });
+
+    async function saveWebTabs(d, tabs, msg) {
+      try {
+        const { device } = await api('update-device', { method: 'POST', body: { device_id: d.device_id, web_tabs: tabs } });
+        if (device && !Array.isArray(device.web_tabs)) throw new Error('Run the 10.4 web_tabs migration in Supabase first');
+        toast(msg); await load();
+      } catch (e) { toast(e.message, true); }
+    }
+    $('w-save').addEventListener('click', () => {
+      const d = byId(openId); if (!d) return;
+      let url = $('w-url').value.trim();
+      if (!url) return toast('Enter a website', true);
+      if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+      try { new URL(url); } catch { return toast('That website address is not valid', true); }
+      const tab = { name: $('w-name').value.trim(), url, nav: $('w-nav').value };
+      saveWebTabs(d, [...(d.web_tabs || []), tab], 'Tab added').then(() => { $('w-url').value = ''; $('w-name').value = ''; });
     });
 
     async function setExpiry(iso) {
