@@ -80,7 +80,7 @@ fun WebScreen(model: AppModel) {
             }
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            model.platform.WebPage(tab, if (model.adblockOn) model.adblock else null, controls, Modifier.fillMaxSize())
+            model.platform.WebPage(tab, model.adblock, model.adblockOn, controls, Modifier.fillMaxSize())
         }
     }
 }

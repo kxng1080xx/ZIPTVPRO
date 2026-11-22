@@ -927,6 +927,12 @@ internal open class UniffiVTableCallbackInterfaceSyncListener(
 
 
 
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -950,7 +956,13 @@ fun uniffi_ziptv_core_checksum_method_adblock_hide_css(
 ): Short
 fun uniffi_ziptv_core_checksum_method_adblock_load(
 ): Short
+fun uniffi_ziptv_core_checksum_method_adblock_set_allowed_hosts(
+): Short
+fun uniffi_ziptv_core_checksum_method_adblock_set_enabled(
+): Short
 fun uniffi_ziptv_core_checksum_method_adblock_should_block(
+): Short
+fun uniffi_ziptv_core_checksum_method_adblock_start_proxy(
 ): Short
 fun uniffi_ziptv_core_checksum_method_caster_active_name(
 ): Short
@@ -1182,8 +1194,14 @@ fun uniffi_ziptv_core_fn_method_adblock_hide_css(`ptr`: Pointer,`pageUrl`: RustB
 ): RustBuffer.ByValue
 fun uniffi_ziptv_core_fn_method_adblock_load(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+fun uniffi_ziptv_core_fn_method_adblock_set_allowed_hosts(`ptr`: Pointer,`hosts`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_ziptv_core_fn_method_adblock_set_enabled(`ptr`: Pointer,`on`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 fun uniffi_ziptv_core_fn_method_adblock_should_block(`ptr`: Pointer,`url`: RustBuffer.ByValue,`pageUrl`: RustBuffer.ByValue,`kind`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_ziptv_core_fn_method_adblock_start_proxy(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): Short
 fun uniffi_ziptv_core_fn_clone_caster(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Pointer
 fun uniffi_ziptv_core_fn_free_caster(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1522,7 +1540,16 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_ziptv_core_checksum_method_adblock_load() != 40502.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_ziptv_core_checksum_method_adblock_set_allowed_hosts() != 33478.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_adblock_set_enabled() != 52746.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_ziptv_core_checksum_method_adblock_should_block() != 57567.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_adblock_start_proxy() != 10697.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ziptv_core_checksum_method_caster_active_name() != 825.toShort()) {
@@ -2285,9 +2312,22 @@ public interface AdBlockInterface {
     fun `load`()
     
     /**
+     * Hosts the proxy must never block: the web tabs' own addresses.
+     */
+    fun `setAllowedHosts`(`hosts`: List<kotlin.String>)
+    
+    fun `setEnabled`(`on`: kotlin.Boolean)
+    
+    /**
      * `kind`: script, image, stylesheet, xmlhttprequest, media, font, sub_frame, document, other.
      */
     fun `shouldBlock`(`url`: kotlin.String, `pageUrl`: kotlin.String, `kind`: kotlin.String): kotlin.Boolean
+    
+    /**
+     * Starts a local HTTP proxy (127.0.0.1, free port) that refuses ad/tracker servers and tunnels
+     * everything else; returns the port. HTTPS stays end-to-end encrypted: only the host name is seen.
+     */
+    fun `startProxy`(): kotlin.UShort
     
     companion object
 }
@@ -2413,6 +2453,31 @@ open class AdBlock: Disposable, AutoCloseable, AdBlockInterface
 
     
     /**
+     * Hosts the proxy must never block: the web tabs' own addresses.
+     */override fun `setAllowedHosts`(`hosts`: List<kotlin.String>)
+        = 
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_adblock_set_allowed_hosts(
+        it, FfiConverterSequenceString.lower(`hosts`),_status)
+}
+    }
+    
+    
+
+    override fun `setEnabled`(`on`: kotlin.Boolean)
+        = 
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_adblock_set_enabled(
+        it, FfiConverterBoolean.lower(`on`),_status)
+}
+    }
+    
+    
+
+    
+    /**
      * `kind`: script, image, stylesheet, xmlhttprequest, media, font, sub_frame, document, other.
      */override fun `shouldBlock`(`url`: kotlin.String, `pageUrl`: kotlin.String, `kind`: kotlin.String): kotlin.Boolean {
             return FfiConverterBoolean.lift(
@@ -2420,6 +2485,22 @@ open class AdBlock: Disposable, AutoCloseable, AdBlockInterface
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_adblock_should_block(
         it, FfiConverterString.lower(`url`),FfiConverterString.lower(`pageUrl`),FfiConverterString.lower(`kind`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Starts a local HTTP proxy (127.0.0.1, free port) that refuses ad/tracker servers and tunnels
+     * everything else; returns the port. HTTPS stays end-to-end encrypted: only the host name is seen.
+     */override fun `startProxy`(): kotlin.UShort {
+            return FfiConverterUShort.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_adblock_start_proxy(
+        it, _status)
 }
     }
     )

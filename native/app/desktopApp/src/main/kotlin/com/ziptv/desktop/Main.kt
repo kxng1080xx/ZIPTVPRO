@@ -94,8 +94,8 @@ class DesktopPlatform : Platform {
         runCatching { java.awt.Desktop.getDesktop().browse(java.net.URI(url)) }.isSuccess
 
     @Composable
-    override fun WebPage(tab: com.ziptv.core.WebTab, adblock: com.ziptv.core.AdBlock?, controls: com.ziptv.app.WebControls,
-        modifier: androidx.compose.ui.Modifier) = JcefPage(dataDir, tab, adblock, controls, modifier)
+    override fun WebPage(tab: com.ziptv.core.WebTab, adblock: com.ziptv.core.AdBlock, blockAds: Boolean, controls: com.ziptv.app.WebControls,
+        modifier: androidx.compose.ui.Modifier) = WebView2Page(dataDir, tab, adblock, blockAds, controls, modifier)
 
     @Composable
     override fun BackHandler(enabled: Boolean, onBack: () -> Unit) {
@@ -135,6 +135,7 @@ fun main(args: Array<String>) {
     if (!claimSingleInstance()) return
     Thread(::removeV9, "remove-v9").apply { isDaemon = true }.start()
     app(minimized = "--minimized" in args)
+    kotlin.system.exitProcess(0) // web tabs' WebView2 threads would otherwise keep the process alive
 }
 
 /**
@@ -159,12 +160,12 @@ private fun removeV9() {
     runCatching { marker.parentFile.mkdirs(); marker.writeText("done") }
 }
 
-private fun app(minimized: Boolean) = application {
+private fun app(minimized: Boolean) = application(exitProcessOnExit = false) {
     val model = remember { AppModel(DesktopPlatform(), MainScope()).also { it.start() } }
     val windowState = rememberWindowState(width = 1440.dp, height = 900.dp)
     androidx.compose.runtime.LaunchedEffect(Unit) { if (minimized) windowState.isMinimized = true }
     Window(
-        onCloseRequest = { model.player.release(); Jcef.dispose(); exitApplication() },
+        onCloseRequest = { model.player.release(); exitApplication() },
         title = "ZIPTV Pro",
         state = windowState,
         onPreviewKeyEvent = { e ->
@@ -179,7 +180,7 @@ private fun app(minimized: Boolean) = application {
         // WindowPlacement.Fullscreen and AWT exclusive mode both left the title bar.
         androidx.compose.runtime.LaunchedEffect(full) { WindowsFullscreen.set(window, full) }
         val quit by quitApp.collectAsState()
-        androidx.compose.runtime.LaunchedEffect(quit) { if (quit) { model.player.release(); Jcef.dispose(); exitApplication() } }
+        androidx.compose.runtime.LaunchedEffect(quit) { if (quit) { model.player.release(); exitApplication() } }
         // PiP: the button minimizes this window and opens the floating one; minimizing while something
         // plays does the same (like leaving a video app on a phone); bringing this window back ends it.
         androidx.compose.runtime.LaunchedEffect(model.pip) { if (model.pip) windowState.isMinimized = true }

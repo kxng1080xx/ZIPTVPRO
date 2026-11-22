@@ -7,6 +7,12 @@ device — TV and projector, phone and tablet, or Windows PC — with no switchi
 playlists and provider setup carry on. Favorites and local watch history from version 9
 start fresh.
 
+**10.4.1:**
+- PC: web tabs now use Microsoft Edge's engine (built into Windows), so movie and streaming sites play
+  (they got stuck on "Finding sources"). The installer is about 120 MB smaller.
+- PC: ad blocker for web tabs works with the new engine.
+- PC: no more crash when closing the app after opening a web tab.
+
 **10.4.0:**
 - Web tabs: add any website as its own tab from the ZIPTV Pro website (/connect). It shows in the sidebar
   with the site's icon and opens inside the app.

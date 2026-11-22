@@ -93,9 +93,9 @@ interface Platform {
     @Composable
     fun BackHandler(enabled: Boolean, onBack: () -> Unit)
 
-    /** A web tab's page (Android WebView, PC Chromium). Fills [controls]; [adblock] null = blocker off. */
+    /** A web tab's page (Android WebView, PC Edge WebView2). Fills [controls]; [blockAds] = Settings switch. */
     @Composable
-    fun WebPage(tab: com.ziptv.core.WebTab, adblock: com.ziptv.core.AdBlock?, controls: WebControls, modifier: Modifier) {
+    fun WebPage(tab: com.ziptv.core.WebTab, adblock: com.ziptv.core.AdBlock, blockAds: Boolean, controls: WebControls, modifier: Modifier) {
         androidx.compose.material3.Text("Web tabs aren't available on this device", modifier)
     }
 }
