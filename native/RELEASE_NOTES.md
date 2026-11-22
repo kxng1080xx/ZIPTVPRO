@@ -7,6 +7,14 @@ device — TV and projector, phone and tablet, or Windows PC — with no switchi
 playlists and provider setup carry on. Favorites and local watch history from version 9
 start fresh.
 
+**10.4.0:**
+- Web tabs: add any website as its own tab from the ZIPTV Pro website (/connect). It shows in the sidebar
+  with the site's icon and opens inside the app.
+- Built-in ad blocker for web tabs, on by default (Settings > Ad blocker).
+- TV remotes work web tabs two ways, set per tab: a cursor you move with the arrows, or jumping between links
+  and buttons. Menu switches between them; Back goes back a page.
+- New Series icon in the sidebar.
+
 **10.3.2:**
 - Live TV on a phone held sideways is laid out for the short screen: no header bar (the phone already shows
   the time), a slimmer side bar with Search and Watch Together, channels on the left and the player on the

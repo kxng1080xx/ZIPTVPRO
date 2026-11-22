@@ -1,6 +1,7 @@
 //! ZIPTV v10 core: everything that isn't UI or video decoding.
 //! Exposed to Kotlin (Android phone/TV + desktop) via uniffi; one Provider per playlist.
 
+mod adblock;
 mod cloud;
 mod epg;
 mod m3u;

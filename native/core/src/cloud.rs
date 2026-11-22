@@ -23,6 +23,16 @@ pub struct CloudPlaylist {
     pub hidden_categories: Vec<String>,
 }
 
+/// A website added as a tab from /connect. `nav`: "cursor" (on-screen pointer) or "focus"
+/// (remote jumps between links and buttons); touch and mouse just use the page.
+#[derive(uniffi::Record, Clone, Debug, PartialEq)]
+pub struct WebTab {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    pub nav: String,
+}
+
 #[derive(uniffi::Record, Clone, Debug)]
 pub struct PairedDevice {
     pub device_id: String,
@@ -50,6 +60,7 @@ pub struct DeviceState {
     pub playlists: Vec<CloudPlaylist>,
     pub companion: Option<PairedDevice>,
     pub vpn: Option<VpnConfig>,
+    pub web_tabs: Vec<WebTab>,
 }
 
 #[derive(uniffi::Object)]
@@ -256,6 +267,21 @@ pub(crate) fn parse_state(v: &Value) -> DeviceState {
             username: field(c, "username"),
             password: field(c, "password"),
         }),
+        web_tabs: v
+            .get("web_tabs")
+            .and_then(|t| t.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter(|t| !field(t, "url").is_empty())
+                    .map(|t| WebTab {
+                        id: opt_field(t, "id").unwrap_or_else(|| field(t, "url")),
+                        name: opt_field(t, "name").unwrap_or_else(|| field(t, "url")),
+                        url: field(t, "url"),
+                        nav: if field(t, "nav") == "focus" { "focus".into() } else { "cursor".into() },
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
     }
 }
 
@@ -312,11 +338,14 @@ mod tests {
                 "playlists":[{"id":7,"name":"A","server_url":"http://h","username":"u","password":"p",
                               "hidden_tabs":["movies"],"hidden_categories":[12,"13"]}],
                 "companion":{"device_id":"AB12CD","platform":"apk","label":null},
-                "vpn":{"enabled":true,"version":"3","ovpn":"x","username":"","password":""}}"#,
+                "vpn":{"enabled":true,"version":"3","ovpn":"x","username":"","password":""},
+                "web_tabs":[{"id":"w1","name":"News","url":"https://n.test","nav":"focus"},{"name":"bad"},{"url":"https://y.test"}]}"#,
         )
         .unwrap();
         let s = parse_state(&v);
         assert!(s.expired);
+        assert_eq!(s.web_tabs.len(), 2); // no url = dropped
+        assert_eq!((s.web_tabs[0].nav.as_str(), s.web_tabs[1].nav.as_str(), s.web_tabs[1].name.as_str()), ("focus", "cursor", "https://y.test"));
         assert_eq!(s.playlists[0].id, "7");
         assert_eq!(s.playlists[0].hidden_categories, vec!["12", "13"]);
         assert_eq!(s.companion.unwrap().device_id, "AB12CD");

@@ -55,11 +55,17 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.6.3")
     implementation("net.java.dev.jna:jna:5.19.1")
     implementation("uk.co.caprica:vlcj:4.12.1")
+    // Web tabs: Chromium (JCEF). The natives jar bundles Chromium in the installer (~120 MB), unpacked on first use.
+    implementation("me.friwi:jcefmaven:135.0.20")
+    runtimeOnly("me.friwi:jcef-natives-windows-amd64:jcef-ca49ada+cef-135.0.20+ge7de5c3+chromium-135.0.7049.85")
 }
 
 compose.desktop {
     application {
         mainClass = "com.ziptv.desktop.MainKt"
+        // JCEF reaches into AWT internals to host Chromium in the window.
+        jvmArgs += listOf("--add-exports=java.desktop/sun.awt=ALL-UNNAMED", "--add-exports=java.desktop/sun.java2d=ALL-UNNAMED",
+            "--add-exports=java.base/java.lang=ALL-UNNAMED")
         // Packaging needs jpackage, which Android Studio's JBR lacks (Gradle itself still runs on JBR).
         (System.getenv("JPACKAGE_JDK") ?: "C:/Program Files/Java/jdk-26.0.2.1").let { if (file(it).exists()) javaHome = it }
         nativeDistributions {
@@ -67,7 +73,7 @@ compose.desktop {
             // jdk.unsupported: vlcj allocates frame buffers via sun.misc.Unsafe. Without it the bundled
             // runtime (CI's JDK 17 jlink) drops every frame: audio plays, picture stays black (10.0.0-10.0.4).
             // From `gradlew :desktopApp:suggestRuntimeModules`; re-run it after adding libraries.
-            modules("java.instrument", "jdk.unsupported")
+            modules("java.instrument", "java.sql", "jdk.unsupported") // java.sql: JCEF (web tabs)
             packageName = "ZIPTV Pro"
             packageVersion = providers.gradleProperty("ziptv.version").get()
             appResourcesRootDir.set(layout.buildDirectory.dir("vlcResources")) // windows/vlc -> <app>/resources/vlc

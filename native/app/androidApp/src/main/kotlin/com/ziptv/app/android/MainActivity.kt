@@ -198,4 +198,8 @@ class AndroidPlatform(private val activity: ComponentActivity) : Platform {
     @Composable
     override fun BackHandler(enabled: Boolean, onBack: () -> Unit) =
         androidx.activity.compose.BackHandler(enabled, onBack)
+
+    @Composable
+    override fun WebPage(tab: com.ziptv.core.WebTab, adblock: com.ziptv.core.AdBlock?, controls: com.ziptv.app.WebControls, modifier: Modifier) =
+        WebTabPage(tab, adblock, controls, device == DeviceClass.Tv, modifier)
 }

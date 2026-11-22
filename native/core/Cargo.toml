@@ -26,6 +26,7 @@ sha2 = "0.10"
 snap = "1"
 tiny_http = "0.12"
 qrcode = { version = "0.14", default-features = false } # share link QR (matrix only, no image deps)
+adblock = { version = "0.13", default-features = false, features = ["embedded-domain-resolver", "full-regex-handling"] } # custom web tabs: Brave's engine + EasyList
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 
 [profile.release]

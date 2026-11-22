@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
@@ -284,6 +285,13 @@ private fun PlaybackSection(model: AppModel) {
             onClick = { model.toggleUpscale() }) {
             Switch(checked = up, onCheckedChange = { model.toggleUpscale() },
                 colors = SwitchDefaults.colors(checkedTrackColor = Z.accent, checkedThumbColor = Color.White))
+        }
+        if (model.webTabs.isNotEmpty()) {
+            Divider()
+            SettingRow(Icons.Rounded.Block, "Ad blocker", "Web tabs", onClick = { model.toggleAdblock() }) {
+                Switch(checked = model.adblockOn, onCheckedChange = { model.toggleAdblock() },
+                    colors = SwitchDefaults.colors(checkedTrackColor = Z.accent, checkedThumbColor = Color.White))
+            }
         }
     }
 }

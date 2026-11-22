@@ -92,6 +92,12 @@ interface Platform {
     /** Android: system back / remote BACK. Desktop: Escape. */
     @Composable
     fun BackHandler(enabled: Boolean, onBack: () -> Unit)
+
+    /** A web tab's page (Android WebView, PC Chromium). Fills [controls]; [adblock] null = blocker off. */
+    @Composable
+    fun WebPage(tab: com.ziptv.core.WebTab, adblock: com.ziptv.core.AdBlock?, controls: WebControls, modifier: Modifier) {
+        androidx.compose.material3.Text("Web tabs aren't available on this device", modifier)
+    }
 }
 
 /** "Watch away from home": exposes the LAN server (Smart TV page) on a public HTTPS URL. */

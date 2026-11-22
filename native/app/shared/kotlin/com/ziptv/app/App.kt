@@ -33,6 +33,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.OndemandVideo
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Groups
@@ -93,7 +94,7 @@ private val allTabs = listOf(
     TabItem(Tab.Home, "Home", Icons.Rounded.Home),
     TabItem(Tab.Live, "Live TV", Icons.Rounded.LiveTv),
     TabItem(Tab.Movies, "Movies", Icons.Rounded.Movie),
-    TabItem(Tab.Series, "Series", Icons.Rounded.VideoLibrary),
+    TabItem(Tab.Series, "Series", Icons.Rounded.OndemandVideo),
     TabItem(Tab.Search, "Search", Icons.Rounded.Search),
     TabItem(Tab.Settings, "Settings", Icons.Rounded.Settings),
 )
@@ -253,7 +254,17 @@ private fun MainScaffold(model: AppModel, wide: Boolean) {
             Header(model, wide = false)
             Box(Modifier.weight(1f)) { TabContent(model) }
             NavigationBar(containerColor = Z.surface) {
-                tabs.forEach { BottomItem(model, it) }
+                tabs.filter { it.tab != Tab.Settings }.forEach { BottomItem(model, it) }
+                model.webTabs.forEach { t ->
+                    NavigationBarItem(
+                        selected = model.tab == Tab.Web && model.webTabId == t.id,
+                        onClick = { model.openWebTab(t.id) },
+                        icon = { WebTabIcon(t) },
+                        label = { Text(t.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        colors = NavigationBarItemDefaults.colors(indicatorColor = Z.accent, selectedTextColor = Z.text, unselectedTextColor = Z.textMuted),
+                    )
+                }
+                tabs.filter { it.tab == Tab.Settings }.forEach { BottomItem(model, it) }
             }
         }
     }
@@ -269,7 +280,9 @@ private fun SideRail(model: AppModel, tabs: List<TabItem>, short: Boolean) {
     var hover by remember { mutableStateOf(false) }
     var focused by remember { mutableStateOf(false) }
     // Focus opens it only on TV (D-pad). On PC a click leaves focus on the item, which kept it stuck open.
-    val open = hover || (focused && LocalDevice.current == DeviceClass.Tv)
+    // PC web tabs: Chromium is a native window that would cover the widened rail, so it stays narrow.
+    val open = (hover && !(model.tab == Tab.Web && LocalDevice.current == DeviceClass.Desktop)) ||
+        (focused && LocalDevice.current == DeviceClass.Tv)
     val w by androidx.compose.animation.core.animateDpAsState(if (open) RAIL_WIDE else RAIL_NARROW,
         tween(220, easing = androidx.compose.animation.core.FastOutSlowInEasing), label = "rail")
     Column(
@@ -296,6 +309,7 @@ private fun SideRail(model: AppModel, tabs: List<TabItem>, short: Boolean) {
         Column(Modifier.weight(1f).verticalScroll(androidx.compose.foundation.rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(6.dp)) {
             tabs.filter { it.tab != Tab.Settings }.forEach { RailItem(model, it, open) }
+            model.webTabs.forEach { WebRailItem(model, it, open) }
         }
         tabs.firstOrNull { it.tab == Tab.Settings }?.let { RailItem(model, it, open) } // pinned to the bottom
     }
@@ -312,6 +326,7 @@ private fun ShortRail(model: AppModel, tabs: List<TabItem>) {
         Column(Modifier.weight(1f).verticalScroll(androidx.compose.foundation.rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
             tabs.filter { it.tab != Tab.Settings }.forEach { RailItem(model, it, open = false) }
+            model.webTabs.forEach { WebRailItem(model, it, open = false) }
         }
         Icon(Icons.Rounded.Groups, "Watch Together", tint = Z.textMuted,
             modifier = Modifier.focusRing(RoundedCornerShape(50)).clip(RoundedCornerShape(50)).clickable { joining = true }.padding(12.dp))
@@ -344,6 +359,23 @@ private fun RailItem(model: AppModel, t: TabItem, open: Boolean) {
         Icon(t.icon, t.label, tint = if (selected) Z.text else Z.textMuted)
         AnimatedVisibility(open, enter = fadeIn(tween(180, delayMillis = 60)), exit = fadeOut(tween(80))) {
             Text(t.label, Modifier.padding(start = 16.dp), color = if (selected) Z.text else Z.textMuted,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1, softWrap = false)
+        }
+    }
+}
+
+@Composable
+private fun WebRailItem(model: AppModel, t: com.ziptv.core.WebTab, open: Boolean) {
+    val selected = model.tab == Tab.Web && model.webTabId == t.id
+    Row(
+        Modifier.fillMaxWidth().height(48.dp).focusRing(RoundedCornerShape(50), lift = 1f).clip(RoundedCornerShape(50))
+            .background(if (selected) Z.accent else Color.Transparent)
+            .clickable { model.openWebTab(t.id) }.padding(horizontal = if (LocalShort.current) 12.dp else 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        WebTabIcon(t)
+        AnimatedVisibility(open, enter = fadeIn(tween(180, delayMillis = 60)), exit = fadeOut(tween(80))) {
+            Text(t.name, Modifier.padding(start = 16.dp), color = if (selected) Z.text else Z.textMuted,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1, softWrap = false)
         }
     }
@@ -464,6 +496,7 @@ private fun TabContent(model: AppModel) {
         Tab.Series -> SeriesScreen(model)
         Tab.Search -> SearchScreen(model)
         Tab.Settings -> SettingsScreen(model)
+        Tab.Web -> WebScreen(model)
     } }
 }
 

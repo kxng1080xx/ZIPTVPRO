@@ -60,7 +60,7 @@ class PlaylistStore(dir: String) {
     }
 }
 
-enum class Tab { Home, Live, Movies, Series, Search, Settings }
+enum class Tab { Home, Live, Movies, Series, Search, Settings, Web }
 
 sealed interface Screen {
     data object Welcome : Screen
@@ -123,6 +123,33 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
     var device by mutableStateOf<DeviceState?>(null); private set
     var error by mutableStateOf<String?>(null)
     var tab by mutableStateOf(Tab.Home)
+
+    // ------------------------------------------------------------ web tabs
+    // Websites added on /connect, shown as tabs (one per site); kept on disk so they show offline.
+    private val webTabsFile = File(platform.dataDir, "web_tabs.tsv")
+    var webTabs by mutableStateOf(runCatching {
+        webTabsFile.readLines().mapNotNull { l -> l.split('\t').takeIf { it.size == 4 }?.let { com.ziptv.core.WebTab(it[0], it[1], it[2], it[3]) } }
+    }.getOrDefault(emptyList())); private set
+    var webTabId by mutableStateOf<String?>(null); private set
+    val webTab get() = webTabs.firstOrNull { it.id == webTabId }
+
+    fun openWebTab(id: String) {
+        // The page has its own sound; the channel would play underneath it.
+        if (nowPlaying != null && !fullscreen) stop()
+        webTabId = id; tab = Tab.Web
+    }
+
+    /** Ad blocker for web tabs, on unless turned off in Settings (per device). */
+    private val adblockOffFile = File(platform.dataDir, "adblock_off")
+    var adblockOn by mutableStateOf(!adblockOffFile.exists()); private set
+    val adblock: com.ziptv.core.AdBlock by lazy {
+        com.ziptv.core.AdBlock(File(platform.dataDir, "adblock").path).also { a -> scope.launch(Dispatchers.IO) { a.load() } }
+    }
+    fun toggleAdblock() {
+        adblockOn = !adblockOn
+        if (adblockOn) adblockOffFile.delete() else adblockOffFile.writeText("1")
+        error = if (adblockOn) "Ad blocker on" else "Ad blocker off"
+    }
     /** Bumped after every sync so screens re-read the catalog. */
     var catalogVersion by mutableStateOf(0); private set
     /** Bumped when favorites/pins/progress change so lists re-read the store. */
@@ -254,6 +281,15 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
     private suspend fun heartbeat() {
         val s = withContext(Dispatchers.IO) { runCatching { cloud.heartbeat() }.getOrNull() } ?: return
         device = s
+        if (s.webTabs != webTabs) {
+            webTabs = s.webTabs
+            runCatching {
+                webTabsFile.writeText(s.webTabs.joinToString("\n") { t ->
+                    listOf(t.id, t.name, t.url, t.nav).joinToString("\t") { it.replace('\t', ' ').replace('\n', ' ') }
+                })
+            }
+            if (tab == Tab.Web && webTab == null) tab = Tab.Home // removed on /connect
+        }
         if (s.expired) {
             // Same rule as v9: an expired device loses its playlists until renewed.
             player.stop(); nowPlaying = null; fullscreen = false
