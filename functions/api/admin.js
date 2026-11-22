@@ -63,6 +63,18 @@ async function handle({ request, env }) {
       if ('label' in b) patch.label = b.label;
       if ('expires_at' in b) patch.expires_at = b.expires_at; // ISO string or null
       if ('archived' in b) patch.archived = !!b.archived;
+      // Websites shown as tabs in the app: [{ id, name, url, nav: 'cursor' | 'focus' }].
+      if (Array.isArray(b.web_tabs)) {
+        patch.web_tabs = b.web_tabs
+          .filter((t) => t && /^https?:\/\//i.test(String(t.url || '')))
+          .slice(0, 20)
+          .map((t, i) => ({
+            id: String(t.id || `w${Date.now().toString(36)}${i}`).slice(0, 40),
+            name: String(t.name || '').trim().slice(0, 40) || new URL(t.url).hostname.replace(/^www\./, ''),
+            url: String(t.url).slice(0, 2000),
+            nav: t.nav === 'focus' ? 'focus' : 'cursor',
+          }));
+      }
       // Derive status from the new expiry when it changes.
       if ('expires_at' in b) {
         patch.status = b.expires_at && new Date(b.expires_at) < new Date() ? 'expired' : 'active';

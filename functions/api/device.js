@@ -93,6 +93,14 @@ export async function onRequestPost({ request, env }) {
       } catch { /* companion info is best-effort */ }
     }
 
+    // Websites added as tabs on /connect. Separate + best-effort, like last_error, so check-ins
+    // keep working before the web_tabs column exists.
+    let web_tabs = [];
+    try {
+      const t = await sb(env, `/devices?device_id=eq.${encodeURIComponent(dev.device_id)}&select=web_tabs`);
+      if (t && t[0] && Array.isArray(t[0].web_tabs)) web_tabs = t[0].web_tabs;
+    } catch { /* optional */ }
+
     let notice = '';
     let vpn = null;
     try {
@@ -118,6 +126,7 @@ export async function onRequestPost({ request, env }) {
       notice,
       companion,
       vpn,
+      web_tabs: expired ? [] : web_tabs,
       playlists: expired ? [] : (dev.playlists || []).map((p) => ({
         id: p.id,
         playlistName: p.name,
