@@ -15,6 +15,9 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.Mouse
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +42,11 @@ class WebControls(nav: String) {
     var back: () -> Unit = {}
     var forward: () -> Unit = {}
     var reload: () -> Unit = {}
+    /** TV: the page hands focus up to the toolbar (Up at the top of the page). */
+    var focusToolbar: () -> Unit = {}
+    /** A video (or anything) on the page went fullscreen: the whole app goes fullscreen with it. */
+    var fullscreen by mutableStateOf(false)
+    var exitFullscreen: () -> Unit = {}
     var canGoBack by mutableStateOf(false)
     var title by mutableStateOf("")
     var url by mutableStateOf("")
@@ -62,20 +70,30 @@ fun WebScreen(model: AppModel) {
     val tab = model.webTab ?: return
     // One page per tab; switching tabs starts that site fresh.
     val controls = remember(tab.id, tab.url) { WebControls(tab.nav) }
-    model.platform.BackHandler(enabled = controls.canGoBack && !model.fullscreen) { controls.back() }
+    val tv = model.platform.device == DeviceClass.Tv
+    val toolbar = remember { androidx.compose.ui.focus.FocusRequester() }
+    controls.focusToolbar = { runCatching { toolbar.requestFocus() } }
+    model.platform.BackHandler(enabled = controls.canGoBack && !model.fullscreen && !controls.fullscreen) { controls.back() }
+    model.platform.BackHandler(enabled = controls.fullscreen) { controls.exitFullscreen() }
+    androidx.compose.runtime.LaunchedEffect(controls.fullscreen) { model.webFullscreen = controls.fullscreen }
+    androidx.compose.runtime.DisposableEffect(controls) { onDispose { model.webFullscreen = false } }
     Column(Modifier.fillMaxSize()) {
-        // TV: the remote drives the page itself (Back = page back, Menu = cursor/focus).
-        if (model.platform.device != DeviceClass.Tv) Row(
+        if (!controls.fullscreen) Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ToolButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", controls.back)
-            ToolButton(Icons.AutoMirrored.Rounded.ArrowForward, "Forward", controls.forward)
-            ToolButton(Icons.Rounded.Refresh, "Reload", controls.reload)
+            ToolButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", Modifier.focusRequester(toolbar), controls.back)
+            ToolButton(Icons.AutoMirrored.Rounded.ArrowForward, "Forward", onClick = controls.forward)
+            ToolButton(Icons.Rounded.Refresh, "Reload", onClick = controls.reload)
             WebTabIcon(tab, Modifier.padding(start = 8.dp, end = 10.dp).size(20.dp))
             Text(controls.title.ifBlank { tab.name }, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            ToolButton(Icons.AutoMirrored.Rounded.OpenInNew, "Open in browser") {
+            // TV remote: cursor or jump between links (the Menu key flips it too).
+            if (tv) ToolButton(if (controls.nav == "cursor") Icons.Rounded.Mouse else Icons.Rounded.Link,
+                if (controls.nav == "cursor") "Cursor" else "Links") {
+                controls.nav = if (controls.nav == "cursor") "focus" else "cursor"
+            }
+            else ToolButton(Icons.AutoMirrored.Rounded.OpenInNew, "Open in browser") {
                 model.platform.openUrl(controls.url.ifBlank { tab.url })
             }
         }
@@ -86,6 +104,6 @@ fun WebScreen(model: AppModel) {
 }
 
 @Composable
-private fun ToolButton(icon: ImageVector, label: String, onClick: () -> Unit) =
-    Icon(icon, label, Modifier.focusRing(RoundedCornerShape(50)).clip(RoundedCornerShape(50))
+private fun ToolButton(icon: ImageVector, label: String, modifier: Modifier = Modifier, onClick: () -> Unit) =
+    Icon(icon, label, modifier.focusRing(RoundedCornerShape(50)).clip(RoundedCornerShape(50))
         .clickable(onClick = onClick).background(androidx.compose.ui.graphics.Color.Transparent).padding(8.dp), tint = Z.text)

@@ -23,6 +23,8 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import com.ziptv.app.StartupScreen
 import java.io.File
 
 /** Escape-to-go-back: the topmost enabled handler wins, like Android's back stack. */
@@ -134,7 +136,9 @@ private val quitApp = MutableStateFlow(false)
 fun main(args: Array<String>) {
     if (!claimSingleInstance()) return
     Thread(::removeV9, "remove-v9").apply { isDaemon = true }.start()
-    app(minimized = "--minimized" in args)
+    // Built off the UI thread (VLC, core, saved state: ~0.6 s) while Compose sets up the window.
+    val model = java.util.concurrent.CompletableFuture.supplyAsync { AppModel(DesktopPlatform(), MainScope()) }
+    app(minimized = "--minimized" in args, model)
     kotlin.system.exitProcess(0) // web tabs' WebView2 threads would otherwise keep the process alive
 }
 
@@ -160,12 +164,15 @@ private fun removeV9() {
     runCatching { marker.parentFile.mkdirs(); marker.writeText("done") }
 }
 
-private fun app(minimized: Boolean) = application(exitProcessOnExit = false) {
-    val model = remember { AppModel(DesktopPlatform(), MainScope()).also { it.start() } }
+private fun app(minimized: Boolean, pending: java.util.concurrent.CompletableFuture<AppModel>) = application(exitProcessOnExit = false) {
+    var ready by remember { androidx.compose.runtime.mutableStateOf<AppModel?>(null) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        ready = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { pending.get() }.also { it.start() }
+    }
     val windowState = rememberWindowState(width = 1440.dp, height = 900.dp)
     androidx.compose.runtime.LaunchedEffect(Unit) { if (minimized) windowState.isMinimized = true }
     Window(
-        onCloseRequest = { model.player.release(); exitApplication() },
+        onCloseRequest = { ready?.player?.release(); exitApplication() },
         title = "ZIPTV Pro",
         state = windowState,
         onPreviewKeyEvent = { e ->
@@ -174,6 +181,7 @@ private fun app(minimized: Boolean) = application(exitProcessOnExit = false) {
             } else false
         },
     ) {
+        val model = ready ?: return@Window StartupScreen(DeviceClass.Desktop)
         val full by wantFullscreen.collectAsState()
         // Real fullscreen the way browsers do it on Windows: drop the caption/frame style,
         // cover the whole monitor (taskbar included), restore both on exit. Compose's
@@ -194,6 +202,7 @@ private fun app(minimized: Boolean) = application(exitProcessOnExit = false) {
         }
         App(model)
     }
+    val model = ready ?: return@application
     if (model.pip && model.nowPlaying != null) PipWindow(model) {
         model.pip = false; model.fullscreen = true; windowState.isMinimized = false; bringToFront.value++
     }

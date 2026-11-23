@@ -41,7 +41,7 @@ fun WebTabPage(tab: WebTab, adblock: AdBlock?, controls: WebControls, tv: Boolea
                 }
             },
             modifier = Modifier.fillMaxSize(),
-            onRelease = { it.destroy() },
+            onRelease = { it.hideFullscreen(); it.destroy() },
         )
         val at = cursor
         if (tv && controls.nav == "cursor" && at != null) Canvas(Modifier.fillMaxSize()) {
@@ -63,6 +63,18 @@ private class TvWebView(
     @Volatile private var pageUrl = ""
     private var cx = -1f
     private var cy = -1f
+    // A page's fullscreen video: laid over the whole window (decor view), above the app's rail and bars.
+    private var full: android.view.View? = null
+    private var fullCb: WebChromeClient.CustomViewCallback? = null
+
+    fun hideFullscreen() {
+        val v = full ?: return
+        full = null
+        (v.parent as? android.view.ViewGroup)?.removeView(v)
+        fullCb?.onCustomViewHidden(); fullCb = null
+        controls.fullscreen = false
+        if (tv) requestFocus()
+    }
 
     init {
         settings.javaScriptEnabled = true
@@ -74,8 +86,23 @@ private class TvWebView(
         controls.back = { if (canGoBack()) goBack() }
         controls.forward = { if (canGoForward()) goForward() }
         controls.reload = { reload() }
+        controls.exitFullscreen = { hideFullscreen() }
         webChromeClient = object : WebChromeClient() {
             override fun onReceivedTitle(view: WebView, title: String?) { controls.title = title.orEmpty() }
+
+            override fun onShowCustomView(view: android.view.View, callback: CustomViewCallback) {
+                hideFullscreen()
+                full = view; fullCb = callback
+                view.setBackgroundColor(android.graphics.Color.BLACK)
+                (rootView as android.view.ViewGroup).addView(view, android.view.ViewGroup.LayoutParams(-1, -1))
+                view.isFocusable = true; view.requestFocus()
+                controls.fullscreen = true
+            }
+
+            override fun onHideCustomView() {
+                fullCb = null // the page left fullscreen itself: nothing to tell it
+                hideFullscreen()
+            }
         }
         webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) { pageUrl = url }
@@ -137,7 +164,7 @@ private class TvWebView(
         when (dir) {
             "left" -> { if (cx <= 0f) return false; cx -= step } // at the edge: let the app's rail take focus
             "right" -> cx += step
-            "up" -> if (cy <= margin) scrollPage(-step * 2) else cy -= step
+            "up" -> if (cy <= margin) scrollPage(-step * 2, toToolbar = e.repeatCount == 0) else cy -= step
             "down" -> if (cy >= height - margin) scrollPage(step * 2) else cy += step
         }
         cx = cx.coerceIn(0f, width.toFloat()); cy = cy.coerceIn(0f, height.toFloat())
@@ -145,9 +172,13 @@ private class TvWebView(
         return true
     }
 
-    private fun scrollPage(px: Float) {
-        val css = px / resources.displayMetrics.density
-        evaluateJavascript("window.scrollBy(0,$css)", null)
+    /** Scrolls whatever box is under the cursor (most sites scroll an inner element, not the window).
+     *  Up with nothing left to scroll hands focus to the toolbar. */
+    private fun scrollPage(px: Float, toToolbar: Boolean = false) {
+        val k = "innerWidth/$width"
+        evaluateJavascript("$SCROLL_JS;window.__zipScroll($cx*$k,$cy*$k,$px*$k)") { r ->
+            if (toToolbar && r?.trim('"') == "edge") controls.focusToolbar()
+        }
     }
 
     private fun touch(action: Int, x: Float, y: Float) {
@@ -161,8 +192,9 @@ private class TvWebView(
     // -------- focus mode: arrows jump to the nearest link/button that way, OK taps it
     private fun focusKey(dir: String, e: KeyEvent): Boolean {
         if (e.action != KeyEvent.ACTION_DOWN) return true
-        evaluateJavascript("$SPATIAL_NAV;window.__zipNav('$dir')") { r ->
+        evaluateJavascript("$SCROLL_JS;$SPATIAL_NAV;window.__zipNav('$dir')") { r ->
             val res = r?.trim('"').orEmpty()
+            if (dir == "up" && res == "edge" && e.repeatCount == 0) controls.focusToolbar()
             if (dir == "ok" && res.startsWith("[")) {
                 // [x, y, innerWidth] in CSS px: tap there for real, so inputs open the keyboard too.
                 val p = res.trim('[', ']').replace("\\", "").split(',').mapNotNull { it.trim().toFloatOrNull() }
@@ -191,6 +223,17 @@ private fun kindOf(url: String): String {
 
 private fun jsString(s: String) = "'" + s.replace("\\", "\\\\").replace("'", "\\'").replace("\n", " ") + "'"
 
+/** __zipScroll(x, y, dy) in CSS px: scrolls the nearest scrollable box under (x, y) that can still move
+ *  that way, else the page; 'edge' when nothing could. */
+private val SCROLL_JS = """
+(function(){if(window.__zipScroll)return;window.__zipScroll=function(x,y,dy){
+function can(e,top,h,sh){return dy<0?top>0:top+h<sh-1}
+for(var e=document.elementFromPoint(x,y);e&&e.nodeType==1;e=e.parentElement){var o=getComputedStyle(e).overflowY;
+if((o=='auto'||o=='scroll'||o=='overlay')&&e.scrollHeight>e.clientHeight+1&&can(e,e.scrollTop,e.clientHeight,e.scrollHeight)){e.scrollBy(0,dy);return 'scrolled'}}
+var r=document.scrollingElement||document.documentElement;
+if(can(r,r.scrollTop,innerHeight,r.scrollHeight)){scrollBy(0,dy);return 'scrolled'}return 'edge'}})()
+""".trimIndent().replace("\n", "")
+
 /**
  * Focus mode, injected on demand: keeps a highlighted element and moves to the nearest focusable one in the
  * pressed direction (up/down scroll when nothing is that way). 'ok' returns the element's centre to tap.
@@ -203,12 +246,12 @@ function all(){return [].filter.call(document.querySelectorAll('a[href],button,i
 function set(e){if(cur)cur.classList.remove('__zipf');cur=e;e.classList.add('__zipf');e.scrollIntoView({block:'nearest',inline:'nearest'})}
 window.__zipNav=function(d){
 if(!cur||!document.contains(cur)||!vis(cur)){var c=all().filter(function(e){var r=e.getBoundingClientRect();return r.top>=0&&r.top<innerHeight});
-if(c.length){set(c[0]);return 'moved'}if(d=='up'||d=='down'){scrollBy(0,(d=='up'?-1:1)*innerHeight*0.6);return 'scrolled'}return 'edge'}
+if(c.length){set(c[0]);return 'moved'}if(d=='up'||d=='down')return __zipScroll(innerWidth/2,innerHeight/2,(d=='up'?-1:1)*innerHeight*0.6);return 'edge'}
 if(d=='ok'){var q=cur.getBoundingClientRect();return '['+(q.left+q.width/2)+','+(q.top+q.height/2)+','+innerWidth+']'}
 var a=cur.getBoundingClientRect(),ax=a.left+a.width/2,ay=a.top+a.height/2,best=null,bs=1e9;
 all().forEach(function(e){if(e==cur||cur.contains(e)||e.contains(cur))return;var r=e.getBoundingClientRect(),dx=r.left+r.width/2-ax,dy=r.top+r.height/2-ay,m,c;
 if(d=='left'){if(r.right>a.left+1)return;m=-dx;c=Math.abs(dy)}else if(d=='right'){if(r.left<a.right-1)return;m=dx;c=Math.abs(dy)}
 else if(d=='up'){if(r.bottom>a.top+1)return;m=-dy;c=Math.abs(dx)}else{if(r.top<a.bottom-1)return;m=dy;c=Math.abs(dx)}
 if(m+c*2<bs){bs=m+c*2;best=e}});
-if(best){set(best);return 'moved'}if(d=='up'||d=='down'){scrollBy(0,(d=='up'?-1:1)*innerHeight*0.6);return 'scrolled'}return 'edge'}})()
+if(best){set(best);return 'moved'}if(d=='up'||d=='down')return __zipScroll(innerWidth/2,innerHeight/2,(d=='up'?-1:1)*innerHeight*0.6);return 'edge'}})()
 """.trimIndent().replace("\n", "")

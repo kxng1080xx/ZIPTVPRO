@@ -60,6 +60,7 @@ dependencies {
 compose.desktop {
     application {
         mainClass = "com.ziptv.desktop.MainKt"
+        jvmArgs += listOf("-splash:\$APPDIR/resources/splash.png") // installed app only (dev runs have no APPDIR)
         // Packaging needs jpackage, which Android Studio's JBR lacks (Gradle itself still runs on JBR).
         (System.getenv("JPACKAGE_JDK") ?: "C:/Program Files/Java/jdk-26.0.2.1").let { if (file(it).exists()) javaHome = it }
         nativeDistributions {
@@ -82,4 +83,10 @@ compose.desktop {
     }
 }
 
-tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(prepareVlc) }
+// Startup splash (java -splash): on screen ~0.1 s after the click, until the window opens. <app>/resources/splash*.png
+val prepareSplash by tasks.registering(Copy::class) {
+    from("splash")
+    into(layout.buildDirectory.dir("vlcResources/windows"))
+}
+
+tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(prepareVlc, prepareSplash) }

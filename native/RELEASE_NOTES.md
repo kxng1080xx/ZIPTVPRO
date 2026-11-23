@@ -7,6 +7,15 @@ device — TV and projector, phone and tablet, or Windows PC — with no switchi
 playlists and provider setup carry on. Favorites and local watch history from version 9
 start fresh.
 
+**10.5.0:**
+- Web tabs go truly fullscreen: when a site's video goes fullscreen, the whole app does too (no sidebar
+  or toolbar; phones turn landscape). Back or Esc returns.
+- TV: web tabs have on-screen back, forward, reload and a cursor/links switch (no Menu key needed).
+  Press Up at the top of a page to reach them.
+- TV: web pages scroll on sites that scroll an inner area instead of the whole page.
+- PC: a splash shows the moment you open the app, and the window opens sooner.
+- Home shows your channels about a second sooner after launch.
+
 **10.4.1:**
 - PC: web tabs now use Microsoft Edge's engine (built into Windows), so movie and streaming sites play
   (they got stuck on "Finding sources"). The installer is about 120 MB smaller.

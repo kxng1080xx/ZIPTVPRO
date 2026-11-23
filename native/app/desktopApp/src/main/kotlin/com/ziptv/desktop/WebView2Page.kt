@@ -87,6 +87,7 @@ private const val INIT_JS = """
     });
   });
   addEventListener('popstate', rep); addEventListener('hashchange', rep);
+  document.addEventListener('fullscreenchange', function(){ try { window.__zipFull(document.fullscreenElement ? 1 : 0); } catch (e) {} });
 })();
 """
 
@@ -107,6 +108,10 @@ private class WebViewCanvas(
     }
     private val cssCb = WebviewLib.BindCb { seq, req, _ ->
         lib?.webview_return(w, seq, false, jsonString(adblock.hideCss(jsonArgs(req).getOrNull(0).orEmpty())))
+    }
+    private val fullCb = WebviewLib.BindCb { seq, req, _ ->
+        controls.fullscreen = jsonArgs(req).getOrNull(0) == "1"
+        lib?.webview_return(w, seq, false, "null")
     }
     private val pending = java.util.concurrent.ConcurrentLinkedQueue<(WebviewLib, Long) -> Unit>()
     private val drain = WebviewLib.DispatchCb { _, _ -> lib?.let { l -> while (true) { val f = pending.poll() ?: break; f(l, w) } } }
@@ -143,6 +148,7 @@ private class WebViewCanvas(
                 lib = l; w = h
                 l.webview_bind(h, "__zipState", stateCb, 0)
                 l.webview_bind(h, "__zipCss", cssCb, 0)
+                l.webview_bind(h, "__zipFull", fullCb, 0)
                 l.webview_init(h, INIT_JS)
                 l.webview_navigate(h, tab.url)
                 resizeToCanvas()
@@ -168,6 +174,7 @@ fun WebView2Page(dataDir: String, tab: WebTab, adblock: AdBlock, blockAds: Boole
             controls.back = { c.post { l, h -> l.webview_eval(h, "history.back()") } }
             controls.forward = { c.post { l, h -> l.webview_eval(h, "history.forward()") } }
             controls.reload = { c.post { l, h -> l.webview_eval(h, "location.reload()") } }
+            controls.exitFullscreen = { c.post { l, h -> l.webview_eval(h, "document.exitFullscreen && document.exitFullscreen()") } }
         }
     }
     DisposableEffect(canvas) { onDispose { canvas.close() } }

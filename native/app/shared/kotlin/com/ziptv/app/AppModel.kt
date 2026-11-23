@@ -16,6 +16,7 @@ import com.ziptv.core.UserStore
 import com.ziptv.core.WatchProgress
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -95,6 +96,7 @@ data class Playable(
     }
 }
 
+
 class AppModel(val platform: Platform, val scope: CoroutineScope) {
     private val store = PlaylistStore(platform.dataDir)
     val recorder by lazy { com.ziptv.core.Recorder(File(platform.dataDir, "recordings").path) }
@@ -159,6 +161,8 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
     val watch = WatchTogether(this)
     var nowPlaying by mutableStateOf<Playable?>(null); private set
     var fullscreen by mutableStateOf(false)
+    /** A web tab's page is fullscreen (its video): rail, header and toolbar hide, the window goes fullscreen. */
+    var webFullscreen by mutableStateOf(false)
     /** Detail pages opened from elsewhere (Home, Search). */
     var openMovie by mutableStateOf<com.ziptv.core.Movie?>(null)
     /** Movie playlist page (Movies tab). */
@@ -339,11 +343,14 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
         player.upscale = user?.setting("upscale") == "1"
         liveCategoryState.value = user?.setting("live_cat") ?: CAT_ALL
         userVersion++
+        // Read the saved catalog right away on IO: queued on the UI thread it waited for the window to
+        // finish drawing (~1 s at launch) before starting.
+        val reading = scope.async(Dispatchers.IO) {
+            logoIndex?.let { runCatching { lib.setLogoIndex(it) } }
+            lib.load(fileFor(p, "catalog"))
+        }
         scope.launch {
-            val cached = withContext(Dispatchers.IO) {
-                logoIndex?.let { runCatching { lib.setLogoIndex(it) } }
-                lib.load(fileFor(p, "catalog"))
-            }
+            val cached = reading.await()
             if (cached) {
                 catalogVersion++
                 screen = Screen.Main

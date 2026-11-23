@@ -139,7 +139,7 @@ fun App(model: AppModel) {
                     enter = fadeIn(tween(220)) + scaleIn(tween(260), initialScale = 0.94f), exit = fadeOut(tween(90))) {
                     PlayerScreen(model)
                 }
-                val screenFull = model.fullscreen && model.nowPlaying != null
+                val screenFull = (model.fullscreen && model.nowPlaying != null) || (model.webFullscreen && model.tab == Tab.Web)
                 androidx.compose.runtime.LaunchedEffect(screenFull) { model.platform.setScreenFullscreen(screenFull) }
                 ReminderBanner(model, Modifier.align(Alignment.TopCenter))
                 WatchBanner(model, Modifier.align(Alignment.TopCenter)) // over the player too
@@ -163,6 +163,12 @@ fun Wordmark(size: Int = 22) {
         },
         fontSize = size.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.5.sp,
     )
+}
+
+/** PC: the window opens with this while the app model is still being built in the background. */
+@Composable
+fun StartupScreen(device: DeviceClass) = ZipTheme(device) {
+    Box(Modifier.fillMaxSize().background(Z.bg)) { LoadingScreen() }
 }
 
 @Composable
@@ -239,21 +245,23 @@ private fun MainScaffold(model: AppModel, wide: Boolean) {
     androidx.compose.runtime.LaunchedEffect(model.tab) {
         if (!wide && model.tab != Tab.Live && !model.fullscreen && model.nowPlaying != null) model.stop()
     }
+    // Only hidden, never moved: a web tab's page must stay in place in the tree or it reloads.
+    val webFull = model.webFullscreen && model.tab == Tab.Web
     if (wide) {
         // Rail: icons only, widens with labels on mouse hover / D-pad focus. It floats over the page
         // (content keeps the narrow width as padding), so opening it never reflows the screen.
         Box(Modifier.fillMaxSize()) {
-            Column(Modifier.fillMaxSize().padding(start = if (short) RAIL_SHORT else RAIL_NARROW)) {
-                if (!short) Header(model, wide = true) // landscape phone: the status bar already has the time
+            Column(Modifier.fillMaxSize().padding(start = if (webFull) 0.dp else if (short) RAIL_SHORT else RAIL_NARROW)) {
+                if (!short && !webFull) Header(model, wide = true) // landscape phone: the status bar already has the time
                 Box(Modifier.weight(1f)) { TabContent(model) }
             }
-            SideRail(model, tabs, short)
+            if (!webFull) SideRail(model, tabs, short)
         }
     } else {
         Column(Modifier.fillMaxSize()) {
-            Header(model, wide = false)
+            if (!webFull) Header(model, wide = false)
             Box(Modifier.weight(1f)) { TabContent(model) }
-            NavigationBar(containerColor = Z.surface) {
+            if (!webFull) NavigationBar(containerColor = Z.surface) {
                 tabs.filter { it.tab != Tab.Settings }.forEach { BottomItem(model, it) }
                 model.webTabs.forEach { t ->
                     NavigationBarItem(
