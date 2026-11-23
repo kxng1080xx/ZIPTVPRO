@@ -799,7 +799,7 @@
 
     $('f-m3u').addEventListener('input', () => {
       const p = parseM3u($('f-m3u').value);
-      if (p) { $('f-server').value = p.host; $('f-user').value = p.user; $('f-pass').value = p.pass; }
+      if (p) { $('f-server').value = p.host; $('f-user').value = p.user; $('f-pass').value = p.pass; autoName('f-name', p.host); }
     });
 
     // ---------------------------- saved playlist presets ----------------------------
@@ -861,7 +861,7 @@
 
     $('s-m3u').addEventListener('input', () => {
       const p = parseM3u($('s-m3u').value);
-      if (p) { $('s-server').value = p.host; $('s-user').value = p.user; $('s-pass').value = p.pass; }
+      if (p) { $('s-server').value = p.host; $('s-user').value = p.user; $('s-pass').value = p.pass; autoName('s-name', p.host); }
     });
 
     $('s-save').addEventListener('click', async () => {
@@ -1260,7 +1260,13 @@
       } catch (e) {}
       return null;
     }
-    function hostName(s) { try { return new URL(/^https?:/i.test(s) ? s : 'http://' + s).hostname; } catch { return 'Playlist'; } }
+    // Default playlist name: the server's host and port (e.g. 206.109.57.241:8080).
+    function hostName(s) { try { return new URL(/^https?:/i.test(s) ? s : 'http://' + s).host; } catch { return 'Playlist'; } }
+    // A pasted link names the playlist unless a name was typed.
+    function autoName(id, server) {
+      const f = $(id);
+      if (!f.value.trim() || f.dataset.auto === f.value) { f.value = hostName(server); f.dataset.auto = f.value; }
+    }
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
     // ---------------------------- boot ----------------------------
