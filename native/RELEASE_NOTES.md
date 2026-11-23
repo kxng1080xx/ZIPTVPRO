@@ -7,6 +7,14 @@ device — TV and projector, phone and tablet, or Windows PC — with no switchi
 playlists and provider setup carry on. Favorites and local watch history from version 9
 start fresh.
 
+**10.5.1:**
+- Adding a playlist: paste the link at the top; the name fills in with the server's address. After the
+  login checks out, choose which Live TV, Movies and Series categories to keep.
+- Playlist names show again in Settings (they all said "Playlist").
+- Settings shows when your activation and each playlist's account expire.
+- Fixed a crash when a provider lists the same movie or series twice.
+- Loading no longer looks stuck: it shows how much has downloaded and retries a stalled download sooner.
+
 **10.5.0:**
 - Web tabs go truly fullscreen: when a site's video goes fullscreen, the whole app does too (no sidebar
   or toolbar; phones turn landscape). Back or Esc returns.

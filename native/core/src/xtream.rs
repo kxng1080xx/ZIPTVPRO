@@ -25,7 +25,8 @@ impl Client {
         }
         let agent = ureq::AgentBuilder::new()
             .timeout_connect(Duration::from_secs(15))
-            .timeout_read(Duration::from_secs(90))
+            // No bytes for 30 s = stalled: give up and retry (90 s x 3 tries looked frozen on the sync screen).
+            .timeout_read(Duration::from_secs(30))
             .user_agent("VLC/3.0.20")
             .build();
         let base = format!(
@@ -54,12 +55,23 @@ impl Client {
     }
 
     pub fn get_text(&self, url: &str) -> Result<String, CoreError> {
+        self.get_text_with(url, &mut |_| {})
+    }
+
+    /// Like get_text, reporting bytes received (every 512 KB) so a long download visibly moves.
+    pub fn get_text_with(&self, url: &str, on_bytes: &mut dyn FnMut(u64)) -> Result<String, CoreError> {
         let resp = self.agent.get(url).call().map_err(|e| CoreError::Network { message: friendly(&e) })?;
         // Not into_string(): it refuses bodies over 10 MB, and live lists are bigger.
-        let mut text = String::new();
-        std::io::Read::read_to_string(&mut resp.into_reader(), &mut text)
-            .map_err(|_| CoreError::Network { message: "The server closed the connection mid-download".into() })?;
-        Ok(text)
+        let mut reader = resp.into_reader();
+        let (mut body, mut chunk, mut told) = (Vec::new(), vec![0u8; 64 * 1024], 0usize);
+        loop {
+            let n = std::io::Read::read(&mut reader, &mut chunk)
+                .map_err(|_| CoreError::Network { message: "The server closed the connection mid-download".into() })?;
+            if n == 0 { break; }
+            body.extend_from_slice(&chunk[..n]);
+            if body.len() - told >= 512 * 1024 { told = body.len(); on_bytes(told as u64); }
+        }
+        Ok(String::from_utf8(body).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()))
     }
 
     /// Account check. Errors distinguish "can't reach" from "bad login".
@@ -75,13 +87,18 @@ impl Client {
     }
 
     /// One action, retried. None = still failing after retries (caller keeps old data).
-    pub fn action(&self, action: &str, extra: &str, mut on_retry: impl FnMut(u32, &str)) -> Option<Value> {
+    pub fn action(&self, action: &str, extra: &str, on_retry: impl FnMut(u32, &str)) -> Option<Value> {
+        self.action_with(action, extra, on_retry, &mut |_| {})
+    }
+
+    /// `action` that also reports bytes received.
+    pub fn action_with(&self, action: &str, extra: &str, mut on_retry: impl FnMut(u32, &str), on_bytes: &mut dyn FnMut(u64)) -> Option<Value> {
         let url = format!("{}&action={action}{extra}", self.base);
         for attempt in 1..=3u32 {
             // A non-JSON reply (HTML error page, "max connections reached", a
             // redirect to a notice video) is a FAILURE, not an empty list: treating
             // it as [] wiped the whole catalog when the account was busy.
-            let result = self.get_text(&url).and_then(|text| {
+            let result = self.get_text_with(&url, on_bytes).and_then(|text| {
                 serde_json::from_str::<Value>(&text).map_err(|_| CoreError::Network {
                     message: format!("provider returned non-JSON ({} bytes)", text.len()),
                 })

@@ -225,6 +225,19 @@ impl Provider {
         Ok(())
     }
 
+    /// The provider's categories (live, movies, series; counts 0) without the big lists: picked before a
+    /// new playlist is added. Plain M3U playlists have none here.
+    pub fn fetch_categories(&self) -> Result<Vec<Category>, CoreError> {
+        if self.m3u.is_some() { return Ok(vec![]); }
+        let mut out = vec![];
+        for (action, kind) in [("get_live_categories", ContentKind::Live), ("get_vod_categories", ContentKind::Movie), ("get_series_categories", ContentKind::Series)] {
+            let v = self.client.action(action, "", |_, _| {})
+                .ok_or_else(|| CoreError::Network { message: "Couldn't load the categories".into() })?;
+            out.extend(parse_categories(&v, kind));
+        }
+        Ok(out)
+    }
+
     /// Downloads the whole catalog, one big list at a time, each retried 3x.
     /// A list that still fails keeps its previous copy (same playlist only).
     pub fn sync(&self, listener: Box<dyn SyncListener>) -> Result<SyncSummary, CoreError> {
@@ -235,7 +248,8 @@ impl Provider {
         let mut skipped = vec![];
         let mut fetch = |action: &str, label: &str| {
             say(label);
-            let r = self.client.action(action, "", |n, err| say(&format!("Retrying {label} ({n}/3): {err}")));
+            let r = self.client.action_with(action, "", |n, err| say(&format!("Retrying {label} ({n}/3): {err}")),
+                &mut |b| say(&format!("{label} ({:.1} MB)", b as f64 / 1_048_576.0)));
             if r.is_none() {
                 skipped.push(action.to_string());
             }
@@ -322,24 +336,24 @@ impl Provider {
     pub fn channels(&self, category_id: Option<String>) -> Vec<Channel> {
         let cat = self.catalog.read().unwrap();
         match category_id {
-            Some(id) => cat.channels.iter().filter(|c| c.category_id == id).cloned().collect(),
-            None => cat.channels.clone(),
+            Some(id) => uniq(cat.channels.iter().filter(|c| c.category_id == id), |c| &c.stream_id),
+            None => uniq(cat.channels.iter(), |c| &c.stream_id),
         }
     }
 
     pub fn movies(&self, category_id: Option<String>) -> Vec<Movie> {
         let cat = self.catalog.read().unwrap();
         match category_id {
-            Some(id) => cat.movies.iter().filter(|m| m.category_id == id).cloned().collect(),
-            None => cat.movies.clone(),
+            Some(id) => uniq(cat.movies.iter().filter(|m| m.category_id == id), |m| &m.stream_id),
+            None => uniq(cat.movies.iter(), |m| &m.stream_id),
         }
     }
 
     pub fn series(&self, category_id: Option<String>) -> Vec<Series> {
         let cat = self.catalog.read().unwrap();
         match category_id {
-            Some(id) => cat.series.iter().filter(|s| s.category_id == id).cloned().collect(),
-            None => cat.series.clone(),
+            Some(id) => uniq(cat.series.iter().filter(|s| s.category_id == id), |s| &s.series_id),
+            None => uniq(cat.series.iter(), |s| &s.series_id),
         }
     }
 
@@ -352,9 +366,9 @@ impl Provider {
         }
         let lim = limit as usize;
         SearchResults {
-            channels: ranked(&cat.channels, &q, lim, |c| &c.name),
-            movies: ranked(&cat.movies, &q, lim, |m| &m.name),
-            series: ranked(&cat.series, &q, lim, |s| &s.name),
+            channels: uniq(ranked(&cat.channels, &q, lim, |c| &c.name).iter(), |c| &c.stream_id),
+            movies: uniq(ranked(&cat.movies, &q, lim, |m| &m.name).iter(), |m| &m.stream_id),
+            series: uniq(ranked(&cat.series, &q, lim, |s| &s.name).iter(), |s| &s.series_id),
         }
     }
 
@@ -391,13 +405,13 @@ impl Provider {
     pub fn channels_by_ids(&self, ids: Vec<String>) -> Vec<Channel> {
         let cat = self.catalog.read().unwrap();
         let by: HashMap<&str, &Channel> = cat.channels.iter().map(|c| (c.stream_id.as_str(), c)).collect();
-        ids.iter().filter_map(|id| by.get(id.as_str()).map(|c| (*c).clone())).collect()
+        uniq(ids.iter().filter_map(|id| by.get(id.as_str()).copied()), |c| &c.stream_id)
     }
 
     pub fn movies_by_ids(&self, ids: Vec<String>) -> Vec<Movie> {
         let cat = self.catalog.read().unwrap();
         let by: HashMap<&str, &Movie> = cat.movies.iter().map(|m| (m.stream_id.as_str(), m)).collect();
-        ids.iter().filter_map(|id| by.get(id.as_str()).map(|m| (*m).clone())).collect()
+        uniq(ids.iter().filter_map(|id| by.get(id.as_str()).copied()), |m| &m.stream_id)
     }
 
     /// TMDB's related titles (collection + recommendations, Meta.related) that this playlist has, in that
@@ -430,21 +444,21 @@ impl Provider {
     pub fn series_by_ids(&self, ids: Vec<String>) -> Vec<Series> {
         let cat = self.catalog.read().unwrap();
         let by: HashMap<&str, &Series> = cat.series.iter().map(|s| (s.series_id.as_str(), s)).collect();
-        ids.iter().filter_map(|id| by.get(id.as_str()).map(|s| (*s).clone())).collect()
+        uniq(ids.iter().filter_map(|id| by.get(id.as_str()).copied()), |s| &s.series_id)
     }
 
     pub fn recently_added_movies(&self, limit: u32) -> Vec<Movie> {
         let cat = self.catalog.read().unwrap();
         let mut v: Vec<&Movie> = cat.movies.iter().filter(|m| m.added > 0).collect();
         v.sort_by_key(|m| std::cmp::Reverse(m.added));
-        v.into_iter().take(limit as usize).cloned().collect()
+        uniq(v.into_iter(), |m| &m.stream_id).into_iter().take(limit as usize).collect()
     }
 
     pub fn recently_added_series(&self, limit: u32) -> Vec<Series> {
         let cat = self.catalog.read().unwrap();
         let mut v: Vec<&Series> = cat.series.iter().filter(|s| s.added > 0).collect();
         v.sort_by_key(|s| std::cmp::Reverse(s.added));
-        v.into_iter().take(limit as usize).cloned().collect()
+        uniq(v.into_iter(), |s| &s.series_id).into_iter().take(limit as usize).collect()
     }
 
     pub fn episode_url(&self, episode_id: String, extension: Option<String>) -> String {
@@ -669,6 +683,13 @@ fn fold(s: &str) -> String {
         .collect()
 }
 
+/// First of each id only. Some providers list the same stream twice; the app's lists are keyed by id,
+/// and a repeated key crashes them ("Key ... was already used").
+fn uniq<'a, T: Clone + 'a>(items: impl Iterator<Item = &'a T>, id: impl Fn(&T) -> &String) -> Vec<T> {
+    let mut seen = std::collections::HashSet::new();
+    items.filter(|it| seen.insert(id(it).clone())).cloned().collect()
+}
+
 fn ranked<T: Clone>(items: &[T], q: &str, limit: usize, name: impl Fn(&T) -> &String) -> Vec<T> {
     // ponytail: linear scan; ~70k items is a few ms in Rust. Add an index if catalogs grow 10x.
     let mut hits: Vec<(u8, &T)> = items
@@ -695,6 +716,12 @@ mod tests {
     struct Quiet;
     impl SyncListener for Quiet {
         fn on_progress(&self, _: String) {}
+    }
+
+    #[test]
+    fn uniq_keeps_first_of_each_id() {
+        let v = vec![("1".to_string(), 'a'), ("2".to_string(), 'b'), ("1".to_string(), 'c')];
+        assert_eq!(uniq(v.iter(), |x| &x.0), vec![("1".to_string(), 'a'), ("2".to_string(), 'b')]);
     }
 
     #[test]

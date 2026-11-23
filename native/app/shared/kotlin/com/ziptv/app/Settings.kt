@@ -171,11 +171,19 @@ private fun SectionPage(model: AppModel, s: Section, back: (() -> Unit)?) {
 private fun AccountSection(model: AppModel) {
     var adding by remember { mutableStateOf(false) }
     var confirmRemoveAll by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(model.playlists) { model.loadAccounts() }
+    // Activation set on the ZIPTV Pro website (/connect).
+    model.device?.expiresAt?.let { exp ->
+        Group(null) { SettingRow(Icons.Rounded.Cloud, "Activation", "Expires ${shortDate(exp)}") }
+    }
     Group("Playlists") {
         model.playlists.forEachIndexed { i, p ->
             if (i > 0) Divider()
             val isActive = model.active?.id == p.id
-            SettingRow(Icons.Rounded.PlaylistPlay, p.name, if (isActive) "Playing from this playlist" else "Tap to switch",
+            // The provider's own account expiry, checked when this page opens.
+            val exp = model.accounts[p.id]?.expiresAt?.let { "Expires " + shortDate(it) }
+            SettingRow(Icons.Rounded.PlaylistPlay, p.name,
+                listOfNotNull(if (isActive) "Playing from this playlist" else "Tap to switch", exp).joinToString(" · "),
                 onClick = { if (!isActive) model.open(p) }) {
                 if (isActive) Icon(Icons.Rounded.CheckCircle, "Active", tint = Z.focus, modifier = Modifier.size(22.dp))
                 IconAction(Icons.Rounded.Delete, "Remove ${p.name}", Z.textMuted) { model.remove(p) }
@@ -310,7 +318,7 @@ private fun NetworkSection(model: AppModel) {
             Column(horizontalAlignment = Alignment.End) {
                 Text(d?.status?.replaceFirstChar { it.uppercase() } ?: "Offline", fontWeight = FontWeight.SemiBold,
                     color = if (d == null) Z.live else Z.text)
-                d?.expiresAt?.let { Text("Expires ${it.take(10)}", color = Z.textMuted, style = MaterialTheme.typography.labelMedium) }
+                d?.expiresAt?.let { Text("Expires ${shortDate(it)}", color = Z.textMuted, style = MaterialTheme.typography.labelMedium) }
             }
         }
     }
@@ -502,3 +510,12 @@ fun ShareDialog(model: AppModel, t: ShareTunnel, onDismiss: () -> Unit) {
         }
     }
 }
+
+/** "2027-01-12…" -> "12 Jan 2027" (unparseable: as given). java.text: Android 7 has no java.time. */
+internal fun shortDate(iso: String): String = runCatching {
+    val d = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.ENGLISH).parse(iso.take(10))!!
+    java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.ENGLISH).format(d)
+}.getOrElse { iso.take(10) }
+
+internal fun shortDate(epochSeconds: Long): String =
+    java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.ENGLISH).format(java.util.Date(epochSeconds * 1000))

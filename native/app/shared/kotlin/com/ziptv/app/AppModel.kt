@@ -361,6 +361,33 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
         }
     }
 
+    /** Step 1 of adding: checks the login and lists the provider's categories to choose from.
+     *  Empty list = nothing to choose (plain M3U, or the categories didn't load); error = bad login. */
+    fun checkPlaylist(p: Playlist, onDone: (List<com.ziptv.core.Category>, String?) -> Unit) {
+        scope.launch {
+            val r = withContext(Dispatchers.IO) {
+                try {
+                    val prov = Provider(p.server, p.username, p.password)
+                    prov.login()
+                    Result.success(runCatching { prov.fetchCategories() }.getOrDefault(emptyList()))
+                } catch (e: CoreException) { Result.failure(e) }
+            }
+            r.onSuccess { onDone(it, null) }.onFailure { onDone(emptyList(), it.message ?: "Could not sign in") }
+        }
+    }
+
+    /** Provider account (expiry, connections) per playlist id, for Settings. null = couldn't check. */
+    val accounts = androidx.compose.runtime.mutableStateMapOf<String, com.ziptv.core.AccountInfo?>()
+
+    fun loadAccounts() {
+        for (p in playlists) if (p.id !in accounts && p.username.isNotBlank()) {
+            accounts[p.id] = null
+            scope.launch {
+                accounts[p.id] = withContext(Dispatchers.IO) { runCatching { Provider(p.server, p.username, p.password).login() }.getOrNull() }
+            }
+        }
+    }
+
     /** Validates the login first, so a typo never leaves a broken playlist saved. */
     fun add(p: Playlist, onDone: (String?) -> Unit) {
         scope.launch {
@@ -368,7 +395,7 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
                 try {
                     Provider(p.server, p.username, p.password).login()
                     // Mirror to the cloud so the admin panel sees it (best-effort).
-                    val rid = runCatching { cloud.addPlaylist(p.name, p.server, p.username, p.password) }.getOrNull()
+                    val rid = runCatching { cloud.addPlaylist(p.name, p.server, p.username, p.password, p.hiddenCategories) }.getOrNull()
                     Result.success(p.copy(remoteId = rid?.ifBlank { null }))
                 } catch (e: CoreException) {
                     Result.failure(e)

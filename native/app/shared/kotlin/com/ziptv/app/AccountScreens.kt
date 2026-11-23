@@ -20,6 +20,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -91,20 +93,54 @@ fun WelcomeScreen(model: AppModel) {
 @Composable
 fun PlaylistForm(model: AppModel, onAdded: () -> Unit) {
     var name by remember { mutableStateOf("") }
+    var autoName by remember { mutableStateOf("") }
     var m3u by remember { mutableStateOf("") }
     var server by remember { mutableStateOf("") }
     var user by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // Step 2 (after the login checks out): the provider's categories, ticked = synced.
+    var cats by remember { mutableStateOf<List<com.ziptv.core.Category>?>(null) }
+    var hidden by remember { mutableStateOf(setOf<String>()) }
 
     val plainM3u = m3u.trim().let { it.startsWith("http", ignoreCase = true) && parseM3uUrl(it) == null }
+    fun build(): Playlist {
+        val link = m3u.trim()
+        // A plain M3U (not an Xtream get.php link) is saved as-is: empty username = M3U in the core.
+        return if (plainM3u) Playlist(name.ifBlank { hostPort(link) }, link, "", "")
+            else Playlist(name.ifBlank { hostPort(server) }, server.trim(), user.trim(), pass)
+    }
+    fun save() {
+        busy = true; error = null
+        model.add(build().copy(hiddenCategories = hidden.toList())) { err -> busy = false; error = err; if (err == null) onAdded() }
+    }
+    cats?.let { list ->
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            CategoryPicker(list, hidden) { hidden = it }
+            error?.let { Text(it, color = Z.live, style = MaterialTheme.typography.bodyMedium) }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(onClick = { cats = null }, modifier = Modifier.height(52.dp).focusRing()) { Text("Back") }
+                Button(
+                    onClick = { save() },
+                    enabled = !busy && hidden.size < list.size,
+                    colors = ButtonDefaults.buttonColors(containerColor = Z.accent),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f).height(52.dp).focusRing(),
+                ) { Text(if (busy) "Adding…" else "Add playlist") }
+            }
+        }
+        return
+    }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Field("Playlist name", name) { name = it }
         Field("M3U link (Xtream links fill the fields below)", m3u, KeyboardType.Uri) {
             m3u = it
-            parseM3uUrl(it.trim())?.let { (h, u, p) -> server = h; user = u; pass = p }
+            parseM3uUrl(it.trim())?.let { (h, u, p) ->
+                server = h; user = u; pass = p
+                if (name.isBlank() || name == autoName) { name = hostPort(h); autoName = name } // unless one was typed
+            }
         }
+        Field("Playlist name", name) { name = it }
         Field("Server (host and port)", server, KeyboardType.Uri) { server = it }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(Modifier.weight(1f)) { Field("Username", user) { user = it } }
@@ -114,11 +150,14 @@ fun PlaylistForm(model: AppModel, onAdded: () -> Unit) {
         Button(
             onClick = {
                 busy = true; error = null
-                val link = m3u.trim()
-                // A plain M3U (not an Xtream get.php link) is saved as-is: empty username = M3U in the core.
-                val p = if (plainM3u) Playlist(name.ifBlank { link.substringAfter("://").substringBefore('/') }, link, "", "")
-                    else Playlist(name.ifBlank { server.substringAfter("://").substringBefore(':') }, server.trim(), user.trim(), pass)
-                model.add(p) { err -> busy = false; error = err; if (err == null) onAdded() }
+                model.checkPlaylist(build()) { list, err ->
+                    busy = false
+                    when {
+                        err != null -> error = err
+                        list.isEmpty() -> save() // nothing to choose
+                        else -> { cats = list; hidden = emptySet() }
+                    }
+                }
             },
             enabled = !busy && (plainM3u || (server.isNotBlank() && user.isNotBlank() && pass.isNotBlank())),
             colors = ButtonDefaults.buttonColors(containerColor = Z.accent),
@@ -127,6 +166,46 @@ fun PlaylistForm(model: AppModel, onAdded: () -> Unit) {
         ) { Text(if (busy) "Checking…" else "Connect playlist") }
     }
 }
+
+@Composable
+private fun CategoryPicker(cats: List<com.ziptv.core.Category>, hidden: Set<String>, onChange: (Set<String>) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Choose categories", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        for ((kind, label) in listOf(com.ziptv.core.ContentKind.LIVE to "Live TV", com.ziptv.core.ContentKind.MOVIE to "Movies",
+            com.ziptv.core.ContentKind.SERIES to "Series")) {
+            val group = cats.filter { it.kind == kind }
+            if (group.isEmpty()) continue
+            var open by remember { mutableStateOf(false) }
+            val on = group.count { it.id !in hidden }
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Z.surfaceHigh).focusRing(RoundedCornerShape(10.dp))
+                    .clickable { open = !open }.padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(label, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                Text("$on of ${group.size}", color = Z.textMuted, style = MaterialTheme.typography.bodyMedium)
+                androidx.compose.material3.TextButton(
+                    onClick = { onChange(if (on == group.size) hidden + group.map { it.id } else hidden - group.map { it.id }.toSet()) },
+                    modifier = Modifier.focusRing(),
+                ) { Text(if (on == group.size) "None" else "All", color = Z.focus) }
+                Icon(if (open) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                    if (open) "Collapse" else "Expand", tint = Z.textMuted)
+            }
+            if (open) for (c in group) Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).focusRing(RoundedCornerShape(8.dp))
+                    .clickable { onChange(if (c.id in hidden) hidden - c.id else hidden + c.id) }.padding(start = 6.dp, end = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                androidx.compose.material3.Checkbox(c.id !in hidden, onCheckedChange = null,
+                    colors = androidx.compose.material3.CheckboxDefaults.colors(checkedColor = Z.accent))
+                Text(c.name, Modifier.padding(vertical = 12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+/** Default playlist name: the server's host and port. */
+private fun hostPort(url: String) = url.trim().substringAfter("://").substringBefore('/')
 
 @Composable
 private fun Field(label: String, value: String, keyboard: KeyboardType = KeyboardType.Text, secret: Boolean = false, onChange: (String) -> Unit) {

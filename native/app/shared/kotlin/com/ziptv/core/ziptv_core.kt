@@ -933,6 +933,8 @@ internal open class UniffiVTableCallbackInterfaceSyncListener(
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1039,6 +1041,8 @@ fun uniffi_ziptv_core_checksum_method_provider_epg(
 fun uniffi_ziptv_core_checksum_method_provider_episode_url(
 ): Short
 fun uniffi_ziptv_core_checksum_method_provider_episodes(
+): Short
+fun uniffi_ziptv_core_checksum_method_provider_fetch_categories(
 ): Short
 fun uniffi_ziptv_core_checksum_method_provider_live_url(
 ): Short
@@ -1232,7 +1236,7 @@ fun uniffi_ziptv_core_fn_free_cloud(`ptr`: Pointer,uniffi_out_err: UniffiRustCal
 ): Unit
 fun uniffi_ziptv_core_fn_constructor_cloud_new(`codeFile`: RustBuffer.ByValue,`platform`: RustBuffer.ByValue,`appVersion`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Pointer
-fun uniffi_ziptv_core_fn_method_cloud_add_playlist(`ptr`: Pointer,`name`: RustBuffer.ByValue,`serverUrl`: RustBuffer.ByValue,`username`: RustBuffer.ByValue,`password`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_ziptv_core_fn_method_cloud_add_playlist(`ptr`: Pointer,`name`: RustBuffer.ByValue,`serverUrl`: RustBuffer.ByValue,`username`: RustBuffer.ByValue,`password`: RustBuffer.ByValue,`hiddenCategories`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_ziptv_core_fn_method_cloud_companion_history(`ptr`: Pointer,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1301,6 +1305,8 @@ fun uniffi_ziptv_core_fn_method_provider_epg(`ptr`: Pointer,`streamId`: RustBuff
 fun uniffi_ziptv_core_fn_method_provider_episode_url(`ptr`: Pointer,`episodeId`: RustBuffer.ByValue,`extension`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_ziptv_core_fn_method_provider_episodes(`ptr`: Pointer,`seriesId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_ziptv_core_fn_method_provider_fetch_categories(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_ziptv_core_fn_method_provider_live_url(`ptr`: Pointer,`streamId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1579,7 +1585,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_ziptv_core_checksum_method_caster_volume() != 45191.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_ziptv_core_checksum_method_cloud_add_playlist() != 42687.toShort()) {
+    if (lib.uniffi_ziptv_core_checksum_method_cloud_add_playlist() != 63789.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ziptv_core_checksum_method_cloud_companion_history() != 39450.toShort()) {
@@ -1664,6 +1670,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ziptv_core_checksum_method_provider_episodes() != 33806.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_provider_fetch_categories() != 63395.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ziptv_core_checksum_method_provider_live_url() != 57677.toShort()) {
@@ -3024,8 +3033,9 @@ public interface CloudInterface {
     
     /**
      * Mirrors a manually added playlist to this device's cloud record. Returns its id.
+     * `hidden_categories`: category ids left out (chosen when adding), kept on the cloud copy.
      */
-    fun `addPlaylist`(`name`: kotlin.String, `serverUrl`: kotlin.String, `username`: kotlin.String, `password`: kotlin.String): kotlin.String
+    fun `addPlaylist`(`name`: kotlin.String, `serverUrl`: kotlin.String, `username`: kotlin.String, `password`: kotlin.String, `hiddenCategories`: List<kotlin.String>): kotlin.String
     
     /**
      * The paired companion's Continue Watching (newest first); empty when unpaired/offline.
@@ -3172,13 +3182,14 @@ open class Cloud: Disposable, AutoCloseable, CloudInterface
     
     /**
      * Mirrors a manually added playlist to this device's cloud record. Returns its id.
+     * `hidden_categories`: category ids left out (chosen when adding), kept on the cloud copy.
      */
-    @Throws(CoreException::class)override fun `addPlaylist`(`name`: kotlin.String, `serverUrl`: kotlin.String, `username`: kotlin.String, `password`: kotlin.String): kotlin.String {
+    @Throws(CoreException::class)override fun `addPlaylist`(`name`: kotlin.String, `serverUrl`: kotlin.String, `username`: kotlin.String, `password`: kotlin.String, `hiddenCategories`: List<kotlin.String>): kotlin.String {
             return FfiConverterString.lift(
     callWithPointer {
     uniffiRustCallWithError(CoreException) { _status ->
     UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_cloud_add_playlist(
-        it, FfiConverterString.lower(`name`),FfiConverterString.lower(`serverUrl`),FfiConverterString.lower(`username`),FfiConverterString.lower(`password`),_status)
+        it, FfiConverterString.lower(`name`),FfiConverterString.lower(`serverUrl`),FfiConverterString.lower(`username`),FfiConverterString.lower(`password`),FfiConverterSequenceString.lower(`hiddenCategories`),_status)
 }
     }
     )
@@ -3910,6 +3921,12 @@ public interface ProviderInterface {
      */
     fun `episodes`(`seriesId`: kotlin.String): List<Episode>
     
+    /**
+     * The provider's categories (live, movies, series; counts 0) without the big lists: picked before a
+     * new playlist is added. Plain M3U playlists have none here.
+     */
+    fun `fetchCategories`(): List<Category>
+    
     fun `liveUrl`(`streamId`: kotlin.String): kotlin.String
     
     /**
@@ -4152,6 +4169,23 @@ open class Provider: Disposable, AutoCloseable, ProviderInterface
     uniffiRustCallWithError(CoreException) { _status ->
     UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_provider_episodes(
         it, FfiConverterString.lower(`seriesId`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * The provider's categories (live, movies, series; counts 0) without the big lists: picked before a
+     * new playlist is added. Plain M3U playlists have none here.
+     */
+    @Throws(CoreException::class)override fun `fetchCategories`(): List<Category> {
+            return FfiConverterSequenceTypeCategory.lift(
+    callWithPointer {
+    uniffiRustCallWithError(CoreException) { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_provider_fetch_categories(
+        it, _status)
 }
     }
     )

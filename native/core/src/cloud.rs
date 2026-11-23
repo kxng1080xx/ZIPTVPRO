@@ -109,10 +109,12 @@ impl Cloud {
     }
 
     /// Mirrors a manually added playlist to this device's cloud record. Returns its id.
-    pub fn add_playlist(&self, name: String, server_url: String, username: String, password: String) -> Result<String, CoreError> {
+    /// `hidden_categories`: category ids left out (chosen when adding), kept on the cloud copy.
+    pub fn add_playlist(&self, name: String, server_url: String, username: String, password: String, hidden_categories: Vec<String>) -> Result<String, CoreError> {
         let v = self.post("/api/device", json!({
             "action": "add_playlist", "device_id": self.code,
-            "name": name, "server_url": server_url, "username": username, "password": password, "type": "xtream"
+            "name": name, "server_url": server_url, "username": username, "password": password, "type": "xtream",
+            "hidden_categories": hidden_categories
         }))?;
         Ok(field(&v, "id"))
     }
@@ -249,7 +251,8 @@ pub(crate) fn parse_state(v: &Value) -> DeviceState {
                 a.iter()
                     .map(|p| CloudPlaylist {
                         id: field(p, "id"),
-                        name: opt_field(p, "name").unwrap_or_else(|| "Playlist".into()),
+                        // The server sends "playlistName" (what v9 apps read); "name" kept for safety.
+                        name: opt_field(p, "playlistName").or_else(|| opt_field(p, "name")).unwrap_or_else(|| "Playlist".into()),
                         server_url: field(p, "server_url"),
                         username: field(p, "username"),
                         password: field(p, "password"),
@@ -335,7 +338,7 @@ mod tests {
     fn device_state_parses_admin_playlists_and_expiry() {
         let v: Value = serde_json::from_str(
             r#"{"status":"expired","expired":true,"notice":"Renew","expires_at":"2026-01-01",
-                "playlists":[{"id":7,"name":"A","server_url":"http://h","username":"u","password":"p",
+                "playlists":[{"id":7,"playlistName":"A","server_url":"http://h","username":"u","password":"p",
                               "hidden_tabs":["movies"],"hidden_categories":[12,"13"]}],
                 "companion":{"device_id":"AB12CD","platform":"apk","label":null},
                 "vpn":{"enabled":true,"version":"3","ovpn":"x","username":"","password":""},
@@ -346,7 +349,7 @@ mod tests {
         assert!(s.expired);
         assert_eq!(s.web_tabs.len(), 2); // no url = dropped
         assert_eq!((s.web_tabs[0].nav.as_str(), s.web_tabs[1].nav.as_str(), s.web_tabs[1].name.as_str()), ("focus", "cursor", "https://y.test"));
-        assert_eq!(s.playlists[0].id, "7");
+        assert_eq!((s.playlists[0].id.as_str(), s.playlists[0].name.as_str()), ("7", "A")); // the server says "playlistName"
         assert_eq!(s.playlists[0].hidden_categories, vec!["12", "13"]);
         assert_eq!(s.companion.unwrap().device_id, "AB12CD");
         assert_eq!(s.vpn.unwrap().version, 3);

@@ -258,7 +258,9 @@ async function addPlaylist(env, deviceId, b) {
       type: b.type || 'xtream',
       server_url: serverUrl,
       username,
-      password
+      password,
+      // Categories left out, chosen in the app when adding (ids as strings, like /connect saves them).
+      hidden_categories: Array.isArray(b.hidden_categories) ? b.hidden_categories.slice(0, 5000).map(String) : []
     }
   });
   const row = rows && rows[0];
