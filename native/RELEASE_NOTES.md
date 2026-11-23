@@ -7,6 +7,10 @@ device — TV and projector, phone and tablet, or Windows PC — with no switchi
 playlists and provider setup carry on. Favorites and local watch history from version 9
 start fresh.
 
+**10.5.3:**
+- PC: going back from picture-in-picture no longer crashes the app.
+- TV web page (port 8790): scroll with the mouse wheel, touch or click-and-drag; hovering highlights.
+
 **10.5.2:**
 - Live TV: search the channels in a category from the bar above the list.
 - Settings: edit a playlist (pencil button) to rename it or change which categories load.

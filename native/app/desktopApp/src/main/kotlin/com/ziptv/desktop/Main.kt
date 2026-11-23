@@ -186,7 +186,17 @@ private fun app(minimized: Boolean, pending: java.util.concurrent.CompletableFut
         // Real fullscreen the way browsers do it on Windows: drop the caption/frame style,
         // cover the whole monitor (taskbar included), restore both on exit. Compose's
         // WindowPlacement.Fullscreen and AWT exclusive mode both left the title bar.
-        androidx.compose.runtime.LaunchedEffect(full) { WindowsFullscreen.set(window, full) }
+        // Never resize a minimized window: coming back from PiP asks for fullscreen while the window is
+        // still being restored, and Skia's Direct3D surface crashed (null deref) rebuilding mid-restore.
+        androidx.compose.runtime.LaunchedEffect(full, windowState.isMinimized) {
+            if (windowState.isMinimized) return@LaunchedEffect
+            var waited = 0
+            while (waited < 1000 && !(window.isShowing && (window.extendedState and java.awt.Frame.ICONIFIED) == 0)) {
+                kotlinx.coroutines.delay(25); waited += 25
+            }
+            kotlinx.coroutines.delay(100) // let the restore's own layout pass finish first
+            WindowsFullscreen.set(window, full)
+        }
         val quit by quitApp.collectAsState()
         androidx.compose.runtime.LaunchedEffect(quit) { if (quit) { model.player.release(); exitApplication() } }
         // PiP: the button minimizes this window and opens the floating one; minimizing while something

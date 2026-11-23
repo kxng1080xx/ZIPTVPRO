@@ -72,6 +72,48 @@ function slide(track, el) {
   track._o = o;
   track.style.transform = horiz ? `translate3d(${o}px,0,0)` : `translate3d(0,${o}px,0)`;
 }
+// Mouse wheel / touch drag: shift the nearest track the same way focus does.
+function nudge(el, dx, dy) {
+  for (var vp = el && el.closest && el.closest('.vp'); vp; vp = vp.parentElement && vp.parentElement.closest('.vp')) {
+    var horiz = vp.classList.contains('h'), d = horiz ? (Math.abs(dx) > Math.abs(dy) ? dx : 0) : dy;
+    if (!d) continue;
+    var track = vp.firstElementChild, vr = vp.getBoundingClientRect();
+    var view = horiz ? vr.width : vr.height, full = horiz ? track.scrollWidth : track.scrollHeight;
+    var cur = track._o || 0, o = Math.min(0, Math.max(cur - d, Math.min(0, view - full - (horiz ? 0 : 40))));
+    if (o === cur) continue;
+    track._o = o;
+    track.style.transform = horiz ? `translate3d(${o}px,0,0)` : `translate3d(0,${o}px,0)`;
+    if (full + o < view * 2) $$('.f', track).forEach(f => { if (f._onfocus) f._onfocus(f); }); // load the next page near the end
+    return true;
+  }
+}
+document.addEventListener('wheel', e => { if (!playerOpen() && nudge(e.target, e.deltaX || (e.shiftKey ? e.deltaY : 0), e.shiftKey ? 0 : e.deltaY)) e.preventDefault(); }, { passive: false });
+var touch = null;
+document.addEventListener('touchstart', e => { touch = e.touches[0]; }, { passive: true });
+document.addEventListener('touchmove', e => {
+  var t = e.touches[0]; if (!touch || playerOpen()) return;
+  if (nudge(e.target, touch.clientX - t.clientX, touch.clientY - t.clientY)) e.preventDefault();
+  touch = t;
+}, { passive: false });
+// Mouse: hover highlights without moving the list; click-drag scrolls (and doesn't click).
+document.addEventListener('mouseover', e => {
+  var f = e.target.closest && e.target.closest('.f'), a = document.activeElement;
+  if (!f || f === a || playerOpen() || (a && a.tagName === 'INPUT')) return;
+  try { f.focus({ preventScroll: true }); } catch (x) { f.focus(); }
+  if (f._onfocus) f._onfocus(f);
+});
+var drag = null;
+document.addEventListener('mousedown', e => { if (e.button === 0) drag = { x: e.clientX, y: e.clientY, el: e.target, moved: 0 }; });
+document.addEventListener('mousemove', e => {
+  if (!drag || !(e.buttons & 1) || playerOpen()) return;
+  var dx = drag.x - e.clientX, dy = drag.y - e.clientY;
+  drag.moved += Math.abs(dx) + Math.abs(dy);
+  if (drag.moved > 6) { document.body.classList.add('dragging'); nudge(drag.el, dx, dy); }
+  drag.x = e.clientX; drag.y = e.clientY;
+});
+document.addEventListener('click', e => { if (drag && drag.moved > 6) { e.stopPropagation(); e.preventDefault(); } drag = null; }, true);
+document.addEventListener('mouseup', () => document.body.classList.remove('dragging'));
+document.addEventListener('dragstart', e => e.preventDefault());
 function focusables() {
   var scope = playerOpen() ? $('#osd') : document;
   return $$('.f', scope).filter(e => e.offsetParent !== null);

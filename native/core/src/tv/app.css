@@ -156,3 +156,4 @@ h2 { font-size: 1.2rem; font-weight: 600; margin: 0 0 0.9rem; color: #E5E7EB; }
 .toast { position: fixed; left: 50%; bottom: 3rem; transform: translateX(-50%); background: #181C25; padding: 0.95rem 1.7rem; border-radius: 1rem; font-weight: 600; z-index: 20;
   box-shadow: 0 1rem 3rem rgba(0,0,0,0.5); animation: enter 0.25s ease-out both; }
 @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
+.dragging .track { transition: none; } .dragging { user-select: none; }
