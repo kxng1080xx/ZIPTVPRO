@@ -9,6 +9,7 @@ start fresh.
 
 **10.5.3:**
 - PC: going back from picture-in-picture no longer crashes the app.
+- PC: no empty command window left open after an update.
 - TV web page (port 8790): scroll with the mouse wheel, touch or click-and-drag; hovering highlights.
 
 **10.5.2:**

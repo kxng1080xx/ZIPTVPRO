@@ -86,7 +86,7 @@ class DesktopPlatform : Platform {
         if (total > 0 && exe.length() != total) return "The download was cut off. Try again"
         // Waits for us to exit (files in use), installs (/passive: progress bar, no clicks), reopens the app.
         val script = File(dir, "update.cmd")
-        script.writeText("@echo off\r\nping -n 4 127.0.0.1 >nul\r\nstart \"\" /wait \"${exe.path}\" /passive\r\nstart \"\" \"$app\"\r\n")
+        script.writeText("@echo off\r\nping -n 4 127.0.0.1 >nul\r\nstart \"\" /wait \"${exe.path}\" /passive\r\nstart \"\" \"$app\"\r\nexit\r\n") // `start x.cmd` runs it under cmd /k: without exit the window stays open
         ProcessBuilder("cmd", "/c", "start", "", "/min", script.path).start()
         quitApp.value = true
         null
