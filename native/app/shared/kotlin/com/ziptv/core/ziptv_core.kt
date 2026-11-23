@@ -935,6 +935,8 @@ internal open class UniffiVTableCallbackInterfaceSyncListener(
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1003,6 +1005,8 @@ fun uniffi_ziptv_core_checksum_method_cloud_remove_all_playlists(
 fun uniffi_ziptv_core_checksum_method_cloud_remove_playlist(
 ): Short
 fun uniffi_ziptv_core_checksum_method_cloud_unpair(
+): Short
+fun uniffi_ziptv_core_checksum_method_cloud_update_playlist(
 ): Short
 fun uniffi_ziptv_core_checksum_method_cloud_watch_create(
 ): Short
@@ -1255,6 +1259,8 @@ fun uniffi_ziptv_core_fn_method_cloud_remove_all_playlists(`ptr`: Pointer,uniffi
 fun uniffi_ziptv_core_fn_method_cloud_remove_playlist(`ptr`: Pointer,`remoteId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_ziptv_core_fn_method_cloud_unpair(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_ziptv_core_fn_method_cloud_update_playlist(`ptr`: Pointer,`remoteId`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,`hiddenCategories`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_ziptv_core_fn_method_cloud_watch_create(`ptr`: Pointer,`server`: RustBuffer.ByValue,`content`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1613,6 +1619,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ziptv_core_checksum_method_cloud_unpair() != 55225.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_cloud_update_playlist() != 18941.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ziptv_core_checksum_method_cloud_watch_create() != 21744.toShort()) {
@@ -3065,6 +3074,11 @@ public interface CloudInterface {
     fun `unpair`()
     
     /**
+     * Edits this device's cloud copy of a playlist (name, categories left out).
+     */
+    fun `updatePlaylist`(`remoteId`: kotlin.String, `name`: kotlin.String, `hiddenCategories`: List<kotlin.String>)
+    
+    /**
      * Host: opens a room for `content` on the playlist at `server`. Returns the 4-letter code.
      */
     fun `watchCreate`(`server`: kotlin.String, `content`: WatchContent): kotlin.String
@@ -3308,6 +3322,21 @@ open class Cloud: Disposable, AutoCloseable, CloudInterface
     uniffiRustCallWithError(CoreException) { _status ->
     UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_cloud_unpair(
         it, _status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Edits this device's cloud copy of a playlist (name, categories left out).
+     */
+    @Throws(CoreException::class)override fun `updatePlaylist`(`remoteId`: kotlin.String, `name`: kotlin.String, `hiddenCategories`: List<kotlin.String>)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(CoreException) { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_cloud_update_playlist(
+        it, FfiConverterString.lower(`remoteId`),FfiConverterString.lower(`name`),FfiConverterSequenceString.lower(`hiddenCategories`),_status)
 }
     }
     

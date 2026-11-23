@@ -39,6 +39,8 @@ import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -233,16 +235,19 @@ private fun LivePanel(
         if (model.platform.device == DeviceClass.Tv) LaunchedEffect(Unit) { runCatching { fr.requestFocus() } }
         Column(Modifier.fillMaxSize().focusRequester(fr).focusGroup()) {
             if (channelsMode) {
-                Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                var query by remember(categoryId) { mutableStateOf("") }
+                Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 8.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconAction(Icons.Rounded.ArrowBack, "Back to categories") { setShowChannels(false) }
-                    Text(categories.firstOrNull { it.id == categoryId }?.name ?: "Channels", Modifier.weight(1f),
-                        style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    ChannelSearch(query, "Search ${categories.firstOrNull { it.id == categoryId }?.name ?: "channels"}",
+                        Modifier.weight(1f).padding(end = 8.dp)) { query = it }
                     if (categoryId != CAT_ALL) Text("Guide", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.focusRing(RoundedCornerShape(50)).clip(RoundedCornerShape(50)).background(Z.surfaceHigh)
                             .clickable { model.showGuide = true }.padding(horizontal = 16.dp, vertical = 8.dp))
                 }
-                ChannelList(model, channels, current, Modifier.weight(1f).padding(horizontal = 6.dp), choose)
+                val q = fold(query.trim())
+                val shown = remember(channels, q) { if (q.isEmpty()) channels else channels.filter { fold(it.name).contains(q) } }
+                if (shown.isEmpty()) Text("No channels match", Modifier.padding(20.dp), color = Z.textMuted)
+                ChannelList(model, shown, current, Modifier.weight(1f).padding(horizontal = 6.dp), choose)
             } else {
                 Text("Categories", Modifier.padding(start = 16.dp, top = 12.dp, bottom = 6.dp),
                     style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -253,6 +258,33 @@ private fun LivePanel(
         }
     }
 }
+
+/** Filters the open category's channels by name (accents and case ignored). */
+@Composable
+private fun ChannelSearch(query: String, hint: String, modifier: Modifier, onChange: (String) -> Unit) {
+    androidx.compose.foundation.text.BasicTextField(
+        value = query, onValueChange = onChange, singleLine = true,
+        textStyle = MaterialTheme.typography.bodyLarge.copy(color = Z.text),
+        cursorBrush = androidx.compose.ui.graphics.SolidColor(Z.focus),
+        modifier = modifier.focusRing(RoundedCornerShape(50)),
+        decorationBox = { inner ->
+            Row(Modifier.clip(RoundedCornerShape(50)).background(Z.surfaceHigh).padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Search, null, tint = Z.textMuted, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Box(Modifier.weight(1f)) {
+                    if (query.isEmpty()) Text(hint, color = Z.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    inner()
+                }
+                if (query.isNotEmpty()) Icon(Icons.Rounded.Close, "Clear", tint = Z.textMuted,
+                    modifier = Modifier.size(20.dp).clip(RoundedCornerShape(50)).clickable { onChange("") })
+            }
+        },
+    )
+}
+
+private fun fold(s: String) = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
+    .replace(Regex("""\p{M}+"""), "").lowercase()
 
 /** The page's own player (phone Live): video + the same controls as the preview pane. */
 @Composable

@@ -28,6 +28,7 @@ export async function onRequestPost({ request, env }) {
     if (b.action === 'unpair') return await unpair(env, deviceId);
     if (b.action === 'add_playlist') return await addPlaylist(env, deviceId, b);
     if (b.action === 'remove_playlist') return await removeManagedPlaylist(env, deviceId, b.playlist_id);
+    if (b.action === 'update_playlist') return await updateManagedPlaylist(env, deviceId, b);
     if (b.action === 'remove_all_playlists') {
       // Scoped to this device_id only — same trust boundary as remove_playlist.
       await sb(env, `/playlists?device_id=eq.${encodeURIComponent(deviceId)}`, { method: 'DELETE', prefer: 'return=minimal' });
@@ -265,6 +266,20 @@ async function addPlaylist(env, deviceId, b) {
   });
   const row = rows && rows[0];
   return json({ ok: true, id: row ? row.id : null });
+}
+
+// Edit from the app: name and/or which categories sync. Only a row this device owns.
+async function updateManagedPlaylist(env, deviceId, b) {
+  const id = String(b.playlist_id || '').trim();
+  if (!id) return json({ error: 'playlist_id required' }, 400);
+  const patch = {};
+  if (typeof b.name === 'string' && b.name.trim()) patch.name = b.name.trim().slice(0, 120);
+  if (Array.isArray(b.hidden_categories)) patch.hidden_categories = b.hidden_categories.slice(0, 5000).map(String);
+  if (!Object.keys(patch).length) return json({ ok: true });
+  await sb(env, `/playlists?id=eq.${encodeURIComponent(id)}&device_id=eq.${encodeURIComponent(deviceId)}`, {
+    method: 'PATCH', body: patch, prefer: 'return=minimal'
+  });
+  return json({ ok: true });
 }
 
 // Delete only removes a row this device owns (device_id must match), so a

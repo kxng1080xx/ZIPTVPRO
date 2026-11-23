@@ -20,10 +20,22 @@ static EMOJI: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(?:[\x{1F1E6}-\x{1F1FF}\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}\x{2B00}-\x{2BFF}\x{FE0F}\x{200D}]+\s*)+").unwrap()
 });
 static STRAY_SEP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(?:\|\s+|[\s\-–—:•·.]+)+").unwrap());
+// Country at the END: "WGN AMERICA HD | USA". Removed first, or CAPS_TAG takes "WGN AMERICA HD |" for a
+// prefix tag and leaves only "USA" (premiumplay-style lists: every channel showed as "USA").
+static SUFFIX_COUNTRY: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(&format!(r"(?i)\s*[|:]\s*(?:{COUNTRY_WORDS})\s*$")).unwrap());
 static MULTI_SPACE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s{2,}").unwrap());
 
 fn strip(re: &Regex, s: &str) -> String {
     re.replace(s, "").into_owned()
+}
+
+/// "NECN HD | USA" -> "NECN HD"; a name that is only the country stays.
+fn strip_suffix_country(s: &str) -> String {
+    match SUFFIX_COUNTRY.find(s) {
+        Some(m) if !s[..m.start()].trim().is_empty() => s[..m.start()].to_string(),
+        _ => s.to_string(),
+    }
 }
 
 fn strip_if_followed(re: &Regex, s: &str) -> String {
@@ -35,7 +47,7 @@ fn strip_if_followed(re: &Regex, s: &str) -> String {
 
 /// "US: CNN HD" -> "CNN HD", "|AR| beIN" -> "beIN", "PM : CA TCM" -> "TCM".
 pub fn clean_channel_name(raw: &str) -> String {
-    let mut s = raw.to_string();
+    let mut s = strip_suffix_country(raw);
     for _ in 0..4 {
         let before = s.clone();
         s = s.trim_start().to_string();
@@ -64,8 +76,18 @@ static KEY_NONALNUM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[^a-z0-9+]"
 /// Matching key for logo/EPG indexes: "US: CNN HD" -> ("cnn", "us"). Must stay
 /// identical to logoKey() in server/channel-logos.js, which built the indexes.
 pub fn logo_key(raw: &str) -> (String, String) {
-    let mut s = raw.to_lowercase();
-    let mut cc = String::new();
+    // "CNN | USA": the country at the end counts like a prefix ("USA: CNN").
+    let suffix = SUFFIX_COUNTRY.find(raw).filter(|m| !raw[..m.start()].trim().is_empty())
+        .map(|m| raw[m.start()..].trim_matches(|c: char| c.is_whitespace() || c == '|' || c == ':').to_lowercase());
+    let mut s = strip_suffix_country(raw).to_lowercase();
+    let mut cc = suffix.map(|c| match c.as_str() {
+        "uk" | "eng" | "gbr" => "gb".into(),
+        "usa" => "us".into(),
+        "can" => "ca".into(),
+        "aus" => "au".into(),
+        "uae" => "ae".into(),
+        _ => c,
+    }).unwrap_or_default();
     for _ in 0..3 {
         let Some(caps) = KEY_PREFIX.captures(&s) else { break };
         let code = caps[1].to_string();
@@ -100,6 +122,12 @@ mod tests {
         assert_eq!(clean_channel_name("MTV - Classic"), "MTV - Classic");
         assert_eq!(clean_channel_name("US"), "US"); // never cleaned into nothing
         assert_eq!(clean_channel_name("#EXTINF:0,Ambient Sleeping Pill [Opt-1]"), "Ambient Sleeping Pill [Opt-1]");
+        // Country at the end (premiumplay): the name stays, the country goes.
+        assert_eq!(clean_channel_name("WGN AMERICA HD | USA"), "WGN AMERICA HD");
+        assert_eq!(clean_channel_name("NHK WORLD (JPN) | USA"), "NHK WORLD (JPN)");
+        assert_eq!(clean_channel_name("Fuse | USA"), "Fuse");
+        assert_eq!(clean_channel_name("US: WGN 9 (Chicago) | HD"), "WGN 9 (Chicago) | HD");
+        assert_eq!(clean_channel_name("| USA"), "USA"); // nothing before it: left as the cleaner always did
     }
 
     #[test]
@@ -108,5 +136,6 @@ mod tests {
         assert_eq!(logo_key("[UK] Sky Sports Main Event FHD"), ("skysportsmainevent".into(), "gb".into()));
         assert_eq!(logo_key("USA - Catchy Comedy"), ("catchycomedy".into(), "us".into()));
         assert_eq!(logo_key("ESPN 2"), ("espn2".into(), "".into()));
+        assert_eq!(logo_key("WGN AMERICA HD | USA"), ("wgnamerica".into(), "us".into()));
     }
 }

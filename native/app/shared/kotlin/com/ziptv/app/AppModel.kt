@@ -410,6 +410,34 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
         }
     }
 
+    /** A playlist's categories to choose from: the loaded catalog's when it's the open one, else the provider's. */
+    fun categoriesOf(p: Playlist, onDone: (List<com.ziptv.core.Category>?) -> Unit) {
+        scope.launch {
+            val lib = library.takeIf { active?.id == p.id }
+            onDone(withContext(Dispatchers.IO) {
+                runCatching {
+                    lib?.let { l -> listOf(ContentKind.LIVE, ContentKind.MOVIE, ContentKind.SERIES).flatMap { l.categories(it) } }
+                        ?.takeIf { it.isNotEmpty() }
+                        ?: Provider(p.server, p.username, p.password).fetchCategories()
+                }.getOrNull()
+            })
+        }
+    }
+
+    /** Rename / change which categories show. Saved here and on the cloud copy (so check-ins keep it). */
+    fun editPlaylist(p: Playlist, name: String, hidden: List<String>) {
+        val edited = p.copy(name = name.ifBlank { p.name }, hiddenCategories = hidden)
+        playlists = playlists.map { if (it.id == p.id) edited else it }
+        store.save(playlists)
+        if (active?.id == p.id) { active = edited; catalogVersion++ }
+        edited.remoteId?.let { rid ->
+            scope.launch {
+                withContext(Dispatchers.IO) { runCatching { cloud.updatePlaylist(rid, edited.name, edited.hiddenCategories) } }
+                    .onFailure { error = "Saved on this device; the server didn't take it (${it.message})" }
+            }
+        }
+    }
+
     fun remove(p: Playlist) {
         p.remoteId?.let { rid -> scope.launch(Dispatchers.IO) { runCatching { cloud.removePlaylist(rid) } } }
         playlists = playlists.filterNot { it.id == p.id }

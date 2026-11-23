@@ -204,6 +204,39 @@ private fun CategoryPicker(cats: List<com.ziptv.core.Category>, hidden: Set<Stri
     }
 }
 
+/** Settings: rename a playlist and change which categories it shows. */
+@Composable
+fun PlaylistEditor(model: AppModel, p: Playlist, onDone: () -> Unit) {
+    var name by remember(p.id) { mutableStateOf(p.name) }
+    var hidden by remember(p.id) { mutableStateOf(p.hiddenCategories.toSet()) }
+    var cats by remember(p.id) { mutableStateOf<List<com.ziptv.core.Category>?>(null) }
+    var failed by remember(p.id) { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(p.id) { model.categoriesOf(p) { cats = it; failed = it == null } }
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Field("Playlist name", name) { name = it }
+        val list = cats
+        when {
+            failed -> Text("Couldn't load the categories", color = Z.live, style = MaterialTheme.typography.bodyMedium)
+            list == null -> Text("Loading categories…", color = Z.textMuted, style = MaterialTheme.typography.bodyMedium)
+            list.isNotEmpty() -> CategoryPicker(list, hidden) { hidden = it }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(onClick = onDone, modifier = Modifier.height(52.dp).focusRing()) { Text("Cancel") }
+            Button(
+                onClick = {
+                    // Ids no longer offered by the provider are dropped; unknown list = keep the old choice.
+                    val keep = list?.let { l -> hidden.filter { h -> l.any { it.id == h } } } ?: p.hiddenCategories
+                    model.editPlaylist(p, name.trim(), keep); onDone()
+                },
+                enabled = list == null || failed || hidden.size < list.size,
+                colors = ButtonDefaults.buttonColors(containerColor = Z.accent),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.weight(1f).height(52.dp).focusRing(),
+            ) { Text("Save") }
+        }
+    }
+}
+
 /** Default playlist name: the server's host and port. */
 private fun hostPort(url: String) = url.trim().substringAfter("://").substringBefore('/')
 

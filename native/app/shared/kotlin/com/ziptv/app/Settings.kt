@@ -39,6 +39,7 @@ import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Devices
@@ -170,6 +171,7 @@ private fun SectionPage(model: AppModel, s: Section, back: (() -> Unit)?) {
 @Composable
 private fun AccountSection(model: AppModel) {
     var adding by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<String?>(null) }
     var confirmRemoveAll by remember { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(model.playlists) { model.loadAccounts() }
     // Activation set on the ZIPTV Pro website (/connect).
@@ -186,7 +188,11 @@ private fun AccountSection(model: AppModel) {
                 listOfNotNull(if (isActive) "Playing from this playlist" else "Tap to switch", exp).joinToString(" · "),
                 onClick = { if (!isActive) model.open(p) }) {
                 if (isActive) Icon(Icons.Rounded.CheckCircle, "Active", tint = Z.focus, modifier = Modifier.size(22.dp))
+                IconAction(Icons.Rounded.Edit, "Edit ${p.name}", Z.textMuted) { editing = if (editing == p.id) null else p.id }
                 IconAction(Icons.Rounded.Delete, "Remove ${p.name}", Z.textMuted) { model.remove(p) }
+            }
+            AnimatedVisibility(editing == p.id, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                Box(Modifier.padding(16.dp)) { PlaylistEditor(model, p) { editing = null } }
             }
         }
         if (model.playlists.isNotEmpty()) Divider()

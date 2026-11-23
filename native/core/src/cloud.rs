@@ -119,6 +119,14 @@ impl Cloud {
         Ok(field(&v, "id"))
     }
 
+    /// Edits this device's cloud copy of a playlist (name, categories left out).
+    pub fn update_playlist(&self, remote_id: String, name: String, hidden_categories: Vec<String>) -> Result<(), CoreError> {
+        self.post("/api/device", json!({
+            "action": "update_playlist", "device_id": self.code, "playlist_id": remote_id,
+            "name": name, "hidden_categories": hidden_categories
+        })).map(|_| ())
+    }
+
     pub fn remove_playlist(&self, remote_id: String) -> Result<(), CoreError> {
         self.post("/api/device", json!({ "action": "remove_playlist", "device_id": self.code, "playlist_id": remote_id }))
             .map(|_| ())

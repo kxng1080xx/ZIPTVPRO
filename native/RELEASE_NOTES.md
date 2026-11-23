@@ -7,6 +7,11 @@ device — TV and projector, phone and tablet, or Windows PC — with no switchi
 playlists and provider setup carry on. Favorites and local watch history from version 9
 start fresh.
 
+**10.5.2:**
+- Live TV: search the channels in a category from the bar above the list.
+- Settings: edit a playlist (pencil button) to rename it or change which categories load.
+- Channels named like "WGN AMERICA HD | USA" show their real name instead of just "USA", and find their logos.
+
 **10.5.1:**
 - Adding a playlist: paste the link at the top; the name fills in with the server's address. After the
   login checks out, choose which Live TV, Movies and Series categories to keep.
