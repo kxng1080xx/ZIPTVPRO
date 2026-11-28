@@ -67,6 +67,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.material.icons.rounded.Stream
+import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Minimize
@@ -277,6 +278,14 @@ private fun PlaybackSection(model: AppModel) {
     }
     Text("Switch to HLS if channels won't start on your provider. Applies to the next channel you open.",
         color = Z.textMuted, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp, vertical = 10.dp))
+    Group("Movies & series") {
+        val lang = model.userVersion.let { model.audioLanguage }
+        SettingRow(Icons.Rounded.Translate, "Audio language", com.ziptv.sources.SourceLanguage.labelOf(lang))
+        Row(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp).horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            com.ziptv.sources.SourceLanguage.OPTIONS.forEach { (code, name) -> Chip(name, code == lang) { model.setAudioLanguage(code) } }
+        }
+    }
     Group("Sleep timer") {
         val left = model.sleepAt?.let { ((it - System.currentTimeMillis()) / 60_000).coerceAtLeast(0) }
         SettingRow(Icons.Rounded.Bedtime, "Stop playback after", left?.let { "$it min left" } ?: "Off")
@@ -330,13 +339,15 @@ private fun NetworkSection(model: AppModel) {
     }
     Text("Enter this code on the ZIPTV Pro website to send playlists to this device.", color = Z.textMuted,
         style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp, vertical = 10.dp))
-    // v9's Smart TV Access: any TV browser on this Wi-Fi (Samsung, LG...) opens the app served from here.
-    Group("Smart TV access") {
-        val url = remember { model.lan.tvUrl() }
-        SettingRow(Icons.Rounded.Tv, url ?: "Unavailable", if (url != null) "Open this in your TV's web browser" else "Couldn't start the TV server")
+    // v9's Smart TV Access: any TV browser on this Wi-Fi (Samsung, LG...) opens the app served from here. PC only (user).
+    if (model.platform.device == DeviceClass.Desktop) {
+        Group("Smart TV access") {
+            val url = remember { model.lan.tvUrl() }
+            SettingRow(Icons.Rounded.Tv, url ?: "Unavailable", if (url != null) "Open this in your TV's web browser" else "Couldn't start the TV server")
+        }
+        Text("Works while ZIPTV Pro is open on this device. Recordings started on the TV are saved here.", color = Z.textMuted,
+            style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp, vertical = 10.dp))
     }
-    Text("Works while ZIPTV Pro is open on this device. Recordings started on the TV are saved here.", color = Z.textMuted,
-        style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 6.dp, vertical = 10.dp))
     model.platform.tunnel?.let { AwayFromHome(model, it) }
 }
 

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -96,18 +97,29 @@ fun MoviesScreen(model: AppModel) {
         MovieListScreen(model, name) { model.openList = null }
         return
     }
-    CatalogScreen(model, ContentKind.MOVIE,
+    var show by rememberSaveable { mutableStateOf(0) }  // index into SHOW
+    var genre by rememberSaveable { mutableStateOf(0) } // 0 = all genres, else MOVIE_GENRES[genre - 1]
+    val filtered = show != 0 || genre != 0
+    CatalogScreen(model, ContentKind.MOVIE, key = show to genre, newestFirst = !filtered,
         load = { cat ->
             val lib = model.library ?: return@CatalogScreen emptyList()
+            if (filtered) return@CatalogScreen Extras.discoverMovies(lib, SHOW[show], MOVIE_GENRES.getOrNull(genre - 1), model::isHiddenCategory)
+                .map { Poster(it.streamId, it.name, it.poster, it.rating, it.year, it) }
             val list = when (cat) {
                 CAT_FAV -> lib.moviesByIds(model.user?.favorites(ContentKind.MOVIE) ?: emptyList())
-                CAT_ALL -> lib.movies(null).filter { !model.isHiddenCategory(it.categoryId) }
+                CAT_ALL -> lib.distinctMovies(lib.movies(null).filter { !model.isHiddenCategory(it.categoryId) })
                 else -> lib.movies(cat)
             }
             list.map { Poster(it.streamId, it.name, it.poster, it.rating, it.year, it) }
         },
+        extra = { if (filtered) emptyList() else model.library?.let { lib -> Extras.movies(lib).map { Poster(it.streamId, it.name, it.poster, it.rating, it.year, it) } }.orEmpty() },
         onOpen = { model.openMovie = it.item as Movie },
-        header = { MovieListsShelf(model) })
+        header = {
+            Column {
+                FilterBar(show, genre, MOVIE_GENRES, { show = it; if (SHOW[it] == "Recently added") genre = 0 }, { genre = it })
+                if (!filtered) { MovieListsShelf(model); CategoryRows(model, ContentKind.MOVIE); AllTitle("All movies") }
+            }
+        })
 }
 
 @Composable
@@ -117,26 +129,160 @@ fun SeriesScreen(model: AppModel) {
         EpisodesScreen(model, s) { model.openSeries = null }
         return
     }
-    CatalogScreen(model, ContentKind.SERIES,
+    var show by rememberSaveable { mutableStateOf(0) }
+    var genre by rememberSaveable { mutableStateOf(0) }
+    val filtered = show != 0 || genre != 0
+    CatalogScreen(model, ContentKind.SERIES, key = show to genre, newestFirst = !filtered,
         load = { cat ->
             val lib = model.library ?: return@CatalogScreen emptyList()
+            if (filtered) return@CatalogScreen Extras.discoverSeries(lib, SHOW[show], SERIES_GENRES.getOrNull(genre - 1), model::isHiddenCategory)
+                .map { Poster(it.seriesId, it.name, it.cover, it.rating, it.year, it) }
             val list = when (cat) {
                 CAT_FAV -> lib.seriesByIds(model.user?.favorites(ContentKind.SERIES) ?: emptyList())
-                CAT_ALL -> lib.series(null).filter { !model.isHiddenCategory(it.categoryId) }
+                CAT_ALL -> lib.distinctSeries(lib.series(null).filter { !model.isHiddenCategory(it.categoryId) })
                 else -> lib.series(cat)
             }
             list.map { Poster(it.seriesId, it.name, it.cover, it.rating, it.year, it) }
         },
-        onOpen = { model.openSeries = it.item as Series })
+        extra = { if (filtered) emptyList() else model.library?.let { lib -> Extras.series(lib).map { Poster(it.seriesId, it.name, it.cover, it.rating, it.year, it) } }.orEmpty() },
+        onOpen = { model.openSeries = it.item as Series },
+        header = {
+            Column {
+                FilterBar(show, genre, SERIES_GENRES, { show = it; if (SHOW[it] == "Recently added") genre = 0 }, { genre = it })
+                if (!filtered) { CategoryRows(model, ContentKind.SERIES); AllTitle("All series") }
+            }
+        })
+}
+
+private val YEAR = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+
+/** The Movies / Series filter: what to show, then a genre (Cinemeta's genre names). */
+private val SHOW = listOf("All", "Popular", "New releases", "Recently added")
+private val MOVIE_GENRES = listOf("Action", "Adventure", "Animation", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy",
+    "History", "Horror", "Music", "Mystery", "Romance", "Sci-Fi", "Sport", "Thriller", "War", "Western")
+private val SERIES_GENRES = listOf("Action", "Adventure", "Animation", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy",
+    "History", "Horror", "Mystery", "Reality-TV", "Romance", "Sci-Fi", "Talk-Show", "Thriller", "War", "Western")
+
+@Composable
+private fun FilterBar(show: Int, genre: Int, genres: List<String>, onShow: (Int) -> Unit, onGenre: (Int) -> Unit) {
+    Row(Modifier.padding(start = 8.dp, top = 4.dp, bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        FilterDropdown(SHOW, show, onShow)
+        if (SHOW[show] != "Recently added") FilterDropdown(listOf("All genres") + genres, genre, onGenre) // the provider's list has no genres
+    }
+}
+
+/** A pill with a menu, like the season picker (D-pad: OK opens, arrows move, Back closes). */
+@Composable
+private fun FilterDropdown(options: List<String>, selected: Int, onPick: (Int) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            Modifier.focusRing(RoundedCornerShape(12.dp)).clip(RoundedCornerShape(12.dp)).background(Z.surfaceHigh)
+                .clickable { open = true }.padding(start = 16.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(options[selected], style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Icon(Icons.Rounded.ExpandMore, null, tint = Z.textMuted, modifier = Modifier.padding(start = 6.dp).size(20.dp))
+        }
+        DropdownMenu(open, { open = false }, containerColor = Z.surfaceHigh, shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.heightIn(max = 420.dp)) {
+            options.forEachIndexed { i, name ->
+                DropdownMenuItem(
+                    text = { Text(name, fontWeight = if (i == selected) FontWeight.SemiBold else FontWeight.Normal, color = if (i == selected) Z.focus else Z.text) },
+                    onClick = { open = false; onPick(i) },
+                    modifier = Modifier.focusRing(RoundedCornerShape(10.dp)),
+                )
+            }
+        }
+    }
+}
+
+/** Category rows like CinemaOS: popular and new first, then genres (Cinemeta catalogs, merged with the playlist). */
+private val MOVIE_ROWS = listOf("Popular" to listOf("top"), "New releases" to listOf("year/genre=$YEAR", "year/genre=${YEAR - 1}")) +
+    listOf("Action", "Comedy", "Drama", "Thriller", "Horror", "Sci-Fi", "Animation", "Family", "Romance", "Crime", "Documentary")
+        .map { it to listOf("top/genre=$it") }
+private val SERIES_ROWS = listOf("Popular" to listOf("top"), "New releases" to listOf("year/genre=$YEAR", "year/genre=${YEAR - 1}")) +
+    listOf("Drama", "Comedy", "Crime", "Action", "Sci-Fi", "Animation", "Mystery", "Reality-TV", "Documentary", "Family")
+        .map { it to listOf("top/genre=$it") }
+
+@Composable
+private fun CategoryRows(model: AppModel, kind: ContentKind) {
+    val lib = model.library ?: return
+    val movie = kind == ContentKind.MOVIE
+    val rows = if (movie) MOVIE_ROWS else SERIES_ROWS
+    Column(Modifier.padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        rows.forEachIndexed { i, (title, paths) ->
+            CategoryRow(model, lib, movie, title, paths)
+            if (i == 1) RecentlyAddedRow(model, lib, movie) // the provider's newest, after Popular + New releases
+        }
+    }
 }
 
 @Composable
-private fun CatalogScreen(model: AppModel, kind: ContentKind, load: (String) -> List<Poster>, onOpen: (Poster) -> Unit,
-                          header: (@Composable () -> Unit)? = null) {
-    // ponytail: no category browsing for movies/series — everything in one grid, search finds the rest.
-    val posters by produceState<List<Poster>?>(null, model.library, kind, model.catalogVersion) {
-        value = withContext(Dispatchers.IO) { load(CAT_ALL) }
+private fun CategoryRow(model: AppModel, lib: com.ziptv.core.Provider, movie: Boolean, title: String, paths: List<String>) {
+    val items by produceState(emptyList<Poster>(), lib, model.catalogVersion, title) {
+        value = runCatching {
+            if (movie) Extras.movieRow(lib, paths, model::isHiddenCategory).map { Poster(it.streamId, it.name, it.poster, it.rating, it.year, it) }
+            else Extras.seriesRow(lib, paths, model::isHiddenCategory).map { Poster(it.seriesId, it.name, it.cover, it.rating, it.year, it) }
+        }.getOrDefault(emptyList())
     }
+    PosterRowOf(model, title, items)
+}
+
+@Composable
+private fun RecentlyAddedRow(model: AppModel, lib: com.ziptv.core.Provider, movie: Boolean) {
+    val items by produceState(emptyList<Poster>(), lib, model.catalogVersion) {
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                if (movie) lib.recentlyAddedMovies(40u).filter { !model.isHiddenCategory(it.categoryId) }.map { Poster(it.streamId, it.name, it.poster, it.rating, it.year, it) }
+                else lib.recentlyAddedSeries(40u).filter { !model.isHiddenCategory(it.categoryId) }.map { Poster(it.seriesId, it.name, it.cover, it.rating, it.year, it) }
+            }.getOrDefault(emptyList())
+        }
+    }
+    PosterRowOf(model, "Recently added", items)
+}
+
+@Composable
+private fun PosterRowOf(model: AppModel, title: String, items: List<Poster>) {
+    if (items.isEmpty()) return
+    PosterRow(title, items.map { Triple(it.title, it.image, it.item) }, ratings = items.map { it.rating }) { item ->
+        when (item) { is Movie -> model.openMovie = item; is Series -> model.openSeries = item }
+    }
+}
+
+@Composable
+private fun AllTitle(title: String) =
+    Text(title, Modifier.padding(start = 20.dp, top = 14.dp, bottom = 4.dp), style = MaterialTheme.typography.titleLarge)
+
+/** One entry per film/show: providers list "Dune" and "Dune 4K" separately (the details page picks the copy).
+ *  ponytail: a copy with no year groups with the first same-named one of any year; fine for real catalogs. */
+private fun com.ziptv.core.Provider.distinctMovies(list: List<Movie>): List<Movie> {
+    val same = matchTitles(ContentKind.MOVIE, list.map { com.ziptv.core.RelatedTitle(it.name, it.year) })
+    val seen = HashSet<String>()
+    return list.filterIndexed { i, m -> seen.add(same.getOrNull(i) ?: m.streamId) }
+}
+
+private fun com.ziptv.core.Provider.distinctSeries(list: List<Series>): List<Series> {
+    val same = matchTitles(ContentKind.SERIES, list.map { com.ziptv.core.RelatedTitle(it.name, it.year) })
+    val seen = HashSet<String>()
+    return list.filterIndexed { i, s -> seen.add(same.getOrNull(i) ?: s.seriesId) }
+}
+
+@Composable
+private fun CatalogScreen(model: AppModel, kind: ContentKind, load: suspend (String) -> List<Poster>, onOpen: (Poster) -> Unit,
+                          extra: suspend () -> List<Poster> = { emptyList() }, header: (@Composable () -> Unit)? = null,
+                          key: Any? = null, newestFirst: Boolean = true) {
+    // ponytail: no category browsing for movies/series — everything in one grid, search finds the rest.
+    val own by produceState<List<Poster>?>(null, model.library, kind, model.catalogVersion, key) {
+        value = null // a new filter: skeleton until its titles arrive
+        value = withContext(Dispatchers.IO) { runCatching { load(CAT_ALL) }.getOrDefault(emptyList()) }
+    }
+    // Titles the playlist doesn't have (built-in sources), after its own once they arrive.
+    val more by produceState(emptyList<Poster>(), model.library, kind, model.catalogVersion, key) {
+        value = runCatching { extra() }.getOrDefault(emptyList())
+    }
+    // Newest first (the provider's own order buries this year's releases under old ones); a filter keeps its own order.
+    val posters = own?.let { (it + more).distinctBy { p -> p.id }.let { l -> if (newestFirst) l.sortedByDescending { p -> p.year?.take(4)?.toIntOrNull() ?: 0 } else l } }
     PosterGrid(posters, Modifier.fillMaxSize().padding(horizontal = if (LocalWide.current) 16.dp else 6.dp), onOpen, header)
 }
 
@@ -248,11 +394,25 @@ fun hms(ms: Long): String {
 @Composable
 private fun MovieDetail(model: AppModel, m: Movie, onBack: () -> Unit) {
     val lib = model.library ?: return
-    val resume = model.userVersion.let { model.user?.progress("movie:${m.streamId}") }
+    val ext = Extras.isExt(m.streamId)
+    // Every copy the playlist has of this film ("Dune", "Dune 4K"): 4K screens play the 4K one, others the regular one.
+    val versions by produceState(listOf(m), m.streamId, model.catalogVersion) {
+        if (!ext) value = withContext(Dispatchers.IO) { runCatching { lib.movieVersions(m.streamId) }.getOrDefault(emptyList()) }.ifEmpty { listOf(m) }
+    }
+    val is4k = { v: Movie -> qualityBadge(v.name) == "4K" }
+    val started = model.userVersion.let { versions.firstOrNull { model.user?.progress("movie:${it.streamId}") != null } }
+    val pick = started ?: if (model.platform.screen4k) versions.firstOrNull(is4k) ?: m else versions.firstOrNull { !is4k(it) } ?: m
+    // Also asks the built-in sources now: the badge shows if one has it in 4K, and Play reuses what they found.
+    val sources4k by produceState(false, m.streamId) {
+        val search = runCatching { model.sourceSearch(model.moviePlayable(lib, m).source!!) }.getOrNull() ?: return@produceState
+        search.found.collect { links -> if (links.any { it.is4k }) value = true } // the first source with 4K is enough
+    }
+    val has4k = versions.any(is4k) || sources4k
+    val resume = model.userVersion.let { model.user?.progress("movie:${pick.streamId}") }
     val fav = model.userVersion.let { model.isFavorite(ContentKind.MOVIE, m.streamId) }
     fun play(fromStart: Boolean) {
-        if (fromStart) model.user?.removeProgress("movie:${m.streamId}")
-        model.play(Playable(m.name, m.year ?: "Movie", lib.movieUrl(m.streamId, m.extension), PlayKind.Movie, m.streamId, m.poster, m.extension), true)
+        if (fromStart) model.user?.removeProgress("movie:${pick.streamId}")
+        model.play(model.moviePlayable(lib, pick), true)
     }
     Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
     DetailBackdrop(model, ContentKind.MOVIE, m.name, m.year, m.poster)
@@ -262,7 +422,11 @@ private fun MovieDetail(model: AppModel, m: Movie, onBack: () -> Unit) {
             IconAction(Icons.Rounded.ArrowBack, "Back", onClick = onBack)
             Text(m.name, style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.height(6.dp))
-            Text(listOfNotNull(m.year, if (m.rating > 0) "★ %.1f".format(m.rating) else null).joinToString(" · "), color = Z.textMuted)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(listOfNotNull(m.year, if (m.rating > 0) "★ %.1f".format(m.rating) else null).joinToString(" · "), color = Z.textMuted)
+                if (has4k) Text("4K", Modifier.clip(RoundedCornerShape(6.dp)).background(Z.accentGradient).padding(horizontal = 8.dp, vertical = 2.dp),
+                    color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+            }
             Spacer(Modifier.height(20.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (resume != null) {
@@ -271,11 +435,13 @@ private fun MovieDetail(model: AppModel, m: Movie, onBack: () -> Unit) {
                 } else {
                     PillButton(Icons.Rounded.PlayArrow, "Play", true) { play(false) }
                 }
-                IconAction(if (fav) Icons.Rounded.Star else Icons.Rounded.StarBorder, if (fav) "Remove favorite" else "Add favorite",
-                    if (fav) Z.gold else Z.textMuted) { model.toggleFavorite(ContentKind.MOVIE, m.streamId) }
-                var picking by remember { mutableStateOf(false) }
-                IconAction(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to a playlist") { picking = true }
-                if (picking) AddToListDialog(model, m) { picking = false }
+                if (!ext) { // favorites and movie playlists hold the playlist's own movies
+                    IconAction(if (fav) Icons.Rounded.Star else Icons.Rounded.StarBorder, if (fav) "Remove favorite" else "Add favorite",
+                        if (fav) Z.gold else Z.textMuted) { model.toggleFavorite(ContentKind.MOVIE, m.streamId) }
+                    var picking by remember { mutableStateOf(false) }
+                    IconAction(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to a playlist") { picking = true }
+                    if (picking) AddToListDialog(model, m) { picking = false }
+                }
             }
             MetaSection(model, ContentKind.MOVIE, m.name, m.year)
             SimilarMovies(model, m)
@@ -358,7 +524,7 @@ private fun DetailBackdrop(model: AppModel, kind: ContentKind, title: String, ye
 private fun EpisodesScreen(model: AppModel, series: Series, onBack: () -> Unit) {
     val lib = model.library ?: return
     val episodes by produceState<List<Episode>?>(null, series.seriesId) {
-        value = withContext(Dispatchers.IO) { runCatching { lib.episodes(series.seriesId) }.getOrDefault(emptyList()) }
+        value = withContext(Dispatchers.IO) { runCatching { model.episodes(lib, series.seriesId, series.name, series.year) }.getOrDefault(emptyList()) }
     }
     val fav = model.userVersion.let { model.isFavorite(ContentKind.SERIES, series.seriesId) }
     var season by rememberSaveable(series.seriesId) { mutableStateOf<Int?>(null) }
@@ -381,8 +547,8 @@ private fun EpisodesScreen(model: AppModel, series: Series, onBack: () -> Unit) 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconAction(Icons.Rounded.ArrowBack, "Back", onClick = onBack)
                 Text(series.name, Modifier.weight(1f), style = MaterialTheme.typography.headlineMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                IconAction(if (fav) Icons.Rounded.Star else Icons.Rounded.StarBorder, if (fav) "Remove favorite" else "Add favorite",
-                    if (fav) Z.gold else Z.textMuted) { model.toggleFavorite(ContentKind.SERIES, series.seriesId) }
+                if (!Extras.isExt(series.seriesId)) IconAction(if (fav) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                    if (fav) "Remove favorite" else "Add favorite", if (fav) Z.gold else Z.textMuted) { model.toggleFavorite(ContentKind.SERIES, series.seriesId) }
             }
             MetaSection(model, ContentKind.SERIES, series.name, series.year)
           }
@@ -469,8 +635,7 @@ private fun EpisodeRow(model: AppModel, series: Series, e: Episode, modifier: Mo
         modifier.fillMaxWidth().focusRing(RoundedCornerShape(14.dp), lift = 1.01f)
             .clip(RoundedCornerShape(14.dp)).background(Z.surface)
             .clickable {
-                model.play(Playable("${series.name} · S${e.season}E${e.number}", title,
-                    lib.episodeUrl(e.id, e.extension), PlayKind.Episode, e.id, e.image ?: series.cover, e.extension, series.seriesId), full = true)
+                model.play(model.episodePlayable(lib, series.name, series.seriesId, series.year, series.cover, e, title), full = true)
             }
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -513,8 +678,16 @@ fun SearchScreen(model: AppModel) {
     val query = model.searchQuery
     val results by produceState(SearchResults(emptyList(), emptyList(), emptyList()), query, model.catalogVersion) {
         delay(200) // debounce typing
-        value = withContext(Dispatchers.IO) { lib.search(query, 40u) }
+        value = withContext(Dispatchers.IO) { lib.search(query, 40u).let { r -> r.copy(movies = lib.distinctMovies(r.movies), series = lib.distinctSeries(r.series)) } }
     }
+    val extra by produceState(emptyList<Movie>() to emptyList<Series>(), query, model.catalogVersion) {
+        value = emptyList<Movie>() to emptyList()
+        if (query.trim().length < 2) return@produceState
+        delay(500) // network: wait for typing to settle
+        value = runCatching { Extras.search(lib, query) }.getOrDefault(emptyList<Movie>() to emptyList())
+    }
+    val movies = results.movies + extra.first
+    val series = results.series + extra.second
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
         // Wide layouts type in the header pill; compact gets the field at the top of this page.
         if (!LocalWide.current || LocalShort.current) {
@@ -531,19 +704,19 @@ fun SearchScreen(model: AppModel) {
             items(results.channels, key = { "c" + it.streamId }) { ch ->
                 ResultRow(ch.name, "Live", ch.logo) { model.playChannel(ch, results.channels, full = true) }
             }
-            if (results.movies.isNotEmpty() && !model.isHiddenTab(Tab.Movies)) {
+            if (movies.isNotEmpty() && !model.isHiddenTab(Tab.Movies)) {
                 item { Section("Movies") }
-                items(results.movies, key = { "m" + it.streamId }) { m ->
+                items(movies, key = { "m" + it.streamId }) { m ->
                     ResultRow(m.name, m.year ?: "Movie", m.poster) { model.openMovie = m; model.tab = Tab.Movies }
                 }
             }
-            if (results.series.isNotEmpty() && !model.isHiddenTab(Tab.Series)) {
+            if (series.isNotEmpty() && !model.isHiddenTab(Tab.Series)) {
                 item { Section("Series") }
-                items(results.series, key = { "s" + it.seriesId }) { s ->
+                items(series, key = { "s" + it.seriesId }) { s ->
                     ResultRow(s.name, s.year ?: "Series", s.cover) { model.openSeries = s; model.tab = Tab.Series }
                 }
             }
-            if (query.length >= 2 && results.channels.isEmpty() && results.movies.isEmpty() && results.series.isEmpty()) {
+            if (query.length >= 2 && results.channels.isEmpty() && movies.isEmpty() && series.isEmpty()) {
                 item { Text("No results for “$query”", color = Z.textMuted) }
             }
         }

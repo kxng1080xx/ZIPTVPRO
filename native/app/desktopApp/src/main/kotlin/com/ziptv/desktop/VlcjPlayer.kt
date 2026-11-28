@@ -1,5 +1,9 @@
 package com.ziptv.desktop
 
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableIntStateOf
@@ -109,6 +113,7 @@ class VlcjPlayer : VideoPlayer {
 
     override var deinterlace = false
     override var upscale = false
+    override var audioLanguage = "en"
     // Tracked here: VLC reports "muted"/volume -1 until audio output exists, which showed a false mute icon.
     override var volume: Int = 100
         set(v) { field = v.coerceIn(0, 100); mp.audio().setVolume(field) }
@@ -125,14 +130,21 @@ class VlcjPlayer : VideoPlayer {
             if (System.getenv("ZIPTV_HW_DECODE") == null) add(":avcodec-hw=none")
             if (deinterlace) { add(":deinterlace=1"); add(":deinterlace-mode=yadif2x") }
             if (upscale) { add(":video-filter=sharpen"); add(":sharpen-sigma=0.45") }
+            add(":audio-language=$audioLanguage")
         }.toTypedArray()
         worker.execute { mp.media().play(url, *opts) }
     }
 
     override fun positionMs(): Long = mp.status().time().coerceAtLeast(0)
     override fun durationMs(): Long = mp.status().length().coerceAtLeast(0)
+    override fun videoSize(): Pair<Int, Int>? = runCatching { mp.video().videoDimension()?.let { it.width to it.height } }.getOrNull()?.takeIf { it.first > 0 }
     override fun seekTo(ms: Long) = worker.execute { mp.controls().setTime(ms.coerceAtLeast(0)) }
-    override fun audioTracks(): List<Track> = mp.audio().trackDescriptions().map { Track(it.id(), it.description()) }
+    // VLC lists "Disable" (id -1) as an audio track: picking it mutes with no way back from the menu.
+    override fun audioTracks(): List<Track> = mp.audio().trackDescriptions().filter { it.id() >= 0 }.map { Track(it.id(), it.description()) }
+    override fun audioTrack(): Int = runCatching { mp.audio().track() }.getOrDefault(-1)
+    override fun subtitleTrack(): Int = runCatching { mp.subpictures().track() }.getOrDefault(-1)
+    override fun addSubtitle(url: String, select: Boolean) =
+        worker.execute { mp.media().addSlave(uk.co.caprica.vlcj.media.MediaSlaveType.SUBTITLE, url, select) }
     override fun subtitleTracks(): List<Track> = mp.subpictures().trackDescriptions().map { Track(it.id(), it.description()) }
     override fun selectAudio(id: Int) = worker.execute { mp.audio().setTrack(id) }
     override fun selectSubtitle(id: Int) = worker.execute { mp.subpictures().setTrack(id) }
@@ -147,16 +159,21 @@ class VlcjPlayer : VideoPlayer {
         worker.awaitTermination(3, java.util.concurrent.TimeUnit.SECONDS)
     }
 
+    override var pictureSize by androidx.compose.runtime.mutableStateOf(com.ziptv.app.PictureSize.Fit)
+
     @Composable
     override fun Surface(modifier: Modifier) {
-        Canvas(modifier) {
+        Canvas(modifier.clipToBounds()) {
             frame.intValue // read so each new frame redraws
             val bmp = front ?: return@Canvas
             val img = bmp.asComposeImageBitmap()
-            // Fit (letterbox) inside the available space.
-            val scale = minOf(size.width / img.width, size.height / img.height)
-            val w = (img.width * scale).toInt()
-            val h = (img.height * scale).toInt()
+            // Fit = letterbox, Fill = cover (edges cut, clipped), Stretch = the whole area.
+            val sx = size.width / img.width; val sy = size.height / img.height
+            val (w, h) = when (pictureSize) {
+                com.ziptv.app.PictureSize.Fit -> minOf(sx, sy).let { (img.width * it).toInt() to (img.height * it).toInt() }
+                com.ziptv.app.PictureSize.Fill -> maxOf(sx, sy).let { (img.width * it).toInt() to (img.height * it).toInt() }
+                com.ziptv.app.PictureSize.Stretch -> size.width.toInt() to size.height.toInt()
+            }
             drawImage(
                 img, srcOffset = IntOffset.Zero, srcSize = IntSize(img.width, img.height),
                 dstOffset = IntOffset(((size.width - w) / 2).toInt(), ((size.height - h) / 2).toInt()),

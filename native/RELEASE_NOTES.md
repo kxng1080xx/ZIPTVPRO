@@ -1,3 +1,33 @@
+## ZIPTV Pro 11.0: more to watch, and it keeps playing
+
+**Movies and series**
+- Titles your provider doesn't have now show up too, in the Movies and Series pages and in search. Each title
+  shows once, even when your provider lists several copies.
+- If your provider's copy won't play, ZIPTV finds the title somewhere else and carries on
+  ("Hold on, finding your movie elsewhere…").
+- New filter bar on Movies and Series: All, Popular, New releases or Recently added, plus a genre.
+- New rows: Popular, New releases, Recently added and a row per genre. The full list is newest first.
+- Series use the official season and episode numbers and titles, and missing episodes are filled in.
+- Anime plays, with Japanese (Sub) or English (Dub) to choose from and subtitles in several languages.
+
+**Player**
+- 4K TVs and monitors play 4K first, and the movie page shows a 4K badge when a 4K copy is available.
+- Settings > Playback > Audio language (English by default): your language comes first, even before 4K.
+- Skip intro and Skip recap buttons, and "Up next" appears when the credits start.
+- Sources button: pick another copy of what you're watching, from the same moment.
+- Info button: where it's playing from, the picture size and whether your screen is 4K.
+- Picture size button: Fit, Fill or Stretch.
+- Pause screen with what you're watching, the time left and when it ends.
+- Button names show when you hover or move onto them.
+
+**Remote and keyboard**
+- Menus open with the first item selected and keep the selection inside until you close them (Back or Esc).
+- PC: the arrow keys move around the whole app, like a TV remote.
+- The volume control works with the remote: Up and Down change the volume, OK mutes.
+
+**Other**
+- Smart TV access (the /tv link) shows on PC only.
+
 ## ZIPTV Pro 10.0 — rebuilt from the ground up
 
 ZIPTV Pro 10 is a complete rebuild for speed and reliability. One app now adapts to your

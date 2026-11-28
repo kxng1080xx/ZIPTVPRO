@@ -50,6 +50,9 @@ pub struct Meta {
     /// Library::similar_movies keeps the ones this playlist has.
     #[serde(default)]
     pub related: Vec<RelatedTitle>,
+    /// TMDB id (0 = unknown): what the built-in sources search by.
+    #[serde(default)]
+    pub tmdb_id: i64,
 }
 
 #[derive(uniffi::Record, Clone, Debug, Serialize, Deserialize)]
@@ -90,7 +93,7 @@ impl Tmdb {
             return None;
         }
         let tv = kind == ContentKind::Series;
-        let key = format!("v3:{}:{}:{}", if tv { "tv" } else { "movie" }, title.to_lowercase().trim(), year.as_deref().unwrap_or(""));
+        let key = format!("v4:{}:{}:{}", if tv { "tv" } else { "movie" }, title.to_lowercase().trim(), year.as_deref().unwrap_or(""));
         let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
         if let Some(e) = self.cache.lock().unwrap().get(&key) {
             if now - e.at < if e.meta.is_some() { TTL_HIT } else { TTL_MISS } {
@@ -111,6 +114,7 @@ impl Tmdb {
                 let append = if tv { "credits,aggregate_credits,videos,external_ids" } else { "credits,videos,external_ids,recommendations" };
                 let d = self.call(&format!("/{seg}/{id}?append_to_response={append}"))?;
                 let mut m = normalize(tv, &d);
+                m.tmdb_id = id;
                 if !tv {
                     // Collection first ("X-Men Collection" = every X-Men film), oldest first; best effort.
                     let parts = d.pointer("/belongs_to_collection/id").map(as_i64).filter(|c| *c > 0)
@@ -256,6 +260,7 @@ fn normalize(tv: bool, d: &Value) -> Meta {
         cast,
         trailer_key,
         related: vec![],
+        tmdb_id: 0,
     }
 }
 

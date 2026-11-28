@@ -402,7 +402,8 @@ private fun Header(model: AppModel, wide: Boolean) {
         Text(model.active?.name ?: "", Modifier.weight(1f), color = Z.textMuted, maxLines = 1,
             overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge)
         // v9's header TV link: the address to type into a Smart TV's browser (re-read each minute: Wi-Fi can change).
-        if (wide) remember(now / 60_000) { model.lan.tvUrl() }?.let { TvLink(it) }
+        // The Smart TV page link: PC only.
+        if (wide && model.platform.device == DeviceClass.Desktop) remember(now / 60_000) { model.lan.tvUrl() }?.let { TvLink(it) }
         // One click to "Watch away from home": starts the link and shows its QR.
         model.platform.tunnel?.let { t ->
             val tunnelUrl by t.url.collectAsState()

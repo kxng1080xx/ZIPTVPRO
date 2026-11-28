@@ -73,6 +73,11 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("io.coil-kt.coil3:coil-compose:3.2.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.2.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0") // built-in movie/series sources
+    // Anime sources (JS plugins): Nuvio's QuickJS build, which has all four ABIs incl. the 32-bit Fire TV ones.
+    implementation(files("libs/quickjs-kt-android-1.0.5-nuvio.aar"))
+    implementation("com.fleeksoft.ksoup:ksoup:0.2.6")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0")
     implementation("net.java.dev.jna:jna:5.19.1@aar")
     implementation("org.videolan.android:libvlc-all:3.6.5")
 }

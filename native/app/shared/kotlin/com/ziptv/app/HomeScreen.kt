@@ -484,7 +484,7 @@ private fun ChannelRow(title: String, channels: List<Channel>, model: AppModel) 
 }
 
 @Composable
-private fun PosterRow(title: String, items: List<Triple<String, String?, Any>>, ratings: List<Float>, width: Dp = 140.dp,
+internal fun PosterRow(title: String, items: List<Triple<String, String?, Any>>, ratings: List<Float>, width: Dp = 140.dp,
                       actions: (@Composable () -> Unit)? = null, onOpen: (Any) -> Unit) {
     if (actions == null) RowTitle(title)
     else Row(Modifier.padding(end = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {

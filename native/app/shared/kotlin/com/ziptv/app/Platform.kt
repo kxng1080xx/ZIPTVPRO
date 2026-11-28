@@ -23,6 +23,9 @@ sealed interface PlayerState {
     data class Failed(val message: String) : PlayerState
 }
 
+/** How the picture fills the screen: whole picture (black bars), zoomed to fill (edges cut), or stretched. */
+enum class PictureSize { Fit, Fill, Stretch }
+
 /** An audio or subtitle track. id -1 = "off" (subtitles). */
 data class Track(val id: Int, val name: String)
 
@@ -33,6 +36,10 @@ interface VideoPlayer {
     var deinterlace: Boolean
     /** Upscaler: sharpen filter (+ high-quality scaling on PC). Applies on the next play(). */
     var upscale: Boolean
+    /** Applies at once. */
+    var pictureSize: PictureSize
+    /** Preferred audio language (ISO code, "en"): files with several audio tracks start on it. Next play(). */
+    var audioLanguage: String
     /** startMs > 0 resumes a movie/episode where the user left off. */
     fun play(url: String, startMs: Long = 0)
     fun togglePause()
@@ -40,11 +47,18 @@ interface VideoPlayer {
     fun release()
     fun positionMs(): Long
     fun durationMs(): Long
+    /** The picture's real size (width to height) once playing; null = not known yet. */
+    fun videoSize(): Pair<Int, Int>? = null
     fun seekTo(ms: Long)
     fun audioTracks(): List<Track>
     fun subtitleTracks(): List<Track>
     fun selectAudio(id: Int)
     fun selectSubtitle(id: Int)
+    /** The audio / subtitle track on now (-1 = none / unknown). */
+    fun audioTrack(): Int = -1
+    fun subtitleTrack(): Int = -1
+    /** Adds a subtitle file (http URL) to what's playing; [select] turns it on. */
+    fun addSubtitle(url: String, select: Boolean) {}
     /** 0..100 */
     var volume: Int
     var muted: Boolean
@@ -80,6 +94,8 @@ interface Platform {
     fun setAutostart(on: Boolean, minimized: Boolean) {}
     /** Internet tunnel to this device's LAN server (desktop: Cloudflare quick tunnel). null = not here. */
     val tunnel: ShareTunnel? get() = null
+    /** The screen can show 4K (3840 px or more): built-in sources then pick 4K links first. */
+    val screen4k: Boolean get() = false
     /** Picture-in-picture where the OS supports it; false = not available. */
     fun enterPip(): Boolean = false
     /** PC: model.pip opens a floating always-on-top window instead of the in-app mini player. */

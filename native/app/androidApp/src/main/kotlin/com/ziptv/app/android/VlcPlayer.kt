@@ -45,6 +45,7 @@ class VlcPlayer(context: Context) : VideoPlayer {
 
     override var deinterlace = false
     override var upscale = false
+    override var audioLanguage = "en"
     private var lastVolume = 100
     override var volume: Int
         get() = mp.volume.coerceIn(0, 100)
@@ -61,6 +62,7 @@ class VlcPlayer(context: Context) : VideoPlayer {
                 if (startMs > 0) addOption(":start-time=${startMs / 1000}")
                 if (deinterlace) { addOption(":deinterlace=1"); addOption(":deinterlace-mode=yadif2x") }
                 if (upscale) { addOption(":video-filter=sharpen"); addOption(":sharpen-sigma=0.45") }
+                addOption(":audio-language=$audioLanguage")
             }
             mp.media = media
             media.release()
@@ -70,11 +72,27 @@ class VlcPlayer(context: Context) : VideoPlayer {
 
     override fun positionMs(): Long = mp.time.coerceAtLeast(0)
     override fun durationMs(): Long = mp.length.coerceAtLeast(0)
+    override fun videoSize(): Pair<Int, Int>? = runCatching { mp.currentVideoTrack?.let { it.width to it.height } }.getOrNull()?.takeIf { it.first > 0 }
     override fun seekTo(ms: Long) = worker.execute { mp.time = ms.coerceAtLeast(0) }
     override fun audioTracks(): List<Track> = mp.audioTracks?.filter { it.id >= 0 }?.map { Track(it.id, it.name) } ?: emptyList()
     override fun subtitleTracks(): List<Track> = mp.spuTracks?.map { Track(it.id, it.name) } ?: emptyList()
     override fun selectAudio(id: Int) = worker.execute { mp.audioTrack = id }
     override fun selectSubtitle(id: Int) = worker.execute { mp.spuTrack = id }
+    override var pictureSize = com.ziptv.app.PictureSize.Fit
+        set(v) {
+            field = v
+            worker.execute {
+                mp.videoScale = when (v) {
+                    com.ziptv.app.PictureSize.Fit -> MediaPlayer.ScaleType.SURFACE_BEST_FIT
+                    com.ziptv.app.PictureSize.Fill -> MediaPlayer.ScaleType.SURFACE_FIT_SCREEN
+                    com.ziptv.app.PictureSize.Stretch -> MediaPlayer.ScaleType.SURFACE_FILL
+                }
+            }
+        }
+    override fun audioTrack(): Int = runCatching { mp.audioTrack }.getOrDefault(-1)
+    override fun subtitleTrack(): Int = runCatching { mp.spuTrack }.getOrDefault(-1)
+    override fun addSubtitle(url: String, select: Boolean) =
+        worker.execute { mp.addSlave(org.videolan.libvlc.interfaces.IMedia.Slave.Type.Subtitle, Uri.parse(url), select) }
 
     override fun togglePause() = worker.execute { if (mp.isPlaying) mp.pause() else mp.play() }
     override fun stop() = worker.execute { mp.stop() }

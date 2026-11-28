@@ -174,6 +174,11 @@ fn query(url: &str) -> Vec<(String, String)> {
 /// Rewrite an HLS playlist so every URI goes through `/cast/seg` (absolute provider URL,
 /// CORS headers added): Chromecast's receiver and TV browsers can't fetch the provider directly.
 fn rewrite_m3u8(text: &str, base: &str) -> String {
+    rewrite_m3u8_via(text, base, |u| format!("/cast/seg?u={}", pct_encode(u)))
+}
+
+/// Same, with `via` turning each absolute URI into the local path that serves it.
+fn rewrite_m3u8_via(text: &str, base: &str, via_abs: impl Fn(&str) -> String) -> String {
     let origin = base.splitn(4, '/').take(3).collect::<Vec<_>>().join("/");
     let dir = &base[..base.rfind('/').map(|i| i + 1).unwrap_or(base.len())];
     let abs = |u: &str| -> String {
@@ -181,7 +186,7 @@ fn rewrite_m3u8(text: &str, base: &str) -> String {
         else if u.starts_with('/') { format!("{origin}{u}") }
         else { format!("{dir}{u}") }
     };
-    let via = |u: &str| format!("/cast/seg?u={}", pct_encode(&abs(u)));
+    let via = |u: &str| via_abs(&abs(u));
     text.lines().map(|l| {
         let t = l.trim();
         if t.is_empty() { String::new() }
@@ -209,6 +214,7 @@ impl LanServer {
         let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
         match parts.as_slice() {
             ["cast", "seg"] => self.segment(req, &url),
+            ["src", "play"] | ["src", "play", _] => self.source(req, &url), // /src/play/sub.vtt: a name for the player
             ["cast", kind, file] => self.cast(req, kind, file),
             [""] | ["tv"] | ["tv", ""] => text(req, TV_HTML, "text/html; charset=utf-8"),
             ["tv", "app.js"] => text(req, TV_JS, "application/javascript; charset=utf-8"),
@@ -340,6 +346,65 @@ impl LanServer {
         }
     }
 
+    /// `/src/play?u=<url>&h=<"Name: value" lines>`: a built-in source's link for the app's own player
+    /// (VLC can't send the Origin / Cookie / token headers these hosts check). Files get VodReader's
+    /// byte-resume, so a dropped connection carries on at the next byte; HLS playlists are rewritten
+    /// so every segment comes back here with the same headers.
+    /// ponytail: open proxy like /cast/seg; it only answers on the home LAN (tunnel visitors need the token).
+    fn source(&self, req: Request, url: &str) {
+        let q = query(url);
+        let arg = |k: &str| q.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
+        let Some(u) = arg("u").filter(|u| u.starts_with("http://") || u.starts_with("https://")) else {
+            let _ = req.respond(Response::empty(400));
+            return;
+        };
+        let lines = arg("h").unwrap_or_default();
+        let headers: Vec<(String, String)> = lines.lines().filter_map(|l| l.split_once(':'))
+            .map(|(k, v)| (k.trim().to_string(), v.trim().to_string())).filter(|(k, _)| !k.is_empty()).collect();
+        // Playlist entries come back marked s=1: they're segments (or keys), whatever the host labels them.
+        let segment = arg("s").as_deref() == Some("1");
+        let hls_body = |text: String, base: &str| rewrite_m3u8_via(&text, base,
+            |abs| format!("/src/play?u={}&h={}&s=1", pct_encode(abs), pct_encode(&lines)));
+        let m3u8 = |req: Request, body: String| {
+            let _ = req.respond(Response::from_string(body).with_header(header("Content-Type", "application/vnd.apple.mpegurl"))
+                .with_header(header("Cache-Control", "no-cache")));
+        };
+        if u.split('?').next().unwrap_or("").ends_with(".m3u8") {
+            match crate::stream::get_with(&crate::stream::agent(), &u, None, &headers) {
+                Ok(r) => { let base = r.get_url().to_string(); m3u8(req, hls_body(r.into_string().unwrap_or_default(), &base)) }
+                Err(code) => { let _ = req.respond(Response::empty(if code == 0 { 502 } else { code })); }
+            }
+            return;
+        }
+        let range = req.headers().iter().find(|x| x.field.equiv("Range")).map(|x| x.value.as_str().to_string());
+        match VodReader::open_with(u.clone(), range.as_deref(), headers) {
+            Ok((mut r, head)) => {
+                let ct = head.content_type.clone().unwrap_or_else(|| "video/mp4".into());
+                if segment && !ct.contains("mpegurl") {
+                    // Anime CDNs disguise segments (image/jpeg, text/html, a PNG glued in front of the video):
+                    // serve them as MPEG-TS, with anything before the first TS packets dropped.
+                    let body: Box<dyn Read + Send> = Box::new(crate::stream::TsAlign::new(r));
+                    let _ = req.respond(Response::new(200.into(), vec![header("Content-Type", "video/mp2t")], body, None, None));
+                    return;
+                }
+                if ct.starts_with("text/html") { // a host's web page, not the file: fail now so the app tries the next link
+                    let _ = req.respond(Response::empty(502));
+                    return;
+                }
+                if ct.contains("mpegurl") { // an HLS playlist without the .m3u8 name
+                    let mut text = String::new();
+                    let _ = r.read_to_string(&mut text);
+                    return m3u8(req, hls_body(text, &u));
+                }
+                let mut h = vec![header("Content-Type", &ct), header("Accept-Ranges", "bytes")];
+                if let Some(cr) = &head.content_range { h.push(header("Content-Range", cr)); }
+                let body: Box<dyn Read + Send> = Box::new(r);
+                let _ = req.respond(Response::new(head.status.into(), h, body, head.content_length.map(|l| l as usize), None));
+            }
+            Err(code) => { let _ = req.respond(Response::empty(if code == 0 { 502 } else { code })); }
+        }
+    }
+
     /// A finished recording (a .ts file on this PC) for the TV page's player.
     fn recording(&self, req: Request, id: &str) {
         let path = self.recorder.read().unwrap().as_ref().and_then(|r| r.list().into_iter().find(|x| x.id == id)).map(|x| x.path);
@@ -468,6 +533,36 @@ fn json_out(req: Request, code: u16, v: Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn source_proxy_sends_the_hosts_headers() {
+        // A "host" that only serves with the right Origin, like the scraped CDNs.
+        let host = Server::http("127.0.0.1:0").unwrap();
+        let hport = host.server_addr().to_ip().unwrap().port();
+        std::thread::spawn(move || for req in host.incoming_requests() {
+            let ok = req.headers().iter().any(|h| h.field.equiv("Origin") && h.value.as_str() == "https://site.example");
+            let path = req.url().to_string();
+            let _ = if !ok { req.respond(Response::empty(403)) }
+                else if path.ends_with(".m3u8") { req.respond(Response::from_string("#EXTM3U
+seg1.ts
+")) }
+                else { req.respond(Response::from_string("VIDEO")) };
+        });
+        let lan = LanServer::new(18830);
+        let base = format!("http://127.0.0.1:{}", lan.port());
+        let via = |u: &str, h: &str| format!("{base}/src/play?u={}&h={}", pct_encode(u), pct_encode(h));
+        let get = |u: String| match ureq::get(&u).call() { Ok(r) => (r.status(), r.into_string().unwrap()), Err(ureq::Error::Status(c, _)) => (c, String::new()), Err(e) => panic!("{e}") };
+        let file = format!("http://127.0.0.1:{hport}/v.mp4");
+        assert_eq!(get(via(&file, "Origin: https://site.example
+Referer: https://site.example/")), (200, "VIDEO".into()));
+        assert_eq!(get(via(&file, "")).0, 403);
+        // HLS: the segment line now points back at the proxy, headers included.
+        let (code, body) = get(via(&format!("http://127.0.0.1:{hport}/p/index.m3u8"), "Origin: https://site.example"));
+        assert_eq!(code, 200);
+        let seg = body.lines().nth(1).unwrap();
+        assert!(seg.starts_with("/src/play?u="), "{seg}");
+        assert_eq!(get(format!("{base}{seg}")), (200, "VIDEO".into()));
+    }
 
     #[test]
     fn tunnel_visitors_need_the_share_token() {

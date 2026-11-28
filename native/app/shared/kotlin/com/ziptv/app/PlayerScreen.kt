@@ -4,6 +4,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -99,8 +100,11 @@ fun PlayerScreen(model: AppModel) {
     val tv = LocalDevice.current == DeviceClass.Tv
     val primary = remember { FocusRequester() }
     var focusAt by remember { mutableStateOf(0) } // 0 = elsewhere, 1 = this box, 2 = a control inside it
-    LaunchedEffect(tv, controls, focusAt, popOpen, state) {
-        if (!tv || popOpen) return@LaunchedEffect // menus/sheets manage their own focus
+    // PC keyboard: once a key is pressed, focus follows the controls exactly like a TV remote (arrows move between
+    // buttons, Enter presses); moving the mouse goes back to mouse mode.
+    var keys by remember { mutableStateOf(false) }
+    LaunchedEffect(tv, keys, controls, focusAt, popOpen, state) {
+        if (!(tv || keys) || popOpen) return@LaunchedEffect // menus/sheets manage their own focus
         if (controls && focusAt != 2) runCatching { primary.requestFocus() }
         else if (!controls && focusAt != 1) runCatching { focus.requestFocus() }
     }
@@ -116,6 +120,7 @@ fun PlayerScreen(model: AppModel) {
             .focusRequester(focus).focusable()
             .onPreviewKeyEvent { e ->
                 poke++
+                if (!tv && e.type == KeyEventType.KeyDown) keys = true
                 if (e.type != KeyEventType.KeyDown || controls) return@onPreviewKeyEvent false
                 // TV: the arrows are how you reach the on-screen controls, so with the controls hidden an
                 // arrow only brings them up (poke above; focus lands on Play/Pause) and changes nothing.
@@ -135,7 +140,7 @@ fun PlayerScreen(model: AppModel) {
                 awaitPointerEventScope {
                     while (true) {
                         val e = awaitPointerEvent()
-                        if (e.type == PointerEventType.Move || e.type == PointerEventType.Press) poke++
+                        if (e.type == PointerEventType.Move || e.type == PointerEventType.Press) { poke++; keys = false }
                     }
                 }
             }
@@ -143,9 +148,14 @@ fun PlayerScreen(model: AppModel) {
     ) {
         model.player.Surface(Modifier.fillMaxSize())
 
+        // Paused long enough for the controls to fade: what's on, how long is left (Nuvio's pause screen).
+        AnimatedVisibility(state == PlayerState.Paused && !controls && item.seekable && model.playError == null,
+            enter = fadeIn(tween(600)), exit = fadeOut(tween(200)), modifier = Modifier.fillMaxSize()) { PauseScreen(model, item) }
+
         PlayerStatus(model)
 
         model.upNext?.let { UpNextCard(model, it, Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 140.dp)) }
+            ?: SkipButton(model, item, Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 140.dp))
 
         AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize()) {
@@ -156,6 +166,41 @@ fun PlayerScreen(model: AppModel) {
                 if (model.playError == null) CenterControls(model, item, state, primary, Modifier.align(Alignment.Center)) { poke++ }
                 PlayerChrome(model, item, inFullscreen = true, onActive = { popOpen = it }, onInteract = { poke++ })
             }
+        }
+    }
+}
+
+/** "You're watching", the title, the episode, its description and the time left; who paused it in Watch Together. */
+@Composable
+private fun PauseScreen(model: AppModel, item: Playable) {
+    val episode = item.kind == PlayKind.Episode
+    val show = item.title.substringBefore(" · ")
+    val about by androidx.compose.runtime.produceState(item.plot, item) {
+        if (value == null) value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                model.tmdb.lookup(if (episode) com.ziptv.core.ContentKind.SERIES else com.ziptv.core.ContentKind.MOVIE, show, item.source?.year)
+            }.getOrNull()?.overview?.ifBlank { null }
+        }
+    }
+    val pos = model.player.positionMs(); val dur = model.player.durationMs()
+    val left = (dur - pos).coerceAtLeast(0)
+    val timeLeft = if (dur <= 0) null else {
+        val min = ((left + 59_999) / 60_000).toInt()
+        val ends = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(System.currentTimeMillis() + left))
+        (if (min >= 60) "${min / 60} h ${min % 60} min left" else "$min min left") + " · Ends at $ends"
+    }
+    val together = model.watch.code?.let { if (model.watch.isHost) "Paused for everyone" else "Paused by the host" }
+    Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Color.Black.copy(alpha = 0.85f), 0.55f to Color.Black.copy(alpha = 0.35f), 1f to Color.Transparent))) {
+        Column(Modifier.align(Alignment.BottomStart).padding(start = 56.dp, bottom = 72.dp, end = 24.dp).widthIn(max = 640.dp)) {
+            Text("You're watching", color = Z.textMuted, style = MaterialTheme.typography.titleSmall)
+            Text(show, color = Color.White, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold,
+                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+            if (episode) Text("${item.title.substringAfter(" · ", "")} · ${item.subtitle}", color = Color.White,
+                style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
+            about?.let { Text(it, color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodyLarge, maxLines = 4,
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 14.dp)) }
+            timeLeft?.let { Text(it, color = Z.textMuted, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 16.dp)) }
+            together?.let { Text(it, color = Z.focus, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp)) }
         }
     }
 }
@@ -257,21 +302,22 @@ fun BoxScope.PlayerStatus(model: AppModel, compact: Boolean = false) {
     val err = model.playError
     val waiting = state is PlayerState.Buffering || state == PlayerState.Idle || state is PlayerState.Failed ||
         (state == PlayerState.Ended && model.nowPlaying?.live == true)
-    if (err == null && !waiting) return
+    val finding = model.finding
+    if (err == null && !waiting && finding == null) return
     Column(Modifier.align(Alignment.Center).padding(12.dp).clip(RoundedCornerShape(16.dp)).background(Color.Black.copy(alpha = 0.6f))
         .padding(horizontal = if (compact) 12.dp else 22.dp, vertical = if (compact) 10.dp else 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally) {
         if (err != null) {
             Text("Couldn't play this stream", fontWeight = FontWeight.SemiBold, color = Color.White,
                 style = if (compact) MaterialTheme.typography.labelLarge else MaterialTheme.typography.titleMedium)
-            if (!compact) Text("Tried 5 times. $err", Modifier.padding(top = 4.dp), color = Z.textMuted,
+            if (!compact) Text(err, Modifier.padding(top = 4.dp), color = Z.textMuted,
                 style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             Text("Try again", color = Color.White, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(top = if (compact) 6.dp else 12.dp).focusRing(RoundedCornerShape(50)).clip(RoundedCornerShape(50))
                     .background(Z.accentGradient).clickable { model.retryNow() }.padding(horizontal = 18.dp, vertical = 8.dp))
         } else {
             CircularProgressIndicator(Modifier.size(if (compact) 22.dp else 34.dp), color = Z.focus, strokeWidth = 3.dp)
-            Text(if (model.retry == 0) "Loading…" else "Retrying (${model.retry} of 4)…", Modifier.padding(top = if (compact) 6.dp else 10.dp),
+            Text(finding ?: if (model.retry == 0) "Loading…" else "Retrying (${model.retry} of 4)…", Modifier.padding(top = if (compact) 6.dp else 10.dp),
                 color = Color.White, style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.bodyMedium)
         }
     }
@@ -348,6 +394,22 @@ private fun RoundButton(icon: ImageVector, label: String, big: Boolean = false, 
 }
 
 /** Netflix-style "Up next" for series: shows the last ~20s of an episode, plays the next when it ends. */
+/** "Skip intro" / "Skip recap" while one is on screen (Netflix / Nuvio style); OK on the remote skips. */
+@Composable
+private fun SkipButton(model: AppModel, item: Playable, modifier: Modifier) {
+    val segs = model.segments
+    if (segs.isEmpty() || !item.seekable) return
+    val pos by androidx.compose.runtime.produceState(model.player.positionMs(), item, segs) {
+        while (true) { value = model.player.positionMs(); kotlinx.coroutines.delay(400) }
+    }
+    val seg = segs.firstOrNull { it.kind != Segment.Kind.Credits && pos >= it.startMs && pos < it.endMs - 1_000 } ?: return
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(seg) { runCatching { focus.requestFocus() } }
+    Text(if (seg.kind == Segment.Kind.Recap) "Skip recap" else "Skip intro", color = Color.White, fontWeight = FontWeight.SemiBold,
+        modifier = modifier.focusRequester(focus).focusRing(RoundedCornerShape(12.dp)).clip(RoundedCornerShape(12.dp))
+            .background(Z.bg.copy(alpha = 0.85f)).clickable { model.skip(seg) }.padding(horizontal = 22.dp, vertical = 12.dp))
+}
+
 @Composable
 private fun UpNextCard(model: AppModel, next: Playable, modifier: Modifier) {
     val focus = remember { FocusRequester() }

@@ -441,6 +441,38 @@ impl Provider {
         out
     }
 
+    /// Every copy of this movie on the playlist (same cleaned title and year, e.g. "Dune" and "Dune 4K"), itself first.
+    pub fn movie_versions(&self, stream_id: String) -> Vec<Movie> {
+        let cat = self.catalog.read().unwrap();
+        let Some(me) = cat.movies.iter().find(|m| m.stream_id == stream_id) else { return vec![] };
+        let key = movie_key(me);
+        let mut v: Vec<&Movie> = cat.movies.iter().filter(|m| movie_key(m) == key).collect();
+        v.sort_by_key(|m| m.stream_id != stream_id);
+        uniq(v.into_iter(), |m| &m.stream_id)
+    }
+
+    /// For each title, the id of this playlist's movie (or series) with the same cleaned title and,
+    /// when both have one, year. None = the playlist doesn't have it. Used to drop duplicates.
+    pub fn match_titles(&self, kind: ContentKind, titles: Vec<tmdb::RelatedTitle>) -> Vec<Option<String>> {
+        let cat = self.catalog.read().unwrap();
+        let mut by: HashMap<String, Vec<(String, Option<String>)>> = HashMap::new();
+        let mut add = |id: &String, name: &str, year: &Option<String>| {
+            let (t, y) = tmdb::clean_title(name);
+            by.entry(match_key(&t)).or_default().push((id.clone(), year.clone().filter(|y| !y.is_empty()).or(y)));
+        };
+        match kind {
+            ContentKind::Series => for s in &cat.series { add(&s.series_id, &s.name, &s.year) },
+            _ => for m in &cat.movies { add(&m.stream_id, &m.name, &m.year) },
+        }
+        titles.iter().map(|r| {
+            let (t, y) = tmdb::clean_title(&r.title);
+            let year = r.year.clone().filter(|y| !y.is_empty()).or(y);
+            by.get(&match_key(&t))?.iter()
+                .find(|(_, y)| match (y, &year) { (Some(a), Some(b)) => a.get(..4) == b.get(..4), _ => true })
+                .map(|(id, _)| id.clone())
+        }).collect()
+    }
+
     pub fn series_by_ids(&self, ids: Vec<String>) -> Vec<Series> {
         let cat = self.catalog.read().unwrap();
         let by: HashMap<&str, &Series> = cat.series.iter().map(|s| (s.series_id.as_str(), s)).collect();
@@ -786,6 +818,24 @@ mod tests {
     }
 
     #[test]
+    fn duplicates_match_across_quality_tags() {
+        let mv = |id: &str, name: &str, year: Option<&str>| Movie { stream_id: id.into(), name: name.into(), category_id: "1".into(),
+            poster: None, rating: 0.0, year: year.map(Into::into), extension: None, added: 0 };
+        let p = Provider::new("http://x/list.m3u".into(), String::new(), String::new());
+        p.catalog.write().unwrap().movies = vec![
+            mv("1", "Dune (2021)", None), mv("2", "EN - Dune 4K", Some("2021")), mv("3", "Dune (1984)", None), mv("4", "Logan", None),
+        ];
+        let ids: Vec<String> = p.movie_versions("2".into()).into_iter().map(|m| m.stream_id).collect();
+        assert_eq!(ids, ["2", "1"]); // itself first, the 1984 film is another movie
+        let r = |t: &str, y: Option<&str>| RelatedTitle { title: t.into(), year: y.map(Into::into) };
+        assert_eq!(p.match_titles(ContentKind::Movie, vec![r("Dune", Some("2021")), r("Dune (1984)", None), r("Arrival", Some("2016")), r("Logan", Some("2017"))]),
+            [Some("1".to_string()), Some("3".to_string()), None, Some("4".to_string())]);
+        p.catalog.write().unwrap().series = vec![Series { series_id: "9".into(), name: "Naruto Shippūden".into(), category_id: "1".into(),
+            cover: None, rating: 0.0, year: Some("2007-02-15".into()), added: 0 }];
+        assert_eq!(p.match_titles(ContentKind::Series, vec![r("Naruto: Shippuden", Some("2007"))]), [Some("9".to_string())]);
+    }
+
+    #[test]
     fn qr_code_is_square_with_finder_corner() {
         let q = qr_code("https://a-b.trycloudflare.com/tv?stk=0123456789abcdef0123456789abcdef".into()).unwrap();
         assert_eq!(q.modules.len() as u32, q.size * q.size);
@@ -829,8 +879,33 @@ mod tests {
 }
 
 /// "X-Men: Days of Future Past" and "X Men - Days Of Future Past" -> "xmendaysoffuturepast".
+/// "dune|2021": one key per film, whatever quality tags the provider put in the name.
+fn movie_key(m: &Movie) -> String {
+    let (t, y) = tmdb::clean_title(&m.name);
+    let year = m.year.clone().filter(|y| !y.is_empty()).or(y).unwrap_or_default();
+    format!("{}|{}", match_key(&t), year.chars().take(4).collect::<String>())
+}
+
 fn match_key(title: &str) -> String {
-    title.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect()
+    title.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).map(fold_accent).collect()
+}
+
+/// "Shippūden" == "Shippuden", "Amélie" == "Amelie": accented Latin letters match the plain one.
+/// ponytail: a table of the common ones; the unicode-normalization crate if other scripts ever need it.
+fn fold_accent(c: char) -> char {
+    match c {
+        'à'..='å' | 'ā' | 'ă' | 'ą' => 'a',
+        'ç' | 'ć' | 'č' => 'c',
+        'è'..='ë' | 'ē' | 'ė' | 'ę' | 'ě' => 'e',
+        'ì'..='ï' | 'ī' | 'į' => 'i',
+        'ñ' | 'ń' | 'ň' => 'n',
+        'ò'..='ö' | 'ø' | 'ō' | 'ő' => 'o',
+        'ù'..='ü' | 'ū' | 'ů' | 'ű' | 'ų' => 'u',
+        'ý' | 'ÿ' => 'y',
+        'ś' | 'š' => 's',
+        'ź' | 'ż' | 'ž' => 'z',
+        _ => c,
+    }
 }
 
 /// QR code for `text` (the share link): `size` x `size` modules, row by row, true = dark.
@@ -838,6 +913,13 @@ fn match_key(title: &str) -> String {
 pub struct QrCode {
     pub size: u32,
     pub modules: Vec<bool>,
+}
+
+/// "EN - The Drop (2024) 1080p" -> ("The Drop", "2024"): the core's title cleaner, for the app's source search.
+#[uniffi::export]
+pub fn clean_name(raw: String) -> tmdb::RelatedTitle {
+    let (title, year) = tmdb::clean_title(&raw);
+    tmdb::RelatedTitle { title, year }
 }
 
 #[uniffi::export]

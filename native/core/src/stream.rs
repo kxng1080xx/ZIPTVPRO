@@ -31,7 +31,7 @@ pub fn dlna_profile(live: bool, ext: &str) -> (&'static str, String) {
     (mime, format!("DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS={FLAGS}"))
 }
 
-fn agent() -> ureq::Agent {
+pub(crate) fn agent() -> ureq::Agent {
     // timeout_read doubles as v9's idle watchdog: a silently black-holed socket errors
     // after 15 s instead of freezing the picture forever.
     ureq::AgentBuilder::new()
@@ -43,7 +43,13 @@ fn agent() -> ureq::Agent {
 
 /// Ok(response) for 200/206, Err(status) otherwise (0 = network error).
 fn get(agent: &ureq::Agent, url: &str, range: Option<String>) -> Result<ureq::Response, u16> {
+    get_with(agent, url, range, &[])
+}
+
+/// `headers`: what a scraped source needs (Referer, Origin, Cookie, a token...); they win over the defaults.
+pub(crate) fn get_with(agent: &ureq::Agent, url: &str, range: Option<String>, headers: &[(String, String)]) -> Result<ureq::Response, u16> {
     let mut r = agent.get(url);
+    for (k, v) in headers { r = r.set(k, v); }
     if let Some(range) = range { r = r.set("Range", &range); }
     match r.call() {
         Ok(resp) if resp.status() == 200 || resp.status() == 206 => Ok(resp),
@@ -60,6 +66,67 @@ pub fn upstream_length(url: &str) -> Option<u64> {
         return Some(total);
     }
     if resp.status() == 200 { resp.header("content-length")?.parse().ok() } else { None }
+}
+
+// ---------------------------------------------------------------- disguised HLS segments
+
+/// Some anime CDNs hide each HLS segment behind an image (a PNG/JPEG/GIF header with the MPEG-TS after it),
+/// which VLC can't read. When a segment starts with an image signature, everything before the first run of
+/// TS packets (0x47 every 188 bytes) is dropped; anything else passes through untouched.
+pub struct TsAlign<R: Read> {
+    inner: R,
+    head: Vec<u8>,
+    pos: usize,
+    ready: bool,
+}
+
+const MAX_PREFIX: usize = 4 << 20;
+
+fn ts_sync(b: &[u8], from: usize) -> Option<usize> {
+    (from..b.len().saturating_sub(376)).find(|&i| b[i] == 0x47 && b[i + 188] == 0x47 && b[i + 376] == 0x47)
+}
+
+fn image_signature(b: &[u8]) -> bool {
+    b.starts_with(&[0x89, b'P', b'N', b'G']) || b.starts_with(&[0xFF, 0xD8]) || b.starts_with(b"GIF8") || b.starts_with(b"BM")
+}
+
+impl<R: Read> TsAlign<R> {
+    pub fn new(inner: R) -> Self { Self { inner, head: Vec::new(), pos: 0, ready: false } }
+
+    fn fill(&mut self, at_least: usize) -> io::Result<bool> {
+        let mut chunk = [0u8; 65536];
+        while self.head.len() < at_least {
+            let n = self.inner.read(&mut chunk)?;
+            if n == 0 { return Ok(false); }
+            self.head.extend_from_slice(&chunk[..n]);
+        }
+        Ok(true)
+    }
+
+    fn align(&mut self) -> io::Result<()> {
+        self.ready = true;
+        self.fill(377)?;
+        if !image_signature(&self.head) { return Ok(()); }
+        let mut from = 0;
+        loop {
+            if let Some(i) = ts_sync(&self.head, from) { self.pos = i; return Ok(()); }
+            from = self.head.len().saturating_sub(376);
+            if self.head.len() >= MAX_PREFIX || !self.fill(self.head.len() + 65536)? { return Ok(()); } // not TS after all: as is
+        }
+    }
+}
+
+impl<R: Read> Read for TsAlign<R> {
+    fn read(&mut self, dst: &mut [u8]) -> io::Result<usize> {
+        if !self.ready { self.align()?; }
+        if self.pos < self.head.len() {
+            let n = dst.len().min(self.head.len() - self.pos);
+            dst[..n].copy_from_slice(&self.head[self.pos..self.pos + n]);
+            self.pos += n;
+            return Ok(n);
+        }
+        self.inner.read(dst)
+    }
 }
 
 // ---------------------------------------------------------------- live (PTS splice)
@@ -188,6 +255,7 @@ pub struct VodHead {
     pub status: u16,
     pub content_range: Option<String>,
     pub content_length: Option<u64>,
+    pub content_type: Option<String>,
 }
 
 /// Movie/episode file that survives provider session cuts: on a drop it reconnects with
@@ -202,24 +270,30 @@ pub struct VodReader {
     skip: u64,
     fails: u32,
     session: u64,
+    headers: Vec<(String, String)>,
 }
 
 impl VodReader {
     /// `range`: the TV's Range header. Only open-ended "bytes=N-" gets resume accounting.
     pub fn open(url: String, range: Option<&str>) -> Result<(Self, VodHead), u16> {
+        Self::open_with(url, range, vec![])
+    }
+
+    /// Same, sending `headers` on every (re)connect.
+    pub fn open_with(url: String, range: Option<&str>, headers: Vec<(String, String)>) -> Result<(Self, VodHead), u16> {
         let agent = agent();
         let base = range.and_then(|r| r.strip_prefix("bytes=")).and_then(|r| r.strip_suffix('-')).and_then(|n| n.parse().ok());
         // Bounded/suffix ranges: one-shot passthrough (no resume).
-        let resp = get(&agent, &url, range.map(str::to_string))?;
+        let resp = get_with(&agent, &url, range.map(str::to_string), &headers)?;
         let content_range = resp.header("content-range").map(str::to_string);
         let content_length = resp.header("content-length").and_then(|l| l.parse().ok());
         let total = content_range.as_deref().and_then(|cr| cr.rsplit('/').next()).and_then(|t| t.trim().parse().ok())
             .or(if resp.status() == 200 { content_length } else { None });
-        let head = VodHead { status: resp.status(), content_range, content_length };
+        let head = VodHead { status: resp.status(), content_range, content_length, content_type: resp.header("content-type").map(str::to_string) };
         let resumable = range.is_none() || base.is_some();
         Ok((Self {
             agent, url, up: Some(Box::new(resp.into_reader())), base: base.unwrap_or(0), sent: 0,
-            total: if resumable { total } else { None }, skip: 0, fails: 0, session: 0,
+            total: if resumable { total } else { None }, skip: 0, fails: 0, session: 0, headers,
         }, head))
     }
 
@@ -235,7 +309,7 @@ impl VodReader {
             }
             self.session = 0;
             let at = self.base + self.sent;
-            match get(&self.agent, &self.url, Some(format!("bytes={at}-"))) {
+            match get_with(&self.agent, &self.url, Some(format!("bytes={at}-")), &self.headers) {
                 Ok(resp) => {
                     let start = if resp.status() == 206 {
                         resp.header("content-range").and_then(|cr| cr.strip_prefix("bytes "))
@@ -341,6 +415,25 @@ mod tests {
     }
 
     /// Provider cuts the file after 10 bytes; the reader resumes with a Range at byte 10.
+    #[test]
+    fn disguised_segments_lose_their_image_header() {
+        let mut ts = Vec::new();
+        for i in 0..5u8 { let mut p = vec![0u8; 188]; p[0] = 0x47; p[1] = i; ts.extend(p); }
+        let mut png = vec![0x89, b'P', b'N', b'G', 13, 10, 26, 10];
+        png.extend(vec![0x47u8; 3]); // a stray sync byte inside the image must not fool it
+        png.extend(vec![7u8; 5000]);
+        let mut out = Vec::new();
+        TsAlign::new(io::Cursor::new([png, ts.clone()].concat())).read_to_end(&mut out).unwrap();
+        assert_eq!(out, ts);
+        // Plain TS (and anything that isn't an image) passes through as is.
+        let mut same = Vec::new();
+        TsAlign::new(io::Cursor::new(ts.clone())).read_to_end(&mut same).unwrap();
+        assert_eq!(same, ts);
+        let mut short = Vec::new();
+        TsAlign::new(io::Cursor::new(b"0123456789abcdef".to_vec())).read_to_end(&mut short).unwrap();
+        assert_eq!(short, b"0123456789abcdef");
+    }
+
     #[test]
     fn vod_resumes_at_byte_offset() {
         let file: Vec<u8> = (0..30u8).collect();

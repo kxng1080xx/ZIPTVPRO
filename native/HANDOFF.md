@@ -177,3 +177,128 @@ tries with/without a trailing "tv"). PC: preview no longer huge on big windows; 
   favorites/history start fresh.
 - Secrets needed (set by the user; agent writes to secret stores are blocked):
   ANDROID_DEBUG_KEYSTORE, TMDB_TOKEN.
+
+## Built-in sources (2026-11-27) — UNCOMMITTED, NOT RELEASED
+Ported from the CinemaOS app (github.com/cinema-os/CinemaOS-Mobile, **GPL-3.0**). The user chose to ship it to
+customers and settle the legal side later: GPL-3 means ZIPTV's source must be released under GPL-3 once
+distributed, and the sources scrape piracy hosts. Ask before any release / `native-release.yml` run.
+
+What it does
+- **Provider first, sources as backup** (AppModel "built-in sources" block): a movie/episode gets one go on the
+  provider (12 s, `VOD_TIMEOUT_MS`); on failure the player shows "Hold on, finding your movie elsewhere…"
+  (`model.finding`, drawn by PlayerStatus) and tries the sources' links one by one, best first. Live TV unchanged.
+- **Extra titles** (`app/Extras.kt`): Cinemeta's top 1000 movies + 1000 series and its search, minus what the
+  playlist has (core `match_titles`, same cleaned title + year). Ids are `ext:<imdb>` (episodes
+  `ext:<imdb>:<s>:<e>`); they play only through the sources. Favorites / movie playlists are hidden for them.
+- **No duplicates**: Movies/Series grids and search keep one entry per film (`distinctMovies/distinctSeries` in
+  VodScreens); the details page picks the copy (core `movie_versions`): the 4K one on 4K screens, else the regular.
+- **4K**: `Platform.screen4k` (PC: any monitor >= 3840 px; Android: the panel's best mode). Sources rank 4K
+  first on 4K screens, else 1080p first and 4K after 720p. Details page shows a **4K badge** when the playlist
+  has a 4K copy or a source has a 4K link (it starts the source lookup; Play reuses it, cached 20 min).
+- **Episode labels from IMDb/TMDB** (`Extras.relabel`, test `desktopApp/src/test/.../RelabelTest.kt`): provider
+  episodes get Cinemeta's season/episode/title ("Season 403 E1" = episode 403); episodes the provider lacks are
+  added (played via sources). Provider ids are kept, so progress is unchanged.
+- **Proxy**: VLC can't send the hosts' Origin/Cookie/token headers, so source links play through the LAN server's
+  new `/src/play?u=&h=` (core lan.rs `source`): headers on every request, VodReader byte-resume, HLS rewritten so
+  segments come back through it, HTML pages answered 502 (fail fast to the next link). Test: `source_proxy_sends_the_hosts_headers`.
+
+Code: `app/shared/kotlin/com/ziptv/sources/*` (scrapers as in CinemaOS + `Sources.kt`), `app/Extras.kt`,
+AppModel/VodScreens/PlayerScreen/Platform edits, core `match_titles`, `movie_versions`, `clean_name`,
+`Meta.tmdb_id` (TMDB cache key bumped to v4), `stream::get_with` / `VodReader::open_with`.
+Deps: okhttp 4.12.0 (both apps), org.json (desktop).
+
+Checks: `cargo test --release --lib` (42 pass); `./gradlew :desktopApp:test` (RelabelTest);
+live: `ZIPTV_PROBE=1 ./gradlew :desktopApp:test --tests '*SourcesProbe*' -i` (Cinemeta, links, proxy).
+
+Left / known gaps
+- Android `.so` are STALE (only `FAST=1 build.sh --skip-android` ran): run the full `native/core/build.sh`
+  before any APK. Not yet tried on Android / TV.
+- Cast (Chromecast/DLNA), Watch Together and the TV web page don't handle `ext:` titles or source links yet.
+- Anime: CinemaOS plays anime through JS plugins (QuickJS); ZIPTV has no JS engine, so anime only gets what
+  the 9 Kotlin sources find.
+- Extra titles' favorites/continue-watching are device-only (not mirrored to the cloud).
+- Later the same day: player **Sources** button (cloud; provider + every found link, pick to switch, failures
+  continue down the list: `model.findSources/useSource/sourceOptions`) and **Info** button (source, listed quality,
+  real picture size via new `VideoPlayer.videoSize()`, screen 4K/HD). 4K badge now shows on the first 4K link
+  (`SourceSearch.found` flow). Title matching folds accents (`fold_accent`: "Shippūden" = "Shippuden").
+  Volume popover is D-pad driven (focus on open; Up/Down volume, OK mute, Left/Right/Back close).
+  Android compile of these (VlcPlayer.videoSize uses `currentVideoTrack`) not yet verified.
+- **Anime** (same day): the CinemaOS anime sources (MegaPlay, Anikoto, AnimeSalt, AnimeWorld, KickAssAnime) are JS
+  plugins, now run in QuickJS: `app/shared/kotlin/com/ziptv/plugins/` = Nuvio's plugin runtime (GPL-3) with ZIPTV glue
+  (`PluginSupport.kt` logger + PC library path, `runtime/RuntimePlatform.kt`, OkHttp `runtime/network/HttpRaw.kt`,
+  java.net.URI in UrlBridge). `sources/AnimeSources.kt` downloads the manifest/scripts to `<dataDir>/plugins` (6 h
+  refresh, offline copy) and runs them for titles arm.haglund.dev calls anime (first in the list, 45 s budget).
+  Long-running shows (one ARM entry, no TMDB season) retry with `mal:<id>` + overall episode (`AnimeSources.overall`).
+  Links are labelled "Anikoto · DUB". Deps: quickjs-kt 1.0.15 (PC), `androidApp/libs/quickjs-kt-android-1.0.5-nuvio.aar`
+  (Nuvio's build, all 4 ABIs incl. Fire TV's 32-bit), ksoup 0.2.6, kotlinx-serialization-json 1.10.0.
+  Live check: `ZIPTV_PROBE=1 ./gradlew :desktopApp:test --tests '*SourcesProbe.anime*' -i`.
+- **4K rule (user, 2026-11-27): 4K screens get 4K playback first even when it's not from the provider.** A non-4K
+  provider copy waits up to 10 s (`FIND_4K_MS`, "Looking for 4K…") for a source's 4K link; if that link fails the
+  provider's copy plays next. HD screens: provider first, sources 1080p-first. The Sources panel always lists 4K on top.
+- Android: `:androidApp:compileDebugKotlin` passes; the Android core `.so` are still stale (full `core/build.sh` needed).
+- **Disguised anime segments**: the anime CDNs label HLS segments image/jpeg, text/html or javascript, and some glue a
+  PNG in front of the MPEG-TS. Playlist entries now come back to `/src/play` with `s=1`; those skip the HTML check
+  and go through `stream::TsAlign` (drops everything before the first TS packets when the segment starts with an
+  image signature), served as video/mp2t. Test: `disguised_segments_lose_their_image_header`. (Before this, anime
+  played ~1 s and stopped on every source.)
+- **Skip intro / Up next at the credits** (Nuvio's feature): `app/SkipTimes.kt` gets intro/recap/credits times from
+  IntroDB (`api.introdb.app`, IMDb id + IMDb season/episode, movies too) and AniSkip (anime: MAL id via
+  arm.haglund.dev, overall episode for long shows); IntroDB wins per kind. `model.segments` loads on play; PlayerScreen
+  shows "Skip intro"/"Skip recap" (focused, OK skips); `watchForNext` brings the Up next card up when the credits
+  start (else the last 25 s). Anime-Skip (needs a client id) was not ported.
+- **Player additions (same day)**: anime audio picker in Audio & subtitles ("Japanese (Sub)" / "English (Dub)"…, each
+  another source link picked up at the same moment; `model.audioChoices()`, `SourceLink.audio`); a link's own subtitle
+  files (anime SUB streams) are added once it plays through `/src/play/sub.vtt?...` (`VideoPlayer.addSubtitle`), English
+  on; VLC's "Disable" audio entry hidden, ticks on the track in use. **Pause screen** (paused + controls faded): "You're
+  watching", title, episode + its description (TMDB overview for movies), time left + end time, "Paused by the host" /
+  "Paused for everyone" in Watch Together (rooms have no device names yet). **Picture size** button (Fit / Fill /
+  Stretch, saved per playlist as `picture`). Hover/focus labels on every control button.
+- **D-pad + keyboard**: menus take focus on open and trap it (`Popover`: focusProperties onExit cancel + focusGroup),
+  Back/Escape closes; PC keyboard makes focus follow the controls like a TV (`keys` in PlayerScreen). Rule saved in
+  memory (dpad-keyboard-focus-rule).
+- **Audio language** (Settings > Playback > Movies & series, default English, setting `audio_lang`): sources rank by
+  language first (has it > not stated > other), then quality (`Sources.ranked(links, screen4k, lang)`, test
+  SourcesRankTest); the 4K hunt only takes a 4K link in that language; VLC gets `:audio-language=<code>` for
+  multi-audio files; anime SUB links turn on subtitles in it (English fallback). User: "doesn't make sense to watch
+  in 4K if you can't understand it" — language beats 4K.
+- **Keyboard on PC**: arrow keys move focus from the desktop Window's `onKeyEvent` (works with nothing focused yet:
+  first press focuses the first item); Esc closes an open player menu first (menus register a BackHandler).
+- **Movies / Series category rows** (CinemaOS style, above the grid): Popular, New releases (this + last year),
+  Recently added (provider), then genre rows; Cinemeta catalogs merged with the playlist (`Extras.movieRow/seriesRow`:
+  the playlist's own copy when it has the title, with Cinemeta's clean name/poster; hidden categories respected).
+  The full grid below ("All movies"/"All series") is sorted newest first. Home's `PosterRow` is now internal (shared).
+- **Smart TV access** (Settings > Network) and the header's /tv link show on PC only (user).
+- **Discover filter** on Movies and Series (CinemaOS's bar, without its Movies/Series type dropdown): `FilterBar` with
+  "All / Popular / New releases / Recently added" + a genre dropdown (hidden for Recently added: the provider's list
+  has no genres). Both "All" = the rows + full grid; anything else = a grid of just those titles, popularity order
+  (`Extras.discoverMovies/discoverSeries`: Cinemeta pages merged with the playlist; New releases + genre = that genre
+  filtered to this year and last). `CatalogScreen` takes a suspend loader, a reload `key`, and `newestFirst`.
+- **Version 11.0.0** (versionCode 110000) set in `native/app/gradle.properties` for this work (user, 2026-11-27).
+  Not released. Before releasing: full `core/build.sh` (Android .so are stale), try it on the Fire TV / a phone,
+  commit, write `native/RELEASE_NOTES.md`, and settle the GPL-3 / sources question (see the memory note).
+
+## >>> PICK UP HERE (end of 2026-11-27 session, started from the CinemaOS workspace)
+State:
+- All v11 work above is **uncommitted** on branch **`v11-sources`** (created from `v10-native` at 3538cbdb, no commits yet).
+  `ziptv.version=11.0.0` / `versionCode=110000`; `native/RELEASE_NOTES.md` has the 11.0 section at the top.
+- A full `bash native/core/build.sh` (tests + DLL + bindings + Android .so for 4 ABIs) was running when the session
+  ended. Re-run it to be sure: it must end with "core build done" and all `cargo test` passing. Then
+  `cd native/app && ./gradlew.bat :desktopApp:test :androidApp:compileDebugKotlin`.
+- **The user said "go live and run release" (2026-11-27).** Release steps, in order, stopping on any failure:
+  1. Commit on `v11-sources`. Stage `native/` changes + the new `native/app/androidApp/libs/` (quickjs aar),
+     `desktopApp/src/test/`, `shared/kotlin/com/ziptv/{plugins,sources}/`, `app/Extras.kt`, `app/SkipTimes.kt`.
+     Do NOT stage `PRODUCT.md`, `prototype.html`, `vids/`, `supabase/migrations/9.4.3_lock_down_rls.sql`,
+     `desktopApp/hs_err_pid*.log`. No AI co-author trailer (user's global rule). Message style:
+     `feat(v11): ...; release 11.0.0`.
+  2. Fast-forward `v10-native` to it and push `v10-native` (releases have always run from `v10-native`; `main`
+     only carries the website/API and the version bumps the workflow pushes itself; don't merge into main).
+  3. `gh workflow run native-release.yml --ref v10-native`, watch it; it publishes v11.0.0 as latest and bumps
+     version.json on main.
+- Open question to ask the user before/with the release: add a `LICENSE` (GPL-3) + credits note (Nuvio,
+  CinemaOS: the scrapers and plugin runtime are GPL-3). The repo is already public (user: "its already public"),
+  which covers making the source available; the licence file/notice isn't there yet. Piracy exposure unchanged.
+- `main`'s red X on GitHub = Vercel ("Account is blocked"); harmless (Pages is the host), the Vercel integration
+  could be removed.
+- Untested on Android/Fire TV/phone so far (only PC). The dev build (`:desktopApp:run`) was left running.
+- Close the PC app before recompiling: a running dev build reading class files that get rebuilt shows
+  "NoClassDefFound"-style error boxes.

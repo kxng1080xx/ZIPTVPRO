@@ -937,6 +937,12 @@ internal open class UniffiVTableCallbackInterfaceSyncListener(
 
 
 
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -953,6 +959,8 @@ internal open class UniffiVTableCallbackInterfaceSyncListener(
 internal interface IntegrityCheckingUniffiLib : Library {
     // Integrity check functions only
     fun uniffi_ziptv_core_checksum_func_check_update(
+): Short
+fun uniffi_ziptv_core_checksum_func_clean_name(
 ): Short
 fun uniffi_ziptv_core_checksum_func_qr_code(
 ): Short
@@ -1054,7 +1062,11 @@ fun uniffi_ziptv_core_checksum_method_provider_load(
 ): Short
 fun uniffi_ziptv_core_checksum_method_provider_login(
 ): Short
+fun uniffi_ziptv_core_checksum_method_provider_match_titles(
+): Short
 fun uniffi_ziptv_core_checksum_method_provider_movie_url(
+): Short
+fun uniffi_ziptv_core_checksum_method_provider_movie_versions(
 ): Short
 fun uniffi_ziptv_core_checksum_method_provider_movies(
 ): Short
@@ -1320,7 +1332,11 @@ fun uniffi_ziptv_core_fn_method_provider_load(`ptr`: Pointer,`path`: RustBuffer.
 ): Byte
 fun uniffi_ziptv_core_fn_method_provider_login(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_ziptv_core_fn_method_provider_match_titles(`ptr`: Pointer,`kind`: RustBuffer.ByValue,`titles`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_ziptv_core_fn_method_provider_movie_url(`ptr`: Pointer,`streamId`: RustBuffer.ByValue,`extension`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_ziptv_core_fn_method_provider_movie_versions(`ptr`: Pointer,`streamId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_ziptv_core_fn_method_provider_movies(`ptr`: Pointer,`categoryId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1411,6 +1427,8 @@ fun uniffi_ziptv_core_fn_method_userstore_toggle_pin(`ptr`: Pointer,`kind`: Rust
 fun uniffi_ziptv_core_fn_init_callback_vtable_synclistener(`vtable`: UniffiVTableCallbackInterfaceSyncListener,
 ): Unit
 fun uniffi_ziptv_core_fn_func_check_update(`current`: RustBuffer.ByValue,`platform`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_ziptv_core_fn_func_clean_name(`raw`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_ziptv_core_fn_func_qr_code(`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1541,6 +1559,9 @@ private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_ziptv_core_checksum_func_check_update() != 64264.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_func_clean_name() != 42609.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ziptv_core_checksum_func_qr_code() != 21886.toShort()) {
@@ -1693,7 +1714,13 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_ziptv_core_checksum_method_provider_login() != 64911.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_ziptv_core_checksum_method_provider_match_titles() != 58628.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_ziptv_core_checksum_method_provider_movie_url() != 40476.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ziptv_core_checksum_method_provider_movie_versions() != 37100.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ziptv_core_checksum_method_provider_movies() != 53730.toShort()) {
@@ -3968,7 +3995,18 @@ public interface ProviderInterface {
      */
     fun `login`(): AccountInfo
     
+    /**
+     * For each title, the id of this playlist's movie (or series) with the same cleaned title and,
+     * when both have one, year. None = the playlist doesn't have it. Used to drop duplicates.
+     */
+    fun `matchTitles`(`kind`: ContentKind, `titles`: List<RelatedTitle>): List<kotlin.String?>
+    
     fun `movieUrl`(`streamId`: kotlin.String, `extension`: kotlin.String?): kotlin.String
+    
+    /**
+     * Every copy of this movie on the playlist (same cleaned title and year, e.g. "Dune" and "Dune 4K"), itself first.
+     */
+    fun `movieVersions`(`streamId`: kotlin.String): List<Movie>
     
     fun `movies`(`categoryId`: kotlin.String?): List<Movie>
     
@@ -4264,12 +4302,43 @@ open class Provider: Disposable, AutoCloseable, ProviderInterface
     }
     
 
+    
+    /**
+     * For each title, the id of this playlist's movie (or series) with the same cleaned title and,
+     * when both have one, year. None = the playlist doesn't have it. Used to drop duplicates.
+     */override fun `matchTitles`(`kind`: ContentKind, `titles`: List<RelatedTitle>): List<kotlin.String?> {
+            return FfiConverterSequenceOptionalString.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_provider_match_titles(
+        it, FfiConverterTypeContentKind.lower(`kind`),FfiConverterSequenceTypeRelatedTitle.lower(`titles`),_status)
+}
+    }
+    )
+    }
+    
+
     override fun `movieUrl`(`streamId`: kotlin.String, `extension`: kotlin.String?): kotlin.String {
             return FfiConverterString.lift(
     callWithPointer {
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_provider_movie_url(
         it, FfiConverterString.lower(`streamId`),FfiConverterOptionalString.lower(`extension`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Every copy of this movie on the playlist (same cleaned title and year, e.g. "Dune" and "Dune 4K"), itself first.
+     */override fun `movieVersions`(`streamId`: kotlin.String): List<Movie> {
+            return FfiConverterSequenceTypeMovie.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_method_provider_movie_versions(
+        it, FfiConverterString.lower(`streamId`),_status)
 }
     }
     )
@@ -5997,7 +6066,11 @@ data class Meta (
      * Movies only: the rest of its collection (release order), then TMDB recommendations.
      * Library::similar_movies keeps the ones this playlist has.
      */
-    var `related`: List<RelatedTitle>
+    var `related`: List<RelatedTitle>, 
+    /**
+     * TMDB id (0 = unknown): what the built-in sources search by.
+     */
+    var `tmdbId`: kotlin.Long
 ) {
     
     companion object
@@ -6027,6 +6100,7 @@ public object FfiConverterTypeMeta: FfiConverterRustBuffer<Meta> {
             FfiConverterSequenceTypeCastMember.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterSequenceTypeRelatedTitle.read(buf),
+            FfiConverterLong.read(buf),
         )
     }
 
@@ -6048,7 +6122,8 @@ public object FfiConverterTypeMeta: FfiConverterRustBuffer<Meta> {
             FfiConverterOptionalString.allocationSize(value.`backdrop`) +
             FfiConverterSequenceTypeCastMember.allocationSize(value.`cast`) +
             FfiConverterOptionalString.allocationSize(value.`trailerKey`) +
-            FfiConverterSequenceTypeRelatedTitle.allocationSize(value.`related`)
+            FfiConverterSequenceTypeRelatedTitle.allocationSize(value.`related`) +
+            FfiConverterLong.allocationSize(value.`tmdbId`)
     )
 
     override fun write(value: Meta, buf: ByteBuffer) {
@@ -6070,6 +6145,7 @@ public object FfiConverterTypeMeta: FfiConverterRustBuffer<Meta> {
             FfiConverterSequenceTypeCastMember.write(value.`cast`, buf)
             FfiConverterOptionalString.write(value.`trailerKey`, buf)
             FfiConverterSequenceTypeRelatedTitle.write(value.`related`, buf)
+            FfiConverterLong.write(value.`tmdbId`, buf)
     }
 }
 
@@ -7893,6 +7969,34 @@ public object FfiConverterSequenceTypeWebTab: FfiConverterRustBuffer<List<WebTab
         }
     }
 }
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceOptionalString: FfiConverterRustBuffer<List<kotlin.String?>> {
+    override fun read(buf: ByteBuffer): List<kotlin.String?> {
+        val len = buf.getInt()
+        return List<kotlin.String?>(len) {
+            FfiConverterOptionalString.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.String?>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterOptionalString.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.String?>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterOptionalString.write(it, buf)
+        }
+    }
+}
         /**
          * `platform`: "pc" (wants .msi/.exe) or "apk" (wants .apk). None = up to date / offline.
          */ fun `checkUpdate`(`current`: kotlin.String, `platform`: kotlin.String): UpdateInfo? {
@@ -7900,6 +8004,18 @@ public object FfiConverterSequenceTypeWebTab: FfiConverterRustBuffer<List<WebTab
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_ziptv_core_fn_func_check_update(
         FfiConverterString.lower(`current`),FfiConverterString.lower(`platform`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * "EN - The Drop (2024) 1080p" -> ("The Drop", "2024"): the core's title cleaner, for the app's source search.
+         */ fun `cleanName`(`raw`: kotlin.String): RelatedTitle {
+            return FfiConverterTypeRelatedTitle.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_ziptv_core_fn_func_clean_name(
+        FfiConverterString.lower(`raw`),_status)
 }
     )
     }

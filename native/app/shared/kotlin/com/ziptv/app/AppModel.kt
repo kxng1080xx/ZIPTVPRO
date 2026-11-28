@@ -22,6 +22,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.first
 import java.io.File
 
 /**
@@ -73,6 +75,8 @@ sealed interface Screen {
 
 private const val MAX_RETRIES = 4
 private const val LOAD_TIMEOUT_MS = 20_000L // loading this long with no picture counts as a failed attempt
+private const val VOD_TIMEOUT_MS = 12_000L  // movies/episodes have a backup (the built-in sources), so give up on a link sooner
+private const val FIND_4K_MS = 10_000L      // 4K screens: how long to look for a 4K source before playing the provider's copy
 
 enum class PlayKind { Live, Catchup, Movie, Episode, Recording }
 
@@ -86,6 +90,10 @@ data class Playable(
     val image: String? = null,
     val extension: String? = null,
     val seriesId: String? = null,
+    /** Movies and episodes: what the built-in sources look for if the provider can't play it (extra titles: always). */
+    val source: SourceQuery? = null,
+    /** An episode's own description (the pause screen; movies use TMDB's). */
+    val plot: String? = null,
 ) {
     val live get() = kind == PlayKind.Live
     val seekable get() = kind != PlayKind.Live
@@ -96,9 +104,21 @@ data class Playable(
     }
 }
 
+/** A title for the built-in sources: the show's name + season/episode for an episode. [imdb] = extra (Cinemeta) titles. */
+data class SourceQuery(
+    val title: String,
+    val year: String?,
+    val series: Boolean,
+    val season: Int? = null,
+    val episode: Int? = null,
+    val imdb: String? = null,
+)
 
 class AppModel(val platform: Platform, val scope: CoroutineScope) {
-    private val store = PlaylistStore(platform.dataDir)
+    private val store = PlaylistStore(platform.dataDir).also {
+        com.ziptv.sources.AnimeSources.dir = File(platform.dataDir) // anime source scripts are kept here
+        if (platform.device == DeviceClass.Desktop) com.ziptv.plugins.configureDesktopQuickJs(File(platform.dataDir))
+    }
     val recorder by lazy { com.ziptv.core.Recorder(File(platform.dataDir, "recordings").path) }
     /** Bumped when recordings change; the list also refreshes on a timer while one is running. */
     var recordingsVersion by mutableStateOf(0); private set
@@ -214,13 +234,16 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
                 delay(1000)
                 val dur = player.durationMs(); val left = dur - player.positionMs()
                 val ended = player.state.value == PlayerState.Ended
-                if (!looked && dur > 0 && (left <= 25_000 || ended)) {
+                // Credits marked (IntroDB / AniSkip): "Up next" comes up when they start, like Nuvio; else the last 25 s.
+                val credits = segments.firstOrNull { it.kind == Segment.Kind.Credits }?.startMs
+                val inCredits = credits != null && dur > 0 && player.positionMs() >= credits && credits < dur
+                if (!looked && dur > 0 && (left <= 25_000 || ended || inCredits)) {
                     looked = true
                     next = withContext(Dispatchers.IO) { runCatching { nextEpisode(item) }.getOrNull() }
                 }
                 val n = next ?: continue
                 if (upNextCancelled) continue
-                if (left > 26_000 && !ended) { upNext = null; continue } // seeked back: hide until the end again
+                if (left > 26_000 && !ended && !inCredits) { upNext = null; continue } // seeked back: hide until the end again
                 upNext = n
                 upNextIn = (left / 1000).toInt().coerceAtLeast(0)
                 if (ended || left <= 800) { playUpNext(); break }
@@ -231,12 +254,25 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
     private fun nextEpisode(item: Playable): Playable? {
         val lib = library ?: return null
         if (item.kind == PlayKind.Movie) return queue.firstOrNull()?.let { moviePlayable(lib, it) }
-        val eps = lib.episodes(item.seriesId ?: return null).sortedWith(compareBy({ it.season }, { it.number }))
+        val sid = item.seriesId ?: return null
+        val eps = episodes(lib, sid, item.title.substringBefore(" · "), item.source?.year)
         val e = eps.getOrNull(eps.indexOfFirst { it.id == item.streamId }.takeIf { it >= 0 }?.plus(1) ?: return null) ?: return null
-        val show = item.title.substringBefore(" · ")
-        return Playable("$show · S${e.season}E${e.number}", e.title.ifBlank { "Episode ${e.number}" },
-            lib.episodeUrl(e.id, e.extension), PlayKind.Episode, e.id, e.image ?: item.image, e.extension, item.seriesId)
+        return episodePlayable(lib, item.title.substringBefore(" · "), sid, item.source?.year, item.image, e, e.title.ifBlank { "Episode ${e.number}" })
     }
+
+    /** A series' episodes, labelled as on IMDb/TMDB: the provider's (relabelled, gaps filled from Cinemeta), or Cinemeta's for an extra series. */
+    fun episodes(lib: Provider, seriesId: String, name: String, year: String?): List<com.ziptv.core.Episode> {
+        if (Extras.isExt(seriesId)) return Extras.episodes(seriesId)
+        val own = lib.episodes(seriesId)
+        val imdb = runCatching { Extras.imdbByTitle(name, year, series = true) }.getOrNull() ?: return own
+        return Extras.relabel(own, runCatching { Extras.episodes(Extras.extId(imdb)) }.getOrDefault(emptyList()))
+    }
+
+    fun episodePlayable(lib: Provider, show: String, seriesId: String, year: String?, cover: String?, e: com.ziptv.core.Episode, subtitle: String) =
+        Playable("$show · S${e.season}E${e.number}", subtitle,
+            if (Extras.isExt(e.id)) e.id else lib.episodeUrl(e.id, e.extension), PlayKind.Episode, e.id, e.image ?: cover, e.extension, seriesId,
+            SourceQuery(show, year, series = true, season = e.season.toInt(), episode = e.number.toInt(), imdb = Extras.imdbOf(seriesId) ?: Extras.imdbOf(e.id)),
+            plot = e.plot.ifBlank { null })
 
     fun playUpNext() {
         val n = upNext ?: return
@@ -341,6 +377,8 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
         user = UserStore(fileFor(p, "user"))
         player.deinterlace = user?.setting("deinterlace") == "1"
         player.upscale = user?.setting("upscale") == "1"
+        player.pictureSize = PictureSize.entries.firstOrNull { it.name == user?.setting("picture") } ?: PictureSize.Fit
+        player.audioLanguage = audioLanguage
         liveCategoryState.value = user?.setting("live_cat") ?: CAT_ALL
         userVersion++
         // Read the saved catalog right away on IO: queued on the UI thread it waited for the window to
@@ -544,12 +582,38 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
         saveProgress() // the item being replaced
         nowPlaying = item
         fullscreen = full
-        retry = 0; playError = null
-        startStream(item)
+        retry = 0; playError = null; link = null; links = null; finding = null; sourceOptions = null; tried.clear(); providerLeft = false
+        loadSegments(item)
+        val hunt = wants4k(item)
+        if (!hunt) startStream(item) // 4K hunt: the player starts once we know which copy
         item.progressKey?.let { startProgressSaver() }
         watchForNext(item)
-        watchPlayback(item)
+        watchPlayback(item, hunt4k = hunt)
     }
+
+    /** Intro / recap / credits of what's playing (empty until known, or when nobody marked it). */
+    var segments by mutableStateOf<List<Segment>>(emptyList()); private set
+
+    private fun loadSegments(item: Playable) {
+        segments = emptyList()
+        val q = item.source ?: return
+        scope.launch {
+            val found = withContext(Dispatchers.IO) {
+                runCatching {
+                    val imdb = q.imdb ?: Extras.imdbByTitle(q.title, q.year, q.series) ?: return@runCatching emptyList()
+                    SkipTimes.of(imdb, q.season, q.episode)
+                }.getOrDefault(emptyList())
+            }
+            if (nowPlaying === item) segments = found
+        }
+    }
+
+    /** "Skip intro" / "Skip recap": jump to where it ends. */
+    fun skip(s: Segment) { player.seekTo(s.endMs) }
+
+    /** 4K screens get 4K first, wherever it comes from: a non-4K provider copy waits for the sources' 4K link. */
+    private fun wants4k(item: Playable) = platform.screen4k && item.source != null && !Extras.isExt(item.url) &&
+        (item.kind == PlayKind.Movie || item.kind == PlayKind.Episode) && qualityBadge(item.title) != "4K"
 
     // ------------------------------------------------------ loading / retry
     // Every kind of playback (live, catch-up, movies, episodes, recordings): loading, then up to
@@ -561,12 +625,156 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
     var playError by mutableStateOf<String?>(null); private set
     private var watchJob: Job? = null
 
-    private fun startStream(item: Playable) =
-        player.play(item.url, item.progressKey?.let { user?.progress(it) }?.positionMs ?: 0L) // VOD: back where it was
+    private fun startStream(item: Playable) {
+        // A built-in source link once the provider failed; an extra title has nothing to play until one is found.
+        val url = link?.let { viaProxy(it) } ?: item.url.takeUnless { Extras.isExt(it) } ?: return
+        player.play(url, item.progressKey?.let { user?.progress(it) }?.positionMs ?: 0L) // VOD: back where it was
+        link?.let { addSubtitles(item, it) }
+    }
 
-    private fun watchPlayback(item: Playable) {
+    /**
+     * A source link's own subtitle files (anime SUB streams), added once it plays (VLC drops ones added before).
+     * English comes on for a subbed link; the rest are in the Subtitles menu.
+     */
+    private fun addSubtitles(item: Playable, l: com.ziptv.sources.SourceLink) {
+        if (l.subtitles.isEmpty()) return
+        scope.launch {
+            val until = System.currentTimeMillis() + 30_000
+            while (player.state.value != PlayerState.Playing) { if (System.currentTimeMillis() > until || link !== l) return@launch; delay(300) }
+            if (nowPlaying !== item || link !== l) return@launch
+            // Subtitles in the audio-language setting (English if that has none), for subbed links.
+            val pref = audioLanguage
+            val pref3 = runCatching { java.util.Locale(pref).isO3Language }.getOrDefault(pref)
+            val on = (l.subtitles.firstOrNull { it.lang == pref || it.lang == pref3 }
+                ?: l.subtitles.firstOrNull { it.lang == "eng" || it.lang == "en" || it.label.startsWith("English") })
+                ?.takeIf { l.audio?.endsWith("(Sub)") != false }
+            for (s in l.subtitles) player.addSubtitle(viaProxy(s.url, s.headers, "sub.vtt"), select = s === on)
+        }
+    }
+
+    /**
+     * The anime audio picker (CinemaOS): one choice per audio language among the links found ("Japanese (Sub)",
+     * "English (Dub)"…), each backed by the best link for it (same source, then the closest quality). Empty unless a
+     * source link with an audio label is playing and there's more than one choice. Japanese first, then English.
+     */
+    fun audioChoices(): List<Pair<String, com.ziptv.sources.SourceLink>> {
+        val cur = link?.takeIf { it.audio != null } ?: return emptyList()
+        val byAudio = (sourceOptions.orEmpty() + cur).filter { it.audio != null }.groupBy { it.audio!! }
+        if (byAudio.size < 2) return emptyList()
+        val curSource = cur.source.substringBefore(" ·")
+        return byAudio.map { (audio, ls) ->
+            audio to (if (audio == cur.audio) cur else ls.sortedWith(compareByDescending<com.ziptv.sources.SourceLink> { it.source.substringBefore(" ·") == curSource }
+                .thenBy { kotlin.math.abs(it.height - cur.height) }).first())
+        }.sortedWith(compareByDescending<Pair<String, com.ziptv.sources.SourceLink>> { it.first.startsWith("Japanese") }
+            .thenByDescending { it.first.startsWith("English") }.thenBy { it.first })
+    }
+
+    // ------------------------------------------------------ built-in sources
+    // Movies and episodes play from the provider first. If that fails (or the title is an extra one the
+    // provider doesn't have), the built-in sources are searched and their links tried one by one, best first.
+
+    /** "Hold on, finding your movie elsewhere…" while the sources are being searched; null otherwise. */
+    var finding by mutableStateOf<String?>(null); private set
+    /** The source link playing now; null = the provider's own stream. */
+    var link by mutableStateOf<com.ziptv.sources.SourceLink?>(null); private set
+    /** Links still to try if this one fails (best first). */
+    private var links: MutableList<com.ziptv.sources.SourceLink>? = null
+    /** Links already tried for what's playing (never retried). */
+    private val tried = mutableSetOf<String>()
+    /** A 4K source went first on a 4K screen: if it fails, the provider's copy is next. */
+    private var providerLeft = false
+    /** Every link found for what's playing, best first (the player's Sources panel); null = not looked up yet. */
+    var sourceOptions by mutableStateOf<List<com.ziptv.sources.SourceLink>?>(null); private set
+    var searchingSources by mutableStateOf(false); private set
+
+    /** Through the LAN server: it sends the headers the host checks (VLC can't) and resumes a dropped file at the next byte. */
+    private fun viaProxy(l: com.ziptv.sources.SourceLink): String = viaProxy(l.url, l.headers)
+
+    /** [name] gives the player a file name to go by (subtitles: "sub.vtt"). */
+    private fun viaProxy(url: String, headers: Map<String, String>, name: String? = null): String {
+        val port = lan.port().toInt()
+        if (port == 0) return url
+        fun enc(s: String) = java.net.URLEncoder.encode(s, "UTF-8")
+        return "http://127.0.0.1:$port/src/play${name?.let { "/$it" } ?: ""}?u=${enc(url)}&h=${enc(headers.entries.joinToString("\n") { "${it.key}: ${it.value}" })}"
+    }
+
+    /** The sources' links for a title (shared with the details page's 4K check, so Play often finds them ready). */
+    suspend fun sourceLinks(q: SourceQuery): List<com.ziptv.sources.SourceLink> = sourceSearch(q)?.result?.await().orEmpty()
+
+    /** The (shared, cached) search for a title; null = no TMDB id to search by. */
+    suspend fun sourceSearch(q: SourceQuery): com.ziptv.sources.SourceSearch? {
+        val id = withContext(Dispatchers.IO) {
+            q.imdb?.let { Extras.tmdbId(it, q.series) }
+                ?: runCatching { tmdb.lookup(if (q.series) ContentKind.SERIES else ContentKind.MOVIE, q.title, q.year) }.getOrNull()
+                    ?.tmdbId?.takeIf { it > 0 }?.toString()
+                ?: Extras.tmdbIdByTitle(q.title, q.year, q.series)
+        } ?: return null
+        return com.ziptv.sources.Sources.lookup(id, !q.series, q.season, q.episode)
+    }
+
+    /** Sources panel: look the links up now (without switching to them). */
+    fun findSources() {
+        val item = nowPlaying ?: return
+        val q = item.source ?: return
+        if (sourceOptions != null || searchingSources) return
+        searchingSources = true
+        scope.launch {
+            val found = runCatching { sourceLinks(q) }.getOrDefault(emptyList())
+            if (nowPlaying === item) sourceOptions = com.ziptv.sources.Sources.ranked(found, platform.screen4k, audioLanguage)
+            searchingSources = false
+        }
+    }
+
+    /** Sources panel: play [l] (null = the provider's stream) from the current position; a failure moves on to the links after it. */
+    fun useSource(l: com.ziptv.sources.SourceLink?) {
+        val item = nowPlaying ?: return
+        saveProgress()
+        val all = sourceOptions.orEmpty()
+        link = l
+        links = if (l == null) null else all.drop(all.indexOf(l) + 1).toMutableList()
+        retry = 0; playError = null; finding = null; providerLeft = false
+        l?.let { tried += it.url }
+        startStream(item)
+        watchPlayback(item)
+    }
+
+    /** Plays the next source link, searching the first time. False = nothing (left) to try. */
+    private suspend fun nextSource(item: Playable): Boolean {
+        val q = item.source ?: return false
+        val list = links ?: run {
+            val what = if (item.kind == PlayKind.Episode) "episode" else "movie"
+            finding = if (Extras.isExt(item.url)) "Finding your $what…" else "Hold on, finding your $what elsewhere…"
+            val found = runCatching { sourceLinks(q) }.getOrDefault(emptyList())
+            if (nowPlaying === item) finding = null
+            val ranked = com.ziptv.sources.Sources.ranked(found, platform.screen4k, audioLanguage)
+            if (nowPlaying === item) sourceOptions = ranked
+            ranked.filter { it.url !in tried }.toMutableList().also { links = it }
+        }
+        if (nowPlaying !== item) return false
+        link = list.removeFirstOrNull() ?: return false
+        tried += link!!.url
+        startStream(item)
+        return true
+    }
+
+    private fun watchPlayback(item: Playable, hunt4k: Boolean = false) {
         watchJob?.cancel()
         watchJob = scope.launch {
+            if (hunt4k) {
+                // Already found by the details page (its 4K badge) = instant; else up to FIND_4K_MS.
+                finding = "Looking for 4K…"
+                val l = item.source?.let { q ->
+                    runCatching { withTimeoutOrNull(FIND_4K_MS) { sourceSearch(q)?.found?.first { f -> f.any { it.is4k && it.langTier(audioLanguage) > 0 } } } }.getOrNull()
+                }?.filter { it.is4k && it.langTier(audioLanguage) > 0 }?.maxByOrNull { it.langTier(audioLanguage) } // 4K in your language
+                if (nowPlaying !== item) return@launch
+                finding = null
+                if (l != null) { link = l; tried += l.url; providerLeft = true }
+                startStream(item)
+            }
+            if (Extras.isExt(item.url) && link == null && !nextSource(item)) {
+                if (nowPlaying === item) { playError = "Not found on any source right now."; player.stop() }
+                return@launch
+            }
             var loadingSince = System.currentTimeMillis()
             var playingSince = 0L
             while (isActive && nowPlaying === item) {
@@ -580,11 +788,25 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
                     continue
                 }
                 playingSince = 0
-                val stuck = (s is PlayerState.Buffering || s == PlayerState.Idle) && t - loadingSince > LOAD_TIMEOUT_MS
+                val limit = if (item.source != null) VOD_TIMEOUT_MS else LOAD_TIMEOUT_MS
+                val stuck = (s is PlayerState.Buffering || s == PlayerState.Idle) && t - loadingSince > limit
                 // A live stream never "ends": Ended there is the provider dropping the connection.
                 if (s !is PlayerState.Failed && !(item.live && s == PlayerState.Ended) && !stuck) continue
+                if (item.source != null) {
+                    // Movies/episodes: one go on the provider, then each source link once.
+                    saveProgress()
+                    if (providerLeft) { // the 4K source failed: the provider's own copy
+                        providerLeft = false; link = null; startStream(item); loadingSince = System.currentTimeMillis(); continue
+                    }
+                    if (nextSource(item)) { loadingSince = System.currentTimeMillis(); continue }
+                    if (nowPlaying === item) {
+                        playError = if (Extras.isExt(item.url)) "Not found on any source right now." else "Your provider and the other sources couldn't play it."
+                        player.stop()
+                    }
+                    break
+                }
                 if (retry >= MAX_RETRIES) {
-                    playError = (s as? PlayerState.Failed)?.message ?: "The stream did not start."
+                    playError = "Tried 5 times. " + ((s as? PlayerState.Failed)?.message ?: "The stream did not start.")
                     player.stop()
                     break
                 }
@@ -601,7 +823,7 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
     /** "Try again" on the failure message: a fresh round of attempts. */
     fun retryNow() {
         val item = nowPlaying ?: return
-        retry = 0; playError = null
+        retry = 0; playError = null; link = null; links = null
         startStream(item)
         watchPlayback(item)
     }
@@ -610,7 +832,7 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
         pip = false
         upNextJob?.cancel(); upNext = null
         progressJob?.cancel()
-        watchJob?.cancel(); retry = 0; playError = null
+        watchJob?.cancel(); retry = 0; playError = null; link = null; links = null; finding = null; sourceOptions = null
         saveProgress()
         player.stop()
         nowPlaying = null
@@ -636,7 +858,7 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
         user?.setProgress(p); userVersion++
         val now = System.currentTimeMillis()
         val pid = active?.remoteId ?: active?.id ?: ""
-        if (now - lastCloudBackup > 30_000) { // companion hand-off mirror, throttled
+        if (now - lastCloudBackup > 30_000 && !Extras.isExt(item.streamId)) { // companion hand-off mirror, throttled (extras: this device only)
             lastCloudBackup = now
             scope.launch(Dispatchers.IO) { cloud.recordHistory(pid, p) }
         }
@@ -644,6 +866,14 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
 
     fun resume(p: WatchProgress) {
         val lib = library ?: return
+        val movie = p.kind == ContentKind.MOVIE
+        val se = Regex("""S(\d+)E(\d+)""").find(p.title.substringAfter(" · ", ""))
+        val q = SourceQuery(p.title.substringBefore(" · "), p.subtitle.takeIf { movie && it.matches(Regex("""\d{4}.*""")) }, !movie,
+            se?.groupValues?.get(1)?.toInt(), se?.groupValues?.get(2)?.toInt(), Extras.imdbOf(if (movie) p.streamId else p.seriesId) ?: Extras.imdbOf(p.streamId))
+        if (Extras.isExt(p.streamId)) {
+            play(Playable(p.title, p.subtitle, p.streamId, if (movie) PlayKind.Movie else PlayKind.Episode, p.streamId, p.image, null, p.seriesId, q), full = true)
+            return
+        }
         // From the other device: the cloud keeps no file type, so find it in this catalog first.
         if (p.extension == null) {
             scope.launch {
@@ -659,7 +889,7 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
         }
         val url = if (p.kind == ContentKind.MOVIE) lib.movieUrl(p.streamId, p.extension) else lib.episodeUrl(p.streamId, p.extension)
         play(Playable(p.title, p.subtitle, url, if (p.kind == ContentKind.MOVIE) PlayKind.Movie else PlayKind.Episode,
-            p.streamId, p.image, p.extension, p.seriesId), full = true)
+            p.streamId, p.image, p.extension, p.seriesId, q), full = true)
     }
 
     fun playCatchup(ch: Channel, title: String, start: Long, end: Long) {
@@ -715,7 +945,8 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
     }
 
     fun moviePlayable(lib: Provider, m: Movie) =
-        Playable(m.name, m.year ?: "Movie", lib.movieUrl(m.streamId, m.extension), PlayKind.Movie, m.streamId, m.poster, m.extension)
+        Playable(m.name, m.year ?: "Movie", if (Extras.isExt(m.streamId)) m.streamId else lib.movieUrl(m.streamId, m.extension),
+            PlayKind.Movie, m.streamId, m.poster, m.extension, source = SourceQuery(m.name, m.year, series = false, imdb = Extras.imdbOf(m.streamId)))
 
     fun setSetting(key: String, value: String?) { user?.setSetting(key, value); userVersion++ }
 
@@ -742,6 +973,22 @@ class AppModel(val platform: Platform, val scope: CoroutineScope) {
         userVersion++
         nowPlaying?.let { item -> val full = fullscreen; nowPlaying = null; play(item, full) }
         error = if (on) "Upscaler on (sharper picture)" else "Upscaler off"
+    }
+
+    /** Settings > Playback > Audio language (ISO code); English unless changed. Sources in it play first. */
+    val audioLanguage: String get() = user?.setting("audio_lang") ?: "en"
+
+    fun setAudioLanguage(code: String) {
+        setSetting("audio_lang", code.takeIf { it != "en" })
+        player.audioLanguage = code
+    }
+
+    /** Picture size button: Fit -> Fill -> Stretch, remembered per playlist like the other picture settings. */
+    fun nextPictureSize() {
+        val next = PictureSize.entries[(player.pictureSize.ordinal + 1) % PictureSize.entries.size]
+        player.pictureSize = next
+        setSetting("picture", next.name.takeIf { next != PictureSize.Fit })
+        error = when (next) { PictureSize.Fit -> "Fit"; PictureSize.Fill -> "Fill"; PictureSize.Stretch -> "Stretch" }
     }
 
     /** Records the live channel until the current show ends (1h when there's no guide). */

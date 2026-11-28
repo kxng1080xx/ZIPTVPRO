@@ -25,6 +25,10 @@ import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Cast
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.AspectRatio
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.FiberManualRecord
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
@@ -59,11 +63,26 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.dp
 
-private enum class Pop { None, More, Tracks, Sleep, Volume, Cast }
+private enum class Pop { None, More, Tracks, Sleep, Volume, Cast, Sources, Info }
+
+/** "4K", "1080p"…; null when the source didn't say. */
+private fun heightLabel(h: Int) = when { h >= 2160 -> "4K"; h > 0 -> "${h}p"; else -> null }
 
 /**
  * v9's player control row + its popovers, shared by fullscreen and the Live
@@ -104,6 +123,9 @@ fun BoxScope.PlayerChrome(model: AppModel, item: Playable, inFullscreen: Boolean
         if (item.live || item.kind == PlayKind.Catchup) {
             ControlIcon(Icons.Rounded.Sensors, if (item.live) "Go to live" else "Back to live", size) { model.goLive(); onInteract() }
         }
+        ControlIcon(Icons.Rounded.AspectRatio, "Picture size: ${model.player.pictureSize.name}", size) { model.nextPictureSize(); onInteract() }
+        if (item.source != null) ControlIcon(Icons.Rounded.Cloud, "Sources", size, selected = pop == Pop.Sources) { open(Pop.Sources) }
+        ControlIcon(Icons.Rounded.Info, "Stream info", size, selected = pop == Pop.Info) { open(Pop.Info) }
         ControlIcon(if (model.player.muted) Icons.Rounded.VolumeOff else Icons.Rounded.VolumeUp, "Volume", size) { open(Pop.Volume) }
         ControlIcon(Icons.Rounded.MoreHoriz, "More options", size, selected = pop == Pop.More) { open(Pop.More) }
         ControlIcon(Icons.Rounded.PictureInPictureAlt, "Picture in picture", size) {
@@ -120,7 +142,9 @@ fun BoxScope.PlayerChrome(model: AppModel, item: Playable, inFullscreen: Boolean
     // Phone page player is too short for a popover: menus come up as a bottom sheet instead.
     val sheet = !inFullscreen && !wide
     @Composable fun Menu(content: @Composable () -> Unit) =
-        if (sheet) Sheet({ pop = Pop.None }, content) else Popover(popMod, content)
+        if (sheet) Sheet({ pop = Pop.None }, content) else Popover(popMod, { pop = Pop.None }, content)
+    // Esc (PC) / Back (remote) closes the open menu, not the player.
+    model.platform.BackHandler(enabled = pop != Pop.None) { pop = Pop.None }
     when (pop) {
         Pop.More -> Menu {
             MenuItem(Icons.Rounded.Translate, "Audio track") { pop = Pop.Tracks }
@@ -145,17 +169,57 @@ fun BoxScope.PlayerChrome(model: AppModel, item: Playable, inFullscreen: Boolean
             MenuItem(Icons.Rounded.Stop, "Stop") { pop = Pop.None; model.stop() }
         }
         Pop.Tracks -> Menu {
+            LaunchedEffect(item) { model.findSources() } // the anime audio choices come from the links found
             val audio = remember { model.player.audioTracks() }
             val subs = remember { model.player.subtitleTracks() }
+            val onAudio = remember { model.player.audioTrack() }
+            val onSub = remember { model.player.subtitleTrack() }
+            val choices = model.sourceOptions.let { model.audioChoices() }
+            @Composable fun Choice(label: String, on: Boolean, pick: () -> Unit) =
+                MenuItem(if (on) Icons.Rounded.Check else null, label, tint = if (on) Z.focus else Z.text) { pick(); pop = Pop.None }
             MenuItem(Icons.Rounded.ArrowBack, "Back") { pop = Pop.More }
             Label("AUDIO")
-            if (audio.isEmpty()) Text("Only one track", color = Z.textMuted, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
-            audio.forEach { t -> MenuItem(null, t.name) { model.player.selectAudio(t.id); pop = Pop.None } }
+            // Anime: Japanese (Sub) / English (Dub)… each is another source, picked up at the same moment.
+            choices.forEach { (label, l) -> Choice(label, l == model.link) { if (l != model.link) model.useSource(l) } }
+            if (choices.isEmpty() || audio.size > 1) {
+                if (audio.size <= 1 && choices.isEmpty()) Text("Only one track", color = Z.textMuted, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+                else audio.forEach { t -> Choice(t.name, t.id == onAudio) { model.player.selectAudio(t.id) } }
+            }
             Label("SUBTITLES")
-            MenuItem(null, "Off") { model.player.selectSubtitle(-1); pop = Pop.None }
-            subs.filter { it.id >= 0 }.forEach { t -> MenuItem(null, t.name) { model.player.selectSubtitle(t.id); pop = Pop.None } }
+            Choice("Off", onSub < 0) { model.player.selectSubtitle(-1) }
+            subs.filter { it.id >= 0 }.forEach { t -> Choice(t.name, t.id == onSub) { model.player.selectSubtitle(t.id) } }
         }
         Pop.Cast -> Menu { CastPicker(model, item) { pop = Pop.None } }
+        // Where this movie/episode can play from: the provider, then every link the built-in sources found (best first).
+        Pop.Sources -> Menu {
+            LaunchedEffect(item) { model.findSources() }
+            val now = model.link
+            if (!Extras.isExt(item.url)) {
+                MenuItem(if (now == null) Icons.Rounded.Check else null, "Your provider", tint = if (now == null) Z.focus else Z.text) {
+                    model.useSource(null); pop = Pop.None
+                }
+            }
+            val opts = model.sourceOptions
+            when {
+                opts == null -> Text("Searching…", color = Z.textMuted, modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp))
+                opts.isEmpty() -> Text("No other sources found", color = Z.textMuted, modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp))
+                else -> opts.sortedByDescending { it.height }.forEach { l -> // 4K at the top, then 1080p…
+                    val on = l == now
+                    MenuItem(if (on) Icons.Rounded.Check else null, listOfNotNull(heightLabel(l.height), l.source).joinToString(" · "),
+                        tint = if (on) Z.focus else Z.text) { model.useSource(l); pop = Pop.None }
+                }
+            }
+        }
+        Pop.Info -> Menu {
+            val picture by androidx.compose.runtime.produceState(model.player.videoSize(), item) {
+                while (true) { value = model.player.videoSize(); kotlinx.coroutines.delay(1000) }
+            }
+            val l = model.link
+            InfoRow("Playing from", l?.source ?: "Your provider")
+            l?.let { heightLabel(it.height) }?.let { InfoRow("Listed as", it) }
+            InfoRow("Picture", picture?.let { (w, h) -> "$w × $h" + (heightLabel(if (w >= 3800) 2160 else h)?.let { " ($it)" } ?: "") } ?: "Loading…")
+            InfoRow("Your screen", if (model.platform.screen4k) "4K" else "HD")
+        }
         Pop.Sleep -> Menu {
             MenuItem(Icons.Rounded.ArrowBack, "Back") { pop = Pop.More }
             listOf(15, 30, 45, 60, 90, 120).forEach { m -> MenuItem(null, "$m minutes") { model.setSleepTimer(m); pop = Pop.None } }
@@ -176,8 +240,25 @@ fun BoxScope.PlayerChrome(model: AppModel, item: Playable, inFullscreen: Boolean
             val sidePad = if (inFullscreen) 24.dp else 10.dp
             val endPad = sidePad + size * 3 + 30.dp + (size - 52.dp) / 2  // over the Volume button (FS, PiP, More to its right)
             var v by remember { mutableFloatStateOf(model.player.volume / 100f) }
+            // D-pad / arrows: the panel takes focus when it opens; Up/Down = louder/quieter, OK = mute,
+            // Left/Right/Back = close. (The slider is rotated, so its own arrow keys would go sideways.)
+            val volFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+            LaunchedEffect(Unit) { runCatching { volFocus.requestFocus() } }
+            fun nudge(by: Float) { v = (v + by).coerceIn(0f, 1f); model.player.volume = (v * 100).toInt(); model.player.muted = false; onInteract() }
             Column(
                 Modifier.align(Alignment.BottomEnd).padding(end = endPad.coerceAtLeast(0.dp), bottom = size + if (inFullscreen) 36.dp else 18.dp)
+                    .focusRequester(volFocus)
+                    .onPreviewKeyEvent { e ->
+                        if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        when (e.key) {
+                            Key.DirectionUp -> { nudge(0.05f); true }
+                            Key.DirectionDown -> { nudge(-0.05f); true }
+                            Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> { model.player.muted = !model.player.muted; onInteract(); true }
+                            Key.DirectionLeft, Key.DirectionRight, Key.Back, Key.Escape -> { pop = Pop.None; true }
+                            else -> false
+                        }
+                    }
+                    .focusRing(RoundedCornerShape(26.dp), lift = 1f).focusable()
                     .width(52.dp).clip(RoundedCornerShape(26.dp)).background(Z.bg.copy(alpha = 0.92f)).padding(vertical = 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
@@ -204,9 +285,18 @@ private fun Sheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun Popover(modifier: Modifier, content: @Composable () -> Unit) {
+private fun Popover(modifier: Modifier, onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    // D-pad: focus moves onto the menu's first item when it opens (it stayed on the button below);
+    // Back / Escape closes the menu instead of leaving the player.
+    val enter = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { enter.requestFocus() } }
     Column(
-        modifier.widthIn(min = 220.dp, max = 280.dp).heightIn(max = 360.dp).clip(RoundedCornerShape(14.dp))
+        // Focus stays inside an open menu: the arrows can't wander onto the buttons behind it.
+        modifier.focusRequester(enter).focusProperties { onExit = { cancelFocusChange() } }.focusGroup()
+            .onPreviewKeyEvent { e ->
+                if (e.type == KeyEventType.KeyDown && (e.key == Key.Back || e.key == Key.Escape)) { onDismiss(); true } else false
+            }
+            .widthIn(min = 220.dp, max = 280.dp).heightIn(max = 360.dp).clip(RoundedCornerShape(14.dp))
             .background(Z.bg.copy(alpha = 0.96f)).verticalScroll(rememberScrollState()).padding(6.dp),
     ) { content() }
 }
@@ -224,16 +314,49 @@ private fun MenuItem(icon: ImageVector?, label: String, tint: Color = Z.text, on
 }
 
 @Composable
+private fun InfoRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Text(label, color = Z.textMuted, modifier = Modifier.width(104.dp))
+        Text(value, color = Z.text, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
 private fun Label(text: String) =
     Text(text, color = Z.textMuted, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 2.dp))
 
 @Composable
 private fun ControlIcon(icon: ImageVector, label: String, size: Dp, selected: Boolean = false, onClick: () -> Unit) {
+    val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val hovered by source.collectIsHoveredAsState()
+    var focused by remember { mutableStateOf(false) }
     Box(
-        Modifier.size(size).focusRing(RoundedCornerShape(10.dp), lift = 1.06f).clip(RoundedCornerShape(10.dp))
-            .background(if (selected) Color.White.copy(alpha = 0.18f) else Color.Transparent).clickable(onClick = onClick),
+        Modifier.size(size).onFocusChanged { focused = it.isFocused }.focusRing(RoundedCornerShape(10.dp), lift = 1.06f).clip(RoundedCornerShape(10.dp))
+            .background(if (selected) Color.White.copy(alpha = 0.18f) else Color.Transparent)
+            .hoverable(source).clickable(source, androidx.compose.material3.ripple(), onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { Icon(icon, label, tint = Color.White, modifier = Modifier.size(size * 0.55f)) }
+    ) {
+        Icon(icon, label, tint = Color.White, modifier = Modifier.size(size * 0.55f))
+        // What the button does, above it: on mouse hover, and on D-pad focus (TV). Hidden while its menu is open.
+        if ((hovered || focused) && !selected) {
+            androidx.compose.ui.window.Popup(popupPositionProvider = AboveAnchor,
+                properties = androidx.compose.ui.window.PopupProperties(focusable = false)) {
+                Text(label, color = Color.White, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Z.bg.copy(alpha = 0.92f))
+                        .padding(horizontal = 10.dp, vertical = 5.dp))
+            }
+        }
+    }
+}
+
+/** Centred above the button, 8 px clear of it, kept on screen. */
+private object AboveAnchor : androidx.compose.ui.window.PopupPositionProvider {
+    override fun calculatePosition(anchorBounds: androidx.compose.ui.unit.IntRect, windowSize: androidx.compose.ui.unit.IntSize,
+                                   layoutDirection: androidx.compose.ui.unit.LayoutDirection, popupContentSize: androidx.compose.ui.unit.IntSize) =
+        androidx.compose.ui.unit.IntOffset(
+            (anchorBounds.left + (anchorBounds.width - popupContentSize.width) / 2).coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0)),
+            (anchorBounds.top - popupContentSize.height - 8).coerceAtLeast(0),
+        )
 }
 
 /** Rotates a horizontal control to vertical (bottom = min) and swaps its measured width/height. */

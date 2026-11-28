@@ -53,8 +53,16 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")
     implementation("io.coil-kt.coil3:coil-compose:3.6.3")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.6.3")
+    // Built-in movie/series sources (shared/kotlin/com/ziptv/sources); Android has org.json built in.
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.json:json:20240303")
+    // Anime sources: CinemaOS JS plugins in QuickJS (shared/kotlin/com/ziptv/plugins, ported from Nuvio).
+    implementation("io.github.dokar3:quickjs-kt:1.0.15")
+    implementation("com.fleeksoft.ksoup:ksoup:0.2.6")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0")
     implementation("net.java.dev.jna:jna:5.19.1")
     implementation("uk.co.caprica:vlcj:4.12.1")
+    testImplementation(kotlin("test"))
 }
 
 compose.desktop {

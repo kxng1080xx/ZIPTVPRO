@@ -63,6 +63,10 @@ class DesktopPlatform : Platform {
         }
     }
     override val ownPipWindow = true
+    /** Any attached monitor at 3840 px or more (physical pixels, whatever the Windows scaling). */
+    override val screen4k: Boolean by lazy {
+        runCatching { java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices.any { it.displayMode.width >= 3840 } }.getOrDefault(false)
+    }
 
     // Auto-update: download the installer here, then close, install with just a progress bar
     // (per-user MSI: no admin prompt) and reopen. Installed app only.
@@ -170,6 +174,9 @@ private fun app(minimized: Boolean, pending: java.util.concurrent.CompletableFut
         ready = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { pending.get() }.also { it.start() }
     }
     val windowState = rememberWindowState(width = 1440.dp, height = 900.dp)
+    // Keyboard = remote: arrow keys nobody used move focus (Android does this for the D-pad; the desktop
+    // doesn't). Window level, so it also works while nothing has focus yet (then the first item gets it).
+    val focus = remember { arrayOfNulls<androidx.compose.ui.focus.FocusManager>(1) }
     androidx.compose.runtime.LaunchedEffect(Unit) { if (minimized) windowState.isMinimized = true }
     Window(
         onCloseRequest = { ready?.player?.release(); exitApplication() },
@@ -180,7 +187,20 @@ private fun app(minimized: Boolean, pending: java.util.concurrent.CompletableFut
                 backHandlers.lastOrNull { it.first() }?.second?.invoke()?.let { true } ?: false
             } else false
         },
+        onKeyEvent = { e ->
+            val dir = when (e.key) {
+                Key.DirectionUp -> androidx.compose.ui.focus.FocusDirection.Up
+                Key.DirectionDown -> androidx.compose.ui.focus.FocusDirection.Down
+                Key.DirectionLeft -> androidx.compose.ui.focus.FocusDirection.Left
+                Key.DirectionRight -> androidx.compose.ui.focus.FocusDirection.Right
+                else -> null
+            }
+            val fm = focus[0]
+            if (e.type != KeyEventType.KeyDown || dir == null || fm == null) false
+            else { fm.moveFocus(dir) || fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Next); true }
+        },
     ) {
+        focus[0] = androidx.compose.ui.platform.LocalFocusManager.current
         val model = ready ?: return@Window StartupScreen(DeviceClass.Desktop)
         val full by wantFullscreen.collectAsState()
         // Real fullscreen the way browsers do it on Windows: drop the caption/frame style,

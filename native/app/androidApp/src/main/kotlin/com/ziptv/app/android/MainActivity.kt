@@ -109,6 +109,11 @@ fun detectDevice(ctx: Context): DeviceClass {
 class AndroidPlatform(private val activity: ComponentActivity) : Platform {
     override val device = detectDevice(activity)
     override val cloudPlatform = "apk"
+    /** The panel's best mode: TV boxes draw their UI at 1080p on a 4K TV, but list the 4K mode. */
+    @Suppress("DEPRECATION")
+    override val screen4k: Boolean by lazy {
+        runCatching { activity.windowManager.defaultDisplay.supportedModes.any { maxOf(it.physicalWidth, it.physicalHeight) >= 3840 } }.getOrDefault(false)
+    }
     override val appVersion: String =
         activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "10"
 
