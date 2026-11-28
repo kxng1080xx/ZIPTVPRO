@@ -16,6 +16,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -96,4 +101,31 @@ fun Modifier.focusRing(shape: Shape = RoundedCornerShape(12.dp), lift: Float = 1
         .onFocusChanged { focused = it.isFocused || it.hasFocus }
         .graphicsLayer { scaleX = scale; scaleY = scale }
         .border(if (focused) 3.dp else 0.dp, if (focused) Z.focus else Color.Transparent, shape)
+}
+
+
+/** TV: the D-pad landing on a text field must not pop the on-screen keyboard; it opens when you press OK (see [okOpensKeyboard]). */
+@Composable
+fun tvKeyboard(base: androidx.compose.foundation.text.KeyboardOptions = androidx.compose.foundation.text.KeyboardOptions.Default) =
+    if (LocalDevice.current == DeviceClass.Tv) base.copy(showKeyboardOnFocus = false) else base
+
+/**
+ * TV: OK on a focused text field opens the keyboard (pair with [tvKeyboard]), and the D-pad arrows move focus
+ * out of the field instead of getting trapped moving the text cursor. Elsewhere: no change.
+ */
+fun Modifier.okOpensKeyboard(): Modifier = composed {
+    if (LocalDevice.current != DeviceClass.Tv) return@composed Modifier
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    Modifier.onPreviewKeyEvent { e ->
+        val down = e.type == KeyEventType.KeyDown
+        when (e.key) {
+            Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> { if (down) keyboard?.show(); true }
+            Key.DirectionUp -> { if (down) focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Up); true }
+            Key.DirectionDown -> { if (down) focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Down); true }
+            Key.DirectionLeft -> { if (down) focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Left); true }
+            Key.DirectionRight -> { if (down) focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Right); true }
+            else -> false
+        }
+    }
 }

@@ -241,7 +241,7 @@ fun WatchJoinField(model: AppModel, onJoined: () -> Unit = {}) {
     var busy by androidx.compose.runtime.remember { mutableStateOf(false) }
     Row(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         androidx.compose.material3.OutlinedTextField(input, { input = it.filter(Char::isLetter).uppercase().take(4) },
-            singleLine = true, label = { Text("Room code") }, modifier = Modifier.weight(1f),
+            singleLine = true, label = { Text("Room code") }, modifier = Modifier.weight(1f).okOpensKeyboard(), keyboardOptions = tvKeyboard(),
             colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(focusedBorderColor = Z.focus, unfocusedBorderColor = Z.surfaceHigh))
         androidx.compose.foundation.layout.Spacer(Modifier.size(10.dp))
         BannerButton(if (busy) "Joining…" else "Join", primary = input.length == 4) {

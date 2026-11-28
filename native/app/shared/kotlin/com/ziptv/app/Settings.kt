@@ -251,9 +251,9 @@ private fun CompanionGroup(model: AppModel) {
             SettingRow(Icons.Rounded.Devices, "Pair a phone and a PC", "Continue watching across PC & mobile")
             Row(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(pairCode, { pairCode = it.uppercase().take(8) }, singleLine = true,
-                    label = { Text("Other device's code") },
+                    label = { Text("Other device's code") }, keyboardOptions = tvKeyboard(),
                     colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Z.focus, unfocusedBorderColor = Z.surfaceHigh),
-                    modifier = Modifier.weight(1f))
+                    modifier = Modifier.weight(1f).okOpensKeyboard())
                 Spacer(Modifier.width(10.dp))
                 Chip("Pair", pairCode.length >= 4) {
                     if (pairCode.length >= 4) scope.launch {

@@ -100,11 +100,20 @@ fun PlayerScreen(model: AppModel) {
     val tv = LocalDevice.current == DeviceClass.Tv
     val primary = remember { FocusRequester() }
     var focusAt by remember { mutableStateOf(0) } // 0 = elsewhere, 1 = this box, 2 = a control inside it
+    // Movies/series: Left/Right with the controls hidden start scrubbing, and focus lands on the seek bar
+    // (not Play/Pause) so the next presses keep seeking.
+    val scrub = remember { SeekScrub() }
+    val seekBar = remember { FocusRequester() }
+    var toSeekBar by remember { mutableStateOf(false) }
     // PC keyboard: once a key is pressed, focus follows the controls exactly like a TV remote (arrows move between
     // buttons, Enter presses); moving the mouse goes back to mouse mode.
     var keys by remember { mutableStateOf(false) }
-    LaunchedEffect(tv, keys, controls, focusAt, popOpen, state) {
+    LaunchedEffect(tv, keys, controls, focusAt, popOpen, state, toSeekBar) {
         if (!(tv || keys) || popOpen) return@LaunchedEffect // menus/sheets manage their own focus
+        if (controls && toSeekBar) {
+            toSeekBar = false
+            if (runCatching { seekBar.requestFocus() }.isSuccess) return@LaunchedEffect
+        }
         if (controls && focusAt != 2) runCatching { primary.requestFocus() }
         else if (!controls && focusAt != 1) runCatching { focus.requestFocus() }
     }
@@ -121,10 +130,15 @@ fun PlayerScreen(model: AppModel) {
             .onPreviewKeyEvent { e ->
                 poke++
                 if (!tv && e.type == KeyEventType.KeyDown) keys = true
+                if (e.type == KeyEventType.KeyUp) scrub.release() // a held arrow speeds scrubbing up; letting go resets it
                 if (e.type != KeyEventType.KeyDown || controls) return@onPreviewKeyEvent false
-                // TV: the arrows are how you reach the on-screen controls, so with the controls hidden an
-                // arrow only brings them up (poke above; focus lands on Play/Pause) and changes nothing.
-                // The remote's own CH+/CH-/play-pause buttons stay shortcuts.
+                // TV: the arrows are how you reach the on-screen controls, so with the controls hidden Up/Down
+                // only bring them up (poke above; focus lands on Play/Pause). On a movie/series Left/Right
+                // seek (like any TV player) and hand focus to the seek bar. CH+/CH-/play-pause stay shortcuts.
+                if (tv && item.seekable && (e.key == Key.DirectionLeft || e.key == Key.DirectionRight)) {
+                    scrub.nudge(model, e.key == Key.DirectionRight); toSeekBar = true
+                    return@onPreviewKeyEvent true
+                }
                 if (tv && e.key in setOf(Key.DirectionUp, Key.DirectionDown, Key.DirectionLeft, Key.DirectionRight)) return@onPreviewKeyEvent true
                 // Controls hidden: remote/keyboard shortcuts (v9 parity).
                 when (e.key) {
@@ -164,7 +178,7 @@ fun PlayerScreen(model: AppModel) {
                 if (item.live && model.zapList.size > 1 && LocalWide.current) ChannelPanel(model, item, Modifier.align(Alignment.TopStart)) { poke++ }
                 // The failure message and its Try again sit in the centre; don't cover them.
                 if (model.playError == null) CenterControls(model, item, state, primary, Modifier.align(Alignment.Center)) { poke++ }
-                PlayerChrome(model, item, inFullscreen = true, onActive = { popOpen = it }, onInteract = { poke++ })
+                PlayerChrome(model, item, inFullscreen = true, onActive = { popOpen = it }, onInteract = { poke++ }, scrub = scrub, seekFocus = seekBar)
             }
         }
     }

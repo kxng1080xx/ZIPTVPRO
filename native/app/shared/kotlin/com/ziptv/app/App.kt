@@ -65,6 +65,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -120,6 +123,11 @@ fun App(model: AppModel) {
             val short = wide && model.platform.device == DeviceClass.Touch && maxHeight < 480.dp
             val logoTransform = androidx.compose.runtime.remember { model.platform.logoTransformation() }
             CompositionLocalProvider(LocalWide provides wide, LocalShort provides short, LocalLogoTransform provides logoTransform) {
+                // The pages stay composed under the fullscreen player. Keep the D-pad out of them while it's up:
+                // otherwise focus can slip behind the video onto e.g. the header's search box (keyboard pops up).
+                Box(Modifier.fillMaxSize()
+                    .focusProperties { onEnter = { if ((model.fullscreen && model.nowPlaying != null) || model.update != null) cancelFocusChange() } }
+                    .focusGroup()) {
                 AnimatedContent(model.screen, contentKey = { it::class }, // sync progress text doesn't re-animate
                     transitionSpec = { fadeIn(tween(260)) togetherWith fadeOut(tween(160)) }) { s ->
                     when (s) {
@@ -128,6 +136,7 @@ fun App(model: AppModel) {
                         is Screen.Syncing -> SyncingScreen(s.message)
                         Screen.Main -> MainScaffold(model, wide)
                     }
+                }
                 }
                 // Exits stay short: the video surface can only be in one place at a time.
                 AnimatedVisibility(miniPlayerVisible(model, wide),
@@ -144,11 +153,11 @@ fun App(model: AppModel) {
                 ReminderBanner(model, Modifier.align(Alignment.TopCenter))
                 WatchBanner(model, Modifier.align(Alignment.TopCenter)) // over the player too
                 CastBanner(model, Modifier.align(Alignment.BottomCenter).padding(bottom = if (LocalWide.current) 0.dp else 80.dp))
-                UpdateBanner(model, Modifier.align(Alignment.BottomStart))
                 model.error?.let { msg ->
                     LaunchedEffect(msg) { delay(5000); model.error = null }
                     Snackbar(Modifier.align(Alignment.BottomCenter).padding(24.dp).widthIn(max = 560.dp)) { Text(msg) }
                 }
+                UpdateBanner(model, Modifier) // a centred dialog over everything (topmost)
             }
         }
     }
@@ -244,6 +253,12 @@ private fun MainScaffold(model: AppModel, wide: Boolean) {
     // Leaving Live TV keeps playing: wide layouts show the mini player; compact (phones) stop.
     androidx.compose.runtime.LaunchedEffect(model.tab) {
         if (!wide && model.tab != Tab.Live && !model.fullscreen && model.nowPlaying != null) model.stop()
+    }
+    // TV: playback never drops into the corner mini player by itself — only when the user picks picture-in-picture.
+    // Leaving fullscreen (Back) stops it unless the page has its own preview (the Live channel list).
+    val tv = model.platform.device == DeviceClass.Tv
+    androidx.compose.runtime.LaunchedEffect(tv, model.tab, model.showGuide, model.fullscreen, model.pip, model.nowPlaying) {
+        if (tv && model.nowPlaying != null && !model.fullscreen && !model.pip && !(model.tab == Tab.Live && !model.showGuide)) model.stop()
     }
     // Only hidden, never moved: a web tab's page must stay in place in the tree or it reloads.
     val webFull = model.webFullscreen && model.tab == Tab.Web
@@ -463,7 +478,8 @@ private fun HeaderSearch(model: AppModel, modifier: Modifier) {
         singleLine = true,
         textStyle = MaterialTheme.typography.bodyLarge.copy(color = Z.text),
         cursorBrush = androidx.compose.ui.graphics.SolidColor(Z.focus),
-        modifier = modifier.focusRing(RoundedCornerShape(50), lift = 1f),
+        keyboardOptions = tvKeyboard(),
+        modifier = modifier.okOpensKeyboard().focusRing(RoundedCornerShape(50), lift = 1f),
         decorationBox = { inner ->
             Row(
                 Modifier.clip(RoundedCornerShape(50)).background(Z.surface).padding(horizontal = 16.dp, vertical = 10.dp),
@@ -509,40 +525,62 @@ private fun TabContent(model: AppModel) {
     } }
 }
 
+/**
+ * "Update available" as a centred dialog over a dimmed screen. The remote lands on Update right away and can't
+ * wander off it onto the page behind; Back = Later. Waits while a video is fullscreen (never interrupts playback).
+ */
 @Composable
 private fun UpdateBanner(model: AppModel, modifier: Modifier) {
     val u = model.update ?: return
-    Row(
-        modifier.padding(16.dp).widthIn(max = 520.dp).clip(RoundedCornerShape(14.dp)).background(Z.surfaceHigh).padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    if (model.fullscreen && model.nowPlaying != null) return
+    val updateFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(u.version) { delay(50); runCatching { updateFocus.requestFocus() } }
+    model.platform.BackHandler(enabled = true) { model.dismissUpdate() }
+    Box(
+        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f))
+            // Swallow taps/clicks so the page behind can't be used while the dialog is up.
+            .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } },
+        contentAlignment = Alignment.Center,
     ) {
-        var progress by remember { mutableStateOf<Float?>(null) }
-        Column(Modifier.weight(1f)) {
-            Text("ZIPTV Pro ${u.version} is available", fontWeight = FontWeight.Bold)
-            val p = progress
-            if (p == null) Text("You have ${model.platform.appVersion}", color = Z.textMuted, style = MaterialTheme.typography.bodyMedium)
-            else {
-                Text("Downloading… ${(p * 100).toInt()}%", color = Z.textMuted, style = MaterialTheme.typography.bodyMedium)
-                androidx.compose.material3.LinearProgressIndicator(progress = { p }, color = Z.focus, trackColor = Z.surface,
-                    modifier = Modifier.padding(top = 6.dp).fillMaxWidth())
-            }
+    var progress by remember { mutableStateOf<Float?>(null) }
+    Column(
+        Modifier.padding(24.dp).widthIn(max = 480.dp).fillMaxWidth().shadow(24.dp, RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(20.dp)).background(Z.surfaceHigh)
+            // Focus stays in the dialog: the arrows only move between its buttons.
+            .focusProperties { onExit = { cancelFocusChange() } }.focusGroup()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text("ZIPTV Pro ${u.version} is available", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+        val p = progress
+        if (p == null) Text("You have ${model.platform.appVersion}", color = Z.textMuted, style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(top = 6.dp))
+        else {
+            Text("Downloading… ${(p * 100).toInt()}%", color = Z.textMuted, style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 6.dp))
+            androidx.compose.material3.LinearProgressIndicator(progress = { p }, color = Z.focus, trackColor = Z.surface,
+                modifier = Modifier.padding(top = 10.dp).fillMaxWidth())
         }
-        TextButton(onClick = {
-            if (progress != null) return@TextButton
-            if (!model.platform.inAppUpdate) { if (!model.platform.openUrl(u.url)) model.error = "Couldn't open the download"; return@TextButton }
-            // v9's built-in downloader: no browser needed (Fire TV has none that installs APKs).
-            progress = 0f
-            model.scope.launch {
-                val err = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    model.platform.downloadAndInstall(u.url) { f -> progress = f }
+        Row(Modifier.padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            TextButton(onClick = { model.dismissUpdate() }, modifier = Modifier.focusRing()) { Text("Later", color = Z.textMuted) }
+            TextButton(onClick = {
+                if (progress != null) return@TextButton
+                if (!model.platform.inAppUpdate) { if (!model.platform.openUrl(u.url)) model.error = "Couldn't open the download"; return@TextButton }
+                // v9's built-in downloader: no browser needed (Fire TV has none that installs APKs).
+                progress = 0f
+                model.scope.launch {
+                    val err = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        model.platform.downloadAndInstall(u.url) { f -> progress = f }
+                    }
+                    progress = null
+                    err?.let { model.error = it }
                 }
-                progress = null
-                err?.let { model.error = it }
+            }, modifier = Modifier.focusRequester(updateFocus).focusRing().clip(RoundedCornerShape(50)).background(Z.accentGradient)) {
+                Text(if (progress == null) "Update now" else "Downloading…", color = Color.White, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 8.dp))
             }
-        }, modifier = Modifier.focusRing()) {
-            Text(if (progress == null) "Update" else "…", color = Z.focus)
         }
-        TextButton(onClick = { model.dismissUpdate() }, modifier = Modifier.focusRing()) { Text("Later", color = Z.textMuted) }
+    }
     }
 }
 

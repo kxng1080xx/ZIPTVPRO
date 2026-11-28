@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 fun miniPlayerVisible(model: AppModel, wide: Boolean): Boolean =
     model.screen == Screen.Main && !model.fullscreen && model.nowPlaying != null &&
         !(model.pip && model.platform.ownPipWindow) && // PC: the floating PiP window has the video
+        (model.pip || model.platform.device != DeviceClass.Tv) && // TV: only when the user asked for picture-in-picture
         (model.pip || !(model.tab == Tab.Live && !model.showGuide)) // the Live page has its own preview unless PiP was asked for
 
 /**

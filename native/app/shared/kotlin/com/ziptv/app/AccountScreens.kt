@@ -244,10 +244,10 @@ private fun hostPort(url: String) = url.trim().substringAfter("://").substringBe
 private fun Field(label: String, value: String, keyboard: KeyboardType = KeyboardType.Text, secret: Boolean = false, onChange: (String) -> Unit) {
     OutlinedTextField(
         value = value, onValueChange = onChange, label = { Text(label) }, singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = keyboard, autoCorrectEnabled = false),
+        keyboardOptions = tvKeyboard(KeyboardOptions(keyboardType = keyboard, autoCorrectEnabled = false)),
         visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
         colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Z.focus, unfocusedBorderColor = Z.surfaceHigh),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().okOpensKeyboard(),
     )
 }
 

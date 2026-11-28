@@ -492,7 +492,7 @@ private fun AddToListDialog(model: AppModel, m: Movie, onDismiss: () -> Unit) {
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(name, { name = it }, Modifier.weight(1f), singleLine = true,
+                OutlinedTextField(name, { name = it }, Modifier.weight(1f).okOpensKeyboard(), singleLine = true, keyboardOptions = tvKeyboard(),
                     placeholder = { Text("New playlist, e.g. Transformers") })
                 TextButton(onClick = { model.toggleInList(name, m.streamId); name = "" }, enabled = name.isNotBlank()) { Text("Create") }
             }
@@ -694,7 +694,8 @@ fun SearchScreen(model: AppModel) {
             OutlinedTextField(
                 query, { model.searchQuery = it }, singleLine = true, placeholder = { Text("Search live, movies & series…") },
                 colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Z.focus, unfocusedBorderColor = Z.surfaceHigh),
-                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = tvKeyboard(),
+                modifier = Modifier.fillMaxWidth().okOpensKeyboard(),
             )
             Spacer(Modifier.height(16.dp))
         }

@@ -1,3 +1,12 @@
+## ZIPTV Pro 11.0.1
+
+**TV fixes**
+- Movies and series: Left/Right on the remote seek (10 s per press, faster while held) and the seek bar takes the remote, so you can keep scrubbing; OK jumps there.
+- Leaving a movie with Back no longer drops it into a corner window; picture-in-picture only appears when you pick it.
+- The remote can no longer slip behind the player onto the search box (no more surprise keyboard).
+- The update notice now pops up in the middle of the screen with the remote already on Update now (Back = Later).
+- Moving onto a text box (search, sign-in, codes) no longer pops up the keyboard; press OK on it to type.
+
 ## ZIPTV Pro 11.0: more to watch, and it keeps playing
 
 **Movies and series**

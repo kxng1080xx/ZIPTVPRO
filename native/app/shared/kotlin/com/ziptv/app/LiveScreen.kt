@@ -266,7 +266,8 @@ private fun ChannelSearch(query: String, hint: String, modifier: Modifier, onCha
         value = query, onValueChange = onChange, singleLine = true,
         textStyle = MaterialTheme.typography.bodyLarge.copy(color = Z.text),
         cursorBrush = androidx.compose.ui.graphics.SolidColor(Z.focus),
-        modifier = modifier.focusRing(RoundedCornerShape(50)),
+        keyboardOptions = tvKeyboard(),
+        modifier = modifier.okOpensKeyboard().focusRing(RoundedCornerShape(50)),
         decorationBox = { inner ->
             Row(Modifier.clip(RoundedCornerShape(50)).background(Z.surfaceHigh).padding(horizontal = 14.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically) {

@@ -91,7 +91,8 @@ private fun heightLabel(h: Int) = when { h >= 2160 -> "4K"; h > 0 -> "${h}p"; el
  * player's Box. [onActive] reports when a popover is open (keeps controls up).
  */
 @Composable
-fun BoxScope.PlayerChrome(model: AppModel, item: Playable, inFullscreen: Boolean, onActive: (Boolean) -> Unit = {}, onInteract: () -> Unit = {}) {
+fun BoxScope.PlayerChrome(model: AppModel, item: Playable, inFullscreen: Boolean, onActive: (Boolean) -> Unit = {}, onInteract: () -> Unit = {},
+                           scrub: SeekScrub = remember { SeekScrub() }, seekFocus: androidx.compose.ui.focus.FocusRequester? = null) {
     var pop by remember { mutableStateOf(Pop.None) }
     val wide = LocalWide.current
     LaunchedEffect(pop) { onActive(pop != Pop.None) }
@@ -115,7 +116,7 @@ fun BoxScope.PlayerChrome(model: AppModel, item: Playable, inFullscreen: Boolean
     ) {
         // Phone page player: no room for NOW/NEXT next to the buttons (the guide is a tap away).
         when {
-            item.seekable -> SeekInline(model, item, Modifier.weight(1f), onInteract) // VOD/catch-up: slim seek in the bar
+            item.seekable -> SeekInline(model, item, Modifier.weight(1f), onInteract, scrub, seekFocus) // VOD/catch-up: slim seek in the bar
             // Landscape phone: the NOW card sits right under the video, and the bar is too narrow for both.
             item.live && (inFullscreen || (LocalWide.current && !LocalShort.current)) -> NowNext(model, item, Modifier.weight(1f), compact = !inFullscreen)
             else -> Spacer(Modifier.weight(1f))
@@ -368,34 +369,84 @@ private fun Modifier.vertical(): Modifier = this
         layout(p.height, p.width) { p.place(-(p.width - p.height) / 2, (p.width - p.height) / 2) }
     }
 
+/**
+ * D-pad / arrow-key scrubbing: each Left/Right press moves [target] (10 s, bigger steps while held), and the
+ * player seeks once, shortly after the last press — no stutter from a seek per press. Shared by the player
+ * screen (a press while the controls are hidden starts scrubbing) and the seek bar (which carries it on).
+ */
+class SeekScrub {
+    var target by mutableStateOf<Long?>(null)
+    private var held = 0
+    fun nudge(model: AppModel, forward: Boolean) {
+        val dur = model.player.durationMs()
+        if (dur <= 0) { model.player.seekTo(model.player.positionMs() + if (forward) 10_000 else -10_000); return }
+        held++
+        val step = when { held > 20 -> 60_000L; held > 8 -> 30_000L; else -> 10_000L }
+        target = ((target ?: model.player.positionMs()) + if (forward) step else -step).coerceIn(0, dur)
+    }
+    fun release() { held = 0 }
+    fun commit(model: AppModel) { target?.let { model.player.seekTo(it) }; target = null; held = 0 }
+}
+
 /** Minimal seek: small times either side of a thin line with a small dot; sits in the control row. */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun SeekInline(model: AppModel, item: Playable, modifier: Modifier, poke: () -> Unit) {
-    var pos by remember { mutableStateOf(0L) }
-    var dur by remember { mutableStateOf(0L) }
+private fun SeekInline(model: AppModel, item: Playable, modifier: Modifier, poke: () -> Unit,
+                       scrub: SeekScrub = remember { SeekScrub() }, focus: androidx.compose.ui.focus.FocusRequester? = null) {
+    // Start from the player's numbers so the bar exists (and can take D-pad focus) the moment it's shown.
+    var pos by remember { mutableStateOf(model.player.positionMs()) }
+    var dur by remember { mutableStateOf(model.player.durationMs()) }
     var dragging by remember { mutableStateOf(false) }
     var dragValue by remember { mutableFloatStateOf(0f) }
+    var focused by remember { mutableStateOf(false) }
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val target = scrub.target
     LaunchedEffect(item.url) {
-        while (true) { if (!dragging) { pos = model.player.positionMs(); dur = model.player.durationMs() }; kotlinx.coroutines.delay(500) }
+        while (true) { if (!dragging && scrub.target == null) { pos = model.player.positionMs(); dur = model.player.durationMs() }; kotlinx.coroutines.delay(500) }
     }
+    // One seek, 700 ms after the last press (each press restarts the wait).
+    LaunchedEffect(target) { if (target != null) { kotlinx.coroutines.delay(700); pos = target; scrub.commit(model) } }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { scrub.commit(model) } } // controls faded mid-scrub
     if (dur <= 0) { Spacer(modifier); return }
     val colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Z.focus, inactiveTrackColor = Color.White.copy(alpha = 0.22f))
+    val shown = when { dragging -> (dragValue * dur).toLong(); target != null -> target; else -> pos }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         val time = MaterialTheme.typography.labelMedium
-        Text(hms(if (dragging) (dragValue * dur).toLong() else pos), color = Color.White, style = time)
+        Text(hms(shown), color = if (target != null) Z.focus else Color.White, style = time, fontWeight = if (target != null) FontWeight.Bold else null)
         Slider(
-            value = if (dragging) dragValue else (pos.toFloat() / dur).coerceIn(0f, 1f),
+            value = (shown.toFloat() / dur).coerceIn(0f, 1f),
             onValueChange = { dragging = true; dragValue = it; poke() },
             onValueChangeFinished = { model.player.seekTo((dragValue * dur).toLong()); pos = (dragValue * dur).toLong(); dragging = false },
             colors = colors,
-            thumb = { Box(Modifier.size(if (dragging) 14.dp else 10.dp).clip(RoundedCornerShape(50)).background(Color.White)) },
+            thumb = { Box(Modifier.size(if (dragging || focused) 14.dp else 10.dp).clip(RoundedCornerShape(50)).background(Color.White)) },
             track = { st ->
-                SliderDefaults.Track(sliderState = st, modifier = Modifier.height(3.dp), colors = colors,
+                SliderDefaults.Track(sliderState = st, modifier = Modifier.height(if (focused) 5.dp else 3.dp), colors = colors,
                     thumbTrackGapSize = 0.dp, drawStopIndicator = null)
             },
-            modifier = Modifier.weight(1f).padding(horizontal = 10.dp).height(24.dp),
+            modifier = Modifier.weight(1f).padding(horizontal = 10.dp).height(24.dp)
+                .let { if (focus != null) it.focusRequester(focus) else it }
+                .onFocusChanged { focused = it.isFocused || it.hasFocus }
+                // TV remote / arrows: the Slider's own key handling moves 1% per press (~1 min on a movie) and
+                // also eats Up/Down, trapping focus on the bar. Take the keys first: Left/Right scrub, Up leaves,
+                // OK seeks now (or plays/pauses).
+                .onPreviewKeyEvent { e ->
+                    val down = e.type == KeyEventType.KeyDown
+                    when (e.key) {
+                        Key.DirectionLeft, Key.DirectionRight -> {
+                            if (down) { scrub.nudge(model, e.key == Key.DirectionRight); poke() } else scrub.release()
+                            true
+                        }
+                        Key.DirectionUp -> { if (down) focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Up); true }
+                        Key.DirectionDown -> true
+                        Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                            if (down) { if (scrub.target != null) { pos = scrub.target!!; scrub.commit(model) } else model.player.togglePause(); poke() }
+                            true
+                        }
+                        else -> false
+                    }
+                }
+                .focusRing(RoundedCornerShape(12.dp), lift = 1f),
         )
-        Text("-" + hms((dur - pos).coerceAtLeast(0)), color = Z.textMuted, style = time)
+        Text("-" + hms((dur - shown).coerceAtLeast(0)), color = Z.textMuted, style = time)
     }
 }
